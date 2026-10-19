@@ -1,0 +1,5 @@
+_chrome_profile/
+node_modules/
+dist-portable/
+*.zip
+*.tar.gz
