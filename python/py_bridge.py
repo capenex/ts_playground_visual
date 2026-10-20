@@ -137,7 +137,58 @@ def _numpy_array_to_list(value):
     return None
 
 
-def _tag_value(value, depth=0, memo=None, budget=None):
+_POINTER_NAMES = (
+    "mid", "m", "i", "j", "k", "idx", "p", "q", "cur", "curr", "slow", "fast", "pivot",
+    "l", "r", "left", "right", "lo", "hi", "low", "high", "start", "end",
+)
+_COORD_PAIRS = (("i", "j"), ("r", "c"), ("row", "col"), ("x", "y"))
+
+
+def _extract_focus(local_vars):
+    indices = []
+    seen = set()
+    for name in _POINTER_NAMES:
+        val = local_vars.get(name)
+        if type(val) is int and 0 <= val < 10**9 and val not in seen:
+            seen.add(val)
+            indices.append(val)
+    coord = None
+    for rk, ck in _COORD_PAIRS:
+        rv = local_vars.get(rk)
+        cv = local_vars.get(ck)
+        if type(rv) is int and type(cv) is int and rv >= 0 and cv >= 0:
+            coord = (rv, cv)
+            break
+    return {"indices": indices[:6], "coord": coord}
+
+
+def _select_grid_axis(total, focus_idx, max_count=8):
+    if total <= max_count:
+        return list(range(total))
+    chosen = {0, total - 1}
+    center = focus_idx if (type(focus_idx) is int and 0 <= focus_idx < total) else 1
+    inner_quota = max(2, max_count - 2)
+    start = max(1, center - inner_quota // 2)
+    end = min(total - 2, start + inner_quota - 1)
+    start = max(1, end - inner_quota + 1)
+    for idx in range(start, end + 1):
+        chosen.add(idx)
+    return sorted(chosen)
+
+
+def _focal_1d_indices(total, focus_indices):
+    if total <= 20:
+        return []
+    centers = [c for c in (focus_indices or []) if 0 <= c < total][:4]
+    radius = 3 if len(centers) <= 1 else (2 if len(centers) == 2 else 1)
+    chosen = set(range(0, min(total, 3))) | set(range(max(0, total - 3), total))
+    for c in centers:
+        for idx in range(max(0, c - radius), min(total, c + radius + 1)):
+            chosen.add(idx)
+    return sorted(chosen)
+
+
+def _tag_value(value, depth=0, memo=None, budget=None, focus=None):
     if memo is None:
         memo = {}
     if budget is None:
@@ -165,18 +216,25 @@ def _tag_value(value, depth=0, memo=None, budget=None):
 
     numpy_list = _numpy_array_to_list(value)
     if numpy_list is not None:
-        return _tag_value(numpy_list, depth, memo, budget)
+        return _tag_value(numpy_list, depth, memo, budget, focus)
 
     if isinstance(value, range):
         try:
-            if len(value) <= MAX_ITEMS:
-                return _tag_value(list(value), depth, memo, budget)
+            total_len = len(value)
+            if total_len <= MAX_ITEMS:
+                return _tag_value(list(value), depth, memo, budget, focus)
+            items = [_tag_value(value[idx], depth + 1, memo, budget) for idx in range(min(total_len, MAX_ITEMS))]
+            res = {"$t": "seq", "id": len(memo) + 1, "cls": "range", "items": items, "total": total_len}
+            if depth == 0 and total_len > 20:
+                f_idxs = _focal_1d_indices(total_len, focus["indices"] if focus else None)
+                res["sparse"] = [[i, _tag_value(value[i], depth + 1, memo, budget)] for i in f_idxs]
+            return res
         except Exception:
             pass
         return {"$t": "repr", "v": _safe_repr(value)}
 
     if type(value).__module__ == "collections" and type(value).__name__ == "deque":
-        return _tag_value(list(value), depth, memo, budget)
+        return _tag_value(list(value), depth, memo, budget, focus)
 
     if isinstance(value, (list, tuple)):
         oid = id(value)
@@ -186,13 +244,46 @@ def _tag_value(value, depth=0, memo=None, budget=None):
             return {"$t": "repr", "v": _safe_repr(value)}
         memo[oid] = len(memo) + 1
         node_id = memo[oid]
+        total_len = len(value)
         items = []
-        for idx, item in enumerate(value):
-            if idx >= MAX_ITEMS:
-                items.append({"$t": "repr", "v": "… %d more" % (len(value) - MAX_ITEMS)})
-                break
-            items.append(_tag_value(item, depth + 1, memo, budget))
-        return {"$t": "seq", "id": node_id, "cls": "tuple" if isinstance(value, tuple) else "list", "items": items}
+        for idx in range(min(total_len, MAX_ITEMS)):
+            items.append(_tag_value(value[idx], depth + 1, memo, budget))
+        res = {
+            "$t": "seq",
+            "id": node_id,
+            "cls": "tuple" if isinstance(value, tuple) else "list",
+            "items": items,
+            "total": total_len,
+        }
+        if depth == 0 and total_len > 0 and isinstance(value[0], (list, tuple)):
+            total_cols = len(value[0])
+            res["totalRows"] = total_len
+            res["totalCols"] = total_cols
+            if total_len > 10 or total_cols > 10:
+                coord = focus["coord"] if focus else None
+                focus_r = coord[0] if coord else None
+                focus_c = coord[1] if coord else None
+                r_idxs = _select_grid_axis(total_len, focus_r, 8)
+                c_idxs = _select_grid_axis(total_cols, focus_c, 8)
+                view_cells = []
+                for r in r_idxs:
+                    row_obj = value[r] if r < total_len and isinstance(value[r], (list, tuple)) else ()
+                    view_cells.append([
+                        _tag_value(row_obj[c], depth + 2, memo, budget) if c < len(row_obj) else None
+                        for c in c_idxs
+                    ])
+                res["rowIndices"] = r_idxs
+                res["colIndices"] = c_idxs
+                res["viewCells"] = view_cells
+        elif depth == 0 and total_len > 20:
+            f_idxs = _focal_1d_indices(total_len, focus["indices"] if focus else None)
+            res["sparse"] = [[i, _tag_value(value[i], depth + 1, memo, budget)] for i in f_idxs]
+            if total_len > MAX_ITEMS:
+                res["tail"] = [
+                    _tag_value(value[i], depth + 1, memo, budget)
+                    for i in range(max(0, total_len - 6), total_len)
+                ]
+        return res
 
     if isinstance(value, dict):
         oid = id(value)
@@ -202,22 +293,22 @@ def _tag_value(value, depth=0, memo=None, budget=None):
             return {"$t": "repr", "v": _safe_repr(value)}
         memo[oid] = len(memo) + 1
         node_id = memo[oid]
-        keys = list(value.keys())
+        total_len = len(value)
+        keys = []
+        for idx, k in enumerate(value.keys()):
+            if idx >= MAX_ITEMS:
+                break
+            keys.append(k)
         if keys and all(isinstance(k, str) for k in keys) and _looks_like_object_dict(keys):
             fields = {}
-            for idx, key in enumerate(keys):
-                if idx >= MAX_ITEMS:
-                    break
+            for key in keys:
                 fields[key] = _tag_value(value[key], depth + 1, memo, budget)
             return {"$t": "obj", "id": node_id, "cls": "dict", "fields": fields}
         entries = []
-        for idx, key in enumerate(keys):
-            if idx >= MAX_ITEMS:
-                entries.append([{"$t": "repr", "v": "… %d more" % (len(keys) - MAX_ITEMS)}, None])
-                break
+        for key in keys:
             tagged_key = key if isinstance(key, (str, int, float, bool)) else _safe_repr(key)
             entries.append([tagged_key, _tag_value(value[key], depth + 1, memo, budget)])
-        return {"$t": "dict", "id": node_id, "cls": type(value).__name__, "entries": entries}
+        return {"$t": "dict", "id": node_id, "cls": type(value).__name__, "entries": entries, "total": total_len}
 
     if isinstance(value, (set, frozenset)):
         oid = id(value)
@@ -227,12 +318,13 @@ def _tag_value(value, depth=0, memo=None, budget=None):
             return {"$t": "repr", "v": _safe_repr(value)}
         memo[oid] = len(memo) + 1
         node_id = memo[oid]
+        total_len = len(value)
         items = []
         for idx, item in enumerate(value):
             if idx >= MAX_ITEMS:
                 break
             items.append(_tag_value(item, depth + 1, memo, budget))
-        return {"$t": "set", "id": node_id, "cls": type(value).__name__, "items": items}
+        return {"$t": "set", "id": node_id, "cls": type(value).__name__, "items": items, "total": total_len}
 
     if isinstance(value, (types.ModuleType, types.FunctionType, types.BuiltinFunctionType, type)):
         return {"$t": "repr", "v": _safe_repr(value)}
@@ -270,7 +362,8 @@ def _format_value(value, depth=0, seen=None):
     if isinstance(value, (int, float)):
         return repr(value)
     if isinstance(value, str):
-        return json.dumps(value, ensure_ascii=False)
+        s = value if len(value) <= 120 else value[:119] + "…"
+        return json.dumps(s, ensure_ascii=False)
     if _is_user_instance(value) and getattr(type(value), "__repr__", None) is object.__repr__:
         oid = id(value)
         if oid in seen:
@@ -293,12 +386,32 @@ def _format_value(value, depth=0, seen=None):
                 break
             parts.append("%s=%s" % (k, _format_value(v, depth + 1, seen)))
         return "%s(%s)" % (cls_name, ", ".join(parts))
-    if isinstance(value, (list, tuple, dict, set, frozenset)):
-        try:
-            text = repr(value)
-        except Exception:
-            text = "<%s>" % type(value).__name__
-        return text if len(text) <= 400 else text[:399] + "…"
+    if isinstance(value, (list, tuple)):
+        if len(value) > 0 and isinstance(value[0], (list, tuple)):
+            return "[%d×%d]" % (len(value), len(value[0]))
+        head = [_format_value(value[i], depth + 1, seen) for i in range(min(len(value), 6))]
+        if len(value) > 6:
+            head.append("… (%d 项)" % len(value))
+        br_l, br_r = ("(", ")") if isinstance(value, tuple) else ("[", "]")
+        return br_l + ", ".join(head) + br_r
+    if isinstance(value, dict):
+        parts = []
+        for idx, (k, v) in enumerate(value.items()):
+            if idx >= 5:
+                parts.append("… (%d 项)" % len(value))
+                break
+            parts.append("%s: %s" % (_format_value(k, depth + 1, seen), _format_value(v, depth + 1, seen)))
+        return "{" + ", ".join(parts) + "}"
+    if isinstance(value, (set, frozenset)):
+        if not value:
+            return "set()"
+        parts = []
+        for idx, item in enumerate(value):
+            if idx >= 5:
+                parts.append("… (%d 项)" % len(value))
+                break
+            parts.append(_format_value(item, depth + 1, seen))
+        return "{" + ", ".join(parts) + "}"
     return _safe_repr(value, 400)
 
 
@@ -356,16 +469,20 @@ class _Recorder:
         if len(self.steps) % 64 == 0 and time.monotonic() - self.started_at > self.time_limit:
             raise _TraceTimeout()
 
-    def _stack_snapshot(self, frame):
+    def _stack_snapshot(self, frame, top_tagged=None):
         frames = []
         cursor = frame
         idx = 0
         while cursor is not None and cursor.f_code.co_filename == FILENAME:
-            local_vars = _capture_locals(dict(cursor.f_locals))
-            tagged = {}
-            budget = [max(200, NODE_BUDGET // 3)]
-            for key, value in local_vars.items():
-                tagged[key] = _tag_value(value, 0, {}, budget)
+            if idx == 0 and top_tagged is not None:
+                tagged = top_tagged
+            else:
+                local_vars = _capture_locals(dict(cursor.f_locals))
+                focus = _extract_focus(local_vars)
+                tagged = {}
+                budget = [max(300, NODE_BUDGET // 2)]
+                for key, value in local_vars.items():
+                    tagged[key] = _tag_value(value, 0, {}, budget, focus)
             frames.append({
                 "id": idx,
                 "fn": cursor.f_code.co_name,
@@ -392,15 +509,16 @@ class _Recorder:
                 raise
             line = frame.f_lineno
             local_vars = _capture_locals(dict(frame.f_locals))
+            focus = _extract_focus(local_vars)
             tagged = {}
-            budget = [NODE_BUDGET]
+            budget = [NODE_BUDGET * 2]
             for key, value in local_vars.items():
-                tagged[key] = _tag_value(value, 0, {}, budget)
+                tagged[key] = _tag_value(value, 0, {}, budget, focus)
             step = {
                 "line": line,
                 "note": self._note(line),
                 "vars": tagged,
-                "stack": self._stack_snapshot(frame),
+                "stack": self._stack_snapshot(frame, top_tagged=tagged),
                 "isCheckpoint": False,
                 "checkpointVals": None,
                 "error": None,

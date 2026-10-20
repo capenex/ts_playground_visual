@@ -265,6 +265,15 @@ run_counter(1, 3)
     return request('run', { source, options: options || {} }, 180000).then(raw => JSON.parse(raw));
   }
 
+  function attachPyMeta(target, meta) {
+    if (!target || typeof target !== 'object' || !meta) return;
+    try {
+      Object.defineProperty(target, '__py_meta__', {
+        value: meta, enumerable: false, configurable: true, writable: true,
+      });
+    } catch (_) {}
+  }
+
   /* ── tagged Python value → plain JS value ── */
   function hydrate(node, registry) {
     const reg = registry || new Map();
@@ -277,6 +286,32 @@ run_counter(1, 3)
         const arr = [];
         if (node.id != null) reg.set(node.id, arr);
         (node.items || []).forEach(item => arr.push(hydrate(item, reg)));
+        const meta = {};
+        let hasMeta = false;
+        if (typeof node.total === 'number') { meta.total = node.total; hasMeta = true; }
+        if (Array.isArray(node.sparse)) {
+          const spMap = new Map();
+          node.sparse.forEach(pair => {
+            if (Array.isArray(pair) && pair.length >= 2) {
+              spMap.set(pair[0], hydrate(pair[1], reg));
+            }
+          });
+          meta.sparse = spMap;
+          hasMeta = true;
+        }
+        if (Array.isArray(node.tail)) {
+          meta.tail = node.tail.map(x => hydrate(x, reg));
+          hasMeta = true;
+        }
+        if (typeof node.totalRows === 'number') { meta.totalRows = node.totalRows; hasMeta = true; }
+        if (typeof node.totalCols === 'number') { meta.totalCols = node.totalCols; hasMeta = true; }
+        if (Array.isArray(node.rowIndices)) { meta.rowIndices = node.rowIndices; hasMeta = true; }
+        if (Array.isArray(node.colIndices)) { meta.colIndices = node.colIndices; hasMeta = true; }
+        if (Array.isArray(node.viewCells)) {
+          meta.viewCells = node.viewCells.map(r => Array.isArray(r) ? r.map(c => hydrate(c, reg)) : []);
+          hasMeta = true;
+        }
+        if (hasMeta) attachPyMeta(arr, meta);
         return arr;
       }
       case 'dict': {
@@ -285,12 +320,14 @@ run_counter(1, 3)
         (node.entries || []).forEach(entry => {
           map.set(hydrate(entry[0], reg), hydrate(entry[1], reg));
         });
+        if (typeof node.total === 'number') attachPyMeta(map, { total: node.total });
         return map;
       }
       case 'set': {
         const set = new Set();
         if (node.id != null) reg.set(node.id, set);
         (node.items || []).forEach(item => set.add(hydrate(item, reg)));
+        if (typeof node.total === 'number') attachPyMeta(set, { total: node.total });
         return set;
       }
       case 'obj': {
@@ -339,35 +376,37 @@ run_counter(1, 3)
   }
 
   function enrich(ds, v, note, record) {
-    try { enrichFromNote(ds, v, note); } catch (_) {}
-    if (!note) return;
-    const pyPatterns = [
-      { re: /\b([A-Za-z_]\w*)\.append\s*\(/g, hot: 'last' },
-      { re: /\b([A-Za-z_]\w*)\.add\s*\(/g, hot: 'last' },
-      { re: /\b([A-Za-z_]\w*)\.pop\s*\(/g, hot: 'last' },
-      { re: /\b([A-Za-z_]\w*)\.popleft\s*\(/g, hot: 'first' },
-      { re: /heapq\.heappush\s*\(\s*([A-Za-z_]\w*)\s*,/g, hot: 'last' },
-      { re: /heapq\.heappop\s*\(\s*([A-Za-z_]\w*)\s*\)/g, hot: 'first' },
-    ];
-    pyPatterns.forEach(({ re, hot }) => {
-      let m;
-      while ((m = re.exec(note))) {
-        const d = ds[m[1]];
-        if (!d) continue;
-        if (d.kind === 'set' && d.items && d.items.length) {
-          d.hot = hot === 'first' ? d.items[0] : d.items[d.items.length - 1];
-        } else if (d.items && d.items.length) {
-          d.hot = hot === 'first' ? 0 : d.items.length - 1;
-        } else if (d.kind === 'queue' && d.items && d.items.length) {
-          d.hot = 0;
+    if (note) {
+      const pyPatterns = [
+        { re: /\b([A-Za-z_]\w*)\.append\s*\(/g, hot: 'last' },
+        { re: /\b([A-Za-z_]\w*)\.add\s*\(/g, hot: 'last' },
+        { re: /\b([A-Za-z_]\w*)\.pop\s*\(/g, hot: 'last' },
+        { re: /\b([A-Za-z_]\w*)\.popleft\s*\(/g, hot: 'first' },
+        { re: /heapq\.heappush\s*\(\s*([A-Za-z_]\w*)\s*,/g, hot: 'last' },
+        { re: /heapq\.heappop\s*\(\s*([A-Za-z_]\w*)\s*\)/g, hot: 'first' },
+      ];
+      pyPatterns.forEach(({ re, hot }) => {
+        let m;
+        while ((m = re.exec(note))) {
+          const d = ds[m[1]];
+          if (!d) continue;
+          const total = typeof d.total === 'number' ? d.total : (d.items ? d.items.length : 0);
+          if (d.kind === 'set' && d.items && d.items.length) {
+            d.hot = hot === 'first' ? d.items[0] : d.items[d.items.length - 1];
+          } else if (total > 0) {
+            d.hot = hot === 'first' ? 0 : total - 1;
+          } else if (d.kind === 'queue' && d.items && d.items.length) {
+            d.hot = 0;
+          }
         }
+      });
+      const getM = note.match(/\b([A-Za-z_]\w*)\.get\s*\(\s*([^)]+?)\s*\)/);
+      if (getM && ds[getM[1]] && ds[getM[1]].kind === 'map') {
+        const key = pyEvalSimple(getM[2], v);
+        if (key !== undefined) ds[getM[1]].hot = key;
       }
-    });
-    const getM = note.match(/\b([A-Za-z_]\w*)\.get\s*\(\s*([^)]+?)\s*\)/);
-    if (getM && ds[getM[1]] && ds[getM[1]].kind === 'map') {
-      const key = pyEvalSimple(getM[2], v);
-      if (key !== undefined) ds[getM[1]].hot = key;
     }
+    try { enrichFromNote(ds, v, note); } catch (_) {}
     if (record && record.isCheckpoint) {
       Object.keys(ds).forEach(key => { ds[key].win = detectWindowRange(v) || ds[key].win; });
     }
@@ -436,6 +475,14 @@ run_counter(1, 3)
       if (d > 6) return String(value);
       s.add(value);
       if (Array.isArray(value)) {
+        const meta = value.__py_meta__;
+        const total = (meta && typeof meta.total === 'number') ? meta.total : value.length;
+        if (total > 60 || value.length > 60) {
+          const head = value.slice(0, 20).map(x => fmtReturn(x, d + 1, s)).join(', ');
+          const tailSrc = (meta && Array.isArray(meta.tail)) ? meta.tail : value.slice(Math.max(0, value.length - 5));
+          const tail = tailSrc.slice(-5).map(x => fmtReturn(x, d + 1, s)).join(', ');
+          return `[${head}, … (共 ${total} 项), ${tail}]`;
+        }
         return '[' + value.map(x => fmtReturn(x, d + 1, s)).join(', ') + ']';
       }
       if (typeof isMapLike === 'function' && isMapLike(value)) {

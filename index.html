@@ -597,11 +597,15 @@
     font:600 10px var(--code-font);color:var(--blue);
     padding:1px 6px;border-radius:999px;border:1px solid rgba(96,165,250,.4);background:rgba(96,165,250,.1);
   }
+  .slot .name .size-tag{
+    font:600 10px var(--code-font);color:#94a3b8;
+    padding:1px 6px;border-radius:999px;border:1px solid #263142;background:rgba(255,255,255,.04);
+  }
 
   /* viz atoms */
   .viz{font:600 13px var(--code-font);min-width:0}
   .viz-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
-  .viz-row.varray-row{flex-wrap:nowrap;width:100%;gap:4px;overflow:visible;padding:5px 2px 9px}
+  .viz-row.varray-row{flex-wrap:nowrap;width:100%;gap:4px;overflow-x:auto;overflow-y:visible;padding:7px 2px 11px}
   .vcell{
     min-width:30px;height:30px;padding:0 8px;border:1.5px solid #2a3342;border-radius:7px;
     display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.03);font-size:13px;
@@ -613,23 +617,24 @@
     transform:translateY(-2px);box-shadow:0 3px 10px rgba(255,180,84,.18);z-index:1;
   }
   .vcell.mark{background:rgba(96,165,250,.18);border-color:var(--blue);color:#bfdbfe}
-  .varray-row .vcell-idx{flex:1 1 0;min-width:0;position:relative;overflow:visible}
+  .varray-row .vcell-idx{flex:1 1 0;min-width:28px;position:relative;overflow:visible}
   .varray-row .vcell-idx .idx{
     position:absolute;left:50%;bottom:0;transform:translate(-50%,50%);
-    font:700 9px var(--code-font);color:var(--green);line-height:1.2;
+    font:700 9px var(--code-font);color:var(--green);line-height:1.2;white-space:nowrap;
   }
   .vcell .sub-tag{
     position:absolute;left:50%;top:0;transform:translate(-50%,-52%);
-    font:700 8px var(--code-font);color:var(--cyan);background:#0a0e14;padding:0 3px;border-radius:3px;
+    font:700 8px var(--code-font);color:var(--cyan);background:#0a0e14;padding:0 3px;border-radius:3px;white-space:nowrap;
   }
+  .vcell .sub-tag.ptr-tag{color:#ffd9a0;border:1px solid rgba(255,180,84,.38)}
   .vpair{display:inline-flex;align-items:center;gap:4px}
   .vpair .varr{color:var(--accent);font-weight:800;font-size:14px}
   .vpair.hot .vk,.vpair.hot .vv{color:var(--accent);border-color:var(--accent)}
   .vmap-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:8px;justify-items:center}
-  .vstr{display:flex;flex-wrap:nowrap;font:600 13px var(--code-font);overflow:hidden;gap:2px}
+  .vstr{display:flex;flex-wrap:nowrap;font:600 13px var(--code-font);overflow-x:auto;gap:2px;align-items:center}
   .vstr .ch{
     display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:24px;
-    padding:0 3px;border-radius:5px;border:1px solid transparent;
+    padding:0 3px;border-radius:5px;border:1px solid transparent;position:relative;
   }
   .vstr .ch.win{background:rgba(96,165,250,.12);border-color:rgba(96,165,250,.38);color:#dbeafe}
   .vstr .ch.hot{background:rgba(255,180,84,.25);border-color:rgba(255,180,84,.6);color:#ffd9a0}
@@ -637,7 +642,13 @@
   .vcol{display:flex;flex-direction:column-reverse;gap:4px;align-items:stretch;max-height:140px;width:min(100%,130px)}
   .vcol .vcell{height:26px;min-width:0;justify-content:space-between;padding:0 8px}
   .vcol .vtop{font:600 9px var(--ui-font);color:var(--accent)}
-  .vmore{font:600 11px var(--code-font);color:var(--dim);text-align:center;padding:2px 0}
+  .vmore{
+    font:600 10px var(--code-font);color:var(--dim);text-align:center;padding:2px 4px;
+    display:inline-flex;flex-direction:column;align-items:center;justify-content:center;
+    line-height:1.1;user-select:none;flex:0 0 auto;
+  }
+  .vmore .vmore-cnt{font:700 8.5px var(--code-font);color:#64748b}
+  .vgrid-wrap{overflow-x:auto;max-width:100%}
   .vgrid{display:inline-grid;gap:3px;font:600 11px var(--code-font)}
   .vgrid .gcell{
     width:30px;height:26px;border:1.5px solid #2a3342;border-radius:5px;
@@ -646,6 +657,15 @@
   }
   .vgrid .gcell.hot{background:rgba(255,180,84,.22);border-color:var(--accent);color:#ffd9a0;transform:scale(1.06)}
   .vgrid .gcell.dep{background:rgba(192,132,252,.15);border-color:var(--purple);color:#e9d5ff}
+  .vgrid .ghead{
+    min-width:22px;height:20px;padding:0 3px;display:flex;align-items:center;justify-content:center;
+    font:700 9.5px var(--code-font);color:#64748b;user-select:none;
+  }
+  .vgrid .ghead.focus{color:var(--accent)}
+  .vgrid .ggap{
+    min-width:18px;height:22px;display:flex;align-items:center;justify-content:center;
+    color:#475569;font:700 10px var(--code-font);user-select:none;
+  }
   .vempty{font:400 12px var(--code-font);color:#5b6675}
 
   /* heap / uf / tree / graph specialized visuals */
@@ -2533,28 +2553,39 @@ function isSetLike(v) {
   return Object.prototype.toString.call(v) === '[object Set]';
 }
 
+function defineHidden(obj, key, val) {
+  if (!obj || typeof obj !== 'object') return;
+  try {
+    Object.defineProperty(obj, key, {
+      value: val, enumerable: false, configurable: true, writable: true,
+    });
+  } catch (_) {}
+}
+
 function cloneDeepBounded(val, depth = 0) {
   if (val === null || typeof val !== 'object') return val;
   if (depth >= 4) return String(val);
   if (Array.isArray(val)) return val.slice(0, 40).map(x => cloneDeepBounded(x, depth + 1));
   if (isMapLike(val)) {
     const entries = [];
-    val.forEach((v, k) => entries.push({ k: cloneDeepBounded(k, depth + 1), v: cloneDeepBounded(v, depth + 1) }));
-    return entries.slice(0, 40);
+    for (const [k, v] of val) {
+      if (entries.length >= 40) break;
+      entries.push({ k: cloneDeepBounded(k, depth + 1), v: cloneDeepBounded(v, depth + 1) });
+    }
+    return entries;
   }
   if (isSetLike(val)) {
     const items = [];
-    val.forEach(v => items.push(cloneDeepBounded(v, depth + 1)));
-    return items.slice(0, 40);
+    for (const v of val) {
+      if (items.length >= 40) break;
+      items.push(cloneDeepBounded(v, depth + 1));
+    }
+    return items;
   }
   const out = {};
   const clsName = val.__py_cls__ || (val.constructor && val.constructor !== Object && val.constructor.name ? val.constructor.name : '');
   if (clsName) {
-    try {
-      Object.defineProperty(out, '__py_cls__', {
-        value: clsName, enumerable: false, configurable: true, writable: true,
-      });
-    } catch (_) {}
+    defineHidden(out, '__py_cls__', clsName);
   }
   Object.keys(val).slice(0, 20).forEach(k => {
     out[k] = cloneDeepBounded(val[k], depth + 1);
@@ -2566,6 +2597,7 @@ function normalizeTree(value) {
   if (value && Array.isArray(value.nodes)) {
     return {
       kind: 'tree',
+      total: value.total || value.nodes.length,
       nodes: value.nodes.slice(0, 31).map(n => ({
         val: n.val !== undefined ? n.val : n.id,
         left: n.left ?? null,
@@ -2576,10 +2608,19 @@ function normalizeTree(value) {
   }
   const nodes = [];
   const seen = new Set();
+  const nodeMap = new Map();
   function walk(node) {
-    if (!node || typeof node !== 'object' || seen.has(node) || nodes.length >= 31) return null;
+    if (!node || typeof node !== 'object' || seen.has(node)) return null;
     seen.add(node);
+    if (nodes.length >= 31) {
+      if (seen.size < 2000) {
+        walk(node.left);
+        walk(node.right);
+      }
+      return null;
+    }
     const idx = nodes.length;
+    nodeMap.set(node, idx);
     const item = { val: node.val !== undefined ? node.val : node.value, left: null, right: null };
     nodes.push(item);
     item.left = walk(node.left);
@@ -2587,22 +2628,41 @@ function normalizeTree(value) {
     return idx;
   }
   const root = walk(value);
-  return { kind: 'tree', nodes, root: root ?? 0 };
+  const out = { kind: 'tree', nodes, root: root ?? 0, total: seen.size };
+  defineHidden(out, '__nodeMap', nodeMap);
+  return out;
 }
 
 function normalizeList(value) {
+  const pyMeta = (value && typeof value === 'object' && value.__py_meta__) ? value.__py_meta__ : null;
   if (Array.isArray(value)) {
-    return { kind: 'list', items: value.slice(0, 30).map(x => cloneDeepBounded(x, 1)) };
+    const total = (pyMeta && typeof pyMeta.total === 'number') ? pyMeta.total : value.length;
+    const out = { kind: 'list', items: value.slice(0, 30).map(x => cloneDeepBounded(x, 1)), total };
+    if (total > 20) {
+      defineHidden(out, '__raw', value);
+      if (pyMeta) defineHidden(out, '__pyMeta', pyMeta);
+    }
+    return out;
   }
   const items = [];
+  const rawNodes = [];
+  const rawVals = [];
   const seen = new Set();
   let curNode = value;
-  while (curNode && typeof curNode === 'object' && !seen.has(curNode) && items.length < 30) {
+  while (curNode && typeof curNode === 'object' && !seen.has(curNode) && rawNodes.length < 5000) {
     seen.add(curNode);
-    items.push(curNode.val !== undefined ? curNode.val : curNode.value);
+    const v = curNode.val !== undefined ? curNode.val : curNode.value;
+    rawNodes.push(curNode);
+    rawVals.push(v);
+    if (items.length < 30) items.push(cloneDeepBounded(v, 1));
     curNode = curNode.next;
   }
-  return { kind: 'list', items };
+  const out = { kind: 'list', items, total: rawNodes.length };
+  if (rawNodes.length > 0) {
+    defineHidden(out, '__rawNodes', rawNodes);
+    defineHidden(out, '__rawVals', rawVals);
+  }
+  return out;
 }
 
 function normalizeGraph(value) {
@@ -2618,15 +2678,39 @@ function normalizeGraph(value) {
       return { id, label: String(label), x, y };
     });
     const edges = value.edges.slice(0, 32).map(e => Array.isArray(e) ? [e[0], e[1]] : [e.from, e.to]);
-    return { kind: 'graph', nodes, edges };
+    return { kind: 'graph', nodes, edges, totalNodes: value.nodes.length, totalEdges: value.edges.length };
   }
   return { kind: 'graph', nodes: [], edges: [] };
 }
 
 function snapshot(kind, value, extra) {
-  if (kind === 'array' || kind === 'heap' || kind === 'queue' || kind === 'stack' || kind === 'uf') {
-    const items = Array.isArray(value) ? value.slice(0, 40).map(x => cloneDeepBounded(x, 1)) : [];
-    return Object.assign({ kind, items }, extra || {});
+  const pyMeta = (value && typeof value === 'object' && value.__py_meta__) ? value.__py_meta__ : null;
+  if (kind === 'stack') {
+    const arr = Array.isArray(value) ? value : [];
+    const total = (pyMeta && typeof pyMeta.total === 'number') ? pyMeta.total : arr.length;
+    let items;
+    let baseIdx = 0;
+    if (pyMeta && Array.isArray(pyMeta.tail) && total > arr.length) {
+      items = pyMeta.tail.map(x => cloneDeepBounded(x, 1));
+      baseIdx = Math.max(0, total - items.length);
+    } else if (arr.length > 40) {
+      baseIdx = arr.length - 40;
+      items = arr.slice(baseIdx).map(x => cloneDeepBounded(x, 1));
+    } else {
+      items = arr.slice(0, 40).map(x => cloneDeepBounded(x, 1));
+    }
+    return Object.assign({ kind, items, total, baseIdx }, extra || {});
+  }
+  if (kind === 'array' || kind === 'heap' || kind === 'queue' || kind === 'uf') {
+    const arr = Array.isArray(value) ? value : [];
+    const total = (pyMeta && typeof pyMeta.total === 'number') ? pyMeta.total : arr.length;
+    const items = arr.slice(0, 40).map(x => cloneDeepBounded(x, 1));
+    const out = Object.assign({ kind, items, total }, extra || {});
+    if (total > 20) {
+      defineHidden(out, '__raw', arr);
+      if (pyMeta) defineHidden(out, '__pyMeta', pyMeta);
+    }
+    return out;
   }
   if (kind === 'list') {
     return Object.assign(normalizeList(value), extra || {});
@@ -2638,27 +2722,69 @@ function snapshot(kind, value, extra) {
     return Object.assign(normalizeGraph(value), extra || {});
   }
   if (kind === 'string') {
-    return Object.assign({ kind, items: String(value).split('') }, extra || {});
+    const s = String(value);
+    const total = s.length;
+    const items = s.slice(0, 40).split('');
+    const out = Object.assign({ kind, items, total }, extra || {});
+    if (total > 20) {
+      defineHidden(out, '__raw', s);
+    }
+    return out;
   }
   if (kind === 'map') {
     const entries = [];
-    if (value && typeof value.forEach === 'function') {
-      value.forEach((v, k) => entries.push({ k: cloneDeepBounded(k, 1), v: cloneDeepBounded(v, 1) }));
+    let total = 0;
+    if (isMapLike(value)) {
+      total = (pyMeta && typeof pyMeta.total === 'number') ? pyMeta.total : value.size;
+      for (const [k, v] of value) {
+        if (entries.length >= 40) break;
+        entries.push({ k: cloneDeepBounded(k, 1), v: cloneDeepBounded(v, 1) });
+      }
+    } else if (value && typeof value.forEach === 'function') {
+      value.forEach((v, k) => {
+        total++;
+        if (entries.length < 40) entries.push({ k: cloneDeepBounded(k, 1), v: cloneDeepBounded(v, 1) });
+      });
     } else if (value && typeof value === 'object') {
-      Object.keys(value).forEach(k => entries.push({ k, v: cloneDeepBounded(value[k], 1) }));
+      const keys = Object.keys(value);
+      total = keys.length;
+      keys.slice(0, 40).forEach(k => entries.push({ k, v: cloneDeepBounded(value[k], 1) }));
     }
-    return Object.assign({ kind, entries: entries.slice(0, 40) }, extra || {});
+    const out = Object.assign({ kind, entries, total }, extra || {});
+    if (total > 20) defineHidden(out, '__raw', value);
+    return out;
   }
   if (kind === 'set') {
     const items = [];
-    if (value && typeof value.forEach === 'function') value.forEach(v => items.push(cloneDeepBounded(v, 1)));
-    return Object.assign({ kind, items: items.slice(0, 40) }, extra || {});
+    let total = 0;
+    if (isSetLike(value)) {
+      total = (pyMeta && typeof pyMeta.total === 'number') ? pyMeta.total : value.size;
+      for (const v of value) {
+        if (items.length >= 40) break;
+        items.push(cloneDeepBounded(v, 1));
+      }
+    } else if (value && typeof value.forEach === 'function') {
+      value.forEach(v => {
+        total++;
+        if (items.length < 40) items.push(cloneDeepBounded(v, 1));
+      });
+    }
+    const out = Object.assign({ kind, items, total }, extra || {});
+    if (total > 20) defineHidden(out, '__raw', value);
+    return out;
   }
   if (kind === 'grid') {
+    const totalRows = (pyMeta && typeof pyMeta.totalRows === 'number') ? pyMeta.totalRows : (Array.isArray(value) ? value.length : 0);
+    const totalCols = (pyMeta && typeof pyMeta.totalCols === 'number') ? pyMeta.totalCols : (Array.isArray(value) && Array.isArray(value[0]) ? value[0].length : 0);
     const cloned = Array.isArray(value)
       ? value.slice(0, 30).map(r => Array.isArray(r) ? r.slice(0, 30).map(c => cloneDeepBounded(c, 2)) : r)
       : [[0]];
-    return Object.assign({ kind, cells: cloned, mark: null, deps: [] }, extra || {});
+    const out = Object.assign({ kind, cells: cloned, mark: null, deps: [], totalRows, totalCols }, extra || {});
+    if (totalRows > 10 || totalCols > 10) {
+      defineHidden(out, '__raw', value);
+      if (pyMeta) defineHidden(out, '__pyMeta', pyMeta);
+    }
+    return out;
   }
   if (kind === 'interface' || kind === 'object') {
     return Object.assign({ kind: 'interface', fields: [], entries: [] }, extra || {});
@@ -2900,7 +3026,7 @@ function classifyValue(name, value) {
   if (isMapLike(value)) return snapshot('map', value);
   if (isSetLike(value)) return snapshot('set', value);
   if (typeof value === 'string') {
-    if (value.length <= 40) return snapshot('string', value);
+    if (value.length > 0) return snapshot('string', value);
     return null;
   }
   if (typeof value === 'object') {
@@ -3006,89 +3132,342 @@ function detectWindowRange(v) {
   return null;
 }
 
-function enrichFromNote(ds, v, note) {
-  if (!note) return;
+const POINTER_VAR_NAMES = [
+  'mid', 'm', 'i', 'j', 'k', 'idx', 'p', 'q', 'cur', 'curr', 'slow', 'fast', 'pivot',
+  'l', 'r', 'left', 'right', 'lo', 'hi', 'low', 'high', 'start', 'end',
+];
 
-  const win = detectWindowRange(v);
+function build1DFocalSlice(total, getAt, focalCenters) {
+  if (total <= 20) return null;
+  const centers = [];
+  const seenC = new Set();
+  (focalCenters || []).forEach(c => {
+    if (typeof c === 'number' && Number.isInteger(c) && c >= 0 && c < total && !seenC.has(c)) {
+      seenC.add(c);
+      centers.push(c);
+    }
+  });
+  const activeCenters = centers.slice(0, 4);
+  const radius = activeCenters.length <= 1 ? 3 : (activeCenters.length === 2 ? 2 : 1);
+  const intervals = [
+    [0, Math.min(total - 1, 2)],
+    [Math.max(0, total - 3), total - 1],
+  ];
+  activeCenters.forEach(c => {
+    intervals.push([Math.max(0, c - radius), Math.min(total - 1, c + radius)]);
+  });
+  intervals.sort((a, b) => a[0] - b[0]);
+  const merged = [];
+  for (const iv of intervals) {
+    if (!merged.length) {
+      merged.push([iv[0], iv[1]]);
+    } else {
+      const prev = merged[merged.length - 1];
+      if (iv[0] <= prev[1] + 2) {
+        prev[1] = Math.max(prev[1], iv[1]);
+      } else {
+        merged.push([iv[0], iv[1]]);
+      }
+    }
+  }
+  const out = [];
+  for (let s = 0; s < merged.length; s++) {
+    const [start, end] = merged[s];
+    if (s > 0) {
+      const prevEnd = merged[s - 1][1];
+      const gapCount = start - prevEnd - 1;
+      if (gapCount > 0) {
+        out.push({ gap: true, count: gapCount, from: prevEnd + 1, to: start - 1 });
+      }
+    }
+    for (let idx = start; idx <= end; idx++) {
+      out.push({ idx, val: getAt(idx) });
+    }
+  }
+  return out;
+}
+
+function selectGridAxisIndices(total, focusIdx, maxCount = 8) {
+  if (total <= maxCount) {
+    return Array.from({ length: total }, (_, i) => i);
+  }
+  const set = new Set([0, total - 1]);
+  const center = (typeof focusIdx === 'number' && Number.isInteger(focusIdx) && focusIdx >= 0 && focusIdx < total)
+    ? focusIdx
+    : 1;
+  const innerQuota = Math.max(2, maxCount - 2);
+  let start = Math.max(1, center - Math.floor(innerQuota / 2));
+  let end = Math.min(total - 2, start + innerQuota - 1);
+  start = Math.max(1, end - innerQuota + 1);
+  for (let i = start; i <= end; i++) set.add(i);
+  return [...set].sort((a, b) => a - b);
+}
+
+function enrichFromNote(ds, v, note) {
+  if (!ds || typeof ds !== 'object') return;
+  const safeV = v || {};
+  const text = String(note || '');
+
+  const evalIdx = (expr) => {
+    const t = String(expr || '').trim();
+    if (!t) return undefined;
+    if (/^\d+$/.test(t)) return +t;
+    if (t in safeV && typeof safeV[t] === 'number' && Number.isInteger(safeV[t])) return safeV[t];
+    const m = t.match(/^([A-Za-z_$][\w$]*)\s*([+-])\s*(\d+)$/);
+    if (m && typeof safeV[m[1]] === 'number' && Number.isInteger(safeV[m[1]])) {
+      return m[2] === '+' ? safeV[m[1]] + (+m[3]) : safeV[m[1]] - (+m[3]);
+    }
+    const evaluated = safeEvalExpr(t, safeV);
+    return (typeof evaluated === 'number' && Number.isInteger(evaluated)) ? evaluated : undefined;
+  };
+
+  const win = detectWindowRange(safeV);
   if (win) {
     Object.keys(ds).forEach(k => {
-      if (ds[k].kind === 'array' || ds[k].kind === 'string') {
+      if (ds[k] && (ds[k].kind === 'array' || ds[k].kind === 'string')) {
         ds[k].win = win;
       }
     });
   }
 
-  // Highlight accessed property on interface / class / object cards (e.g. user.name, this.total, self.val)
-  const propRe = /\b([A-Za-z_$][\w$]*)\s*\.\s*([A-Za-z_$][\w$]*)\b/g;
-  let pm;
-  while ((pm = propRe.exec(note))) {
-    const rawObj = pm[1], propName = pm[2];
-    const objName = (rawObj === 'self' && !ds.self && ds.this) ? 'this' : rawObj;
-    if (ds[objName] && (ds[objName].kind === 'interface' || ds[objName].kind === 'object')) {
-      ds[objName].hot = propName;
-      const ifaceName = ds[objName].interfaceName;
-      if (ifaceName && ds[ifaceName] && ds[ifaceName].kind === 'interface') {
-        ds[ifaceName].hot = propName;
-      }
-    }
-  }
-
-  const g = note.match(/\b([A-Za-z_$][\w$]*)\s*\[\s*([^[\]]+?)\s*\]\s*\[\s*([^[\]]+?)\s*\]/);
-  if (g && ds[g[1]] && ds[g[1]].kind === 'grid') {
-    const evalIdx = (expr) => {
-      const t = expr.trim();
-      if (/^\d+$/.test(t)) return +t;
-      if (t in v && typeof v[t] === 'number') return v[t];
-      const m = t.match(/^([A-Za-z_$][\w$]*)\s*([+-])\s*(\d+)$/);
-      if (m && typeof v[m[1]] === 'number') return m[2] === '+' ? v[m[1]] + (+m[3]) : v[m[1]] - (+m[3]);
-      return undefined;
-    };
-    const row = evalIdx(g[2]);
-    const col = evalIdx(g[3]);
-    if (typeof row === 'number' && typeof col === 'number') {
-      ds[g[1]].mark = [row, col];
-    }
-    const deps = [];
-    const re = /\b[A-Za-z_$][\w$]*\s*\[\s*([^[\]]+?)\s*\]\s*\[\s*([^[\]]+?)\s*\]/g;
-    let m;
-    while ((m = re.exec(note))) {
-      const r = evalIdx(m[1]);
-      const c = evalIdx(m[2]);
-      if (typeof r === 'number' && typeof c === 'number') {
-        if (!(ds[g[1]].mark && ds[g[1]].mark[0] === r && ds[g[1]].mark[1] === c)) {
-          deps.push([r, c]);
+  if (text) {
+    // Highlight accessed property on interface / class / object cards (e.g. user.name, this.total, self.val)
+    const propRe = /\b([A-Za-z_$][\w$]*)\s*\.\s*([A-Za-z_$][\w$]*)\b/g;
+    let pm;
+    while ((pm = propRe.exec(text))) {
+      const rawObj = pm[1], propName = pm[2];
+      const objName = (rawObj === 'self' && !ds.self && ds.this) ? 'this' : rawObj;
+      if (ds[objName] && (ds[objName].kind === 'interface' || ds[objName].kind === 'object')) {
+        ds[objName].hot = propName;
+        const ifaceName = ds[objName].interfaceName;
+        if (ifaceName && ds[ifaceName] && ds[ifaceName].kind === 'interface') {
+          ds[ifaceName].hot = propName;
         }
       }
     }
-    ds[g[1]].deps = deps;
-    return;
+
+    // 2D Grid subscript access: dp[i][j]
+    const g = text.match(/\b([A-Za-z_$][\w$]*)\s*\[\s*([^[\]]+?)\s*\]\s*\[\s*([^[\]]+?)\s*\]/);
+    if (g && ds[g[1]] && ds[g[1]].kind === 'grid') {
+      const row = evalIdx(g[2]);
+      const col = evalIdx(g[3]);
+      if (typeof row === 'number' && typeof col === 'number') {
+        ds[g[1]].mark = [row, col];
+      }
+      const deps = [];
+      const re = /\b[A-Za-z_$][\w$]*\s*\[\s*([^[\]]+?)\s*\]\s*\[\s*([^[\]]+?)\s*\]/g;
+      let m;
+      while ((m = re.exec(text))) {
+        const r = evalIdx(m[1]);
+        const c = evalIdx(m[2]);
+        if (typeof r === 'number' && typeof c === 'number') {
+          if (!(ds[g[1]].mark && ds[g[1]].mark[0] === r && ds[g[1]].mark[1] === c)) {
+            deps.push([r, c]);
+          }
+        }
+      }
+      ds[g[1]].deps = deps;
+    }
+
+    // 1D subscript access: nums[mid], s[i], etc. (match all occurrences on the line)
+    const subRe = /\b([A-Za-z_$][\w$]*)\s*\[\s*([^[\]]+?)\s*\](?!\s*\[)/g;
+    let sm;
+    while ((sm = subRe.exec(text))) {
+      const varName = sm[1];
+      const d = ds[varName];
+      if (!d || d.kind === 'grid') continue;
+      let idx = evalIdx(sm[2]);
+      if (typeof idx === 'number') {
+        const total = typeof d.total === 'number' ? d.total : (d.items ? d.items.length : 0);
+        if (idx < 0 && total > 0) idx = total + idx;
+        if (d.hot === undefined) {
+          d.hot = idx;
+        } else {
+          if (!d.__extraFocal) defineHidden(d, '__extraFocal', []);
+          d.__extraFocal.push(idx);
+        }
+      }
+    }
+
+    // Container mutation / lookup methods: push, set, add, pop, shift, unshift, get, has
+    const p = text.match(/\b([A-Za-z_$][\w$]*)\s*\.\s*(push|set|add|pop|shift|unshift|get|has)\s*\(\s*([^,)]*)/);
+    if (p && ds[p[1]]) {
+      const d = ds[p[1]];
+      const method = p[2];
+      const firstArg = p[3] ? p[3].trim() : '';
+      if (method === 'get' || method === 'has' || method === 'set' || method === 'add') {
+        const argVal = firstArg ? safeEvalExpr(firstArg, safeV) : undefined;
+        if (d.kind === 'map' && argVal !== undefined) {
+          d.hot = argVal;
+        } else if (d.kind === 'set' && argVal !== undefined) {
+          d.hot = argVal;
+        }
+      }
+      if (method === 'push' || method === 'add' || method === 'set' || method === 'unshift') {
+        if (d.kind === 'stack' || d.kind === 'array' || d.kind === 'queue' || d.kind === 'heap') {
+          const total = typeof d.total === 'number' ? d.total : (d.items ? d.items.length : 0);
+          if (total > 0) d.hot = method === 'unshift' ? 0 : total - 1;
+        } else if (d.kind === 'map' && d.hot === undefined) {
+          if (d.entries && d.entries.length) d.hot = d.entries[d.entries.length - 1].k;
+        } else if (d.kind === 'set' && d.hot === undefined) {
+          if (d.items && d.items.length) d.hot = d.items[d.items.length - 1];
+        }
+      }
+    }
   }
 
-  const a = note.match(/\b([A-Za-z_$][\w$]*)\s*\[\s*([^[\]]+?)\s*\]/);
-  if (a && ds[a[1]]) {
-    const t = a[2].trim();
-    let idx;
-    if (/^\d+$/.test(t)) idx = +t;
-    else if (typeof v[t] === 'number') idx = v[t];
-    else {
-      const m = t.match(/^([A-Za-z_$][\w$]*)\s*([+-])\s*(\d+)$/);
-      if (m && typeof v[m[1]] === 'number') idx = m[2] === '+' ? v[m[1]] + (+m[3]) : v[m[1]] - (+m[3]);
-    }
-    if (typeof idx === 'number') ds[a[1]].hot = idx;
-  }
+  // Finalize focus-aware windowing & pointer tags for all structures in ds
+  Object.keys(ds).forEach(varName => {
+    const d = ds[varName];
+    if (!d || typeof d !== 'object') return;
 
-  const p = note.match(/\b([A-Za-z_$][\w$]*)\s*\.\s*(push|set|add|pop|shift|unshift)\s*\(/);
-  if (p && ds[p[1]]) {
-    const d = ds[p[1]];
-    if (p[2] === 'pop' || p[2] === 'shift') return;
-    if (d.kind === 'stack' || d.kind === 'array' || d.kind === 'queue' || d.kind === 'heap') {
-      if (d.items && d.items.length) d.hot = d.items.length - 1;
-    } else if (d.kind === 'map') {
-      if (d.entries && d.entries.length) d.hot = d.entries[d.entries.length - 1].k;
-    } else if (d.kind === 'set') {
-      if (d.items && d.items.length) d.hot = d.items[d.items.length - 1];
+    // 1) Binary tree node reference highlighting
+    if (d.kind === 'tree' && d.__nodeMap) {
+      for (const pName of POINTER_VAR_NAMES) {
+        const ref = safeV[pName];
+        if (ref && typeof ref === 'object' && d.__nodeMap.has(ref)) {
+          const nodeIdx = d.__nodeMap.get(ref);
+          if (d.hot === undefined) d.hot = nodeIdx;
+          break;
+        }
+      }
     }
-  }
+
+    // 2) Linked list node reference & focal windowing
+    if (d.kind === 'list' && d.__rawNodes) {
+      const nodePtrs = {};
+      const focal = [];
+      for (const pName of POINTER_VAR_NAMES) {
+        const ref = safeV[pName];
+        if (ref && typeof ref === 'object') {
+          const idx = d.__rawNodes.indexOf(ref);
+          if (idx >= 0) {
+            if (!nodePtrs[idx]) nodePtrs[idx] = [];
+            if (!nodePtrs[idx].includes(pName)) nodePtrs[idx].push(pName);
+            if (d.hot === undefined) d.hot = idx;
+            focal.push(idx);
+          }
+        }
+      }
+      if (Object.keys(nodePtrs).length) d.pointers = nodePtrs;
+      const total = d.total || d.__rawVals.length;
+      if (total > 20) {
+        if (typeof d.hot === 'number') focal.unshift(d.hot);
+        d.windowed = build1DFocalSlice(total, idx => cloneDeepBounded(d.__rawVals[idx], 1), focal);
+      }
+    }
+
+    // 3) 1D Indexed Sequences (array, queue, heap, uf, string, array-backed list)
+    if (
+      d.kind === 'array' || d.kind === 'queue' || d.kind === 'heap' ||
+      d.kind === 'uf' || d.kind === 'string' || (d.kind === 'list' && !d.__rawNodes)
+    ) {
+      const total = typeof d.total === 'number' ? d.total : (d.items ? d.items.length : 0);
+      if (total > 0) {
+        const ptrs = d.pointers || {};
+        const focal = [];
+        if (typeof d.hot === 'number' && d.hot >= 0 && d.hot < total) focal.push(d.hot);
+        if (Array.isArray(d.__extraFocal)) {
+          d.__extraFocal.forEach(idx => {
+            if (typeof idx === 'number' && idx >= 0 && idx < total) focal.push(idx);
+          });
+        }
+        if (typeof d.mark === 'number' && d.mark >= 0 && d.mark < total) focal.push(d.mark);
+        if (Array.isArray(d.win)) {
+          if (d.win[0] >= 0 && d.win[0] < total) focal.push(d.win[0]);
+          if (d.win[1] >= 0 && d.win[1] < total) focal.push(d.win[1]);
+        }
+        for (const pName of POINTER_VAR_NAMES) {
+          const val = safeV[pName];
+          if (typeof val === 'number' && Number.isInteger(val) && val >= 0 && val < total) {
+            if (!ptrs[val]) ptrs[val] = [];
+            if (!ptrs[val].includes(pName)) ptrs[val].push(pName);
+            focal.push(val);
+          }
+        }
+        if (Object.keys(ptrs).length) d.pointers = ptrs;
+        if (d.hot === undefined && d.mark === undefined) {
+          if (typeof safeV.mid === 'number' && Number.isInteger(safeV.mid) && safeV.mid >= 0 && safeV.mid < total) {
+            d.mark = safeV.mid;
+          } else if (typeof safeV.m === 'number' && Number.isInteger(safeV.m) && safeV.m >= 0 && safeV.m < total) {
+            d.mark = safeV.m;
+          }
+        }
+        if (total > 20) {
+          const raw = d.__raw;
+          const pyMeta = d.__pyMeta;
+          const getAt = (idx) => {
+            if (pyMeta && pyMeta.sparse && pyMeta.sparse.has(idx)) {
+              return cloneDeepBounded(pyMeta.sparse.get(idx), 1);
+            }
+            if (typeof raw === 'string') return raw[idx] ?? '';
+            if (Array.isArray(raw) && idx < raw.length) return cloneDeepBounded(raw[idx], 1);
+            if (d.items && idx < d.items.length) return d.items[idx];
+            return '…';
+          };
+          d.windowed = build1DFocalSlice(total, getAt, focal);
+        }
+      }
+    }
+
+    // 4) Large Map / Set: ensure accessed hot key/value beyond index 40 is included in entries/items
+    if (d.kind === 'map' && d.hot !== undefined && d.__raw && isMapLike(d.__raw)) {
+      const exists = (d.entries || []).some(e => e.k === d.hot);
+      if (!exists && d.__raw.has(d.hot)) {
+        d.entries.push({ k: cloneDeepBounded(d.hot, 1), v: cloneDeepBounded(d.__raw.get(d.hot), 1) });
+      }
+    }
+    if (d.kind === 'set' && d.hot !== undefined && d.__raw && isSetLike(d.__raw)) {
+      const exists = (d.items || []).some(x => x === d.hot);
+      if (!exists && d.__raw.has(d.hot)) {
+        d.items.push(cloneDeepBounded(d.hot, 1));
+      }
+    }
+
+    // 5) 2D Grid sliding viewport for matrices larger than 10x10
+    if (d.kind === 'grid') {
+      const totalRows = typeof d.totalRows === 'number' ? d.totalRows : (d.cells ? d.cells.length : 0);
+      const totalCols = typeof d.totalCols === 'number' ? d.totalCols : (d.cells && d.cells[0] ? d.cells[0].length : 0);
+      if (totalRows > 10 || totalCols > 10) {
+        const pyMeta = d.__pyMeta;
+        if (pyMeta && Array.isArray(pyMeta.rowIndices) && Array.isArray(pyMeta.colIndices) && Array.isArray(pyMeta.viewCells)) {
+          d.rowIndices = pyMeta.rowIndices;
+          d.colIndices = pyMeta.colIndices;
+          d.viewCells = pyMeta.viewCells;
+        } else {
+          let focusR = d.mark ? d.mark[0] : (d.deps && d.deps[0] ? d.deps[0][0] : undefined);
+          let focusC = d.mark ? d.mark[1] : (d.deps && d.deps[0] ? d.deps[0][1] : undefined);
+          if (focusR === undefined || focusC === undefined) {
+            const coordPairs = [['i', 'j'], ['r', 'c'], ['row', 'col'], ['x', 'y']];
+            for (const [rk, ck] of coordPairs) {
+              if (typeof safeV[rk] === 'number' && typeof safeV[ck] === 'number') {
+                focusR = safeV[rk];
+                focusC = safeV[ck];
+                break;
+              }
+            }
+          }
+          const rowIndices = selectGridAxisIndices(totalRows, focusR, 8);
+          const colIndices = selectGridAxisIndices(totalCols, focusC, 8);
+          const rawGrid = Array.isArray(d.__raw) ? d.__raw : d.cells;
+          d.rowIndices = rowIndices;
+          d.colIndices = colIndices;
+          d.viewCells = rowIndices.map(r => {
+            const rowArr = rawGrid && Array.isArray(rawGrid[r]) ? rawGrid[r] : [];
+            return colIndices.map(c => cloneDeepBounded(rowArr[c], 2));
+          });
+        }
+      }
+    }
+
+    // Clean up temporary raw object references so snapshots stay lightweight and serializable
+    delete d.__raw;
+    delete d.__rawNodes;
+    delete d.__rawVals;
+    delete d.__nodeMap;
+    delete d.__pyMeta;
+    delete d.__extraFocal;
+  });
 }
 
 function formatShortVal(val) {
@@ -5046,6 +5425,13 @@ function safeJSONStringify(val) {
       if (v !== null && typeof v === 'object') {
         if (seen.has(v)) return '[Circular]';
         seen.add(v);
+        if (Array.isArray(v) && v.length > 60) {
+          return [
+            ...v.slice(0, 20),
+            `… (共 ${v.length} 项)`,
+            ...v.slice(v.length - 5),
+          ];
+        }
       }
       return v;
     });
@@ -6412,30 +6798,36 @@ function hoverValueSummary(info) {
   if (!d) return formatHoverVal(info.val);
   const short = formatShortVal;
   if (Array.isArray(d.items)) {
+    const total = typeof d.total === 'number' ? d.total : d.items.length;
     if (d.kind === 'string') {
       const s = d.items.join('');
-      return JSON.stringify(s.length > 120 ? s.slice(0, 118) + '…' : s);
+      const suffix = total > d.items.length ? ` (共 ${total} 字符)` : '';
+      return JSON.stringify(s.length > 120 ? s.slice(0, 118) + '…' : s) + suffix;
     }
     const head = d.items.slice(0, 14).map(short).join(', ');
-    return '[' + head + (d.items.length > 14 ? ', …' : '') + ']';
+    return '[' + head + (total > 14 ? `, … (共 ${total} 项)` : '') + ']';
   }
   if (d.kind === 'map') {
     const entries = d.entries || [];
+    const total = typeof d.total === 'number' ? d.total : entries.length;
     const head = entries.slice(0, 6).map(e => short(e.k) + ' → ' + short(e.v)).join(', ');
-    return 'Map(' + entries.length + ' 项) { ' + head + (entries.length > 6 ? ', …' : '') + ' }';
+    return 'Map(' + total + ' 项) { ' + head + (total > 6 ? ', …' : '') + ' }';
   }
   if (d.kind === 'grid') {
-    const rows = (d.cells || []).length;
-    const cols = rows && Array.isArray(d.cells[0]) ? d.cells[0].length : 0;
+    const rows = typeof d.totalRows === 'number' ? d.totalRows : (d.cells || []).length;
+    const cols = typeof d.totalCols === 'number' ? d.totalCols : (rows && Array.isArray(d.cells[0]) ? d.cells[0].length : 0);
     return rows + ' × ' + cols + ' 的二维矩阵';
   }
   if (d.kind === 'tree') {
     const nodes = d.nodes || [];
+    const total = typeof d.total === 'number' ? d.total : nodes.length;
     const root = nodes[d.root] ? nodes[d.root].val : undefined;
-    return 'Tree(' + nodes.length + ' 个节点 · 根 ' + short(root) + ')';
+    return 'Tree(' + total + ' 个节点 · 根 ' + short(root) + ')';
   }
   if (d.kind === 'graph') {
-    return 'Graph(' + (d.nodes || []).length + ' 节点 / ' + (d.edges || []).length + ' 条边)';
+    const nCnt = typeof d.totalNodes === 'number' ? d.totalNodes : (d.nodes || []).length;
+    const eCnt = typeof d.totalEdges === 'number' ? d.totalEdges : (d.edges || []).length;
+    return 'Graph(' + nCnt + ' 节点 / ' + eCnt + ' 条边)';
   }
   if (d.fields) {
     const head = d.fields.slice(0, 6).map(f => f.k + ': ' + short(f.v)).join(', ');
@@ -6571,37 +6963,55 @@ function scrollCodeTo(line) {
 /* ================================================================
    6) Debug pane renderers — all 12 kinds
    ================================================================ */
-function truncMap(arr, render) {
+function truncMap(arr, render, d) {
+  if (d && Array.isArray(d.windowed) && d.windowed.length) {
+    return d.windowed.map(entry => {
+      if (entry && entry.gap) {
+        const tip = entry.from != null && entry.to != null
+          ? ` title="省略下标 ${entry.from}..${entry.to}（共 ${entry.count} 项）"`
+          : '';
+        return '<div class="vmore"' + tip + '>…<span class="vmore-cnt">+' + entry.count + '</span></div>';
+      }
+      return render(entry.val, entry.idx);
+    }).join('');
+  }
   const MAX = 20, HEAD = 10, TAIL = 5;
   if (!arr || arr.length <= MAX) return (arr || []).map((x, i) => render(x, i)).join('');
+  const total = (d && typeof d.total === 'number' && d.total >= arr.length) ? d.total : arr.length;
+  const hidden = Math.max(1, total - HEAD - TAIL);
   const head = arr.slice(0, HEAD).map((x, i) => render(x, i)).join('');
-  const tail = arr.slice(arr.length - TAIL).map((x, i) => render(x, arr.length - TAIL + i)).join('');
-  return head + '<div class="vmore">…</div>' + tail;
+  const tailStart = total - TAIL;
+  const tail = arr.slice(arr.length - TAIL).map((x, i) => render(x, tailStart + i)).join('');
+  return head + '<div class="vmore" title="省略 ' + hidden + ' 项">…<span class="vmore-cnt">+' + hidden + '</span></div>' + tail;
 }
 
 function vizArray(d) {
   if (!d || !d.items || !d.items.length) return null;
   const win = d.win;
+  const ptrs = d.pointers;
   const cells = truncMap(d.items, (n, k) => {
     let cls = 'vcell vcell-idx';
     if (win && k >= win[0] && k <= win[1]) cls += ' win';
     if (d.hot === k) cls += ' hot';
     else if (d.mark === k) cls += ' mark';
-    return '<div class="' + cls + '"><span class="val">' + esc(n) + '</span><span class="idx">' + k + '</span></div>';
-  });
+    const pTag = (ptrs && ptrs[k] && ptrs[k].length)
+      ? '<span class="sub-tag ptr-tag">' + esc(ptrs[k].slice(0, 2).join(',')) + '</span>'
+      : '';
+    return '<div class="' + cls + '">' + pTag + '<span class="val">' + esc(n) + '</span><span class="idx">' + k + '</span></div>';
+  }, d);
   return '<div class="viz"><div class="viz-row varray-row">' + cells + '</div></div>';
 }
 
 function vizQueue(d) {
   if (!d || !d.items || !d.items.length) return null;
-  const len = d.items.length;
+  const len = (typeof d.total === 'number' && d.total > 0) ? d.total : d.items.length;
   const cells = truncMap(d.items, (n, k) => {
     let cls = 'vcell vcell-idx';
     if (d.hot === k) cls += ' hot';
     else if (k === 0) cls += ' mark';
     const tag = k === 0 ? '<span class="sub-tag">front</span>' : (k === len - 1 ? '<span class="sub-tag">back</span>' : '');
     return '<div class="' + cls + '">' + tag + '<span class="val">' + esc(n) + '</span><span class="idx">' + k + '</span></div>';
-  });
+  }, d);
   return '<div class="viz"><div class="viz-row varray-row">' + cells + '</div></div>';
 }
 
@@ -6613,7 +7023,7 @@ function vizHeap(d) {
     else if (k === 0) cls += ' mark';
     const tag = k === 0 ? '<span class="sub-tag">top</span>' : '';
     return '<div class="' + cls + '">' + tag + '<span class="val">' + esc(n) + '</span><span class="idx">' + k + '</span></div>';
-  });
+  }, d);
   return '<div class="viz"><div class="viz-row varray-row">' + cells + '</div>' +
     '<div class="vmeta-hint">parent = (i - 1) &gt;&gt; 1 · left = 2i + 1</div></div>';
 }
@@ -6626,7 +7036,7 @@ function vizUF(d) {
     else if (p === k) cls += ' mark';
     const tag = p === k ? '<span class="sub-tag">root</span>' : '<span class="sub-tag">p:' + esc(p) + '</span>';
     return '<div class="' + cls + '">' + tag + '<span class="val">' + esc(p) + '</span><span class="idx">' + k + '</span></div>';
-  });
+  }, d);
   return '<div class="viz"><div class="viz-row varray-row">' + cells + '</div></div>';
 }
 
@@ -6635,35 +7045,50 @@ function vizMap(d) {
   return '<div class="viz"><div class="viz-row vmap-row">' + truncMap(d.entries, (e) =>
     '<div class="vpair' + (d.hot === e.k ? ' hot' : '') + '">' +
       '<span class="vcell vk">' + esc(e.k) + '</span><span class="varr">→</span>' +
-      '<span class="vcell vv">' + esc(e.v) + '</span></div>'
+      '<span class="vcell vv">' + esc(e.v) + '</span></div>',
+    d
   ) + '</div></div>';
 }
 
 function vizSet(d) {
   if (!d || !d.items || !d.items.length) return null;
   return '<div class="viz"><div class="viz-row">' + truncMap(d.items, (x) =>
-    '<div class="vcell' + (d.hot === x ? ' hot' : '') + '">' + esc(x) + '</div>'
+    '<div class="vcell' + (d.hot === x ? ' hot' : '') + '">' + esc(x) + '</div>',
+    d
   ) + '</div></div>';
 }
 
 function vizStack(d) {
   if (!d || !d.items || !d.items.length) return null;
   const all = d.items, MAX = 6;
-  const extra = Math.max(0, all.length - MAX);
-  const shown = extra ? all.slice(extra) : all;
+  const total = (typeof d.total === 'number' && d.total >= all.length) ? d.total : all.length;
+  const baseIdx = typeof d.baseIdx === 'number' ? d.baseIdx : Math.max(0, total - all.length);
+  const sliceStart = Math.max(0, all.length - MAX);
+  const shown = all.slice(sliceStart);
+  const hiddenCount = Math.max(0, total - shown.length);
   const rows = shown.map((x, k) => {
-    const abs = k + extra;
-    const isTop = abs === all.length - 1;
+    const abs = baseIdx + sliceStart + k;
+    const isTop = abs === total - 1;
     return '<div class="vcell' + (d.hot === abs ? ' hot' : (isTop ? ' mark' : '')) + '">' +
       '<span>' + esc(x) + '</span>' + (isTop ? '<span class="vtop">top</span>' : '') + '</div>';
   }).join('');
   return '<div class="viz"><div class="vcol">' + rows + '</div>' +
-    (extra ? '<div class="vmore">…+' + extra + '</div>' : '') + '</div>';
+    (hiddenCount ? '<div class="vmore">…+' + hiddenCount + '</div>' : '') + '</div>';
 }
 
 function vizString(d) {
   if (!d || !d.items || !d.items.length) return null;
   const win = d.win;
+  if (Array.isArray(d.windowed) && d.windowed.length) {
+    const cells = truncMap(d.items, (ch, k) => {
+      let cls = 'ch';
+      if (win && k >= win[0] && k <= win[1]) cls += ' win';
+      if (d.hot === k) cls += ' hot';
+      else if (d.mark === k) cls += ' mark';
+      return '<span class="' + cls + '" title="[' + k + ']">' + esc(ch) + '</span>';
+    }, d);
+    return '<div class="viz"><div class="vstr">' + cells + '</div></div>';
+  }
   return '<div class="viz"><div class="vstr">' + d.items.map((ch, k) => {
     let cls = 'ch';
     if (win && k >= win[0] && k <= win[1]) cls += ' win';
@@ -6676,6 +7101,53 @@ function vizString(d) {
 function vizGrid(d) {
   if (!d || !d.cells || !d.cells.length) return null;
   const depSet = new Set((d.deps || []).map(p => p[0] + ',' + p[1]));
+
+  // Sliding viewport mode for large 2D grids (> 10 rows or > 10 cols)
+  if (Array.isArray(d.rowIndices) && Array.isArray(d.colIndices) && Array.isArray(d.viewCells)) {
+    const rIdxs = d.rowIndices;
+    const cIdxs = d.colIndices;
+    const colTracks = [];
+    for (let ci = 0; ci < cIdxs.length; ci++) {
+      if (ci > 0 && cIdxs[ci] > cIdxs[ci - 1] + 1) colTracks.push({ gap: true });
+      colTracks.push({ gap: false, c: cIdxs[ci], ci });
+    }
+    const gridCols = colTracks.length + 1; // +1 for row header column
+    let html = '<div class="ghead">r\\c</div>';
+    for (const ct of colTracks) {
+      if (ct.gap) {
+        html += '<div class="ggap">⋯</div>';
+      } else {
+        const isFocusCol = d.mark && d.mark[1] === ct.c;
+        html += '<div class="ghead' + (isFocusCol ? ' focus' : '') + '">' + ct.c + '</div>';
+      }
+    }
+    for (let ri = 0; ri < rIdxs.length; ri++) {
+      const realR = rIdxs[ri];
+      if (ri > 0 && realR > rIdxs[ri - 1] + 1) {
+        html += '<div class="ggap">⋮</div>';
+        for (let gi = 0; gi < colTracks.length; gi++) {
+          html += '<div class="ggap">' + (colTracks[gi].gap ? '⋱' : '⋮') + '</div>';
+        }
+      }
+      const isFocusRow = d.mark && d.mark[0] === realR;
+      html += '<div class="ghead' + (isFocusRow ? ' focus' : '') + '">' + realR + '</div>';
+      const rowVals = d.viewCells[ri] || [];
+      for (const ct of colTracks) {
+        if (ct.gap) {
+          html += '<div class="ggap">⋯</div>';
+        } else {
+          const realC = ct.c;
+          let cls = 'gcell';
+          if (d.mark && d.mark[0] === realR && d.mark[1] === realC) cls += ' hot';
+          else if (depSet.has(realR + ',' + realC)) cls += ' dep';
+          const val = rowVals[ct.ci];
+          html += '<div class="' + cls + '" title="[' + realR + '][' + realC + ']">' + (val === undefined || val === null ? '·' : esc(val)) + '</div>';
+        }
+      }
+    }
+    return '<div class="viz"><div class="vgrid-wrap"><div class="vgrid" style="grid-template-columns:repeat(' + gridCols + ',auto)">' + html + '</div></div></div>';
+  }
+
   const cols = d.cells[0].length;
   let html = '';
   for (let r = 0; r < d.cells.length; r++) {
@@ -6692,10 +7164,16 @@ function vizGrid(d) {
 
 function vizList(d) {
   if (!d || !d.items || !d.items.length) return null;
-  return '<div class="viz"><div class="viz-row">' + truncMap(d.items, (val, k) =>
-    '<div class="vpair"><span class="vcell' + (d.hot === k ? ' hot' : '') + '">' + esc(val) + '</span>' +
-    (k < d.items.length - 1 ? '<span class="varr">→</span>' : '<span class="varr">→</span><span class="vempty">null</span>') +
-    '</div>') + '</div></div>';
+  const total = (typeof d.total === 'number' && d.total > 0) ? d.total : d.items.length;
+  const ptrs = d.pointers;
+  return '<div class="viz"><div class="viz-row">' + truncMap(d.items, (val, k) => {
+    const pTag = (ptrs && ptrs[k] && ptrs[k].length)
+      ? '<span class="sub-tag ptr-tag">' + esc(ptrs[k].slice(0, 2).join(',')) + '</span>'
+      : '';
+    return '<div class="vpair"><span class="vcell' + (d.hot === k ? ' hot' : '') + '">' + pTag + esc(val) + '</span>' +
+      (k < total - 1 ? '<span class="varr">→</span>' : '<span class="varr">→</span><span class="vempty">null</span>') +
+      '</div>';
+  }, d) + '</div></div>';
 }
 
 function vizTree(d) {
@@ -6790,11 +7268,12 @@ const VIZ = {
 function pressure(d) {
   if (!d) return 0;
   let n = 0;
-  if (d.items) n = d.items.length;
+  if (typeof d.total === 'number') n = d.total;
+  else if (d.items) n = d.items.length;
   else if (d.fields) n = d.fields.length;
   else if (d.entries) n = d.entries.length;
   else if (d.nodes) n = d.nodes.length;
-  else if (d.cells) n = d.cells.length * (d.cells[0] ? d.cells[0].length : 1);
+  else if (d.cells) n = (d.totalRows || d.cells.length) * (d.totalCols || (d.cells[0] ? d.cells[0].length : 1));
   switch (d.kind) {
     case 'grid': return Math.min(1, Math.max(0.5, n / 12));
     case 'array':
@@ -6888,13 +7367,21 @@ function renderSlots() {
     const fn = VIZ[kind];
     const body = d ? (fn ? (fn(d) || '<div class="vempty">empty</div>') : '<div class="vempty">…</div>') : '<div class="vempty">empty</div>';
     const winTag = d && d.win ? `<span class="win-tag">[${d.win[0]}..${d.win[1]}]</span>` : '';
+    let sizeTag = '';
+    if (d) {
+      if (kind === 'grid' && ((d.totalRows || 0) > 10 || (d.totalCols || 0) > 10)) {
+        sizeTag = `<span class="size-tag">${d.totalRows}×${d.totalCols}</span>`;
+      } else if (typeof d.total === 'number' && d.total > 20) {
+        sizeTag = `<span class="size-tag">共 ${d.total} 项</span>`;
+      }
+    }
     const isHotSlot = d && (d.hot !== undefined || d.mark != null);
     const kindPrefix = (d && d.isClass) ? 'class' : 'interface';
     const kindBadge = (kind === 'interface' && d && d.interfaceName && d.interfaceName !== 'object' && !d.isSchema)
       ? `${kindPrefix} · ${d.interfaceName}`
       : (kind === 'interface' && d && d.isClass ? 'class' : kind);
     return '<div class="slot' + (span === 2 ? ' span-2' : '') + (isHotSlot ? ' pulse' : '') + '" data-var="' + esc(s.name) + '">' +
-      '<div class="name"><span>' + esc(s.name) + '</span><span class="kind">' + esc(kindBadge) + '</span>' + winTag + '</div>' +
+      '<div class="name"><span>' + esc(s.name) + '</span><span class="kind">' + esc(kindBadge) + '</span>' + sizeTag + winTag + '</div>' +
       body + '</div>';
   }).join('');
 }

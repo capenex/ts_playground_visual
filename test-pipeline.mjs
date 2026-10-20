@@ -1078,6 +1078,72 @@ check('circular structure in return value runs and finishes debug without JSON c
     cmSrc.includes('indentWithTab') && cmSrc.includes('keymap.of([indentWithTab])'));
 }
 
+// --- Ultra-large data structure support: focus-aware dynamic windowing, true indices, 2D sliding viewport
+{
+  const bigArr = Array.from({ length: 10000 }, (_, i) => i * 2);
+  const dsArr = { nums: classifyValue('nums', bigArr) };
+  enrichFromNote(dsArr, { l: 5000, r: 9999, mid: 7499 }, 'const x = nums[mid];');
+  const dNums = dsArr.nums;
+  const htmlNums = VIZ.array(dNums);
+  check('10,000-element array records total=10000 and builds focus-aware windowed slice around l/mid/r',
+    dNums.total === 10000 &&
+    Array.isArray(dNums.windowed) &&
+    dNums.windowed.some(e => !e.gap && e.idx === 7499 && e.val === 14998) &&
+    dNums.windowed.some(e => !e.gap && e.idx === 5000 && e.val === 10000) &&
+    dNums.windowed.some(e => !e.gap && e.idx === 9999 && e.val === 19998) &&
+    dNums.windowed.some(e => e.gap && e.count > 1000));
+  check('vizArray on 10,000-element array renders true indices (7499, 9999), pointer tags, and gap counts',
+    htmlNums.includes('<span class="idx">7499</span>') &&
+    htmlNums.includes('<span class="idx">9999</span>') &&
+    htmlNums.includes('14998') &&
+    htmlNums.includes('ptr-tag') &&
+    htmlNums.includes('vmore-cnt'));
+
+  // 100x100 2D DP Grid sliding viewport
+  const bigGrid = Array.from({ length: 100 }, (_, r) => Array.from({ length: 100 }, (__, c) => r * 100 + c));
+  const dsGrid = { dp: classifyValue('dp', bigGrid) };
+  enrichFromNote(dsGrid, { i: 45, j: 60 }, 'dp[i][j] = dp[i - 1][j] + dp[i][j - 1];');
+  const dGrid = dsGrid.dp;
+  const htmlBigGrid = VIZ.grid(dGrid);
+  check('100x100 2D grid computes sliding viewport around [45][60] with rowIndices and colIndices',
+    dGrid.totalRows === 100 &&
+    dGrid.totalCols === 100 &&
+    Array.isArray(dGrid.rowIndices) && dGrid.rowIndices.includes(45) && dGrid.rowIndices.includes(0) && dGrid.rowIndices.includes(99) &&
+    Array.isArray(dGrid.colIndices) && dGrid.colIndices.includes(60) && dGrid.colIndices.includes(0) && dGrid.colIndices.includes(99));
+  check('vizGrid on 100x100 grid highlights [45][60] as hot and [44][60]/[45][59] as dep with bounded DOM cells',
+    htmlBigGrid.includes('title="[45][60]"') &&
+    htmlBigGrid.includes('gcell hot') &&
+    (htmlBigGrid.match(/gcell dep/g) || []).length === 2 &&
+    (htmlBigGrid.match(/class="gcell/g) || []).length <= 64);
+
+  // 1,000-element Stack keeps top elements
+  const bigStack = Array.from({ length: 1000 }, (_, i) => i + 1);
+  const dsStack = { stack: classifyValue('stack', bigStack) };
+  enrichFromNote(dsStack, {}, 'stack.push(1000);');
+  const htmlStack = VIZ.stack(dsStack.stack);
+  check('1,000-element stack preserves true top element (1000) and hidden count (+994)',
+    dsStack.stack.total === 1000 &&
+    htmlStack.includes('<span>1000</span><span class="vtop">top</span>') &&
+    htmlStack.includes('…+994'));
+
+  // 200-node Linked List with slow & fast pointers at node 50 and 100
+  let head = null;
+  const nodes = [];
+  for (let i = 199; i >= 0; i--) {
+    head = { val: i * 10, next: head };
+    nodes[i] = head;
+  }
+  const dsList = { head: classifyValue('head', head) };
+  enrichFromNote(dsList, { slow: nodes[50], fast: nodes[100] }, 'slow = slow.next;');
+  const dList = dsList.head;
+  const htmlList = VIZ.list(dList);
+  check('200-node linked list tracks slow/fast node pointers at indices 50 and 100',
+    dList.total === 200 &&
+    dList.pointers && dList.pointers[50] && dList.pointers[50].includes('slow') &&
+    dList.pointers[100] && dList.pointers[100].includes('fast') &&
+    htmlList.includes('500') && htmlList.includes('1000'));
+}
+
 console.log(failed ? `\n${failed} FAILED` : '\nall passed');
 process.exit(failed ? 1 : 0);
 
