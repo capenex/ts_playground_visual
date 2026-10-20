@@ -1,0 +1,585 @@
+"""Pyodide-side bridge for TypeScript Playground VISUAL.
+
+Records a Python run line by line with sys.settrace, converts values into a
+tagged JSON structure, and returns TRACE-compatible steps to the JS side.
+
+The Python source is never rewritten, so line numbers in steps and tracebacks
+are the original source lines.
+"""
+
+import ast
+import json
+import math
+import sys
+import time
+import types
+
+FILENAME = "<py-playground>"
+MAX_STEPS = 4000
+MAX_DEPTH = 6
+MAX_ITEMS = 40
+MAX_STR = 240
+NODE_BUDGET = 1200
+DEFAULT_TIME_LIMIT = 8.0
+
+
+class _StopTrace(BaseException):
+    pass
+
+
+class _TraceTimeout(BaseException):
+    pass
+
+
+def _safe_repr(value, limit=MAX_STR):
+    try:
+        text = repr(value)
+    except Exception:
+        text = "<%s>" % type(value).__name__
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def _is_dunder(name):
+    return name.startswith("__") and name.endswith("__")
+
+
+def _is_displayable(name, value):
+    if _is_dunder(name):
+        return False
+    if name in ("checkpoint", "断点", "print"):
+        return False
+    if isinstance(value, (types.ModuleType, types.FunctionType, types.BuiltinFunctionType, type)):
+        return False
+    return True
+
+
+def _fields_of_instance(value):
+    fields = {}
+    try:
+        if hasattr(value, "__dict__"):
+            for key, val in vars(value).items():
+                if not _is_dunder(key):
+                    fields[key] = val
+    except Exception:
+        pass
+    slots = getattr(type(value), "__slots__", None)
+    if slots:
+        if isinstance(slots, str):
+            slots = (slots,)
+        for key in slots:
+            if key in ("__dict__", "__weakref__"):
+                continue
+            try:
+                fields[key] = getattr(value, key)
+            except Exception:
+                pass
+    return fields
+
+
+def _looks_like_object_dict(keys):
+    key_set = set(keys)
+    if "nodes" in key_set and "edges" in key_set:
+        return True
+    if "val" in key_set and ("left" in key_set or "right" in key_set or "next" in key_set):
+        return True
+    if "id" in key_set and ("label" in key_set or "name" in key_set):
+        return True
+    return False
+
+
+def _numpy_array_to_list(value):
+    try:
+        if "numpy" not in sys.modules:
+            return None
+        np = sys.modules["numpy"]
+        if isinstance(value, np.ndarray):
+            if value.size <= 400:
+                return value.tolist()
+            return None
+        if isinstance(value, np.generic):
+            return value.item()
+    except Exception:
+        return None
+    return None
+
+
+def _tag_value(value, depth=0, memo=None, budget=None):
+    if memo is None:
+        memo = {}
+    if budget is None:
+        budget = [NODE_BUDGET]
+    budget[0] -= 1
+    if budget[0] < 0:
+        return {"$t": "repr", "v": _safe_repr(value)}
+
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        if abs(value) > 9007199254740991:
+            return {"$t": "bigint", "v": str(value)}
+        return value
+    if isinstance(value, float):
+        if math.isnan(value) or math.isinf(value):
+            return {"$t": "float", "v": repr(value)}
+        return value
+    if isinstance(value, str):
+        return value if len(value) <= MAX_STR else value[: MAX_STR - 1] + "…"
+    if isinstance(value, (bytes, bytearray)):
+        return {"$t": "repr", "v": _safe_repr(value)}
+
+    numpy_list = _numpy_array_to_list(value)
+    if numpy_list is not None:
+        return _tag_value(numpy_list, depth, memo, budget)
+
+    if isinstance(value, range):
+        try:
+            if len(value) <= MAX_ITEMS:
+                return _tag_value(list(value), depth, memo, budget)
+        except Exception:
+            pass
+        return {"$t": "repr", "v": _safe_repr(value)}
+
+    if type(value).__module__ == "collections" and type(value).__name__ == "deque":
+        return _tag_value(list(value), depth, memo, budget)
+
+    if isinstance(value, (list, tuple)):
+        oid = id(value)
+        if oid in memo:
+            return {"$t": "ref", "id": memo[oid]}
+        if depth >= MAX_DEPTH:
+            return {"$t": "repr", "v": _safe_repr(value)}
+        memo[oid] = len(memo) + 1
+        node_id = memo[oid]
+        items = []
+        for idx, item in enumerate(value):
+            if idx >= MAX_ITEMS:
+                items.append({"$t": "repr", "v": "… %d more" % (len(value) - MAX_ITEMS)})
+                break
+            items.append(_tag_value(item, depth + 1, memo, budget))
+        return {"$t": "seq", "id": node_id, "cls": "tuple" if isinstance(value, tuple) else "list", "items": items}
+
+    if isinstance(value, dict):
+        oid = id(value)
+        if oid in memo:
+            return {"$t": "ref", "id": memo[oid]}
+        if depth >= MAX_DEPTH:
+            return {"$t": "repr", "v": _safe_repr(value)}
+        memo[oid] = len(memo) + 1
+        node_id = memo[oid]
+        keys = list(value.keys())
+        if keys and all(isinstance(k, str) for k in keys) and _looks_like_object_dict(keys):
+            fields = {}
+            for idx, key in enumerate(keys):
+                if idx >= MAX_ITEMS:
+                    break
+                fields[key] = _tag_value(value[key], depth + 1, memo, budget)
+            return {"$t": "obj", "id": node_id, "cls": "dict", "fields": fields}
+        entries = []
+        for idx, key in enumerate(keys):
+            if idx >= MAX_ITEMS:
+                entries.append([{"$t": "repr", "v": "… %d more" % (len(keys) - MAX_ITEMS)}, None])
+                break
+            tagged_key = key if isinstance(key, (str, int, float, bool)) else _safe_repr(key)
+            entries.append([tagged_key, _tag_value(value[key], depth + 1, memo, budget)])
+        return {"$t": "dict", "id": node_id, "cls": type(value).__name__, "entries": entries}
+
+    if isinstance(value, (set, frozenset)):
+        oid = id(value)
+        if oid in memo:
+            return {"$t": "ref", "id": memo[oid]}
+        if depth >= MAX_DEPTH:
+            return {"$t": "repr", "v": _safe_repr(value)}
+        memo[oid] = len(memo) + 1
+        node_id = memo[oid]
+        items = []
+        for idx, item in enumerate(value):
+            if idx >= MAX_ITEMS:
+                break
+            items.append(_tag_value(item, depth + 1, memo, budget))
+        return {"$t": "set", "id": node_id, "cls": type(value).__name__, "items": items}
+
+    if isinstance(value, (types.ModuleType, types.FunctionType, types.BuiltinFunctionType, type)):
+        return {"$t": "repr", "v": _safe_repr(value)}
+
+    fields = _fields_of_instance(value)
+    if fields:
+        oid = id(value)
+        if oid in memo:
+            return {"$t": "ref", "id": memo[oid]}
+        if depth >= MAX_DEPTH:
+            return {"$t": "repr", "v": _safe_repr(value)}
+        memo[oid] = len(memo) + 1
+        node_id = memo[oid]
+        tagged_fields = {}
+        for idx, (key, val) in enumerate(fields.items()):
+            if idx >= MAX_ITEMS:
+                break
+            tagged_fields[key] = _tag_value(val, depth + 1, memo, budget)
+        return {"$t": "obj", "id": node_id, "cls": type(value).__name__, "fields": tagged_fields}
+
+    return {"$t": "repr", "v": _safe_repr(value)}
+
+
+def tag_value(value):
+    return _tag_value(value)
+
+
+def _format_value(value):
+    if value is None:
+        return "None"
+    if isinstance(value, bool):
+        return "True" if value else "False"
+    if isinstance(value, (int, float)):
+        return repr(value)
+    if isinstance(value, str):
+        return json.dumps(value, ensure_ascii=False)
+    if isinstance(value, (list, tuple, dict, set, frozenset)):
+        try:
+            text = repr(value)
+        except Exception:
+            text = "<%s>" % type(value).__name__
+        return text if len(text) <= 80 else text[:79] + "…"
+    return _safe_repr(value, 80)
+
+
+def _frame_label(frame):
+    name = frame.f_code.co_name
+    if name == "<module>":
+        return "global"
+    arg_count = frame.f_code.co_argcount
+    arg_names = frame.f_code.co_varnames[:arg_count]
+    parts = []
+    for arg in arg_names:
+        if arg == "self":
+            continue
+        if arg in frame.f_locals:
+            parts.append(_format_value(frame.f_locals[arg]))
+    return "%s(%s)" % (name, ", ".join(parts))
+
+
+def _capture_locals(local_vars):
+    out = {}
+    has_self = False
+    for name, value in local_vars.items():
+        if name == "self" and _fields_of_instance(value):
+            out["this"] = value
+            has_self = True
+            continue
+        if _is_displayable(name, value):
+            out[name] = value
+    return out
+
+
+class _Recorder:
+    def __init__(self, lines, max_steps=MAX_STEPS, time_limit=DEFAULT_TIME_LIMIT):
+        self.lines = lines
+        self.max_steps = max_steps
+        self.time_limit = time_limit
+        self.steps = []
+        self.stdout = []
+        self.started_at = None
+        self.error = None
+        self.error_line = None
+        self.pending_checkpoint = None
+        self.finished = False
+        self.return_value = None
+
+    def _note(self, line):
+        if 1 <= line <= len(self.lines):
+            text = self.lines[line - 1].strip()
+            return text if len(text) <= 100 else text[:99] + "…"
+        return ""
+
+    def _check_limits(self):
+        if self.started_at is None:
+            self.started_at = time.monotonic()
+        if len(self.steps) >= self.max_steps:
+            raise _StopTrace()
+        if len(self.steps) % 64 == 0 and time.monotonic() - self.started_at > self.time_limit:
+            raise _TraceTimeout()
+
+    def _stack_snapshot(self, frame):
+        frames = []
+        cursor = frame
+        idx = 0
+        while cursor is not None and cursor.f_code.co_filename == FILENAME:
+            local_vars = _capture_locals(dict(cursor.f_locals))
+            tagged = {}
+            budget = [max(200, NODE_BUDGET // 3)]
+            for key, value in local_vars.items():
+                tagged[key] = _tag_value(value, 0, {}, budget)
+            frames.append({
+                "id": idx,
+                "fn": cursor.f_code.co_name,
+                "label": _frame_label(cursor),
+                "line": cursor.f_lineno,
+                "vars": tagged,
+            })
+            cursor = cursor.f_back
+            idx += 1
+        frames.reverse()
+        for idx, item in enumerate(frames):
+            item["id"] = idx
+        return frames
+
+    def trace(self, frame, event, arg):
+        if frame.f_code.co_filename != FILENAME:
+            return self.trace
+        if event == "line":
+            try:
+                self._check_limits()
+            except _StopTrace:
+                raise
+            except _TraceTimeout:
+                raise
+            line = frame.f_lineno
+            local_vars = _capture_locals(dict(frame.f_locals))
+            tagged = {}
+            budget = [NODE_BUDGET]
+            for key, value in local_vars.items():
+                tagged[key] = _tag_value(value, 0, {}, budget)
+            step = {
+                "line": line,
+                "note": self._note(line),
+                "vars": tagged,
+                "stack": self._stack_snapshot(frame),
+                "isCheckpoint": False,
+                "checkpointVals": None,
+                "error": None,
+            }
+            if self.pending_checkpoint is not None:
+                step["isCheckpoint"] = True
+                step["checkpointVals"] = self.pending_checkpoint
+                self.pending_checkpoint = None
+            self.steps.append(step)
+        return self.trace
+
+    def checkpoint(self, *args):
+        values = [_format_value(value) for value in args]
+        if self.steps:
+            self.steps[-1]["isCheckpoint"] = True
+            self.steps[-1]["checkpointVals"] = values
+        else:
+            self.pending_checkpoint = values
+
+    def print_fn(self, *args, **kwargs):
+        sep = kwargs.get("sep", " ")
+        end = kwargs.get("end", "\n")
+        text = sep.join(_format_value(value) for value in args)
+        if end != "\n":
+            text += end
+        self.stdout.append(text)
+
+
+def check_syntax_json(src):
+    try:
+        compile(src, FILENAME, "exec")
+        return json.dumps({"ok": True}, ensure_ascii=False)
+    except SyntaxError as exc:
+        return json.dumps({
+            "ok": False,
+            "line": exc.lineno or 1,
+            "offset": exc.offset or 0,
+            "msg": exc.msg,
+            "text": exc.text or "",
+        }, ensure_ascii=False)
+
+
+def _find_call(src):
+    for line_no, line in enumerate(src.splitlines(), 1):
+        stripped = line.strip()
+        if stripped.startswith("#") and "调用" in stripped:
+            head, sep, tail = stripped.partition("：")
+            if not sep:
+                head, sep, tail = stripped.partition(":")
+            if sep and tail.strip():
+                return line_no, tail.strip()
+    return None, None
+
+
+def _extract_call(src):
+    return _find_call(src)[1]
+
+
+def _resolve_entry(tree, src):
+    """Prefer a real call on the last top-level line; keep the legacy comment syntax."""
+    line, expr = _find_call(src)
+    if expr:
+        return line, expr, tree
+    if tree.body and isinstance(tree.body[-1], ast.Expr) and isinstance(tree.body[-1].value, ast.Call):
+        node = tree.body[-1]
+        expr = ast.get_source_segment(src, node.value) or ast.unparse(node.value)
+        tree.body = tree.body[:-1]
+        return node.lineno, expr, tree
+    return None, None, tree
+
+
+def extract_meta_json(src):
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:
+        return json.dumps({"classes": [], "varTypes": {}, "declared": [], "imports": []}, ensure_ascii=False)
+    classes = []
+    var_types = {}
+    declared = set()
+    imports = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef):
+            fields = []
+            for body in node.body:
+                if isinstance(body, ast.AnnAssign) and isinstance(body.target, ast.Name):
+                    fields.append({
+                        "k": body.target.id,
+                        "declaredType": ast.unparse(body.annotation),
+                        "optional": False,
+                    })
+                elif isinstance(body, ast.Assign):
+                    for target in body.targets:
+                        if isinstance(target, ast.Name):
+                            fields.append({"k": target.id, "declaredType": "any", "optional": False})
+            classes.append({"name": node.name, "line": node.lineno, "fields": fields})
+            declared.add(node.name)
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            var_types[node.target.id] = ast.unparse(node.annotation)
+            declared.add(node.target.id)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            declared.add(node.name)
+            args = node.args
+            for arg in list(args.posonlyargs) + list(args.args) + list(args.kwonlyargs):
+                declared.add(arg.arg)
+            if args.vararg:
+                declared.add(args.vararg.arg)
+            if args.kwarg:
+                declared.add(args.kwarg.arg)
+        elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
+            declared.add(node.id)
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                imports.add(alias.name.split(".")[0])
+                declared.add(alias.asname or alias.name.split(".")[0])
+        elif isinstance(node, ast.ImportFrom):
+            if node.module:
+                imports.add(node.module.split(".")[0])
+            for alias in node.names:
+                declared.add(alias.asname or alias.name)
+        elif isinstance(node, ast.For):
+            for target in ast.walk(node.target):
+                if isinstance(target, ast.Name):
+                    declared.add(target.id)
+        elif isinstance(node, ast.With):
+            for item in node.items:
+                if item.optional_vars:
+                    for target in ast.walk(item.optional_vars):
+                        if isinstance(target, ast.Name):
+                            declared.add(target.id)
+        elif isinstance(node, ast.ExceptHandler) and node.name:
+            declared.add(node.name)
+    return json.dumps({
+        "classes": classes,
+        "varTypes": var_types,
+        "declared": sorted(declared),
+        "imports": sorted(imports),
+    }, ensure_ascii=False)
+
+
+def run_trace_json(src, options_json="{}"):
+    options = json.loads(options_json or "{}")
+    max_steps = int(options.get("maxSteps", MAX_STEPS))
+    time_limit = float(options.get("timeLimit", DEFAULT_TIME_LIMIT))
+    recorder = _Recorder(src.splitlines(), max_steps, time_limit)
+    try:
+        tree = ast.parse(src)
+        call_line, call_expr, exec_tree = _resolve_entry(tree, src)
+        code_obj = compile(exec_tree, FILENAME, "exec")
+    except SyntaxError as exc:
+        return json.dumps({
+            "ok": False,
+            "syntaxError": {
+                "line": exc.lineno or 1,
+                "offset": exc.offset or 0,
+                "msg": exc.msg,
+                "text": exc.text or "",
+            },
+        }, ensure_ascii=False)
+
+    module_globals = {
+        "__name__": "__main__",
+        "__builtins__": __builtins__,
+        "checkpoint": recorder.checkpoint,
+        "断点": recorder.checkpoint,
+        "print": recorder.print_fn,
+    }
+    try:
+        sys.settrace(recorder.trace)
+        try:
+            exec(code_obj, module_globals)
+            if call_expr:
+                recorder.return_value = eval(call_expr, module_globals)
+        finally:
+            sys.settrace(None)
+    except _StopTrace:
+        recorder.error = "已达单步上限 %d，自动停止记录" % max_steps
+        recorder.error_line = recorder.steps[-1]["line"] if recorder.steps else 1
+    except _TraceTimeout:
+        recorder.error = "执行超过 %.1fs，已强制终止（疑似死循环）" % time_limit
+        recorder.error_line = recorder.steps[-1]["line"] if recorder.steps else 1
+    except BaseException as exc:
+        recorder.error = "%s: %s" % (type(exc).__name__, exc)
+        recorder.error_line = None
+        tb = exc.__traceback__
+        while tb is not None:
+            if tb.tb_frame.f_code.co_filename == FILENAME:
+                recorder.error_line = tb.tb_lineno
+            tb = tb.tb_next
+        if recorder.error_line is None:
+            recorder.error_line = recorder.steps[-1]["line"] if recorder.steps else 1
+    finally:
+        sys.settrace(None)
+
+    if recorder.error:
+        if recorder.steps and recorder.steps[-1]["line"] == recorder.error_line:
+            recorder.steps[-1]["error"] = recorder.error
+        else:
+            recorder.steps.append({
+                "line": recorder.error_line or 1,
+                "note": recorder._note(recorder.error_line or 1),
+                "vars": {},
+                "stack": [],
+                "isCheckpoint": False,
+                "checkpointVals": None,
+                "error": recorder.error,
+            })
+    elif recorder.steps:
+        final_locals = _capture_locals({
+            key: value for key, value in module_globals.items() if not key.startswith("__")
+        })
+        tagged = {}
+        budget = [NODE_BUDGET]
+        for key, value in final_locals.items():
+            tagged[key] = _tag_value(value, 0, {}, budget)
+        final_line = call_line or recorder.steps[-1]["line"]
+        recorder.steps.append({
+            "line": final_line,
+            "note": recorder._note(final_line),
+            "vars": tagged,
+            "stack": [{"id": 0, "fn": "<module>", "label": "global", "line": final_line, "vars": tagged}],
+            "isCheckpoint": False,
+            "checkpointVals": None,
+            "error": None,
+            "isFinalReturn": True,
+        })
+    recorder.finished = True
+    return json.dumps({
+        "ok": True,
+        "steps": recorder.steps,
+        "stdout": "".join(recorder.stdout),
+        "error": recorder.error,
+        "errorLine": recorder.error_line,
+        "returnValue": _tag_value(recorder.return_value),
+        "entryLine": call_line,
+        "entryExpr": call_expr,
+        "meta": json.loads(extract_meta_json(src)),
+        "finished": True,
+    }, ensure_ascii=False)

@@ -41,7 +41,7 @@
 
   /* ── top bar ── */
   #top{
-    height:56px;display:flex;align-items:center;gap:10px;padding:0 20px;
+    height:56px;display:flex;align-items:center;gap:8px;padding:0 16px;
     border-bottom:1px solid var(--line);background:#0a0e14;flex:none;
   }
   #top h1.brand-title{
@@ -70,6 +70,8 @@
     padding:3px 10px;border-radius:999px;font:600 12px var(--code-font);letter-spacing:.04em;white-space:nowrap;
   }
   #top .spacer{flex:1}
+  #top #langSel{width:64px;padding:0 6px;text-align:center;text-align-last:center}
+  #top #sampleSel{max-width:300px;text-overflow:ellipsis}
   #top button,#top select{
     height:34px;padding:0 14px;border-radius:999px;border:1px solid #2a3342;
     background:#1a2230;color:var(--ink);font:600 13px var(--ui-font);cursor:pointer;white-space:nowrap;
@@ -184,6 +186,29 @@
   }
   .pane-title .sub-hint{font:500 11px var(--code-font);letter-spacing:.02em;color:#5b6675}
 
+  /* ── built-in checker scope badge + limitations modal ── */
+  #codeCol .pane-title .checker-badge{
+    display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:999px;
+    border:1px solid rgba(96,165,250,.36);background:rgba(96,165,250,.10);
+    color:#93c5fd;font:600 10px var(--code-font);letter-spacing:.02em;
+    cursor:pointer;white-space:nowrap;flex:none;user-select:none;
+  }
+  #codeCol .pane-title .checker-badge:hover{border-color:rgba(96,165,250,.7);background:rgba(96,165,250,.18)}
+  .checker-modal{position:fixed;inset:0;z-index:12000;background:rgba(2,5,9,.72);display:flex;align-items:center;justify-content:center;padding:24px}
+  .checker-modal[hidden]{display:none}
+  .checker-modal-box{width:min(760px,94vw);max-height:84vh;overflow:auto;background:#0d1219;border:1px solid #263041;border-radius:14px;box-shadow:0 30px 90px rgba(0,0,0,.55)}
+  .checker-modal-head{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 20px;border-bottom:1px solid #1d2532}
+  .checker-modal-head span{font:700 14px var(--ui-font);color:#f7f9fc}
+  .checker-modal-head button{height:28px;padding:0 12px;border-radius:7px;border:1px solid #2a3342;background:#1a2230;color:#cbd5e1;font:600 12px var(--ui-font);cursor:pointer}
+  .checker-modal-head button:hover{border-color:#3b475c;background:#202a3b}
+  .checker-modal-body{padding:16px 20px 22px;color:#cbd5e1;font:13px/1.75 var(--ui-font)}
+  .checker-modal-body p{margin:0 0 10px}
+  .checker-modal-body h3{margin:16px 0 6px;font:700 12px var(--code-font);letter-spacing:.08em;color:#93c5fd;text-transform:uppercase}
+  .checker-modal-body ul{margin:4px 0 10px 20px;padding:0}
+  .checker-modal-body li{margin:3px 0}
+  .checker-modal-body code{padding:1px 5px;border-radius:4px;background:#121a26;color:#9cdcfe;font-family:var(--code-font)}
+  .checker-modal-body .warn{color:#fbbf24}
+
   /* ── editable file name chip in the SOURCE header ── */
   #codeCol .pane-title{gap:10px}
   .file-tab{
@@ -251,6 +276,7 @@
   #highlight .prop{color:#9cdcfe}
   #highlight .num{color:#ffb454}
   #highlight .op{color:#89ddff}
+  #highlight .bi{color:#dcdcaa}
 
   /* ── expression animation tokens on active line ── */
   #highlight .tok-src{
@@ -272,6 +298,46 @@
   #highlight .tok-ckpt{
     background:rgba(56,189,248,.22);outline:1px solid rgba(56,189,248,.65);
     color:#bae6fd;border-radius:4px;
+  }
+
+  /* ── CodeMirror 6 editor layer ── */
+  #cmEditor{position:absolute;inset:0;z-index:2;display:none}
+  body.cm-on #cmEditor{display:block}
+  body.cm-on #editor,
+  body.cm-on #highlight,
+  body.cm-on #gutter{display:none !important}
+  body.cm-on #stepViz{z-index:6}
+  #cmEditor .cm-editor{height:100%;background:transparent}
+  #cmEditor .cm-editor.cm-focused{outline:none}
+  #cmEditor .cm-scroller{overflow:auto}
+  #cmEditor .cm-gutters{background:#070b10;border:none}
+  #cmEditor .cm-gutterElement:not([style*="height: 0"]){height:24px !important;line-height:24px !important}
+  #cmEditor .cm-lineNumbers .cm-gutterElement.has-ckpt::before{
+    content:"◉";color:#38bdf8;font-size:9px;margin-right:3px;vertical-align:middle;
+    text-shadow:0 0 6px rgba(56,189,248,.6);
+  }
+  #cmEditor .cm-foldGutter .cm-gutterElement{padding:0 2px}
+  #cmEditor .cm-step-line{background:rgba(96,165,250,.15);box-shadow:inset 3px 0 0 #60a5fa}
+  #cmEditor .cm-declared,
+  #cmEditor .cm-declared *{color:#9cdcfe !important}
+  #cmEditor .cm-builtin,
+  #cmEditor .cm-builtin *{color:#dcdcaa !important}
+  #cmEditor .cm-matchingBracket,
+  #cmEditor .cm-matchingBracket *{
+    color:#ffe38a !important;
+    background-color:transparent !important;
+    outline:none !important;
+    border-radius:0 !important;
+  }
+  #cmEditor .cm-lintRange-error{text-decoration:underline wavy #f87171;text-underline-offset:3px}
+  #cmEditor .cm-panel.cm-search{padding:8px 10px;font-family:var(--ui-font);font-size:12px}
+  #cmEditor .cm-textfield{
+    background:#121a26;color:#e2e8f0;border:1px solid #2a3342;
+    border-radius:4px;padding:3px 6px;font:500 12px var(--ui-font);
+  }
+  #cmEditor .cm-button{
+    background:#1a2230;color:#cbd5e1;border:1px solid #2a3342;
+    border-radius:4px;padding:3px 8px;font:600 12px var(--ui-font);
   }
 
   /* ── floating step visualization: hovers just above the active line, on top of the code layer ── */
@@ -677,6 +743,10 @@
     <span class="brand-visual">VISUAL</span>
   </h1>
   <div class="spacer"></div>
+  <select id="langSel" title="切换语言模式（TypeScript / Python）">
+    <option value="ts">TS</option>
+    <option value="python">PY</option>
+  </select>
   <select id="sampleSel" title="内置样例（切换后自动开启 Debug 模式）">
     <option value="showcase">showcase · 综合美学演示 (含检查点)</option>
     <option value="mergesort">mergesort · 归并排序 (递归调用栈演示)</option>
@@ -701,6 +771,10 @@
       <button id="btnExportTs" class="menu-item" title="把当前编辑器里的源码导出为 TypeScript 文件">
         <span>📄 导出 TypeScript 文件</span>
         <span class="sub-tag" id="fileExportTag">playground.ts</span>
+      </button>
+      <button id="btnShareLink" class="menu-item" title="复制包含当前代码的分享链接（打开后只加载，不自动运行）">
+        <span>🔗 复制分享链接</span>
+        <span class="sub-tag" id="shareLinkTag">含当前代码</span>
       </button>
       <div class="menu-divider"></div>
       <div class="menu-sec">
@@ -734,17 +808,19 @@
         <input id="fileName" class="file-name" type="text" value="playground.ts" spellcheck="false" autocomplete="off" aria-label="文件名">
         <span class="file-edit" aria-hidden="true">✎</span>
       </span>
+      <span id="checkerBadge" class="checker-badge" role="button" tabindex="0" title="内置类型检查器只覆盖常用 TypeScript 语法，不是完整 tsc；点击查看已知限制">TS 子集检查</span>
       <span class="sub-hint">点击行号插入 checkpoint() · 调试时悬停变量可查看当前值</span>
     </div>
     <div id="editorWrap">
       <div id="gutter" title="点击行号可在该行快速插入/移除 checkpoint() 检查点函数"></div>
       <div id="codeScroll">
         <pre id="highlight" aria-hidden="true"></pre>
+        <div id="cmEditor" aria-label="代码编辑器"></div>
         <div id="stepViz" aria-hidden="true"></div>
-        <textarea id="editor" spellcheck="false" autocomplete="off" placeholder="// 写 TypeScript，可在任意位置调用 checkpoint() 设置检查点，底部注释里写 // 调用：expr"></textarea>
+        <textarea id="editor" spellcheck="false" autocomplete="off" placeholder="// 写 TypeScript，可在任意位置调用 checkpoint() 设置检查点，最后一行直接写入口调用，例如 main()"></textarea>
       </div>
     </div>
-    <div id="log"><div class="dim">Ctrl/Cmd+Enter 运行 · Ctrl/Cmd+Shift+Enter 开启 Debug 调试 · 顶部「📂 导入」读文件 · 标题栏文件名可点击改名</div></div>
+    <div id="log"><div class="dim">Ctrl/Cmd+Enter 运行 · Ctrl/Cmd+Shift+Enter 开启 Debug 调试 · Ctrl+F 查找 · Ctrl+D 多光标 · 顶部「📂 导入」读文件 · 标题栏文件名可点击改名</div></div>
   </div>
 
   <div id="resizer" title="左右拖动调整宽度（双击恢复默认比例）"></div>
@@ -776,6 +852,35 @@
 
 <div id="flyLayer" aria-hidden="true"></div>
 <div id="hoverTip" role="tooltip" aria-hidden="true"></div>
+
+<div id="checkerModal" class="checker-modal" hidden>
+  <div class="checker-modal-box" role="dialog" aria-modal="true" aria-labelledby="checkerModalTitle">
+    <div class="checker-modal-head">
+      <span id="checkerModalTitle">内置检查器 · 范围与限制</span>
+      <button id="checkerModalClose" type="button">关闭</button>
+    </div>
+    <div class="checker-modal-body">
+      <p><strong>这不是完整的 TypeScript 编译器（tsc）。</strong>它是项目内置的子集检查器，不调用官方语言服务，也不做跨文件或完整的类型推断。</p>
+      <h3>TypeScript 模式覆盖</h3>
+      <ul>
+        <li>基础类型注解、数组/联合类型、<code>interface</code> / <code>type</code> 对象结构</li>
+        <li>函数参数、返回类型、常用数组 / Map / Set / Math 方法和简单表达式</li>
+        <li>对象属性链、模板字符串插值、基础赋值 / 比较 / 调用检查</li>
+        <li>内置样例和常见算法代码里的类型错误</li>
+      </ul>
+      <h3>TypeScript 模式不覆盖</h3>
+      <ul>
+        <li>完整泛型推断与约束、条件类型、映射类型、交叉类型</li>
+        <li>复杂类型收窄、声明合并、命名空间 / 模块解析、跨文件类型</li>
+        <li>装饰器、JSX / TSX、完整标准库类型、类型级运算、<code>satisfies</code> 的完整语义</li>
+        <li>所有 tsc 的诊断规则与错误码</li>
+      </ul>
+      <h3>Python 模式</h3>
+      <p>只做运行前语法检查（<code>ast.parse</code> / <code>compile</code>），不做静态类型检查；类型注解不参与校验。</p>
+      <p class="warn">因此可能出现漏报（错误没标红）或误报（合法写法被标红）。以实际运行结果和官方 <code>tsc</code> 为准。</p>
+    </div>
+  </div>
+</div>
 
 <script>
 /* ================================================================
@@ -819,7 +924,7 @@ const SAMPLES = {
   return best + tree.val + graph.nodes.length;
 }
 
-// 调用：visualShowcase([3, 6, 2, 8, 5, 4, 7], 12)
+visualShowcase([3, 6, 2, 8, 5, 4, 7], 12)
 `,
   mergesort: `const nums: number[] = [8, 3, 5, 1, 9, 2, 7, 4];
 
@@ -856,7 +961,7 @@ function mergeSort(l: number, r: number): number[] {
   return nums;
 }
 
-// 调用：mergeSort(0, 7)
+mergeSort(0, 7)
 `,
   debug_crash: `function debugCrashDemo(nums: number[], limit: number): number {
   let acc = 0;
@@ -873,7 +978,7 @@ function mergeSort(l: number, r: number): number[] {
   return acc;
 }
 
-// 调用：debugCrashDemo([4, 7, 5, 9, 3], 18)
+debugCrashDemo([4, 7, 5, 9, 3], 18)
 `,
   lcs: `function lcs(a: string, b: string): number {
   const n: number = a.length;
@@ -894,7 +999,7 @@ function mergeSort(l: number, r: number): number[] {
   return dp[n][m];
 }
 
-// 调用：lcs("ABCBDAB", "BDCABA")
+lcs("ABCBDAB", "BDCABA")
 `,
   analyze: `function analyze(nums: number[], target: number): number[] {
   const map = new Map<number, number>();
@@ -920,7 +1025,7 @@ function mergeSort(l: number, r: number): number[] {
   return [sum, hits];
 }
 
-// 调用：analyze([3,1,4,1,5,9,2,6], 4)
+analyze([3,1,4,1,5,9,2,6], 4)
 `,
   window: `function minSubArrayLen(target: number, nums: number[]): number {
   let l = 0;
@@ -940,7 +1045,7 @@ function mergeSort(l: number, r: number): number[] {
   return best === 999 ? 0 : best;
 }
 
-// 调用：minSubArrayLen(7, [2,3,1,2,4,3])
+minSubArrayLen(7, [2,3,1,2,4,3])
 `,
   structures: `function tourStructures(): number {
   const heap: number[] = [1, 3, 2, 7, 6, 4, 5];
@@ -961,7 +1066,7 @@ function mergeSort(l: number, r: number): number[] {
   return heap[0] + queue.length;
 }
 
-// 调用：tourStructures()
+tourStructures()
 `,
   counter: `function counter(n: number): number {
   let acc = 0;
@@ -976,7 +1081,7 @@ function mergeSort(l: number, r: number): number[] {
   return acc;
 }
 
-// 调用：counter(8)
+counter(8)
 `,
   classes: `class Counter {
   total: number = 0;
@@ -997,7 +1102,7 @@ function runCounter(start: number, times: number): number {
   return c.total;
 }
 
-// 调用：runCounter(1, 3)
+runCounter(1, 3)
 `,
 };
 
@@ -1028,6 +1133,9 @@ const hoverTipEl = $('hoverTip');
 const stepVizEl = $('stepViz');
 const fileNameEl = $('fileName'), fileInputEl = $('fileInput'), btnImportEl = $('btnImport');
 let FILE_NAME = 'playground.ts';
+let LANG = 'ts';
+let LANG_BUFFERS = { ts: null, python: null };
+let PY_DIAGS = [];
 
 /* ── trace / on-demand debug state & safety limits ── */
 const MAX_STEPS = 2000;
@@ -2332,6 +2440,53 @@ function extractCall(src) {
   return m ? m[1].trim() : null;
 }
 
+/* Entry call: the recommended form is a real call on the last executable line.
+   The legacy `// 调用：expr` comment is still accepted for old snippets. */
+let ENTRY_CALL_LINE = 0;
+
+function findTrailingTopLevelCall(js) {
+  const lines = String(js || '').replace(/\r/g, '').split('\n');
+  let idx = lines.length - 1;
+  while (idx >= 0) {
+    const cleaned = stripInlineCommentSafe(lines[idx]).trim();
+    if (!cleaned) { idx--; continue; }
+    if (!/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\s*\(/.test(cleaned)) return null;
+    if (!/\)\s*;?\s*$/.test(cleaned)) return null;
+    if (/^(?:return|throw|if|for|while|switch|class|function|const|let|var|import|export|await|new)\b/.test(cleaned)) return null;
+    const body = cleaned.replace(/;\s*$/, '').trim();
+    if (blankStrings(body).includes(';')) return null;
+    let depth = 0;
+    for (let i = 0; i < idx; i++) {
+      const raw = blankStrings(stripInlineCommentSafe(lines[i]));
+      for (let k = 0; k < raw.length; k++) {
+        const ch = raw[k];
+        if (ch === '{' || ch === '(' || ch === '[') depth++;
+        else if (ch === '}' || ch === ')' || ch === ']') depth = Math.max(0, depth - 1);
+      }
+    }
+    if (depth !== 0) return null;
+    return { index: idx, expr: body, line: idx + 1 };
+  }
+  return null;
+}
+
+function blankJsLine(js, index) {
+  const lines = String(js).split('\n');
+  if (index >= 0 && index < lines.length) lines[index] = '';
+  return lines.join('\n');
+}
+
+function resolveEntry(src, js) {
+  const legacy = extractCall(src);
+  if (legacy) {
+    const idx = String(src).replace(/\r/g, '').split('\n').findIndex(l => /\/\/\s*调用[:：]/.test(l));
+    return { expr: stripTypes(legacy), index: -1, line: idx >= 0 ? idx + 1 : 0, legacy: true };
+  }
+  const found = findTrailingTopLevelCall(js);
+  if (found) return { expr: stripTypes(found.expr), index: found.index, line: found.line, legacy: false };
+  return { expr: 'undefined', index: -1, line: 0, legacy: false };
+}
+
 /* ================================================================
    3) Snapshot / classify — all 12 kinds + window [l, r] + anim/note
    ================================================================ */
@@ -2646,7 +2801,7 @@ function classifyValue(name, value) {
     // Plain object or TypeScript interface instance
     const ifaceDef = matchInterfaceForObject(n, value);
     const annotType = CURRENT_TS_META.varTypes.get(n);
-    const ifaceName = ifaceDef ? ifaceDef.name : (annotType || 'object');
+    const ifaceName = ifaceDef ? ifaceDef.name : (annotType || value.__py_cls__ || 'object');
     const fieldMap = new Map();
     if (ifaceDef) {
       ifaceDef.fields.forEach(f => {
@@ -3949,6 +4104,7 @@ function evalCall(js, call, opts) {
   const o = opts || {};
   const expr = stripTypes(call || 'undefined');
   const budgetMs = o.budgetMs || 0;
+  const entryLine = o.entryLine || 0;
   const stub = o.instrumented ? '' : 'var checkpoint = function(){}, 断点 = checkpoint;\n';
   const t0 = Date.now();
   let ticks = 0;
@@ -3985,16 +4141,17 @@ function evalCall(js, call, opts) {
       ok: false,
       error: e && e.message ? e.message : String(e),
       stack: e && e.stack ? String(e.stack) : '',
-      line: (e && e.__line) || lastLine || 0,
+      line: (e && e.__line) || lastLine || entryLine || 0,
       timeout: Boolean(e && e.__timeout),
     };
   }
-  if (r && r.ok && !r.line) r.line = lastLine || 0;
-  if (r && !r.ok) r.line = r.line || lastLine || 0;
+  if (r && r.ok && !r.line) r.line = lastLine || entryLine || 0;
+  if (r && !r.ok) r.line = r.line || lastLine || entryLine || 0;
   return { ...r, logs, elapsedMs: Date.now() - t0 };
 }
 
 function runOnce(budgetMs) {
+  if (LANG === 'python') return PY_ENGINE.runOnly(budgetMs);
   const budget = (typeof budgetMs === 'number' && budgetMs > 0) ? budgetMs : RUN_TIMEOUT_MS;
   const src = editor.value;
   const unsupported = detectUnsupportedSyntax(src);
@@ -4021,24 +4178,27 @@ function runOnce(budgetMs) {
   }
   const js = stripTypes(enums.code);
   const originalLines = src.replace(/\r/g, '').split('\n');
-  const call = stripTypes(extractCall(src) || 'undefined');
+  const entry = resolveEntry(src, js);
+  const call = stripTypes(entry.expr || 'undefined');
+  ENTRY_CALL_LINE = entry.line || 0;
+  const jsBody = entry.index >= 0 ? blankJsLine(js, entry.index) : js;
 
   // Instrument exactly like Debug does, so every loop iteration passes a watchdog hook.
-  let code = js;
+  let code = jsBody;
   let instrumented = false;
   try {
-    const candidate = instrument(js, originalLines, collectNames(js));
+    const candidate = instrument(jsBody, originalLines, collectNames(jsBody));
     new Function('__t', 'console', candidate);   // reject transforms that would not compile
     code = candidate;
     instrumented = true;
   } catch (_) {
-    code = js;
+    code = jsBody;
     instrumented = false;
   }
   if (!instrumented) say('⚠ 本次运行未能启用死循环熔断（插桩/编译回退），请留意可能的死循环', 'dim');
 
   try {
-    const r = evalCall(code, call, { budgetMs: budget, instrumented });
+    const r = evalCall(code, call, { budgetMs: budget, instrumented, entryLine: entry.line });
     r.logs.forEach(l => say('  log: ' + l, 'dim'));
 
     if (!r.ok && r.timeout) {
@@ -4164,7 +4324,7 @@ function computeAndAppendNextStep(opts = {}) {
 
   const originalLines = DEBUG_SESSION.originalLines;
   const callIdx = originalLines.findIndex(l => /\/\/\s*调用[:：]/.test(l));
-  const globalCallLine = callIdx >= 0 ? callIdx + 1 : 1;
+  const globalCallLine = callIdx >= 0 ? callIdx + 1 : (ENTRY_CALL_LINE || 1);
 
   let count = 0;
   let frameSeq = 0;
@@ -4478,6 +4638,7 @@ function detectUnsupportedSyntax(src) {
 }
 
 function startDebug(initialStep = 0) {
+  if (LANG === 'python') return PY_ENGINE.start(initialStep);
   SELECTED_FRAME_IDX = null;
   const src = editor.value.replace(/\r/g, '');
   const unsupported = detectUnsupportedSyntax(src);
@@ -4508,13 +4669,15 @@ function startDebug(initialStep = 0) {
     return false;
   }
   const js0 = stripTypes(enums.code);
-  const call = extractCall(src);
-  const expr = stripTypes(call || 'undefined');
+  const entry = resolveEntry(src, js0);
+  const expr = stripTypes(entry.expr || 'undefined');
+  ENTRY_CALL_LINE = entry.line || 0;
+  const jsBody = entry.index >= 0 ? blankJsLine(js0, entry.index) : js0;
 
   let compiledFn;
   try {
-    const names = collectNames(js0);
-    const js = instrument(js0, originalLines, names);
+    const names = collectNames(jsBody);
+    const js = instrument(jsBody, originalLines, names);
     const finHook = '\n;try{if(typeof __t==="function"&&__t.__fin)__t.__fin(' + snapFnExpr(names) + ');}catch(_){}\n';
     const body = js + finHook + ';return (' + expr + ');';
     compiledFn = new Function('__t', 'console', body);
@@ -4621,15 +4784,16 @@ const HIGHLIGHT_BUILTINS = new Set([
   'parseInt', 'parseFloat', 'isNaN', 'setTimeout', 'clearTimeout',
 ]);
 
-let DECLARED_NAMES_CACHE = { src: null, names: new Set(HIGHLIGHT_BUILTINS) };
+let DECLARED_NAMES_CACHE = { src: null, names: new Set() };
 
 /* All names the current buffer actually declares: const/let/var (incl. destructuring),
    function & arrow params, loop/catch bindings, function/class/interface/type names. */
 function collectDeclaredNames(src) {
+  if (LANG === 'python') return PY_ENGINE.collectDeclared(src);
   const text = String(src == null ? '' : src);
   if (DECLARED_NAMES_CACHE.src === text) return DECLARED_NAMES_CACHE.names;
 
-  const names = new Set(HIGHLIGHT_BUILTINS);
+  const names = new Set();
   let js = text;
   try { js = stripTypes(text); } catch (_) { js = text; }
   try {
@@ -4646,7 +4810,19 @@ function collectDeclaredNames(src) {
   return names;
 }
 
+function collectHighlightBuiltins(declared) {
+  const source = LANG === 'python'
+    ? ((typeof PY_ENGINE !== 'undefined' && PY_ENGINE.builtins) || [])
+    : HIGHLIGHT_BUILTINS;
+  const out = new Set();
+  source.forEach(name => {
+    if (!declared.has(name)) out.add(name);
+  });
+  return out;
+}
+
 function hl(t, declared) {
+  if (LANG === 'python') return PY_ENGINE.hl(t, declared);
   const re = /(\/\/.*$)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)|\b(function|const|let|var|new|class|extends|typeof|instanceof|import|export|from|async|await|interface|type|as|satisfies)\b|\b(for|if|else|return|while|do|switch|case|break|continue|try|catch|finally|throw|yield)\b|\b(number|string|boolean|void|any|unknown|never|Math|Map|Set|Array|Object|JSON|Number|String|Boolean|Promise|Record|Error)\b|\b(true|false|null|undefined|\d+(?:\.\d+)?)\b|(\b[A-Za-z_$][\w$]*)(?=\s*\()|(?<=\.)([A-Za-z_$][\w$]*)\b|([{,][ \t]*)([A-Za-z_$][\w$]*)(?=[ \t]*:)|(^[ \t]*)([A-Za-z_$][\w$]*)(?=[ \t]*:)|\b([A-Za-z_$][\w$]*)\b|(===|!==|>=|<=|=>|&&|\|\||\+\+|--)/g;
   let out = '', last = 0, m;
   while ((m = re.exec(t))) {
@@ -4655,20 +4831,22 @@ function hl(t, declared) {
     else if (m[2]) out += '<span class="str">' + esc(m[2]) + '</span>';
     else if (m[3]) out += '<span class="kw">' + esc(m[3]) + '</span>';
     else if (m[4]) out += '<span class="ctl">' + esc(m[4]) + '</span>';
-    else if (m[5]) out += '<span class="typ">' + esc(m[5]) + '</span>';
+    else if (m[5]) out += '<span class="' + (HIGHLIGHT_BUILTINS.has(m[5]) ? 'bi' : 'typ') + '">' + esc(m[5]) + '</span>';
     else if (m[6]) out += '<span class="num">' + esc(m[6]) + '</span>';
     else if (m[7]) {
       const id = m[7];
       const isMethod = m.index > 0 && t[m.index - 1] === '.';
-      if (!declared || isMethod || declared.has(id)) out += '<span class="fn">' + esc(id) + '</span>';
+      if (!isMethod && HIGHLIGHT_BUILTINS.has(id)) out += '<span class="bi">' + esc(id) + '</span>';
+      else if (!declared || isMethod || declared.has(id)) out += '<span class="fn">' + esc(id) + '</span>';
       else out += esc(id);
     }
     else if (m[8]) out += '<span class="prop">' + esc(m[8]) + '</span>';
     else if (m[9]) out += esc(m[9]) + '<span class="prop">' + esc(m[10]) + '</span>';
     else if (m[11]) out += esc(m[11]) + '<span class="prop">' + esc(m[12]) + '</span>';
     else if (m[13]) {
-      // Only declared variables keep the variable color; anything else stays plain white.
+      // Declared and built-in names get distinct colors; anything else stays plain white.
       if (!declared || declared.has(m[13])) out += '<span class="prop">' + esc(m[13]) + '</span>';
+      else if (HIGHLIGHT_BUILTINS.has(m[13])) out += '<span class="bi">' + esc(m[13]) + '</span>';
       else out += esc(m[13]);
     }
     else if (m[14]) out += '<span class="op">' + esc(m[14]) + '</span>';
@@ -4697,6 +4875,7 @@ function findExprSpan(line, target, fromIndex = 0) {
 }
 
 function hlActiveLine(rawLine, anim, declared) {
+  if (LANG === 'python') return PY_ENGINE.hlActiveLine(rawLine, anim, declared);
   if (!anim) return hl(rawLine, declared);
   const h = (s) => hl(s, declared);
 
@@ -4961,6 +5140,7 @@ function updateEditorChrome() {
   const text = editor.value.replace(/\r\n?/g, '\n');
   const lines = text.split('\n');
   const declared = collectDeclaredNames(text);
+  const builtins = collectHighlightBuiltins(declared);
   const liveErrors = liveTypeDiags(text);
   const liveByLine = new Map();
   liveErrors.forEach(d => { if (d && d.line >= 1 && !liveByLine.has(d.line)) liveByLine.set(d.line, d); });
@@ -4973,26 +5153,42 @@ function updateEditorChrome() {
     const d = liveByLine.get(lineNum);
     if (!d) return '';
     const tip = (d.code ? d.code + ': ' : '') + (d.message || '');
-    return '<span class="ln-err-badge" title="' + esc(tip) + '">✗ ' + esc(d.code || 'TS') + '</span>';
+    return '<span class="ln-err-badge" title="' + esc(tip) + '">✗ ' + esc(d.code || (LANG === 'python' ? 'PY' : 'TS')) + '</span>';
   };
 
-  highlightEl.innerHTML = lines.map((t, k) => {
-    const lineNum = k + 1;
-    const isCur = lineNum === curLine;
-    const isLiveErr = liveByLine.has(lineNum);
-    const isErr = isLiveErr || TYPE_ERROR_LINES.has(lineNum) || RUNTIME_ERROR_LINES.has(lineNum) || Boolean(isCur && st && st.error);
-    const inner = (isCur && (!activeFrame || activeFrame.isTop)) ? hlActiveLine(t, st && st.anim, declared) : hl(t, declared);
-    const content = (inner || '&nbsp;') + (isLiveErr ? errorBadge(lineNum) : '');
-    return '<span class="ln' + (isCur ? ' cur' : '') + (isErr ? ' err' : '') + '">' + content + '</span>';
-  }).join('');
+  if (window.PlaygroundCM) {
+    const errorLines = new Set([...liveByLine.keys(), ...TYPE_ERROR_LINES, ...RUNTIME_ERROR_LINES]);
+    if (st && st.error && curLine >= 1) errorLines.add(curLine);
+    window.PlaygroundCM.syncFromApp({
+      language: LANG,
+      text,
+      lines,
+      declared,
+      builtins,
+      liveErrors,
+      curLine,
+      st,
+      errorLines,
+    });
+  } else {
+    highlightEl.innerHTML = lines.map((t, k) => {
+      const lineNum = k + 1;
+      const isCur = lineNum === curLine;
+      const isLiveErr = liveByLine.has(lineNum);
+      const isErr = isLiveErr || TYPE_ERROR_LINES.has(lineNum) || RUNTIME_ERROR_LINES.has(lineNum) || Boolean(isCur && st && st.error);
+      const inner = (isCur && (!activeFrame || activeFrame.isTop)) ? hlActiveLine(t, st && st.anim, declared) : hl(t, declared);
+      const content = (inner || '&nbsp;') + (isLiveErr ? errorBadge(lineNum) : '');
+      return '<span class="ln' + (isCur ? ' cur' : '') + (isErr ? ' err' : '') + '">' + content + '</span>';
+    }).join('');
 
-  gutterEl.innerHTML = lines.map((t, k) => {
-    const lineNum = k + 1;
-    const isCur = lineNum === curLine;
-    const isErr = liveByLine.has(lineNum) || TYPE_ERROR_LINES.has(lineNum) || RUNTIME_ERROR_LINES.has(lineNum) || Boolean(isCur && st && st.error);
-    const hasCkpt = /^\s*(?:checkpoint|断点)\s*\(/.test(t);
-    return '<div class="gline' + (isCur ? ' cur' : '') + (hasCkpt ? ' ckpt' : '') + (isErr ? ' err' : '') + '" data-line="' + lineNum + '">' + lineNum + '</div>';
-  }).join('');
+    gutterEl.innerHTML = lines.map((t, k) => {
+      const lineNum = k + 1;
+      const isCur = lineNum === curLine;
+      const isErr = liveByLine.has(lineNum) || TYPE_ERROR_LINES.has(lineNum) || RUNTIME_ERROR_LINES.has(lineNum) || Boolean(isCur && st && st.error);
+      const hasCkpt = /^\s*(?:checkpoint|断点)\s*\(/.test(t);
+      return '<div class="gline' + (isCur ? ' cur' : '') + (hasCkpt ? ' ckpt' : '') + (isErr ? ' err' : '') + '" data-line="' + lineNum + '">' + lineNum + '</div>';
+    }).join('');
+  }
 
   updateStepViz(st, curLine, showVizOnLine, lines[curLine - 1] || '');
   syncScroll();
@@ -5032,6 +5228,22 @@ function positionStepViz() {
     stepVizEl.style.display = 'none';
     return;
   }
+  if (window.PlaygroundCM) {
+    const cm = window.PlaygroundCM;
+    const lineTop = cm.lineTop(STEP_VIZ_LINE);
+    const h = stepVizEl.offsetHeight || 22;
+    let top = lineTop - h - 3;
+    if (top < 2) top = lineTop + 24 + 3;
+    const boxH = cm.viewportHeight() || 0;
+    if (boxH && top + h > boxH - 2) {
+      top = lineTop - h - 3;
+      if (top < 2) top = Math.max(2, boxH - h - 4);
+    }
+    stepVizEl.style.left = cm.contentLeft() + 'px';
+    stepVizEl.style.top = Math.round(top) + 'px';
+    stepVizEl.style.display = 'block';
+    return;
+  }
   const m = hoverMetrics();
   const lineTop = m.padTop + (STEP_VIZ_LINE - 1) * m.lh - (editor.scrollTop || 0);
   const h = stepVizEl.offsetHeight || 22;
@@ -5053,6 +5265,7 @@ function clearFlyLayer() {
 /* ── live static diagnostics: cached per source text, drives the red line markers ── */
 let LIVE_TYPE_CACHE = { src: null, diags: [] };
 function liveTypeDiags(src) {
+  if (LANG === 'python') return PY_DIAGS;
   const text = String(src == null ? '' : src);
   if (LIVE_TYPE_CACHE.src === text) return LIVE_TYPE_CACHE.diags;
   let diags = [];
@@ -5065,6 +5278,7 @@ function liveTypeDiags(src) {
 function revealErrorLine(line, focus) {
   const ln = Math.round(Number(line) || 0);
   if (ln < 1) return;
+  if (window.PlaygroundCM) { window.PlaygroundCM.revealLine(ln, focus); return; }
   const lines = editor.value.replace(/\r\n?/g, '\n').split('\n');
   if (ln > lines.length) return;
   scrollCodeTo(ln);
@@ -5350,6 +5564,7 @@ function playStepAnimation(st) {
 }
 
 function syncScroll() {
+  if (window.PlaygroundCM) { positionStepViz(); return; }
   highlightEl.scrollTop = editor.scrollTop;
   highlightEl.scrollLeft = editor.scrollLeft;
   gutterEl.scrollTop = editor.scrollTop;
@@ -5357,6 +5572,7 @@ function syncScroll() {
 }
 
 function scrollCodeTo(line) {
+  if (window.PlaygroundCM) { window.PlaygroundCM.scrollToLine(line); return; }
   const lh = 24;
   const idx = Math.max(0, line - 1);
   const visible = Math.max(1, Math.floor(editor.clientHeight / lh));
@@ -5785,7 +6001,7 @@ function stepPrev() {
   if (!TRACE.steps.length || cur <= 0) return;
   SELECTED_FRAME_IDX = null;
   if (document.body && document.body.classList) document.body.classList.remove('editing-code');
-  if (document.activeElement === editor && editor.blur) editor.blur();
+  if (isEditorFocused()) blurEditor();
   cur--;
   renderPicker();
   renderStatic(cur, true);
@@ -5795,7 +6011,7 @@ function stepNext(fromAuto = false) {
   if (!fromAuto) stopAuto();
   SELECTED_FRAME_IDX = null;
   if (document.body && document.body.classList) document.body.classList.remove('editing-code');
-  if (document.activeElement === editor && editor.blur) editor.blur();
+  if (isEditorFocused()) blurEditor();
   if (!DEBUG_SESSION.active) {
     startDebug(0);
     return;
@@ -5818,10 +6034,11 @@ function stepNext(fromAuto = false) {
 }
 
 function runToNextCheckpoint() {
+  if (LANG === 'python') return PY_ENGINE.runToNextCheckpoint();
   stopAuto();
   SELECTED_FRAME_IDX = null;
   if (document.body && document.body.classList) document.body.classList.remove('editing-code');
-  if (document.activeElement === editor && editor.blur) editor.blur();
+  if (isEditorFocused()) blurEditor();
 
   if (!DEBUG_SESSION.active) {
     if (!startDebug(0)) return;
@@ -5896,13 +6113,15 @@ function rebuildDebugAtPosition(newTargetLine, targetVisits, fallbackStepIdx) {
     return false;
   }
   const js0 = stripTypes(enums.code);
-  const call = extractCall(src);
-  const expr = stripTypes(call || 'undefined');
+  const entry = resolveEntry(src, js0);
+  const expr = stripTypes(entry.expr || 'undefined');
+  ENTRY_CALL_LINE = entry.line || 0;
+  const jsBody = entry.index >= 0 ? blankJsLine(js0, entry.index) : js0;
 
   let compiledFn;
   try {
-    const names = collectNames(js0);
-    const js = instrument(js0, originalLines, names);
+    const names = collectNames(jsBody);
+    const js = instrument(jsBody, originalLines, names);
     const finHook = '\n;try{if(typeof __t==="function"&&__t.__fin)__t.__fin(' + snapFnExpr(names) + ');}catch(_){}\n';
     const body = js + finHook + ';return (' + expr + ');';
     compiledFn = new Function('__t', 'console', body);
@@ -5962,6 +6181,26 @@ function rebuildDebugAtPosition(newTargetLine, targetVisits, fallbackStepIdx) {
 }
 
 function addCheckpointFunction(preferredLine) {
+  if (LANG === 'python') {
+    const text = editor.value.replace(/\r\n?/g, '\n');
+    const lines = text.split('\n');
+    let line = preferredLine || (TRACE.steps[cur] && TRACE.steps[cur].line) || (window.__CM_CURSOR_LINE || lastEditorCursorLine) || lines.length;
+    line = Math.max(1, Math.min(lines.length, line));
+    const current = lines[line - 1] || '';
+    const indent = (current.match(/^\s*/) || [''])[0];
+    if (/:\s*(?:#.*)?$/.test(current)) {
+      lines.splice(line, 0, indent + '    checkpoint()');
+      line = line + 1;
+    } else {
+      lines.splice(line - 1, 0, indent + 'checkpoint()');
+    }
+    editor.value = lines.join('\n');
+    lastEditorCursorLine = line;
+    resetTraceState();
+    PY_ENGINE.start(0);
+    say('✓ 已插入 checkpoint()，正在重新录制 Python 执行步骤', 'ok');
+    return;
+  }
   const text = editor.value.replace(/\r\n?/g, '\n');
   const lines = text.split('\n');
 
@@ -5999,10 +6238,11 @@ function addCheckpointFunction(preferredLine) {
   }
 
   let targetIdx;
+  const cursorLine = window.__CM_CURSOR_LINE || lastEditorCursorLine;
   if (typeof preferredLine === 'number' && preferredLine >= 1 && preferredLine <= lines.length) {
     targetIdx = preferredLine - 1;
-  } else if (lastEditorCursorLine >= 1 && lastEditorCursorLine <= lines.length) {
-    targetIdx = lastEditorCursorLine - 1;
+  } else if (cursorLine >= 1 && cursorLine <= lines.length) {
+    targetIdx = cursorLine - 1;
   } else if (wasActive) {
     targetIdx = origCurLine - 1;
   } else {
@@ -6028,6 +6268,8 @@ function addCheckpointFunction(preferredLine) {
     } else {
       startDebug(0);
     }
+    const keepLine = Math.max(1, Math.min(lines.length, Math.min(removedLine, lines.length)));
+    scrollCodeTo(keepLine);
     say('· 已移除第 ' + removedLine + ' 行的 checkpoint() 检查点函数（保持当前调试进度）', 'dim');
     return;
   }
@@ -6080,10 +6322,11 @@ if (gutterEl) {
   });
 }
 
-$('auto').onclick = () => {
+$('auto').onclick = async () => {
   if (timer) { stopAuto(); return; }
   if (!DEBUG_SESSION.active || (cur >= TRACE.steps.length - 1 && DEBUG_SESSION.finished)) {
-    if (!startDebug(0)) return;
+    const ok = await Promise.resolve(startDebug(0));
+    if (!ok) return;
   }
   if (cur >= TRACE.steps.length - 1 && DEBUG_SESSION.finished) return;
   $('auto').textContent = '⏸ 暂停';
@@ -6091,10 +6334,7 @@ $('auto').onclick = () => {
     if (cur >= TRACE.steps.length - 1 && DEBUG_SESSION.finished) { stopAuto(); return; }
     stepNext(true);
     const st = TRACE.steps[cur];
-    if (!st || st.error || st.isCheckpoint || (cur >= TRACE.steps.length - 1 && DEBUG_SESSION.finished)) {
-      if (st && st.isCheckpoint) {
-        say('◉ 自动运行已暂停于检查点 [第 ' + st.line + ' 行] · ' + (st.note || ''), 'ok');
-      }
+    if (!st || st.error || (cur >= TRACE.steps.length - 1 && DEBUG_SESSION.finished)) {
       stopAuto();
     }
   }, AUTO_PLAY_MS);
@@ -6160,13 +6400,15 @@ function sanitizeFileName(name) {
     .replace(/\s+/g, ' ')
     .trim()
     .replace(/[.\s]+$/, '');   // Windows rejects trailing dots/spaces
-  return cleaned || 'playground.ts';
+  return cleaned || (LANG === 'python' ? 'playground.py' : 'playground.ts');
 }
 
 /* Name actually written to disk: keep a real extension, otherwise append .ts */
 function exportFileName() {
-  const name = FILE_NAME || 'playground.ts';
-  return /\.[A-Za-z0-9]{1,12}$/.test(name) ? name : name + '.ts';
+  const fallback = LANG === 'python' ? 'playground.py' : 'playground.ts';
+  const name = FILE_NAME || fallback;
+  const ext = LANG === 'python' ? '.py' : '.ts';
+  return /\.[A-Za-z0-9]{1,12}$/.test(name) ? name : name + ext;
 }
 
 function setFileName(name) {
@@ -6179,7 +6421,7 @@ function setFileName(name) {
 function loadImportedSource(text, name) {
   const src = String(text == null ? '' : text).replace(/\r\n?/g, '\n');
   editor.value = src;
-  setFileName(name || 'imported.ts');
+  setFileName(name || (LANG === 'python' ? 'imported.py' : 'imported.ts'));
   lastEditorCursorLine = -1;
   resetTraceState();
   updateEditorChrome();
@@ -7401,7 +7643,9 @@ if (btnExportVideo) {
 }
 
 function loadSample(key) {
+  if (LANG === 'python') { PY_ENGINE.loadSample(key); return; }
   const targetKey = SAMPLES[key] ? key : 'showcase';
+  if ($('sampleSel')) $('sampleSel').value = targetKey;
   editor.value = SAMPLES[targetKey];
   setFileName(targetKey + '.ts');
   lastEditorCursorLine = -1;
@@ -7482,6 +7726,23 @@ if (callStackBarEl) {
   });
 })();
 
+function isEditorFocused() {
+  try {
+    if (window.PlaygroundCM && window.PlaygroundCM.hasFocus()) return true;
+  } catch (_) { /* ignore */ }
+  return document.activeElement === editor;
+}
+
+function blurEditor() {
+  try {
+    if (window.PlaygroundCM && window.PlaygroundCM.hasFocus()) {
+      window.PlaygroundCM.blur();
+      return;
+    }
+  } catch (_) { /* ignore */ }
+  if (editor.blur) editor.blur();
+}
+
 function recordEditorCursorLine() {
   try {
     const pos = editor.selectionStart || 0;
@@ -7508,8 +7769,9 @@ editor.addEventListener('keydown', e => {
   if (e.key === 'Tab') {
     e.preventDefault();
     const s = editor.selectionStart, t = editor.selectionEnd;
-    editor.value = editor.value.slice(0, s) + '  ' + editor.value.slice(t);
-    editor.selectionStart = editor.selectionEnd = s + 2;
+    const indent = LANG === 'python' ? '    ' : '  ';
+    editor.value = editor.value.slice(0, s) + indent + editor.value.slice(t);
+    editor.selectionStart = editor.selectionEnd = s + indent.length;
     onSourceChanged();
   }
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
@@ -7517,7 +7779,7 @@ editor.addEventListener('keydown', e => {
     stopAuto();
     if (e.shiftKey) {
       if (document.body && document.body.classList) document.body.classList.remove('editing-code');
-      if (editor.blur) editor.blur();
+      if (isEditorFocused()) blurEditor();
       startDebug(0);
     } else {
       runOnce();
@@ -7530,6 +7792,7 @@ function onSourceChanged() {
   recordEditorCursorLine();
   TYPE_ERROR_LINES.clear();
   RUNTIME_ERROR_LINES.clear();
+  if (LANG === 'python') PY_DIAGS.length = 0;
   hideHoverTip();
   updateEditorChrome();
   if (TRACE.steps.length || DEBUG_SESSION.active) {
@@ -7568,7 +7831,7 @@ if (sidePanelEl && sidePanelEl.addEventListener) {
 addEventListener('resize', () => positionStepViz());
 
 addEventListener('keydown', e => {
-  if (document.activeElement === editor) return;
+  if (isEditorFocused()) return;
   if (e.key === 'ArrowRight' || e.key === ' ') {
     if (e.target.closest && e.target.closest('button,select,input,textarea')) return;
     e.preventDefault();
@@ -7581,8 +7844,54 @@ addEventListener('keydown', e => {
   }
 });
 
+/* ── built-in checker scope badge + limitations modal ── */
+(function initCheckerInfo() {
+  const badge = $('checkerBadge');
+  const modal = $('checkerModal');
+  const close = $('checkerModalClose');
+  if (!badge || !modal) return;
+  const open = () => { modal.hidden = false; };
+  const hide = () => { modal.hidden = true; };
+  badge.onclick = open;
+  badge.onkeydown = e => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      open();
+    }
+  };
+  if (close) close.onclick = hide;
+  if (modal.addEventListener) {
+    modal.addEventListener('click', e => {
+      if (e.target === modal) hide();
+    });
+  }
+  if (document.addEventListener) {
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') hide();
+    });
+  }
+})();
+
 /* ── boot + URL contract (?trace=&step=&watch=&still=1) ── */
 (function boot() {
+  window.__BOOT_DEFERRED = false;
+  try {
+    const hash = (typeof location !== 'undefined' && location.hash) || '';
+    const qs0 = (typeof location !== 'undefined' && location.search) ? new URLSearchParams(location.search) : null;
+    const hasUrlChoice = Boolean(qs0 && (qs0.has('trace') || qs0.has('sample') || qs0.has('step')));
+    const wantsPython = Boolean(qs0 && qs0.get('lang') === 'python');
+    let hasSaved = false;
+    if (!hasUrlChoice && !wantsPython && typeof localStorage !== 'undefined') {
+      try { hasSaved = Boolean(localStorage.getItem('ts-playground-session-v1')); } catch (_) {}
+    }
+    if (hash.startsWith('#s=') || wantsPython || hasSaved) {
+      window.__BOOT_DEFERRED = true;
+      editor.value = '';
+      clearLog('正在恢复上次会话 / 分享代码…');
+      updateEditorChrome();
+      return;
+    }
+  } catch (_) { /* ignore */ }
   let sampleKey = 'showcase';
   let customStep = null;
   try {
@@ -7616,5 +7925,17 @@ addEventListener('keydown', e => {
   generateTrace(initialStep);
 })();
 </script>
+<script src="python/py_engine.js"></script>
+<script>
+(function () {
+  const langSel = document.getElementById('langSel');
+  if (langSel) {
+    langSel.value = 'ts';
+    langSel.onchange = () => PY_ENGINE.setLang(langSel.value);
+  }
+})();
+</script>
+<script src="app-session.js"></script>
+<script src="editor/cm.bundle.js?v=20261020r"></script>
 </body>
 </html>

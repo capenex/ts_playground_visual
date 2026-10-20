@@ -1,0 +1,28 @@
+{
+  "name": "ts-playground-visual",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "TypeScript / Python visual playground and step debugger",
+  "scripts": {
+    "start": "node python/serve.mjs",
+    "serve": "node python/serve.mjs",
+    "test": "node test-pipeline.mjs",
+    "build:editor": "node scripts/build-editor.mjs",
+    "build": "npm run build:editor && node scripts/build.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@codemirror/lang-javascript": "^6.2.5",
+    "@codemirror/lang-python": "^6.2.1",
+    "@codemirror/lint": "^6.9.7",
+    "@codemirror/search": "^6.7.2",
+    "codemirror": "^6.0.2"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  }
+}

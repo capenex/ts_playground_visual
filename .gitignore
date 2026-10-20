@@ -1,5 +1,7 @@
 _chrome_profile/
 node_modules/
+dist/
 dist-portable/
+__pycache__/
 *.zip
 *.tar.gz

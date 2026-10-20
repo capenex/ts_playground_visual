@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Shared Playground · 沙箱预览</title>
+<style>
+  html,body{height:100%;margin:0;background:#07090d;color:#cbd5e1;font:12px/1.4 system-ui,"PingFang SC","Microsoft YaHei",sans-serif}
+  #bar{height:40px;display:flex;align-items:center;gap:12px;padding:0 14px;border-bottom:1px solid #1d2532;background:#0a0e14;box-sizing:border-box}
+  #status{color:#93c5fd;font-weight:600;white-space:nowrap}
+  #hint{color:#64748b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #frame{display:block;width:100%;height:calc(100% - 40px);border:0;background:#07090d}
+</style>
+</head>
+<body>
+<div id="bar">
+  <span id="status">沙箱加载中…</span>
+  <span id="hint">分享代码在隔离 iframe 中运行，不能访问本页 DOM / localStorage；编辑内容不会自动保存；Python 模式受 Worker 限制，建议在完整页面运行。</span>
+</div>
+<iframe id="frame" title="Shared Playground sandbox" sandbox="allow-scripts allow-downloads"></iframe>
+<script>
+(function () {
+  const frame = document.getElementById('frame');
+  const status = document.getElementById('status');
+  const hash = location.hash || '';
+  let ready = false;
+
+  window.addEventListener('message', function (event) {
+    if (event.source !== frame.contentWindow) return;
+    const data = event.data;
+    if (!data || data.type !== 'ts-playground-ready') return;
+    ready = true;
+    const lang = data.lang === 'python' ? 'Python' : 'TypeScript';
+    status.textContent = '沙箱已就绪 · ' + lang + (data.fileName ? ' · ' + data.fileName : '');
+  });
+
+  frame.src = 'index.html?sandbox=1' + hash;
+
+  setTimeout(function () {
+    if (!ready) status.textContent = '沙箱加载超时：请检查浏览器是否允许 iframe 脚本；Python 模式请改用完整页面。';
+  }, 15000);
+})();
+</script>
+</body>
+</html>
