@@ -2,7 +2,7 @@ import fs from 'fs';
 import vm from 'vm';
 
 const html = fs.readFileSync(new URL('./index.html', import.meta.url), 'utf8');
-const script = html.match(/<script>([\s\S]*)<\/script>/)[1];
+const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
 
 const makeClassList = () => {
   const set = new Set();
@@ -57,11 +57,11 @@ sandbox.window = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(
   script +
-    '\n;globalThis.__exports = { stripTypes, typecheckTS, collectNames, instrument, classifyValue, enrichFromNote, deriveAnimAndNote, hl, hlActiveLine, buildStepVizRow, vizGrid, vizTree, vizGraph, vizUF, vizHeap, vizQueue, VIZ, SAMPLES, collectDeclaredNames, hoverInfoFor, hoverTipHtml, hoverWordAt, liveTypeDiags, revealErrorLine, formatHoverVal, startDebug, stepNext, stepPrev, runToNextCheckpoint, addCheckpointFunction, resetTraceState, runOnce, selectStackFrame, getActiveFrame, formatCallFrameLabel, setVideoExportSpeed, exportVideo, fixWebmDuration, VIDEO_WIDTH, VIDEO_HEIGHT, VIDEO_FPS, VIDEO_SPEED_OPTIONS, RUN_TIMEOUT_MS, setFileName, exportFileName, sanitizeFileName, loadImportedSource, getFileName: () => FILE_NAME, getDebugState: () => ({ TRACE, cur, SELECTED_FRAME_IDX, DEBUG_SESSION, VIDEO_EXPORT_SPEED, cnt: document.getElementById("cnt").textContent, callStackHtml: document.getElementById("callStackBar").innerHTML, varsHtml: document.getElementById("vars").innerHTML, highlightHtml: document.getElementById("highlight").innerHTML, gutterHtml: document.getElementById("gutter").innerHTML, stepVizHtml: document.getElementById("stepViz").innerHTML, stepVizTop: document.getElementById("stepViz").style.top, stepVizLeft: document.getElementById("stepViz").style.left, stepVizDisplay: document.getElementById("stepViz").style.display, editorVal: document.getElementById("editor").value }), setEditorVal: (v) => { document.getElementById("editor").value = v; } };',
+    '\n;globalThis.__exports = { stripTypes, typecheckTS, collectNames, instrument, resolveEntry, blankJsLine, classifyValue, enrichFromNote, deriveAnimAndNote, hl, hlActiveLine, buildStepVizRow, vizGrid, vizTree, vizGraph, vizUF, vizHeap, vizQueue, VIZ, SAMPLES, collectDeclaredNames, hoverInfoFor, hoverTipHtml, hoverWordAt, liveTypeDiags, revealErrorLine, formatHoverVal, startDebug, stepNext, stepPrev, runToNextCheckpoint, addCheckpointFunction, resetTraceState, runOnce, selectStackFrame, getActiveFrame, formatCallFrameLabel, setVideoExportSpeed, exportVideo, fixWebmDuration, VIDEO_WIDTH, VIDEO_HEIGHT, VIDEO_FPS, VIDEO_SPEED_OPTIONS, RUN_TIMEOUT_MS, setFileName, exportFileName, sanitizeFileName, loadImportedSource, getFileName: () => FILE_NAME, getDebugState: () => ({ TRACE, cur, SELECTED_FRAME_IDX, DEBUG_SESSION, VIDEO_EXPORT_SPEED, cnt: document.getElementById("cnt").textContent, callStackHtml: document.getElementById("callStackBar").innerHTML, varsHtml: document.getElementById("vars").innerHTML, highlightHtml: document.getElementById("highlight").innerHTML, gutterHtml: document.getElementById("gutter").innerHTML, stepVizHtml: document.getElementById("stepViz").innerHTML, stepVizTop: document.getElementById("stepViz").style.top, stepVizLeft: document.getElementById("stepViz").style.left, stepVizDisplay: document.getElementById("stepViz").style.display, editorVal: document.getElementById("editor").value }), setEditorVal: (v) => { document.getElementById("editor").value = v; } };',
   sandbox
 );
 const {
-  stripTypes, typecheckTS, collectNames, instrument, classifyValue, enrichFromNote,
+  stripTypes, typecheckTS, collectNames, instrument, resolveEntry, blankJsLine, classifyValue, enrichFromNote,
   deriveAnimAndNote, hl, hlActiveLine, buildStepVizRow, vizGrid, vizTree, vizGraph, vizUF, vizHeap, vizQueue, VIZ, SAMPLES,
   collectDeclaredNames, hoverInfoFor, hoverTipHtml, hoverWordAt, liveTypeDiags, revealErrorLine, formatHoverVal,
   startDebug, stepNext, stepPrev, runToNextCheckpoint, addCheckpointFunction, resetTraceState, runOnce,
@@ -84,6 +84,7 @@ function check(name, cond, extra) {
 // --- syntax highlight CSS classes & draggable resizer exist
 check('syntax highlight CSS defined', /\.com\b/.test(html) && /\.str\b/.test(html) && /\.kw\b/.test(html));
 check('draggable resizer defined', html.includes('id="resizer"') && html.includes('col-resize'));
+check('CodeMirror editor wired (container + bundle)', html.includes('id="cmEditor"') && html.includes('editor/cm.bundle.js'));
 
 // --- stripTypes: strings with //
 let r = stripTypes('const url = "http://x.com"; const b = 1;');
@@ -137,9 +138,11 @@ check('instrument uses original note', /__t\(\d+, "const n: number/.test(inst), 
 // --- full generateTrace-like run for counter
 function runTrace(sample, call) {
   const js0 = stripTypes(sample);
-  const ns = collectNames(js0);
+  const entry = resolveEntry(sample, js0);
+  const jsBase = entry.index >= 0 ? blankJsLine(js0, entry.index) : js0;
+  const ns = collectNames(jsBase);
   const origLines = sample.split('\n');
-  const js1 = instrument(js0, origLines, ns);
+  const js1 = instrument(jsBase, origLines, ns);
   const steps = [];
   const __t = (line, note, snap) => {
     const v = (typeof snap === 'function' ? snap() : snap) || {};
@@ -416,6 +419,16 @@ check(
   Object.keys(SAMPLES).every((k) => typecheckTS(SAMPLES[k], true).length === 0),
   JSON.stringify(Object.keys(SAMPLES).map((k) => [k, typecheckTS(SAMPLES[k], true)]))
 );
+check(
+  'type checker is labeled as a subset, not full tsc',
+  html.includes('TS 子集检查') && html.includes('不是完整的 TypeScript 编译器'),
+  'missing subset label / disclaimer'
+);
+check(
+  'checker limitations modal lists unsupported areas',
+  html.includes('id="checkerModal"') && html.includes('完整泛型推断与约束') && html.includes('Python 模式'),
+  'missing limitations modal'
+);
 
 const dImplicitAny = typecheckTS('function bad(x): number {\n  return x;\n}');
 check('typecheckTS catches TS7006 implicit any param', dImplicitAny.some((d) => d.code === 'TS7006'), JSON.stringify(dImplicitAny));
@@ -571,7 +584,8 @@ const hlUndeclared = hl('const total = acc + ghost;', new Set(['total', 'acc']))
 check('undeclared identifier renders plain white while declared keeps .prop',
   hlUndeclared.includes('<span class="prop">acc</span>') && !hlUndeclared.includes('prop">ghost') && hlUndeclared.includes('ghost'), hlUndeclared);
 check('object literal keys keep the property color', hl('const o = { val: 1 };', new Set(['o'])).includes('<span class="prop">val</span>'));
-check('built-in checkpoint stays colored without a declaration', hl('let x = checkpoint;', collectDeclaredNames('')).includes('<span class="prop">checkpoint</span>'));
+check('built-ins keep their own color without a declaration', hl('let x = checkpoint;', collectDeclaredNames('')).includes('<span class="bi">checkpoint</span>'));
+check('built-ins are not mixed into the declared set', !collectDeclaredNames('').has('checkpoint') && !collectDeclaredNames('').has('Math'), [...collectDeclaredNames('')].join(','));
 const declComment = collectDeclaredNames('// const ghost = 1;\nlet real = 2;\n/* function phantom() {} */\ninterface User { name: string }\nclass Node2 { x: number }\ntype Pair = [number, number];\n');
 check('comments never contribute declared names', !declComment.has('ghost') && !declComment.has('phantom') && declComment.has('real'), [...declComment].join(','));
 check('interface / class / type names count as declared', ['User', 'Node2', 'Pair'].every(n => declComment.has(n)), [...declComment].join(','));
@@ -675,6 +689,35 @@ check('every built-in sample runs under the 2s watchdog without a false timeout'
 check('watchdog run keeps the known-answer results for counter and lcs',
   /→\s+32\s*\(/.test(sampleRunLogs.counter || '') && /→\s+4\s*\(/.test(sampleRunLogs.lcs || ''),
   (sampleRunLogs.counter || '').slice(-60) + ' | ' + (sampleRunLogs.lcs || '').slice(-60));
+
+check('built-in samples use real entry calls instead of legacy // 调用 comments',
+  !Object.values(SAMPLES).some(s => /\/\/\s*调用[:：]/.test(s)),
+  Object.keys(SAMPLES).filter(k => /\/\/\s*调用[:：]/.test(SAMPLES[k])).join(','));
+
+setEditorVal('function add(a: number, b: number): number {\n  return a + b;\n}\n\nadd(1, 2);\n');
+const realEntryMark = logChildren().length;
+runOnce(2000);
+const realEntryLog = readLogSince(realEntryMark);
+check('a real trailing top-level call becomes the entry',
+  /运行完成/.test(realEntryLog) && /→\s+3\s*\(/.test(realEntryLog), realEntryLog.slice(-160));
+
+setEditorVal('let calls = 0;\nfunction next(): number {\n  calls++;\n  return calls;\n}\n\nnext();\n');
+const onceMark = logChildren().length;
+runOnce(2000);
+const onceLog = readLogSince(onceMark);
+check('a real trailing call executes exactly once', /→\s+1\s*\(/.test(onceLog), onceLog.slice(-160));
+
+setEditorVal('function add(a: number, b: number): number {\n  return a + b;\n}\n\nadd(1, 2);\n');
+const startedReal = startDebug(0);
+let realGuard = 0;
+let realState = getDebugState();
+while (realState.DEBUG_SESSION.active && !realState.DEBUG_SESSION.finished && realGuard++ < 50) {
+  stepNext();
+  realState = getDebugState();
+}
+check('Debug mode also uses the real trailing call as entry',
+  startedReal && realState.DEBUG_SESSION.returnValue === 3,
+  JSON.stringify({ started: startedReal, ret: realState.DEBUG_SESSION.returnValue, steps: realState.TRACE.steps.length }));
 
 // --- Feature F: import button, editable file name, TypeScript export
 check('import button, hidden file input and editable file name exist',

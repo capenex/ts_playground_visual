@@ -1,6 +1,8 @@
 # TypeScript Playground VISUAL · 项目架构与技术文档
 
-**TypeScript Playground VISUAL** 是一个**完全自包含、零运行时外部依赖**的 **TypeScript 可视化演练场与按需逐行 Debug 调试器**。整个应用的所有界面、样式、词法感知类型剥离器、强制静态类型检查器、按需单步插桩引擎、12 种数据结构图形渲染器以及 1920×1080 60fps 高清视频导出引擎全部濃縮在单个 `index.html` 文件中——无需 CDN、无需后端服务、无需构建步骤，直接双击 `index.html`（支持 `file://` 协议离线打开）或部署到任意静态服务器即可完整运行。
+**TypeScript Playground VISUAL** 是一个**零前端框架依赖**的 **TypeScript / Python 可视化演练场与按需逐行 Debug 调试器**。核心界面、类型剥离器、内置子集类型检查器、插桩引擎与 12 种数据结构渲染器集中在 `index.html`；自动保存 / 分享链接拆在 `app-session.js`，Python 模式拆在 `python/`。TypeScript 模式不依赖 CDN 或后端，但当前版本请通过静态 HTTP 服务打开（`node python/serve.mjs`）；若要恢复单文件离线分发，需要在构建时把这些脚本内联。
+
+> **类型检查边界**：内置 `typecheckTS` 是项目自带的**子集检查器**，不是 TypeScript 官方 `tsc`，也不调用语言服务。它覆盖常用语法，可能漏报 / 误报；以实际运行和 `tsc` 为准。页面 SOURCE 旁的「TS 子集检查」可查看完整边界。
 
 ---
 
@@ -8,9 +10,9 @@
 
 本项目提供三份配套中文文档，面向不同阅读场景：
 
-1. **[`README.md`（本文档 · 项目架构与部署维护指南）](./README.md)**：介绍项目整体架构、核心管线设计、内置样例、便携打包与自动化测试流程。
+1. **[`README.md`（本文档 · 项目架构与部署维护指南）](./README.md)**：介绍项目整体架构、核心管线设计、内置样例、构建/测试/部署流程。
 2. **[`USER_GUIDE.md`（面向用户的操作说明手册）](./USER_GUIDE.md)**：图文式讲解界面布局、如何编写可调试代码、如何使用 `checkpoint()` 检查点、如何排查类型错误与运行时异常、以及如何导出 1080p 60fps 视频。
-3. **[`SYNTAX_REFERENCE.md`（支持的 TypeScript 语法与可视化范围参考手册）](./SYNTAX_REFERENCE.md)**：详列静态类型检查器（`typecheckTS`）支持的规则与错误码、类型剥离器（`stripTypes`）与自动插桩器（`instrument`）支持的语法边界、以及 12 种数据结构可视化识别规则。
+3. **[`SYNTAX_REFERENCE.md`（支持的 TypeScript 语法与可视化范围参考手册）](./SYNTAX_REFERENCE.md)**：详列内置子集类型检查器（`typecheckTS`，非完整 tsc）支持的规则与错误码、类型剥离器（`stripTypes`）与自动插桩器（`instrument`）支持的语法边界、以及 12 种数据结构可视化识别规则。
 
 ---
 
@@ -19,13 +21,14 @@
 | 模块 / 区域 | 核心能力说明 |
 |---|---|
 | **左上品牌栏 (`TypeScript Playground VISUAL`)** | 蓝青渐变 `TS` 徽标 + 主副标题层级排版 + 垂直居中的琥珀流光 `VISUAL` 标识。 |
-| **顶部工具栏 (`#top`)** | 9 个精选内置样例切换（切换后自动开启 Debug 调试）、**`📂 导入`**（读取本地 `.ts/.tsx/.js/.txt` 到编辑器）、`▶ 运行`（直接求值）、`🐞 Debug 调试`（编译通过后开启按需步进模式），以及右上角 **「⬇ 导出 / 下载 ▾」** 下拉菜单。 |
-| **右上角「⬇ 导出 / 下载」菜单** | 集成 **「📄 导出 TypeScript 文件」**（按 SOURCE 标题栏的可改名文件名下载 `.ts`，缺扩展名时自动补 `.ts`）与 **「🎬 导出视频 (`1920×1080 · 60fps`)」**，内含相对于自动速度的 **5 档倍速调节按钮（`0.75x` / `1x` / `1.5x` / `2x` / `3x`）**。 |
-| **左侧：SOURCE 统一源码编辑与调试画布** | 编辑代码与单步 Debug 共用同一区域。**只有真正声明过的名字**（`const/let/var`、函数/箭头参数、循环与 `catch` 绑定、函数/类/接口名）才显示为高辨识度浅蓝色（`#9cdcfe`）；未声明的名字（拼错的变量、漏声明的函数调用）保持白色，一眼即可看出「这个词没有来源」。步进时在**当前执行行的正上方浮出一枚可视化求值胶囊**（独立浮层 `#stepViz`，`z-index` 高于代码层，不占行内空间；赋值 `assign`、比较 `compare`、调用 `call`、检查点 `checkpoint` 或运行时异常 `RUNTIME ERROR`），每行严格锁定 `24px` 行高，确保编辑光标与高亮层 1:1 零偏移对齐。标题栏的 **`TS ␣ 文件名` 芯片可直接点击改名**（`Enter` 提交 / `Esc` 撤销），导入与导出共用这个名字。 |
+| **顶部工具栏 (`#top`)** | 顶部 `TS / PY` 语言切换；9 个 TypeScript + 6 个 Python 内置样例（切换后自动开启 Debug 调试）、**`📂 导入`**（读取本地 `.ts/.tsx/.js/.jsx/.txt/.py` 到编辑器）、`▶ 运行`（直接求值）、`🐞 Debug 调试`（编译通过后开启按需步进模式），以及右上角 **「⬇ 导出 / 下载 ▾」** 下拉菜单。 |
+| **右上角「⬇ 导出 / 下载」菜单** | 集成 **「📄 导出 TypeScript / Python 文件」**（按 SOURCE 标题栏的可改名文件名下载，缺扩展名时按当前语言补 `.ts` / `.py`）、**「🔗 复制分享链接」**（gzip + base64url 放进 URL hash，打开 `share.html` 的 sandboxed iframe，只加载不自动运行）与 **「🎬 导出视频 (`1920×1080 · 60fps`)」**（WebM，实验性），内含相对于自动速度的 **5 档倍速调节按钮（`0.75x` / `1x` / `1.5x` / `2x` / `3x`）**。 |
+| **会话与分享** | 自动保存代码 / 文件名 / 语言到 `localStorage`，刷新后恢复但不自动运行；分享页使用 `sandbox="allow-scripts allow-downloads"`（无 `allow-same-origin`）隔离，TS 分享代码不能访问主页面 DOM / localStorage。 |
+| **左侧：SOURCE 统一源码编辑与调试画布（CodeMirror 6）** | 编辑代码与单步 Debug 共用同一区域；CodeMirror 6 提供查找 / 替换、多光标（`Ctrl/Cmd+D`、`Alt+点击`）、光标所在词的同名整词匹配（无需选中，蓝色下划线标示，跳过字符串 / 注释）、括号匹配 / 自动闭合、自动缩进、代码折叠、撤销 / 重做与错误波浪线。**只有真正声明过的名字**（`const/let/var`、函数/箭头参数、循环与 `catch` 绑定、函数/类/接口名）显示为浅蓝色（`#9cdcfe`）；内置变量 / 函数（`console`、`Math`、`checkpoint`、`len`、`range` 等）使用暖金色（`#dcdcaa`）；未声明的名字保持白色，一眼即可看出「这个词没有来源」。比较 / 逻辑运算符与普通运算符保持白色，匹配括号显示金色辉光。步进时在**当前执行行的正上方浮出一枚可视化求值胶囊**（独立浮层 `#stepViz`，`z-index` 高于代码层，不占行内空间；赋值 `assign`、比较 `compare`、调用 `call`、检查点 `checkpoint` 或运行时异常 `RUNTIME ERROR`）。标题栏的 **`TS ␣ 文件名` 芯片可直接点击改名**（`Enter` 提交 / `Esc` 撤销），导入与导出共用这个名字。 |
 | **面向对象 / 泛型调试 (`class` · `enum` · 泛型)** | class 方法体会逐行插桩，调用栈出现 `global ▸ runCounter(1, 3) ▸ add(2)` 这样的帧；方法内的 `this` 以卡片进入 `WATCH`，字段（`total` / `history`…）随步进实时变化。`enum`（数字 / 字符串 / `const`）被展开成**等行号**的 IIFE，步进轨迹与报错行号不变；泛型类、`<T,>` 箭头、调用点实参在运行期擦除。`constructor(private x)`、装饰器、`abstract`、`namespace` 会给出明确的人话提示而不是 `Unexpected token`。 |
 | **悬停查看器 (`#hoverTip`)** | Debug 模式下把鼠标停在任意变量/数据结构（源码里或 `LOCALS`/`WATCH` 卡片上）即可弹出浮层：名字、类型/结构种类、**当前帧的实时值**，结构变量还会附带一份同款可视化（数组/树/图/Map/Grid…）。当前帧找不到时自动回退到 `global` 帧，所有取值都来自当前这一步的快照，不会提前执行代码。 |
-| **报错红色定位 (`#highlight .ln.err`)** | 严格类型检查的报错**实时**（边写边检）标红对应行：行底色 + 左侧红条 + 行尾 `✗ TSxxxx` 徽章（悬停看完整信息），并自动滚动到第一处错误；控制台每条诊断可点击跳转到该行。`▶ 运行` 阶段的运行时报错也会通过编译栈行号映射回**源码行**（`fnBodyLineOffset` / `sourceLineFromStack`），而不是只给一句「调用失败」。 |
-| **行号槽检查点交互 (`#gutter`)** | 点击任意行号（或点击底部「＋ 添加检查点函数」）即可在代码中自动插入/移除 `checkpoint();`，且**保持当前所在的调试步骤进度不重置回第一步**。 |
+| **报错定位（CodeMirror 波浪线 + 控制台跳转）** | 内置子集类型检查的报错**实时**（边写边检）标在对应行：CodeMirror 红色波浪线 + 行号提示；控制台每条诊断可点击跳转到该行。`▶ 运行` 阶段的运行时报错也会通过编译栈行号映射回**源码行**（`fnBodyLineOffset` / `sourceLineFromStack`），而不是只给一句「调用失败」。 |
+| **行号与检查点交互** | 点击任意行号（或行号旁的 `◉`）即可在代码中自动插入/移除 `checkpoint();`；CodeMirror gutter 与代码行严格对齐，并**保持当前所在的调试步骤进度不重置回第一步**。 |
 | **中间：可拖拽分隔条 (`#resizer`)** | 左右拖动自由调节代码区与右侧面板宽度（当右侧面板拉窄至 `< 440px` 时卡片自动切换为单列布局；双击分隔条一键恢复默认比例）。 |
 | **右侧：调用栈面包屑 · LOCALS · WATCH · 控制台** | 在 `LOCALS` 区域顶部实时展示当前函数调用链条（如 `global ▸ mergeSort(0, 7) ▸ mergeSort(0, 3) ▸ mergeSort(0, 1)`），**点击任意栈帧面包屑即可切换查看对应栈帧的局部变量（`LOCALS`）、数据结构窗口状态（`WATCH`）与调用行位置**；下方展示自适应网格卡片与底部单步执行详情。 |
 | **底部 Debug 控制栏 (`#ctl`)** | 提供 `‹ 上一步`、非数字状态徽章（`● 调试运行中` / `◉ 命中检查点` / `✗ 运行时报错` / `✓ 执行完毕`，不展示具体步号与总步数）、`下一步 ›`、左下角 **`⏭ 运行到下一个检查点`**、**`＋ 添加检查点函数`** 以及 **`▶ 自动`** 连续播放。 |
@@ -51,8 +54,8 @@
 
 ## 三、 核心技术管线架构
 
-### 1. 默认开启的强制静态类型检查器 (`typecheckTS`)
-在点击「▶ 运行」或「🐞 Debug 调试」前，引擎首先执行双遍静态类型检查（`STRICT_TS = true`）：
+### 1. 默认开启的内置子集类型检查器 (`typecheckTS`，非完整 tsc)
+在点击「▶ 运行」或「🐞 Debug 调试」前，引擎首先执行双遍静态类型检查（`STRICT_TS = true`）。该检查器是项目自带的子集实现，不追求完整 tsc 语义；覆盖 / 不覆盖范围见 `SYNTAX_REFERENCE.md` 的「类型检查边界」，页面 SOURCE 旁的「TS 子集检查」也能查看。
 - **安全剥离行尾注释 (`stripInlineCommentSafe`)**：在保留字符串字面量与模板字符串内容的前提下剥离行尾 `//` 与 `/* */` 注释。
 - **第一遍（Pass 1）**：收集 `interface` 多行/单行接口定义、`type` 类型别名以及函数签名（含必填/可选参数、默认参数类型推导、返回类型注解，并对未标注类型的参数报 `TS7006`）。
 - **第二遍（Pass 2）**：逐行推导表达式类型并校验：
@@ -88,22 +91,25 @@
 - 根据数据结构元素规模计算压力值 `pressure` 决定单双列跨度（`span 1` 或 `span 2`）；若单列卡片总数为奇数，自动将其中压力最大的一张升级为整行双列（`span 2`），确保**所有单列卡片永远成对并排填满，绝不出现半行空缺**。
 
 ### 6. 极速 1920×1080 60fps 视频导出与 WebM 时长修复 (`exportVideo` + `fixWebmDuration`)
-- **离屏位图预烘焙 (`createImageBitmap`)**：导出开始前先将每一步的 `1920×1080` 画布预渲染为 GPU 位图，60fps 帧循环直接合成输出，录制期间不触发页面 DOM 重排。
+> **当前状态（实验性）**：编码管线、倍速和 WebM 时长修复可用；Canvas 渲染层尚未完整复刻 WATCH 卡片（`list` / `queue` / `heap` / `uf` 等仍为简化版）、步骤胶囊和溢出处理，导出内容可能少于屏幕显示。完整对齐的工作量已另行评估。
+- **WebCodecs 离线编码 + 确定性 WebM 封装**：优先使用 `VideoEncoder` 逐帧编码，MediaRecorder 作为 fallback；导出期间不依赖页面 DOM 布局。
 - **5 档倍速控制**：支持 `0.75x`、`1x`、`1.5x`、`2x`、`3x` 五档倍速。
 - **EBML 时长元数据注入 (`fixWebmDuration`)**：录制完成后自动解析 WebM 二进制头部并在 `Segment Info (0x1549A966)` 中写入精确的 `Duration (0x4489)` Float64 毫秒值，彻底解决浏览器原生 `MediaRecorder` 导出视频在播放器中显示时长异常（如 `26113:02`）的问题。
 
 ### 7. 声明集合着色 (`collectDeclaredNames` + `hl(t, declared)`)
+- CodeMirror 模式下由 `editor/cm-entry.js` 分别用 `.cm-declared`（浅蓝 `#9cdcfe`）和 `.cm-builtin`（暖金 `#dcdcaa`）标记**用户声明名**与**内置名**；属性键和点号后的字段名使用紫色（声明 / 内置装饰会跳过 `.` 后的位置，避免覆盖属性色）；比较 / 逻辑运算符保持白色，匹配括号使用金色辉光。旧的 `hl()` 仍用于 textarea 回退和画布导出。
 - **为什么按「声明」而不是按「长得像变量」着色**：旧的语法高亮把所有裸标识符都染成浅蓝，拼错的变量会冒充合法变量。现在先把当前缓冲区里的**真实声明**收集成一个 `Set`，高亮时逐词查表。
-- 收集来源：`stripTypes(src)` 之后的 `collectNames`（覆盖 `const/let/var`、数组/对象解构、函数 / 箭头 / class 方法参数、`for...of/in`、`catch` 绑定），再加上原始源码里的 `function / class / interface / type / enum` 名字，以及 `checkpoint`、`断点`、`console`、`Math` 等内置名字（`HIGHLIGHT_BUILTINS`）。
+- 声明来源：`stripTypes(src)` 之后的 `collectNames`（覆盖 `const/let/var`、数组/对象解构、函数 / 箭头 / class 方法参数、`for...of/in`、`catch` 绑定），再加上原始源码里的 `function / class / interface / type / enum` 名字。内置名不混入声明集合：TypeScript 使用 `HIGHLIGHT_BUILTINS`，Python 使用 `PY_ENGINE.builtins`，若用户重新声明同名变量则按自定义变量着色。
 - `hl(t, declared)` 的第二个参数为空时退化为旧行为（全部着色），便于测试与画布导出；编辑区始终传入真实集合。对象字面量的键（`{ val: 1 }`、行首 `key:`）仍然使用属性色，避免把「键」误读成「未声明变量」。
 - 结果按源码文本缓存（`DECLARED_NAMES_CACHE`），每次重绘只查一次表。
 
 ### 8. 悬停取值与可视化 (`hoverInfoFor` / `hoverTipHtml`)
-- 编辑区是 `textarea`（文字透明）+ 下方 `#highlight` 预览层，两层**字号、行高、内边距完全一致**，因此可以用等宽字宽把鼠标坐标换算成「第几行第几列」：`hoverHitFromEvent` → `hoverWordAt` 取出光标下的标识符。
+- 编辑区由 CodeMirror 6 承载；悬停用 `view.posAtCoords` 定位光标下的文本，再经 `hoverWordAt` 取出标识符（旧 textarea 只作为引擎的数据源保留在 DOM 中，屏幕上看不到）。
 - 取值只读当前步的快照（`TRACE.steps[cur]` 的 `v` / `ds`），当前栈帧找不到时回退到 `global` 帧；不做任何 `eval`，不会因为悬停产生副作用。
 - 浮层复用 WATCH 的 12 种渲染器（`VIZ[kind]`）画出同款缩略可视化；`LOCALS`/`WATCH` 卡片带 `data-var`，悬停同样生效。
 
 ### 9. 报错定位 (`liveTypeDiags` / `revealErrorLine` / `sourceLineFromStack`)
+- CodeMirror 模式下由 `editor/cm-entry.js` 的 lint 波浪线呈现诊断；下面描述的是旧 textarea 回退层。
 - **边写边检**：`updateEditorChrome` 通过 `liveTypeDiags`（按源码文本缓存）拿到 `typecheckTS` 的诊断，逐行加 `.ln.err`、左侧红条与 `✗ TSxxxx` 徽章；`TYPE_ERROR_LINES` / `RUNTIME_ERROR_LINES` 仍保留给「运行/调试」路径。
 - **点击诊断跳转**：`say(msg, cls, line)` 给日志条目写入 `data-line`，点击后 `revealErrorLine` 滚动并把光标放到该行。
 - **`▶ 运行` 的异常行号**：`evalCall` 会把 `e.stack` 带回，`anonStackLine` 取「逗号后 `<anonymous>:行:列`」这一帧，`fnBodyLineOffset` 在启动时实测 `new Function` 包装带来的偏移，`sourceLineFromStack` 再减掉首行 `checkpoint` 存根，即可把 V8 的栈行号还原成编辑器行号；解析失败或指到求值包装器时返回 `0`，退回原来的「调用失败」提示。
@@ -127,22 +133,36 @@
 
 ---
 
-## 四、 便携打包与迁移部署指南
+## 四、 Python 模式
 
-本项目已为你生成好开箱即用的便携部署目录与归档压缩包：
+- 顶部 `TS / PY` 切换；内置 6 个 Python 样例：冒泡排序、二分查找、BFS、LCS DP、结构集合、类 / 实例。
+- 运行时是 **Pyodide Web Worker**：支持 Python 标准库和 numpy（首次 `import numpy` 时加载）；**不做静态类型检查**，运行前只用 `ast.parse` / `compile` 检查语法。f-string 会区分绿色字面段与插值表达式，插值内变量正常着色；选中匹配跳过字符串文字与数字常量。
+- 入口规则与 TS 一致：最后一行直接写真实调用；旧的 `# 调用：expr` 注释仍兼容。调试/可视化复用 12 种 WATCH 渲染器、LOCALS、调用栈、悬停和 checkpoint。
+- 限制：`open()` 只作用于 Pyodide 的虚拟文件系统，不能读写本机文件；`input()` 没有终端；单次最多 2000 步 / 6 秒；Python 模式暂不支持视频导出。
+- 分享沙箱里 Python 模式受 iframe Worker 限制，加载失败时请把代码复制到完整页面运行。
 
-### 1. 现成便携产物清单
-- **`./dist-portable/` 目录**：纯净静态部署目录（包含 `index.html`、`README.md`、`USER_GUIDE.md`、`SYNTAX_REFERENCE.md`、`test-pipeline.mjs`、`smoke-e2e.mjs`），可直接复制到 Nginx、Apache、GitHub Pages、Vercel、Netlify、Cloudflare Pages 或任何静态托管目录。
-- **`./ts-playground-portable.zip`**：标准 ZIP 便携压缩包，可在 Windows / macOS / Linux 下直接解压使用。
-- **`./ts-playground-portable.tar.gz`**：标准 POSIX `.tar.gz` 压缩包，适合服务器与容器环境快速分发。
-- **页面内导出源码**：在浏览器打开应用后，点击右上角 **「⬇ 导出 / 下载 ▾」 → 「📄 导出 TypeScript 文件」**，即可把当前编辑器内容下载为 `.ts` 文件；文件名取 SOURCE 标题栏里那个可点击改名的芯片（切换内置样例时会自动变成 `lcs.ts`、`mergesort.ts` 等）。
-- **页面内导入源码**：点击顶部工具栏 **「📂 导入」** 选择本地 `.ts` / `.tsx` / `.js` / `.txt` 文件，内容读入编辑器并采用该文件名，然后即可运行 / 调试 / 再导出。
+---
 
-### 2. 常用命令（自检测试与重新打包）
+## 五、 构建、测试与部署
+
+### 1. 运行所需文件
+- `index.html`、`app-session.js`、`editor/cm.bundle.js`、`share.html`、`python/`（Python 模式）以及三份文档。
+- `editor/cm.bundle.js` 是 CodeMirror 6 的构建产物；源码在 `editor/cm-entry.js`。首次使用需要 `npm ci && npm run build:editor`。
+- Python 模式必须通过 HTTP(S) 打开；`file://` 双击只适合 TypeScript 模式，且不保证外部脚本加载。
+
+### 2. 常用命令
 ```bash
-# 1. 运行 Node.js 自动化单元测试（覆盖词法剥离、严格类型检查、按需 Debug、检查点保持进度、视频导出、声明着色 / 悬停取值 / 报错定位等 190+ 项断言（含 class / enum / 泛型 / 不支持语法提示））
-node test-pipeline.mjs
-
-# 2. 一键重新生成 dist-portable/ 目录及 .zip / .tar.gz 便携压缩包
-npm run pack
+npm ci           # 首次安装 CodeMirror / esbuild
+npm run build:editor  # 生成 editor/cm.bundle.js
+npm start        # 或 node python/serve.mjs；默认 http://127.0.0.1:5180/
+npm test         # 等价 node test-pipeline.mjs
+npm run build    # build:editor + 生成 dist/
 ```
+
+### 3. 部署说明
+- `npm run build` 不下载依赖、不启动服务，输出在 `dist/`；把整个目录上传到 Nginx、GitHub Pages、Netlify、Cloudflare Pages 等静态托管即可。
+- Python 运行时默认从 jsDelivr 加载；离线部署需把 Pyodide 复制到 `python/pyodide/`，并在页面加载前设置 `window.PYODIDE_BASE = 'python/pyodide/'`（以 `/` 结尾）。
+- 分享链接会打开 `share.html`，在 `sandbox="allow-scripts allow-downloads"`（无 `allow-same-origin`）的 iframe 中加载分享代码；代码不能访问主页面的 DOM / localStorage，也不会自动运行。Python 模式在沙箱内受 Worker/iframe 限制，若加载失败请把代码复制到完整页面运行。
+- 页面内仍可导入 / 导出 `.ts` / `.py`，以及导出视频。
+- CI：`.github/workflows/ci.yml` 在 push / PR 时运行 `node test-pipeline.mjs` 和 `node scripts/build.mjs`。
+- 许可证：当前 `package.json` 为 `private` + `UNLICENSED`。对外发布前请选择并补充 `LICENSE`（MIT / Apache-2.0 / 商业许可）；CodeMirror 6 使用 MIT 许可，分发时请保留其版权声明，Pyodide 使用 MPL-2.0。
