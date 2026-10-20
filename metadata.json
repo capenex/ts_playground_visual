@@ -1,0 +1,5 @@
+{
+  "name": "TypeScript Playground · Trace Debugger",
+  "description": "Self-contained TypeScript playground with a unified source editor and step-through trace debugger.",
+  "requestFramePermissions": []
+}

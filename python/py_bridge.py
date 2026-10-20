@@ -240,8 +240,8 @@ def _format_value(value):
             text = repr(value)
         except Exception:
             text = "<%s>" % type(value).__name__
-        return text if len(text) <= 80 else text[:79] + "…"
-    return _safe_repr(value, 80)
+        return text if len(text) <= 400 else text[:399] + "…"
+    return _safe_repr(value, 400)
 
 
 def _frame_label(frame):

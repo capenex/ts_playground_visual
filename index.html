@@ -1138,8 +1138,8 @@ let LANG_BUFFERS = { ts: null, python: null };
 let PY_DIAGS = [];
 
 /* ── trace / on-demand debug state & safety limits ── */
-const MAX_STEPS = 2000;
-const MAX_EXEC_MS = 2500;
+const MAX_STEPS = 5000;
+const MAX_EXEC_MS = 3500;
 /* ▶ 运行 (non-debug) wall-clock budget: an instrumented loop counter force-stops runaway loops. */
 const RUN_TIMEOUT_MS = 2000;
 const AUTO_PLAY_MS = 900;
@@ -1696,6 +1696,7 @@ function stripTypes(src) {
       parenDepth = Math.max(0, parenDepth - 1);
       out += c;
       i++;
+      while (i < n && src[i] === '!' && src[i + 1] !== '=') i++;
       continue;
     }
 
@@ -1821,6 +1822,7 @@ function stripTypes(src) {
       }
 
       out += word;
+      while (i < n && src[i] === '!' && src[i + 1] !== '=') i++;
 
       {
         let jg = i;
@@ -1862,6 +1864,12 @@ function stripTypes(src) {
           i = typeEnd;
           continue;
         }
+      }
+
+      if (src[j] === '?' && (src[j + 1] === ',' || src[j + 1] === ')') && parenDepth > 0 && !isTernaryColonNow()) {
+        out += src.slice(i, j);
+        i = j + 1;
+        continue;
       }
 
       if (src[j] === ':') {
@@ -3193,28 +3201,62 @@ function stripInlineCommentSafe(line) {
 function normalizeTsType(rawType) {
   if (!rawType) return 'any';
   let t = rawType.trim().replace(/\s+/g, '');
-  const arrGeneric = t.match(/^Array<(.+)>$/);
+  while (t.startsWith('(') && t.endsWith(')') && findBalancedParen(t, 0) === t.length - 1) {
+    t = t.slice(1, -1);
+  }
+  const parenArr = t.match(/^\(([^()]+)\)\[\]$/);
+  if (parenArr) {
+    t = normalizeTsType(parenArr[1]) + '[]';
+  }
+  const arrGeneric = t.match(/^(?:Readonly)?Array<(.+)>$/);
   if (arrGeneric) {
     t = normalizeTsType(arrGeneric[1]) + '[]';
   }
   return t;
 }
 
+function splitTopLevelUnion(typeStr) {
+  const parts = [];
+  let depth = 0, cur = '';
+  for (let i = 0; i < typeStr.length; i++) {
+    const ch = typeStr[i];
+    if (ch === '<' || ch === '(' || ch === '[' || ch === '{') depth++;
+    else if (ch === '>' || ch === ')' || ch === ']' || ch === '}') depth--;
+    if (ch === '|' && depth === 0) {
+      if (cur) parts.push(cur);
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  if (cur) parts.push(cur);
+  return parts;
+}
+
+function stripNullableFromType(typeStr, target) {
+  if (!typeStr) return 'any';
+  const norm = normalizeTsType(typeStr);
+  const parts = splitTopLevelUnion(norm).filter(p => p !== target);
+  return parts.length ? parts.join('|') : norm;
+}
+
 function isTsAssignable(actual, expected) {
   if (!actual || !expected) return true;
   const a = normalizeTsType(actual);
   const e = normalizeTsType(expected);
-  if (a === e || a === 'any' || a === 'unknown' || e === 'any' || e === 'unknown') return true;
+  if (a === e || a === 'any' || a === 'unknown' || e === 'any' || e === 'unknown' || a === 'never') return true;
   if (a === 'any[]' && e.endsWith('[]')) return true;
   if (a === 'any[][]' && e.endsWith('[][]')) return true;
-  if (e.includes('|')) {
-    return e.split('|').some(part => isTsAssignable(a, part));
-  }
-  if (a.includes('|')) {
-    return a.split('|').every(part => isTsAssignable(part, e));
-  }
   if (a.endsWith('[]') && e.endsWith('[]')) {
     return isTsAssignable(a.slice(0, -2), e.slice(0, -2));
+  }
+  const eParts = splitTopLevelUnion(e);
+  if (eParts.length > 1) {
+    return eParts.some(part => isTsAssignable(a, part));
+  }
+  const aParts = splitTopLevelUnion(a);
+  if (aParts.length > 1) {
+    return aParts.every(part => isTsAssignable(part, e));
   }
   return false;
 }
@@ -3348,14 +3390,38 @@ function typecheckTS(src, strict = STRICT_TS) {
       s = s.slice(1, -1).trim();
     }
 
-    const asMatch = s.match(/^([\s\S]+?)\s+(?:as|satisfies)\s+([A-Za-z_$][\w$<>[\]\s|]*)$/);
-    if (asMatch) {
-      return resolveAlias(asMatch[2]);
+    const hadTrailingBang = s.endsWith('!') && !s.endsWith('!=');
+    while (s.endsWith('!') && !s.endsWith('!=')) {
+      s = s.slice(0, -1).trim();
+    }
+    if (hadTrailingBang) {
+      const innerT = inferType(s, lineNum);
+      return stripNullableFromType(stripNullableFromType(innerT, 'null'), 'undefined');
+    }
+
+    // Top-level `as` or `satisfies` cast (only when outside parens/brackets/braces)
+    {
+      let d = 0, castType = null;
+      for (let i = 0; i < s.length; i++) {
+        const ch = s[i];
+        if (ch === '"' || ch === "'" || ch === '`') { i = skipString(s, i) - 1; continue; }
+        if (ch === '(' || ch === '[' || ch === '{') d++;
+        else if (ch === ')' || ch === ']' || ch === '}') d--;
+        else if (d === 0 && isWS(ch)) {
+          const m = s.slice(i).match(/^\s+(?:as|satisfies)\s+([A-Za-z_$][\w$<>[\]\s|()]*)$/);
+          if (m && !/[()]/.test(m[1].replace(/\([^()]*\)\[\]/g, ''))) {
+            castType = resolveAlias(m[1]);
+            break;
+          }
+        }
+      }
+      if (castType) return castType;
     }
 
     if (/^(true|false)$/.test(s)) return 'boolean';
     if (s === 'null') return 'null';
     if (s === 'undefined') return 'undefined';
+    if (s === 'Infinity' || s === '-Infinity' || s === 'NaN') return 'number';
     if (/^[+-]?\d+(?:\.\d+)?$/.test(s)) return 'number';
     if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
       return 'string';
@@ -3376,10 +3442,20 @@ function typecheckTS(src, strict = STRICT_TS) {
       const vt = setCtor[1] ? resolveAlias(setCtor[1]) : 'any';
       return `Set<${vt}>`;
     }
-    const arrFill = s.match(/^Array\s*\([^)]*\)\s*\.fill\s*\(([^)]+)\)$/);
+    const arrFill = s.match(/^(?:new\s+)?Array\s*(?:<\s*([^>]+)\s*>)?\s*\([^)]*\)\s*\.fill\s*\(([\s\S]+)\)$/);
     if (arrFill) {
-      const elemT = inferType(arrFill[1], lineNum);
+      const explicitT = arrFill[1] ? resolveAlias(arrFill[1]) : null;
+      const elemT = explicitT || inferType(arrFill[2], lineNum);
       return elemT + '[]';
+    }
+    const arrCtor = s.match(/^(?:new\s+)?Array\s*(?:<\s*([^>]+)\s*>)?\s*\([^)]*\)$/);
+    if (arrCtor) {
+      const explicitT = arrCtor[1] ? resolveAlias(arrCtor[1]) : 'any';
+      return explicitT + '[]';
+    }
+    const newClassM = s.match(/^new\s+([A-Za-z_$][\w$]*)\s*(?:<[^>]*>)?\s*\(/);
+    if (newClassM && !/^(Map|Set|Array)$/.test(newClassM[1])) {
+      return resolveAlias(newClassM[1]);
     }
 
     if (s.startsWith('[') && s.endsWith(']') && findBalancedParen(s, 0) === s.length - 1) {
@@ -3388,11 +3464,14 @@ function typecheckTS(src, strict = STRICT_TS) {
       const elems = splitTopLevel(inner).map(e => inferType(e, lineNum));
       const concrete = elems.filter(t => t !== 'any');
       if (!concrete.length) return 'any[]';
-      const first = concrete[0];
-      if (concrete.every(t => isTsAssignable(t, first) && isTsAssignable(first, t))) {
-        return first + '[]';
-      }
-      return concrete.join('|') + '[]';
+      const unique = [];
+      concrete.forEach(t => {
+        splitTopLevelUnion(normalizeTsType(t)).forEach(u => {
+          if (!unique.includes(u)) unique.push(u);
+        });
+      });
+      if (unique.length === 1) return unique[0] + '[]';
+      return unique.join('|') + '[]';
     }
 
     if (s.startsWith('{') && s.endsWith('}') && findBalancedParen(s, 0) === s.length - 1) {
@@ -3427,7 +3506,10 @@ function typecheckTS(src, strict = STRICT_TS) {
         inferType(s.slice(0, qIdx), lineNum);
         const t1 = inferType(s.slice(qIdx + 1, cIdx), lineNum);
         const t2 = inferType(s.slice(cIdx + 1), lineNum);
-        return t1 === t2 ? t1 : `${t1}|${t2}`;
+        if (t1 === t2) return t1;
+        if (isTsAssignable(t1, t2)) return t2;
+        if (isTsAssignable(t2, t1)) return t1;
+        return `${t1}|${t2}`;
       }
     }
 
@@ -3464,7 +3546,24 @@ function typecheckTS(src, strict = STRICT_TS) {
         if (ch === '(' || ch === '[' || ch === '{') d++;
         else if (ch === ')' || ch === ']' || ch === '}') d--;
         else if (d === 0) {
-          if ((ch === '<' || ch === '>') && (s[i + 1] === ch || s[i - 1] === ch)) continue;
+          if (ch === '<' || ch === '>') {
+            if (s[i + 1] === ch || s[i - 1] === ch) continue;
+            if (ch === '<') {
+              const before = s.slice(0, i).trim();
+              if (/(?:^|\bnew\s+|\.)[A-Za-z_$][\w$]*$/.test(before)) {
+                let gd = 1, k = i + 1;
+                while (k < s.length && gd > 0) {
+                  if (s[k] === '<') gd++;
+                  else if (s[k] === '>') gd--;
+                  k++;
+                }
+                if (gd === 0 && /^\s*\(/.test(s.slice(k))) {
+                  i = k - 1;
+                  continue;
+                }
+              }
+            }
+          }
           const rest = s.slice(i);
           const m = rest.match(/^(===|!==|<=|>=|==|!=|<|>)(?!=)/);
           if (m && i > 0) {
@@ -3672,30 +3771,40 @@ function typecheckTS(src, strict = STRICT_TS) {
       if (pos === s.length) return curType;
     }
 
-    // Property access chain: a.b.c
-    if (/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+$/.test(s)) {
-      const parts = s.split('.');
-      let curType = env.has(parts[0]) ? env.get(parts[0]).type : 'any';
-      for (let pIdx = 1; pIdx < parts.length; pIdx++) {
-        const prop = parts[pIdx];
-        if (prop === 'length' && (curType.endsWith('[]') || curType === 'string')) {
+    // Property access chain: a.b.c (with optional non-null assertions a!.b!.c)
+    if (/^[A-Za-z_$][\w$]*!*(?:\.[A-Za-z_$][\w$]*!*)+$/.test(s)) {
+      const rawParts = s.split('.');
+      const firstBase = rawParts[0].replace(/!+$/, '');
+      let curType = env.has(firstBase) ? env.get(firstBase).type : 'any';
+      if (rawParts[0].endsWith('!')) {
+        curType = stripNullableFromType(stripNullableFromType(curType, 'null'), 'undefined');
+      }
+      for (let pIdx = 1; pIdx < rawParts.length; pIdx++) {
+        const rawProp = rawParts[pIdx];
+        const hasBang = rawProp.endsWith('!');
+        const prop = rawProp.replace(/!+$/, '');
+        const lookupType = stripNullableFromType(stripNullableFromType(curType, 'null'), 'undefined');
+        if (prop === 'length' && (lookupType.endsWith('[]') || lookupType === 'string')) {
           curType = 'number';
           continue;
         }
-        if (prop === 'size' && (curType.startsWith('Map<') || curType.startsWith('Set<'))) {
+        if (prop === 'size' && (lookupType.startsWith('Map<') || lookupType.startsWith('Set<'))) {
           curType = 'number';
           continue;
         }
-        const shape = getInterfaceShape(curType);
+        const shape = getInterfaceShape(lookupType);
         if (shape) {
           if (!shape.has(prop)) {
-            addDiag(lineNum, 'TS2339', `类型 "${curType}" 上不存在属性 "${prop}"`);
+            addDiag(lineNum, 'TS2339', `类型 "${lookupType}" 上不存在属性 "${prop}"`);
             return 'any';
           }
           curType = shape.get(prop).type;
         } else {
-          if (prop === 'length' || prop === 'size' || prop === 'val') return 'number';
-          curType = 'any';
+          if (prop === 'length' || prop === 'size' || prop === 'val') curType = 'number';
+          else curType = 'any';
+        }
+        if (hasBang) {
+          curType = stripNullableFromType(stripNullableFromType(curType, 'null'), 'undefined');
         }
       }
       return curType;
@@ -3735,10 +3844,11 @@ function typecheckTS(src, strict = STRICT_TS) {
     if (activeInterface) {
       const closeIdx = raw.indexOf('}');
       const memberPart = closeIdx >= 0 ? raw.slice(0, closeIdx).trim() : raw;
-      if (memberPart) {
+      if (memberPart && !/^(?:constructor|[A-Za-z_$][\w$]*)\s*\(/.test(memberPart)) {
         memberPart.split(/[;,]/).map(s => s.trim()).filter(Boolean).forEach(mem => {
+          if (mem.includes('(')) return;
           const cleaned = mem.replace(/^(?:readonly|public|private|protected|static)\s+/, '');
-          const pm = cleaned.match(/^([A-Za-z_$][\w$]*)(\?)?\s*:\s*(.+)$/);
+          const pm = cleaned.match(/^([A-Za-z_$][\w$]*)(\?)?\s*:\s*([^=]+?)(?:\s*=[\s\S]+)?$/);
           if (pm) {
             activeInterface.set(pm[1], { type: resolveAlias(pm[3].trim()), optional: Boolean(pm[2]) });
           }
@@ -3750,7 +3860,7 @@ function typecheckTS(src, strict = STRICT_TS) {
       continue;
     }
 
-    const ifaceStart = raw.match(/^(?:export\s+)?interface\s+([A-Za-z_$][\w$]*)\s*\{(.*)$/);
+    const ifaceStart = raw.match(/^(?:export\s+)?(?:interface|class)\s+([A-Za-z_$][\w$]*)(?:\s*<[^>]*>)?(?:\s+extends\s+[^{]+)?(?:\s+implements\s+[^{]+)?\s*\{(.*)$/);
     if (ifaceStart) {
       const ifaceName = ifaceStart[1];
       const rest = ifaceStart[2].trim();
@@ -3759,8 +3869,9 @@ function typecheckTS(src, strict = STRICT_TS) {
       if (rest.includes('}')) {
         const inner = rest.slice(0, rest.indexOf('}')).trim();
         inner.split(/[;,]/).map(s => s.trim()).filter(Boolean).forEach(mem => {
+          if (mem.includes('(')) return;
           const cleaned = mem.replace(/^(?:readonly|public|private|protected|static)\s+/, '');
-          const pm = cleaned.match(/^([A-Za-z_$][\w$]*)(\?)?\s*:\s*(.+)$/);
+          const pm = cleaned.match(/^([A-Za-z_$][\w$]*)(\?)?\s*:\s*([^=]+?)(?:\s*=[\s\S]+)?$/);
           if (pm) {
             propMap.set(pm[1], { type: resolveAlias(pm[3].trim()), optional: Boolean(pm[2]) });
           }
@@ -3782,42 +3893,55 @@ function typecheckTS(src, strict = STRICT_TS) {
       continue;
     }
 
-    const fnMatch = raw.match(/^(?:export\s+)?(?:default\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(([^)]*)\)\s*(?::\s*([^{]+))?\s*\{?/);
-    if (fnMatch) {
+    const fnMatch = raw.match(/^(?:export\s+)?(?:default\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(/);
+    if (fnMatch && raw.indexOf('(') >= 0) {
       const fnName = fnMatch[1];
-      const paramStr = fnMatch[2].trim();
-      const retType = fnMatch[3] ? resolveAlias(fnMatch[3].trim()) : 'any';
-      const rawParams = paramStr ? splitTopLevel(paramStr) : [];
-      const params = [];
-      let minArgs = 0;
+      let headerStr = raw;
+      let scanLine = i;
+      while (findBalancedParen(headerStr, headerStr.indexOf('(')) < 0 && scanLine + 1 < lines.length) {
+        scanLine++;
+        headerStr += ' ' + stripInlineCommentSafe(lines[scanLine]).trim();
+      }
+      const openP = headerStr.indexOf('(');
+      const closeP = findBalancedParen(headerStr, openP);
+      if (closeP > openP) {
+        const paramStr = headerStr.slice(openP + 1, closeP).trim();
+        const afterClose = headerStr.slice(closeP + 1).trim();
+        const retM = afterClose.match(/^:\s*([^{]+?)\s*\{?$/);
+        const retType = retM ? resolveAlias(retM[1].trim()) : 'any';
+        const rawParams = paramStr ? splitTopLevel(paramStr) : [];
+        const params = [];
+        let minArgs = 0;
 
-      rawParams.forEach(pRaw => {
-        const p = pRaw.trim();
-        if (!p) return;
-        const pm = p.match(/^(?:\.\.\.)?([A-Za-z_$][\w$]*)(\?)?(?:\s*:\s*([^=]+))?(?:\s*=\s*(.+))?$/);
-        if (pm) {
-          const pName = pm[1];
-          const isOpt = Boolean(pm[2] || pm[4]);
-          let pType = pm[3] ? resolveAlias(pm[3].trim()) : null;
-          if (!pType && pm[4]) {
-            pType = inferType(pm[4].trim(), lineNum);
+        rawParams.forEach(pRaw => {
+          const p = pRaw.trim();
+          if (!p) return;
+          const pm = p.match(/^(?:\.\.\.)?([A-Za-z_$][\w$]*)(\?)?(?:\s*:\s*([^=]+))?(?:\s*=\s*(.+))?$/);
+          if (pm) {
+            const pName = pm[1];
+            const isOpt = Boolean(pm[2] || pm[4]);
+            let pType = pm[3] ? resolveAlias(pm[3].trim()) : null;
+            if (!pType && pm[4]) {
+              pType = inferType(pm[4].trim(), lineNum);
+            }
+            if (!pType) {
+              addDiag(lineNum, 'TS7006', `参数 "${pName}" 隐式具有 "any" 类型（严格模式下请显式添加类型注解，如 ${pName}: number）`);
+              pType = 'any';
+            }
+            if (!isOpt) minArgs++;
+            params.push({ name: pName, type: pType, optional: isOpt });
+            env.set(pName, { type: pType, isConst: false, line: lineNum, declaredType: pType });
           }
-          if (!pType) {
-            addDiag(lineNum, 'TS7006', `参数 "${pName}" 隐式具有 "any" 类型（严格模式下请显式添加类型注解，如 ${pName}: number）`);
-            pType = 'any';
-          }
-          if (!isOpt) minArgs++;
-          params.push({ name: pName, type: pType, optional: isOpt });
-          env.set(pName, { type: pType, isConst: false, line: lineNum });
-        }
-      });
+        });
 
-      fns.set(fnName, { name: fnName, params, minArgs, returnType: retType, line: lineNum, hasValueReturn: false });
+        fns.set(fnName, { name: fnName, params, minArgs, returnType: retType, line: lineNum, hasValueReturn: false });
+      }
     }
   }
 
   // Pass 2: Check statements, declarations, reassignments, returns, and calls line-by-line
   let currentFn = null;
+  const fnScopeStack = [];
   let braceDepth = 0;
   let fnStartBraceDepth = 0;
   let inInterfaceBlock = false;
@@ -3849,11 +3973,53 @@ function typecheckTS(src, strict = STRICT_TS) {
     }
 
     const fnOpen = trimmed.match(/^(?:export\s+)?(?:default\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(/);
-    if (fnOpen && fns.has(fnOpen[1])) {
-      currentFn = fns.get(fnOpen[1]);
+    const arrowFnOpen = !fnOpen ? trimmed.match(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?\(([^)]*)\)\s*(?::\s*([^=]+?))?\s*=>\s*\{/) : null;
+    if (fnOpen || arrowFnOpen) {
+      if (currentFn) {
+        fnScopeStack.push({ fn: currentFn, startDepth: fnStartBraceDepth });
+      }
+      if (fnOpen && fns.has(fnOpen[1])) {
+        currentFn = fns.get(fnOpen[1]);
+      } else {
+        const fName = fnOpen ? fnOpen[1] : arrowFnOpen[1];
+        let paramStr = '';
+        let retType = 'any';
+        if (fnOpen) {
+          const openP = trimmed.indexOf('(');
+          const closeP = findBalancedParen(trimmed, openP);
+          if (closeP > openP) {
+            paramStr = trimmed.slice(openP + 1, closeP).trim();
+            const afterClose = trimmed.slice(closeP + 1).trim();
+            const retM = afterClose.match(/^:\s*([^{]+?)\s*\{?$/);
+            if (retM) retType = resolveAlias(retM[1].trim());
+          }
+        } else {
+          paramStr = (arrowFnOpen[2] || '').trim();
+          retType = arrowFnOpen[3] ? resolveAlias(arrowFnOpen[3].trim()) : 'any';
+        }
+        const rawParams = paramStr ? splitTopLevel(paramStr) : [];
+        const params = [];
+        let minArgs = 0;
+        rawParams.forEach(pRaw => {
+          const p = pRaw.trim();
+          if (!p) return;
+          const pm = p.match(/^(?:\.\.\.)?([A-Za-z_$][\w$]*)(\?)?(?:\s*:\s*([^=]+))?(?:\s*=\s*(.+))?$/);
+          if (pm) {
+            const pName = pm[1];
+            const isOpt = Boolean(pm[2] || pm[4]);
+            let pType = pm[3] ? resolveAlias(pm[3].trim()) : (pm[4] ? inferType(pm[4].trim(), lineNum) : 'any');
+            if (!isOpt) minArgs++;
+            params.push({ name: pName, type: pType, optional: isOpt });
+            env.set(pName, { type: pType, isConst: false, line: lineNum, declaredType: pType });
+          }
+        });
+        currentFn = { name: fName, params, minArgs, returnType: retType, line: lineNum, hasValueReturn: false };
+        fns.set(fName, currentFn);
+      }
+      currentFn.params.forEach(p => {
+        env.set(p.name, { type: p.type, isConst: false, line: currentFn.line, declaredType: p.type });
+      });
       fnStartBraceDepth = braceDepth;
-      // One-line body (`function f(): number { return 1; }`): the closing brace is on
-      // this same line, so record the value return before the brace scan below.
       const rm = stripInlineCommentSafe(rawLine).match(/\breturn\b([^;}\n]*)/);
       if (rm && rm[1].trim()) currentFn.hasValueReturn = true;
     }
@@ -3869,11 +4035,17 @@ function typecheckTS(src, strict = STRICT_TS) {
           if (currentFn.returnType !== 'any' && currentFn.returnType !== 'void' && currentFn.returnType !== 'unknown' && !currentFn.hasValueReturn) {
             addDiag(currentFn.line, 'TS2355', `函数 "${currentFn.name}" 声明返回类型为 "${currentFn.returnType}"，但缺少 return 返回值语句`);
           }
-          currentFn = null;
+          if (fnScopeStack.length > 0) {
+            const prev = fnScopeStack.pop();
+            currentFn = prev.fn;
+            fnStartBraceDepth = prev.startDepth;
+          } else {
+            currentFn = null;
+          }
         }
       }
     }
-    if (fnOpen) continue;
+    if (fnOpen || arrowFnOpen) continue;
 
     // For-loop header: for (let i = 0; i < n; i++)
     const forM = trimmed.match(/^for\s*\(\s*(const|let|var)\s+([^;]+);([^;]*);([^)]*)\)/);
@@ -3922,7 +4094,12 @@ function typecheckTS(src, strict = STRICT_TS) {
             const vName = pm[1];
             const declT = pm[2] ? resolveAlias(pm[2].trim()) : null;
             const initExpr = pm[3] ? pm[3].trim() : null;
-            const initT = initExpr ? inferType(initExpr, lineNum) : 'any';
+            const narrowedPropKey = initExpr ? '__narrowed_prop_' + initExpr : '';
+            let initT = initExpr ? inferType(initExpr, lineNum) : 'any';
+            if (narrowedPropKey && env.has(narrowedPropKey)) {
+              initT = env.get(narrowedPropKey).type;
+              env.delete(narrowedPropKey);
+            }
 
             if (declT && initExpr) {
               if (initExpr.startsWith('{') && getInterfaceShape(declT)) {
@@ -3933,7 +4110,7 @@ function typecheckTS(src, strict = STRICT_TS) {
                 addDiag(lineNum, 'TS2322', `不能将类型 "${initT}" 分配给类型 "${declT}" (变量 "${vName}")`);
               }
             }
-            env.set(vName, { type: declT || initT, isConst, line: lineNum });
+            env.set(vName, { type: declT || initT, isConst, line: lineNum, declaredType: declT || initT });
           }
         });
       }
@@ -3961,10 +4138,73 @@ function typecheckTS(src, strict = STRICT_TS) {
       continue;
     }
 
+    // Inline if (...) return / break / continue (with optional early-exit type narrowing)
+    const inlineIfRet = trimmed.match(/^if\s*\((.+?)\)\s*(return(?:\s+([\s\S]+?))?|break|continue);?$/);
+    if (inlineIfRet) {
+      const condStr = inlineIfRet[1].trim();
+      const actionKw = inlineIfRet[2];
+      const retExpr = inlineIfRet[3] ? inlineIfRet[3].trim() : '';
+      inferType(condStr, lineNum);
+      if (actionKw.startsWith('return')) {
+        const retT = retExpr ? inferType(retExpr, lineNum) : 'void';
+        if (currentFn) {
+          if (retExpr) currentFn.hasValueReturn = true;
+          const expectedRet = currentFn.returnType;
+          if (expectedRet && expectedRet !== 'any' && !isTsAssignable(retT, expectedRet)) {
+            addDiag(lineNum, 'TS2322', `不能将返回值类型 "${retT}" 分配给函数 "${currentFn.name}" 声明的返回类型 "${expectedRet}"`);
+          }
+        }
+      }
+      // Early exit narrowing: if (x === null || ...) return/break/continue -> narrow x in subsequent code
+      condStr.split('||').forEach(clause => {
+        const cm = clause.trim().match(/^([A-Za-z_$][\w$]*)\s*===\s*(null|undefined)$/);
+        const cmRev = !cm ? clause.trim().match(/^(null|undefined)\s*===\s*([A-Za-z_$][\w$]*)$/) : null;
+        const negM = (!cm && !cmRev) ? clause.trim().match(/^!\s*([A-Za-z_$][\w$]*)$/) : null;
+        const varName = cm ? cm[1] : (cmRev ? cmRev[2] : (negM ? negM[1] : null));
+        if (varName && env.has(varName)) {
+          const curInfo = env.get(varName);
+          let nextT = stripNullableFromType(curInfo.type, 'null');
+          nextT = stripNullableFromType(nextT, 'undefined');
+          env.set(varName, { ...curInfo, type: nextT });
+        }
+      });
+      continue;
+    }
+
     // If / while / else if conditions
     const condM = trimmed.match(/^(?:}\s*)?(?:if|while|else\s+if)\s*\(([\s\S]+)\)\s*\{?$/);
     if (condM) {
-      inferType(condM[1].trim(), lineNum);
+      const condStr = condM[1].trim();
+      inferType(condStr, lineNum);
+      // Narrow x !== null / x !== undefined inside while/if body
+      condStr.split('&&').forEach(clause => {
+        const cm = clause.trim().match(/^([A-Za-z_$][\w$]*)\s*!==\s*(null|undefined)$/);
+        if (cm && env.has(cm[1])) {
+          const curInfo = env.get(cm[1]);
+          env.set(cm[1], { ...curInfo, type: stripNullableFromType(curInfo.type, cm[2]) });
+        }
+        // If condition checks x.prop !== null, verify if next line assigns const v = x.prop; and narrow it
+        const propCm = clause.trim().match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+)\s*!==\s*(null|undefined)$/);
+        if (propCm && i + 1 < lines.length) {
+          const propExpr = propCm[1];
+          const nextTrim = stripInlineCommentSafe(lines[i + 1]).trim();
+          const nextDecl = nextTrim.match(/^(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+)\s*;?$/);
+          if (nextDecl && nextDecl[2] === propExpr) {
+            const propT = stripNullableFromType(inferType(propExpr, lineNum), propCm[2]);
+            env.set('__narrowed_prop_' + propExpr, { type: propT });
+          }
+        }
+      });
+      // Check if an upcoming line right after if (...) is a return/break/continue statement for early-exit narrowing
+      if (/^if\s*\(/.test(trimmed) && i + 1 < lines.length && /^\s*(?:return|break|continue)\b/.test(lines[i + 1])) {
+        condStr.split('||').forEach(clause => {
+          const cm = clause.trim().match(/^([A-Za-z_$][\w$]*)\s*===\s*(null|undefined)$/);
+          if (cm && env.has(cm[1])) {
+            const curInfo = env.get(cm[1]);
+            env.set(cm[1], { ...curInfo, type: stripNullableFromType(curInfo.type, cm[2]) });
+          }
+        });
+      }
       continue;
     }
 
@@ -3984,7 +4224,7 @@ function typecheckTS(src, strict = STRICT_TS) {
     }
 
     // Assignment or compound assignment: lhs = rhs / lhs += rhs (including property assignment u.age = "20")
-    const assignM = trimmed.match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\s*\[[^\]]+\])*)\s*(\+=|-=|\*=|\/=|=(?!=))\s*([\s\S]+?);?$/);
+    const assignM = trimmed.match(/^([A-Za-z_$][\w$!]*(?:\.[A-Za-z_$][\w$!]*|\s*\[[^\]]+\])*)\s*(\+=|-=|\*=|\/=|=(?!=))\s*([\s\S]+?);?$/);
     if (assignM) {
       const lhs = assignM[1].trim();
       const op = assignM[2];
@@ -3993,15 +4233,16 @@ function typecheckTS(src, strict = STRICT_TS) {
 
       if (/^[A-Za-z_$][\w$]*$/.test(lhs) && env.has(lhs)) {
         const info = env.get(lhs);
+        const checkTargetT = info.declaredType || info.type;
         if (info.isConst) {
           addDiag(lineNum, 'TS2588', `无法分配到 "${lhs}"，因为它是常数 (const)`);
-        } else if (info.type !== 'any') {
-          if (op === '=' && rhs.startsWith('{') && getInterfaceShape(info.type)) {
-            checkObjectLiteralAgainstShape(rhs, info.type, lineNum, `变量 "${lhs}"`);
+        } else if (checkTargetT !== 'any') {
+          if (op === '=' && rhs.startsWith('{') && getInterfaceShape(checkTargetT)) {
+            checkObjectLiteralAgainstShape(rhs, checkTargetT, lineNum, `变量 "${lhs}"`);
           } else {
             const effectiveT = op === '=' ? rhsT : inferType(`${lhs} ${op[0]} (${rhs})`, lineNum);
-            if (!isTsAssignable(effectiveT, info.type)) {
-              addDiag(lineNum, 'TS2322', `不能将类型 "${effectiveT}" 分配给类型 "${info.type}" (变量 "${lhs}")`);
+            if (!isTsAssignable(effectiveT, checkTargetT)) {
+              addDiag(lineNum, 'TS2322', `不能将类型 "${effectiveT}" 分配给类型 "${checkTargetT}" (变量 "${lhs}")`);
             }
           }
         }
@@ -4100,6 +4341,22 @@ function sourceLineFromStack(stack, lineCount) {
 /* Compile & evaluate one call. `opts.budgetMs` arms the loop watchdog: the instrumented
    `__t(line)` hooks count executions and throw once the wall-clock budget is spent, so a
    runaway loop is aborted on the spot and we still know which source line kept spinning. */
+function safeJSONStringify(val) {
+  if (val === undefined) return '(undefined)';
+  try {
+    const seen = new WeakSet();
+    return JSON.stringify(val, (k, v) => {
+      if (v !== null && typeof v === 'object') {
+        if (seen.has(v)) return '[Circular]';
+        seen.add(v);
+      }
+      return v;
+    });
+  } catch (_) {
+    try { return String(val); } catch (__) { return '[Object]'; }
+  }
+}
+
 function evalCall(js, call, opts) {
   const o = opts || {};
   const expr = stripTypes(call || 'undefined');
@@ -4231,7 +4488,7 @@ function runOnce(budgetMs) {
       return;
     }
     const elapsed = ' (' + r.elapsedMs + 'ms)';
-    say('✓ 运行完成  →  ' + (r.value === undefined ? '(undefined)' : JSON.stringify(r.value)) + elapsed, 'ok');
+    say('✓ 运行完成  →  ' + safeJSONStringify(r.value) + elapsed, 'ok');
   } catch (e) {
     say('✗ ' + (e && e.message ? e.message : e), 'err');
   }
@@ -4597,7 +4854,7 @@ function computeAndAppendNextStep(opts = {}) {
   if (runtimeErr) {
     say('✗ 运行时错误 [第 ' + pendingStep.line + ' 行]: ' + pendingStep.error + '（已运行到报错为止）', 'err');
   } else if (!paused && !opts.silent) {
-    say('✓ 调试运行完成  →  ' + (retVal === undefined ? '(undefined)' : JSON.stringify(retVal)), 'ok');
+    say('✓ 调试运行完成  →  ' + safeJSONStringify(retVal), 'ok');
   }
 
   return true;
@@ -5775,7 +6032,7 @@ function vizInterface(d) {
     const hasVal = f.v !== undefined;
     const isStr = typeof f.v === 'string';
     const valDisplay = hasVal
-      ? (isStr ? JSON.stringify(f.v) : (f.v !== null && typeof f.v === 'object' ? JSON.stringify(f.v) : String(f.v)))
+      ? (isStr ? JSON.stringify(f.v) : (f.v !== null && typeof f.v === 'object' ? safeJSONStringify(f.v) : String(f.v)))
       : '未实例化';
     return '<div class="viface-row' + (isHot ? ' hot' : '') + '">' +
       '<span class="viface-k">' + esc(f.k) + (f.optional ? '<span class="viface-opt">?</span>' : '') + '</span>' +
@@ -6084,7 +6341,7 @@ function runToNextCheckpoint() {
   } else if (finalSt && finalSt.isCheckpoint) {
     say('◉ 已运行到检查点 [第 ' + finalSt.line + ' 行] · ' + (finalSt.note || ''), 'ok');
   } else if (DEBUG_SESSION.finished) {
-    say('✓ 已运行至程序结束（后续无更多检查点）  →  ' + (DEBUG_SESSION.returnValue === undefined ? '(undefined)' : JSON.stringify(DEBUG_SESSION.returnValue)), 'ok');
+    say('✓ 已运行至程序结束（后续无更多检查点）  →  ' + safeJSONStringify(DEBUG_SESSION.returnValue), 'ok');
   }
 }
 

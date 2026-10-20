@@ -5,11 +5,13 @@
   "type": "module",
   "description": "TypeScript / Python visual playground and step debugger",
   "scripts": {
-    "start": "node python/serve.mjs",
+    "dev": "node server.mjs",
+    "start": "node server.mjs",
     "serve": "node python/serve.mjs",
     "test": "node test-pipeline.mjs",
+    "lint": "node test-pipeline.mjs",
     "build:editor": "node scripts/build-editor.mjs",
-    "build": "npm run build:editor && node scripts/build.mjs"
+    "build": "node test-pipeline.mjs && node scripts/build.mjs"
   },
   "engines": {
     "node": ">=18"

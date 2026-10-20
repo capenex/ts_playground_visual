@@ -1,0 +1,220 @@
+{
+  "total": 100,
+  "status": {
+    "pass": 68,
+    "compile-fail": 6,
+    "typecheck-fail": 24,
+    "harness-error": 1,
+    "runtime-fail": 1
+  },
+  "byTopic": {
+    "数组与双指针": {
+      "total": 5,
+      "pass": 5,
+      "rate": 100
+    },
+    "字符串与哈希": {
+      "total": 5,
+      "pass": 5,
+      "rate": 100
+    },
+    "链表基础": {
+      "total": 5,
+      "pass": 1,
+      "rate": 20
+    },
+    "二叉树基础": {
+      "total": 5,
+      "pass": 5,
+      "rate": 100
+    },
+    "数学与二分查找": {
+      "total": 5,
+      "pass": 5,
+      "rate": 100
+    },
+    "栈与基础计数": {
+      "total": 5,
+      "pass": 5,
+      "rate": 100
+    },
+    "双指针与数组": {
+      "total": 5,
+      "pass": 4,
+      "rate": 80
+    },
+    "滑动窗口与字符串": {
+      "total": 5,
+      "pass": 5,
+      "rate": 100
+    },
+    "哈希与前缀": {
+      "total": 5,
+      "pass": 4,
+      "rate": 80
+    },
+    "栈与队列": {
+      "total": 5,
+      "pass": 5,
+      "rate": 100
+    },
+    "链表中级": {
+      "total": 5,
+      "pass": 2,
+      "rate": 40
+    },
+    "二叉树遍历": {
+      "total": 5,
+      "pass": 0,
+      "rate": 0
+    },
+    "BST 与树构造": {
+      "total": 5,
+      "pass": 4,
+      "rate": 80
+    },
+    "图与网格": {
+      "total": 5,
+      "pass": 3,
+      "rate": 60
+    },
+    "回溯": {
+      "total": 5,
+      "pass": 2,
+      "rate": 40
+    },
+    "动态规划": {
+      "total": 5,
+      "pass": 2,
+      "rate": 40
+    },
+    "进阶动态规划": {
+      "total": 5,
+      "pass": 0,
+      "rate": 0
+    },
+    "图算法": {
+      "total": 5,
+      "pass": 4,
+      "rate": 80
+    },
+    "链表、树与堆": {
+      "total": 5,
+      "pass": 3,
+      "rate": 60
+    },
+    "字符串与单调栈": {
+      "total": 5,
+      "pass": 4,
+      "rate": 80
+    }
+  },
+  "causes": {
+    "非空断言 ! 未被类型剥离，编译语法错误": {
+      "count": 6,
+      "titles": [
+        "合并两个有序链表",
+        "链表中点",
+        "删除链表倒数第 N 个节点",
+        "环形链表",
+        "从前序与中序构造二叉树",
+        "合并 K 个升序链表"
+      ]
+    },
+    "检查器对 new Array<T>().fill(...) 的返回类型误判": {
+      "count": 12,
+      "titles": [
+        "除自身以外数组的乘积",
+        "每日温度",
+        "课程表",
+        "全排列",
+        "零钱兑换",
+        "不同路径",
+        "单词拆分",
+        "最长公共子序列",
+        "0-1 背包",
+        "分割等和子集",
+        "最大正方形",
+        "最大矩形"
+      ]
+    },
+    "其他类型检查失败": {
+      "count": 5,
+      "titles": [
+        "分隔链表",
+        "重排链表",
+        "组合总和",
+        "括号生成",
+        "编辑距离"
+      ]
+    },
+    "循环结构 JSON 序列化崩溃": {
+      "count": 1,
+      "titles": [
+        "复制带随机指针的链表"
+      ]
+    },
+    "联合类型 / 可空类型推断误报": {
+      "count": 6,
+      "titles": [
+        "二叉树的中序遍历",
+        "二叉树的层序遍历",
+        "锯齿形层序遍历",
+        "二叉树的右视图",
+        "验证二叉搜索树",
+        "克隆图"
+      ]
+    },
+    "Debug 2000 步上限": {
+      "count": 1,
+      "titles": [
+        "单词接龙"
+      ]
+    },
+    "while(true) 内返回被误判缺少 return": {
+      "count": 1,
+      "titles": [
+        "K 个一组翻转链表"
+      ]
+    }
+  },
+  "multi": {
+    "classes": 34,
+    "map": 10,
+    "set": 6,
+    "nestedArray": 23,
+    "arrayFill": 20,
+    "nonNull": 16
+  },
+  "complexityBuckets": {
+    "linear": 53,
+    "nLogN": 3,
+    "quadratic": 11,
+    "exponential": 10,
+    "log": 4
+  },
+  "kindsCoverage": {
+    "array": 42,
+    "map": 7,
+    "stack": 5,
+    "string": 18,
+    "list": 3,
+    "tree": 10,
+    "set": 5,
+    "grid": 14,
+    "interface": 5,
+    "queue": 4
+  },
+  "avgKinds": 1.13,
+  "noVisual": 33,
+  "code": {
+    "avg": 32.9,
+    "median": 29.5,
+    "max": 104
+  },
+  "steps": {
+    "avg": 58.9,
+    "max": 2000,
+    "limit": 1
+  }
+}

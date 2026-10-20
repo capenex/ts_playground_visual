@@ -422,6 +422,39 @@ run_counter(1, 3)
     try { return formatShortVal(value); } catch (_) { return String(value); }
   }
 
+  function fmtReturn(value, depth, seen) {
+    const d = depth || 0;
+    const s = seen || new WeakSet();
+    if (value === undefined) return '(undefined)';
+    if (value === null) return 'None';
+    if (typeof value === 'boolean') return value ? 'True' : 'False';
+    if (typeof value === 'number') return String(value);
+    if (typeof value === 'string') return JSON.stringify(value);
+    if (typeof value === 'object') {
+      if (s.has(value)) return '[Circular]';
+      if (d > 6) return String(value);
+      s.add(value);
+      if (Array.isArray(value)) {
+        return '[' + value.map(x => fmtReturn(x, d + 1, s)).join(', ') + ']';
+      }
+      if (typeof isMapLike === 'function' && isMapLike(value)) {
+        const entries = [];
+        value.forEach((v, k) => entries.push(fmtReturn(k, d + 1, s) + ': ' + fmtReturn(v, d + 1, s)));
+        return '{' + entries.join(', ') + '}';
+      }
+      if (typeof isSetLike === 'function' && isSetLike(value)) {
+        const items = [];
+        value.forEach(v => items.push(fmtReturn(v, d + 1, s)));
+        return items.length ? '{' + items.join(', ') + '}' : 'set()';
+      }
+      const keys = Object.keys(value);
+      const cls = value.__py_cls__;
+      const body = keys.map(k => k + '=' + fmtReturn(value[k], d + 1, s)).join(', ');
+      return cls && cls !== 'dict' && cls !== 'object' ? `${cls}(${body})` : `{${keys.map(k => JSON.stringify(k) + ': ' + fmtReturn(value[k], d + 1, s)).join(', ')}}`;
+    }
+    return String(value);
+  }
+
   function deriveAnim(record, vRaw, nextRaw, theLines, payload, isLast) {
     const line = record.note || '';
     const clean = line.trim();
@@ -532,7 +565,7 @@ run_counter(1, 3)
         type: 'assign',
         to: 'return',
         from: payload.__callExpr || '调用结果',
-        val: fmt(payload.__returnValueHydrated),
+        val: fmtReturn(payload.__returnValueHydrated),
       };
     }
     return null;
@@ -725,7 +758,7 @@ run_counter(1, 3)
         say('✓ Python 运行完成（共 ' + steps.length + ' 步，可逐步回放）', 'ok');
       }
       const rv = payload.__returnValueHydrated;
-      if (rv !== undefined && rv !== null) say('  →  ' + fmt(rv), 'ok');
+      if (rv !== undefined && rv !== null) say('  →  ' + fmtReturn(rv), 'ok');
       return true;
     } catch (err) {
       setStatus('未在调试', '');
@@ -770,7 +803,7 @@ run_counter(1, 3)
         setStatus('✗ 运行时报错', 'err');
       } else {
         const rv = hydrate(payload.returnValue);
-        say('✓ 运行完成  →  ' + (rv === undefined ? '(undefined)' : fmt(rv)), 'ok');
+        say('✓ 运行完成  →  ' + (rv === undefined ? '(undefined)' : fmtReturn(rv)), 'ok');
         setStatus('未在调试', '');
       }
       updateEditorChrome();
@@ -796,7 +829,8 @@ run_counter(1, 3)
     }
     if (nextIdx < 0) {
       nextIdx = TRACE.steps.length - 1;
-      say('✓ 已运行至程序结束（后续无更多检查点）', 'ok');
+      const rv = DEBUG_SESSION && DEBUG_SESSION.returnValue;
+      say('✓ 已运行至程序结束（后续无更多检查点）' + (rv !== undefined && rv !== null ? '  →  ' + fmtReturn(rv) : ''), 'ok');
     } else {
       const st = TRACE.steps[nextIdx];
       say('◉ 已运行到检查点 [第 ' + st.line + ' 行] · ' + (st.note || ''), 'ok');

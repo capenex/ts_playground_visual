@@ -931,7 +931,32 @@ setEditorVal(SAMPLES.classes);
 check('built-in classes sample debug-compiles at its default step',
   startDebug(6) === true && getDebugState().TRACE.steps.length > 1);
 
+// --- Benchmark regression suite: non-null assertion (!), generic Array<T>().fill, union/nullable narrowing, circular JSON
+r = stripTypes('const x = slow!.next!.next; const y = stack.pop()!; const z = a[0]!;');
+check('stripTypes removes postfix non-null assertions (!)', !r.includes('!') && r.includes('slow.next.next') && r.includes('stack.pop()') && r.includes('a[0]'), r);
+
+r = stripTypes('const ok = a !== b && !flag;');
+check('stripTypes preserves !== and prefix !', r.includes('a !== b') && r.includes('!flag'), r);
+
+check('typecheckTS infers new Array<number>(n).fill(0) as number[]',
+  typecheckTS('function f(n: number): number[] {\n  const dp: number[] = new Array<number>(n).fill(0);\n  return dp;\n}\n', true).length === 0);
+
+check('typecheckTS infers new Array<boolean>(n).fill(false) as boolean[]',
+  typecheckTS('function f(n: number): boolean[] {\n  const used: boolean[] = new Array<boolean>(n).fill(false);\n  return used;\n}\n', true).length === 0);
+
+check('typecheckTS accepts bare return inside nested void helper',
+  typecheckTS('function outer(nums: number[]): number[][] {\n  const res: number[][] = [];\n  const dfs = (): void => {\n    if (nums.length === 0) {\n      return;\n    }\n  };\n  dfs();\n  return res;\n}\n', true).length === 0);
+
+check('typecheckTS accepts parenthesized union array parameter (number | null)[]',
+  typecheckTS('function build(values: (number | null)[]): number {\n  return values.length;\n}\nbuild([1, null, 2, 3]);\n', true).length === 0);
+
+// Circular return value should not crash startDebug / runToNextCheckpoint / runOnce
+setEditorVal('class RNode {\n  val: number;\n  next: RNode | null;\n  random: RNode | null;\n  constructor(v: number) { this.val = v; this.next = null; this.random = null; }\n}\nfunction makeCycle(): RNode {\n  const a = new RNode(1);\n  const b = new RNode(2);\n  a.next = b;\n  b.random = a;\n  return a;\n}\nmakeCycle();\n');
+check('circular structure in return value runs and finishes debug without JSON crash',
+  startDebug(0) === true && (runToNextCheckpoint(), getDebugState().DEBUG_SESSION.finished && !getDebugState().DEBUG_SESSION.crashed));
+
 console.log(failed ? `\n${failed} FAILED` : '\nall passed');
 process.exit(failed ? 1 : 0);
+
 
 
