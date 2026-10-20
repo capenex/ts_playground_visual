@@ -53,6 +53,40 @@ def _is_displayable(name, value):
     return True
 
 
+_NON_INSTANCE_TYPES = (
+    type(None),
+    bool,
+    int,
+    float,
+    str,
+    bytes,
+    bytearray,
+    range,
+    list,
+    tuple,
+    dict,
+    set,
+    frozenset,
+    types.ModuleType,
+    types.FunctionType,
+    types.BuiltinFunctionType,
+    types.MethodType,
+    type,
+)
+
+
+def _is_user_instance(value):
+    if isinstance(value, _NON_INSTANCE_TYPES):
+        return False
+    cls = type(value)
+    mod = getattr(cls, "__module__", "")
+    if mod in ("__main__", FILENAME):
+        return True
+    if mod == "builtins":
+        return False
+    return hasattr(value, "__dict__") or bool(getattr(cls, "__slots__", None))
+
+
 def _fields_of_instance(value):
     fields = {}
     try:
@@ -204,7 +238,7 @@ def _tag_value(value, depth=0, memo=None, budget=None):
         return {"$t": "repr", "v": _safe_repr(value)}
 
     fields = _fields_of_instance(value)
-    if fields:
+    if fields or _is_user_instance(value):
         oid = id(value)
         if oid in memo:
             return {"$t": "ref", "id": memo[oid]}
@@ -226,7 +260,9 @@ def tag_value(value):
     return _tag_value(value)
 
 
-def _format_value(value):
+def _format_value(value, depth=0, seen=None):
+    if seen is None:
+        seen = set()
     if value is None:
         return "None"
     if isinstance(value, bool):
@@ -235,6 +271,28 @@ def _format_value(value):
         return repr(value)
     if isinstance(value, str):
         return json.dumps(value, ensure_ascii=False)
+    if _is_user_instance(value) and getattr(type(value), "__repr__", None) is object.__repr__:
+        oid = id(value)
+        if oid in seen:
+            return "%s(…)" % type(value).__name__
+        seen.add(oid)
+        fields = _fields_of_instance(value)
+        cls_name = type(value).__name__
+        if ("val" in fields or "value" in fields) and ("left" in fields or "right" in fields):
+            v = fields.get("val", fields.get("value"))
+            return "Tree(%s)" % _format_value(v, depth + 1, seen)
+        if ("val" in fields or "value" in fields) and "next" in fields:
+            v = fields.get("val", fields.get("value"))
+            return "List(%s)" % _format_value(v, depth + 1, seen)
+        if depth >= 2:
+            return "%s(…)" % cls_name
+        parts = []
+        for idx, (k, v) in enumerate(fields.items()):
+            if idx >= 4:
+                parts.append("…")
+                break
+            parts.append("%s=%s" % (k, _format_value(v, depth + 1, seen)))
+        return "%s(%s)" % (cls_name, ", ".join(parts))
     if isinstance(value, (list, tuple, dict, set, frozenset)):
         try:
             text = repr(value)
@@ -252,7 +310,7 @@ def _frame_label(frame):
     arg_names = frame.f_code.co_varnames[:arg_count]
     parts = []
     for arg in arg_names:
-        if arg == "self":
+        if arg in ("self", "cls"):
             continue
         if arg in frame.f_locals:
             parts.append(_format_value(frame.f_locals[arg]))
@@ -261,11 +319,9 @@ def _frame_label(frame):
 
 def _capture_locals(local_vars):
     out = {}
-    has_self = False
     for name, value in local_vars.items():
-        if name == "self" and _fields_of_instance(value):
+        if name == "self" and (_is_user_instance(value) or _fields_of_instance(value)):
             out["this"] = value
-            has_self = True
             continue
         if _is_displayable(name, value):
             out[name] = value
@@ -416,6 +472,35 @@ def _resolve_entry(tree, src):
     return None, None, tree
 
 
+def _infer_ast_type(node, param_types=None):
+    if node is None:
+        return "any"
+    if isinstance(node, ast.Constant):
+        if node.value is None:
+            return "any"
+        if isinstance(node.value, bool):
+            return "bool"
+        if isinstance(node.value, int):
+            return "int"
+        if isinstance(node.value, float):
+            return "float"
+        if isinstance(node.value, str):
+            return "str"
+    if isinstance(node, ast.List):
+        return "list"
+    if isinstance(node, ast.Dict):
+        return "dict"
+    if isinstance(node, ast.Set):
+        return "set"
+    if isinstance(node, ast.Tuple):
+        return "tuple"
+    if isinstance(node, ast.Name) and param_types and node.id in param_types:
+        return param_types[node.id]
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+        return node.func.id
+    return "any"
+
+
 def extract_meta_json(src):
     try:
         tree = ast.parse(src)
@@ -425,30 +510,74 @@ def extract_meta_json(src):
     var_types = {}
     declared = set()
     imports = set()
+    class_names = {n.name for n in ast.walk(tree) if isinstance(n, ast.ClassDef)}
+    class_body_ann_ids = set()
+
     for node in ast.walk(tree):
         if isinstance(node, ast.ClassDef):
-            fields = []
+            field_map = {}
             for body in node.body:
                 if isinstance(body, ast.AnnAssign) and isinstance(body.target, ast.Name):
-                    fields.append({
-                        "k": body.target.id,
+                    class_body_ann_ids.add(id(body))
+                    k = body.target.id
+                    field_map[k] = {
+                        "k": k,
                         "declaredType": ast.unparse(body.annotation),
                         "optional": False,
-                    })
+                    }
                 elif isinstance(body, ast.Assign):
                     for target in body.targets:
-                        if isinstance(target, ast.Name):
-                            fields.append({"k": target.id, "declaredType": "any", "optional": False})
-            classes.append({"name": node.name, "line": node.lineno, "fields": fields})
+                        if isinstance(target, ast.Name) and not _is_dunder(target.id):
+                            field_map[target.id] = {
+                                "k": target.id,
+                                "declaredType": _infer_ast_type(body.value),
+                                "optional": False,
+                            }
+                elif isinstance(body, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    param_types = {}
+                    all_args = list(body.args.posonlyargs) + list(body.args.args) + list(body.args.kwonlyargs)
+                    for arg in all_args:
+                        if arg.annotation is not None:
+                            param_types[arg.arg] = ast.unparse(arg.annotation)
+                    for stmt in ast.walk(body):
+                        if isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Attribute):
+                            if isinstance(stmt.target.value, ast.Name) and stmt.target.value.id == "self":
+                                k = stmt.target.attr
+                                if not _is_dunder(k):
+                                    field_map[k] = {
+                                        "k": k,
+                                        "declaredType": ast.unparse(stmt.annotation),
+                                        "optional": False,
+                                    }
+                        elif isinstance(stmt, ast.Assign):
+                            for target in stmt.targets:
+                                if isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name) and target.value.id == "self":
+                                    k = target.attr
+                                    if not _is_dunder(k) and k not in field_map:
+                                        field_map[k] = {
+                                            "k": k,
+                                            "declaredType": _infer_ast_type(stmt.value, param_types),
+                                            "optional": False,
+                                        }
+            classes.append({"name": node.name, "line": node.lineno, "isClass": True, "fields": list(field_map.values())})
             declared.add(node.name)
         elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-            var_types[node.target.id] = ast.unparse(node.annotation)
+            if id(node) not in class_body_ann_ids:
+                var_types[node.target.id] = ast.unparse(node.annotation)
             declared.add(node.target.id)
+        elif isinstance(node, ast.Assign):
+            if isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Name) and node.value.func.id in class_names:
+                for target in node.targets:
+                    if isinstance(target, ast.Name) and target.id not in var_types:
+                        var_types[target.id] = node.value.func.id
+                        declared.add(target.id)
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             declared.add(node.name)
             args = node.args
             for arg in list(args.posonlyargs) + list(args.args) + list(args.kwonlyargs):
                 declared.add(arg.arg)
+                if arg.annotation is not None and arg.arg not in var_types:
+                    var_types[arg.arg] = ast.unparse(arg.annotation)
             if args.vararg:
                 declared.add(args.vararg.arg)
             if args.kwarg:

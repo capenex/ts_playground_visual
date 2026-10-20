@@ -412,6 +412,7 @@ run_counter(1, 3)
   function pyEvalSimple(expr, v) {
     const text = String(expr || '').trim();
     if (!text) return undefined;
+    if (text === 'self' && v && 'this' in v) return v.this;
     if (/^[A-Za-z_]\w*$/.test(text) && v && text in v) return v[text];
     if (/^-?\d+(?:\.\d+)?$/.test(text)) return Number(text);
     if (/^(['"]).*\1$/.test(text)) return text.slice(1, -1);
@@ -501,10 +502,11 @@ run_counter(1, 3)
       return null;
     }
 
-    const compound = clean.match(/^([A-Za-z_]\w*)\s*(\+=|-=|\*=|\/=|%=|\/\/=)\s*(.+)$/);
+    const compound = clean.match(/^([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*(\+=|-=|\*=|\/=|%=|\/\/=)\s*(.+)$/);
     if (compound) {
       const to = compound[1];
-      const val = nextRaw && to in nextRaw ? nextRaw[to] : vRaw[to];
+      let val = nextRaw ? pyEvalSimple(to, nextRaw) : undefined;
+      if (val === undefined) val = pyEvalSimple(to, vRaw);
       if (val !== undefined) {
         return { type: 'assign', to, from: compound[2] + ' ' + compound[3].trim(), val: fmt(val) };
       }
@@ -525,19 +527,20 @@ run_counter(1, 3)
       }
     }
 
-    const idxAssign = clean.match(/^([A-Za-z_]\w*)\s*\[([^\]]+)\]\s*=\s*(.+)$/);
+    const idxAssign = clean.match(/^([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*\[([^\]]+)\]\s*=\s*(.+)$/);
     if (idxAssign) {
       const name = idxAssign[1];
       const idx = pyEvalSimple(idxAssign[2], vRaw);
-      let val = nextRaw && name in nextRaw ? nextRaw[name] : vRaw[name];
+      let val = nextRaw ? pyEvalSimple(name, nextRaw) : pyEvalSimple(name, vRaw);
       if (typeof idx === 'number' && Array.isArray(val)) val = val[idx];
       return { type: 'assign', to: name + '[' + idxAssign[2].trim() + ']', from: idxAssign[3].trim(), val: fmt(val) };
     }
 
-    const assign = clean.match(/^([A-Za-z_]\w*)\s*=\s*(?!=)(.+)$/);
+    const assign = clean.match(/^([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)(?:\s*:\s*[^=]+)?\s*=\s*(?!=)(.+)$/);
     if (assign) {
       const to = assign[1];
-      const val = nextRaw && to in nextRaw ? nextRaw[to] : vRaw[to];
+      let val = nextRaw ? pyEvalSimple(to, nextRaw) : undefined;
+      if (val === undefined) val = pyEvalSimple(to, vRaw);
       if (val !== undefined) return { type: 'assign', to, from: assign[2].trim(), val: fmt(val) };
     }
 
@@ -645,6 +648,7 @@ run_counter(1, 3)
       interfaces.set(cls.name, {
         name: cls.name,
         line: cls.line || 1,
+        isClass: cls.isClass !== false,
         fields: (cls.fields || []).map(f => ({
           k: f.k,
           declaredType: f.declaredType || 'any',
@@ -902,7 +906,7 @@ run_counter(1, 3)
     const patterns = [
       /(?:^|\n)\s*(?:async\s+)?def\s+([A-Za-z_]\w*)/g,
       /(?:^|\n)\s*class\s+([A-Za-z_]\w*)/g,
-      /(?:^|\n)\s*([A-Za-z_]\w*)\s*(?:,\s*[A-Za-z_]\w*\s*)*=/g,
+      /(?:^|\n)\s*([A-Za-z_]\w*)\s*(?::\s*[^=\n]+)?\s*(?:,\s*[A-Za-z_]\w*\s*)*=/g,
       /\bfor\s+([A-Za-z_]\w*)(?:\s*,\s*([A-Za-z_]\w*))?\s+in\b/g,
       /\bas\s+([A-Za-z_]\w*)/g,
       /\bimport\s+([A-Za-z_]\w*)/g,

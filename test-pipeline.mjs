@@ -57,11 +57,11 @@ sandbox.window = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(
   script +
-    '\n;globalThis.__exports = { stripTypes, typecheckTS, collectNames, instrument, resolveEntry, blankJsLine, classifyValue, enrichFromNote, deriveAnimAndNote, hl, hlActiveLine, buildStepVizRow, vizGrid, vizTree, vizGraph, vizUF, vizHeap, vizQueue, VIZ, SAMPLES, collectDeclaredNames, hoverInfoFor, hoverTipHtml, hoverWordAt, liveTypeDiags, revealErrorLine, formatHoverVal, startDebug, stepNext, stepPrev, runToNextCheckpoint, addCheckpointFunction, resetTraceState, runOnce, selectStackFrame, getActiveFrame, formatCallFrameLabel, setVideoExportSpeed, exportVideo, fixWebmDuration, VIDEO_WIDTH, VIDEO_HEIGHT, VIDEO_FPS, VIDEO_SPEED_OPTIONS, RUN_TIMEOUT_MS, setFileName, exportFileName, sanitizeFileName, loadImportedSource, getFileName: () => FILE_NAME, getDebugState: () => ({ TRACE, cur, SELECTED_FRAME_IDX, DEBUG_SESSION, VIDEO_EXPORT_SPEED, cnt: document.getElementById("cnt").textContent, callStackHtml: document.getElementById("callStackBar").innerHTML, varsHtml: document.getElementById("vars").innerHTML, highlightHtml: document.getElementById("highlight").innerHTML, gutterHtml: document.getElementById("gutter").innerHTML, stepVizHtml: document.getElementById("stepViz").innerHTML, stepVizTop: document.getElementById("stepViz").style.top, stepVizLeft: document.getElementById("stepViz").style.left, stepVizDisplay: document.getElementById("stepViz").style.display, editorVal: document.getElementById("editor").value }), setEditorVal: (v) => { document.getElementById("editor").value = v; } };',
+    '\n;globalThis.__exports = { stripTypes, typecheckTS, extractTsInterfaceMetadata, cloneDeepBounded, collectNames, instrument, resolveEntry, blankJsLine, classifyValue, enrichFromNote, deriveAnimAndNote, hl, hlActiveLine, buildStepVizRow, vizGrid, vizTree, vizGraph, vizUF, vizHeap, vizQueue, VIZ, SAMPLES, collectDeclaredNames, hoverInfoFor, hoverTipHtml, hoverWordAt, liveTypeDiags, revealErrorLine, formatHoverVal, startDebug, stepNext, stepPrev, runToNextCheckpoint, addCheckpointFunction, resetTraceState, runOnce, selectStackFrame, getActiveFrame, formatCallFrameLabel, setVideoExportSpeed, exportVideo, fixWebmDuration, VIDEO_WIDTH, VIDEO_HEIGHT, VIDEO_FPS, VIDEO_SPEED_OPTIONS, RUN_TIMEOUT_MS, setFileName, exportFileName, sanitizeFileName, loadImportedSource, getFileName: () => FILE_NAME, getDebugState: () => ({ TRACE, cur, SELECTED_FRAME_IDX, DEBUG_SESSION, VIDEO_EXPORT_SPEED, cnt: document.getElementById("cnt").textContent, callStackHtml: document.getElementById("callStackBar").innerHTML, varsHtml: document.getElementById("vars").innerHTML, highlightHtml: document.getElementById("highlight").innerHTML, gutterHtml: document.getElementById("gutter").innerHTML, stepVizHtml: document.getElementById("stepViz").innerHTML, stepVizTop: document.getElementById("stepViz").style.top, stepVizLeft: document.getElementById("stepViz").style.left, stepVizDisplay: document.getElementById("stepViz").style.display, editorVal: document.getElementById("editor").value }), setEditorVal: (v) => { document.getElementById("editor").value = v; } };',
   sandbox
 );
 const {
-  stripTypes, typecheckTS, collectNames, instrument, resolveEntry, blankJsLine, classifyValue, enrichFromNote,
+  stripTypes, typecheckTS, extractTsInterfaceMetadata, cloneDeepBounded, collectNames, instrument, resolveEntry, blankJsLine, classifyValue, enrichFromNote,
   deriveAnimAndNote, hl, hlActiveLine, buildStepVizRow, vizGrid, vizTree, vizGraph, vizUF, vizHeap, vizQueue, VIZ, SAMPLES,
   collectDeclaredNames, hoverInfoFor, hoverTipHtml, hoverWordAt, liveTypeDiags, revealErrorLine, formatHoverVal,
   startDebug, stepNext, stepPrev, runToNextCheckpoint, addCheckpointFunction, resetTraceState, runOnce,
@@ -955,8 +955,118 @@ setEditorVal('class RNode {\n  val: number;\n  next: RNode | null;\n  random: RN
 check('circular structure in return value runs and finishes debug without JSON crash',
   startDebug(0) === true && (runToNextCheckpoint(), getDebugState().DEBUG_SESSION.finished && !getDebugState().DEBUG_SESSION.crashed));
 
+// --- Class visualization, metadata, hover, and typechecking suite
+{
+  const meta = extractTsInterfaceMetadata('class Counter {\n  n: number;\n  constructor(start: number = 0) {\n    this.n = start;\n    this.tag = "ok";\n  }\n}\nconst c = new Counter(5);\n');
+  const clsMeta = meta.interfaces.get('Counter');
+  check('extractTsInterfaceMetadata extracts class with isClass=true and constructor fields',
+    Boolean(clsMeta && clsMeta.isClass === true && clsMeta.fields.some(f => f.k === 'n' && f.declaredType === 'number') && clsMeta.fields.some(f => f.k === 'tag')),
+    JSON.stringify(clsMeta));
+  check('extractTsInterfaceMetadata infers varTypes for new ClassName()',
+    meta.varTypes.get('c') === 'Counter', meta.varTypes.get('c'));
+
+  const pyObj = { x: 10, y: 20 };
+  Object.defineProperty(pyObj, '__py_cls__', { value: 'Point', enumerable: false, configurable: true, writable: true });
+  const clonedPyObj = cloneDeepBounded(pyObj);
+  check('cloneDeepBounded preserves non-enumerable __py_cls__ tag',
+    clonedPyObj && clonedPyObj.__py_cls__ === 'Point', clonedPyObj && clonedPyObj.__py_cls__);
+
+  setEditorVal('class Counter {\n  n: number;\n  constructor(start: number = 0) {\n    this.n = start;\n  }\n  inc(step: number = 1): number {\n    this.n += step;\n    return this.n;\n  }\n}\nfunction runCounter(): number {\n  const c = new Counter(10);\n  c.inc(5);\n  return c.n;\n}\nrunCounter();\n');
+  startDebug(0);
+  let hoverInsideMethod = null;
+  let hoverSelfInsideMethod = null;
+  for (let i = 0; i < 6; i++) {
+    stepNext();
+    const curSt = getDebugState().TRACE.steps[getDebugState().cur];
+    if (curSt && /this\.n\s*\+=\s*step/.test(curSt.rawNote || '')) {
+      hoverInsideMethod = hoverInfoFor('this');
+      hoverSelfInsideMethod = hoverInfoFor('self');
+    }
+  }
+  const st = getDebugState();
+  const incStep = st.TRACE.steps.find(s => /this\.n\s*\+=\s*step/.test(s.rawNote || ''));
+  check('class instance in method has interface/class ds card for `this`',
+    Boolean(incStep && incStep.ds.this && incStep.ds.this.kind === 'interface' && incStep.ds.this.isClass === true && incStep.ds.this.interfaceName === 'Counter'),
+    JSON.stringify(incStep && incStep.ds.this));
+  check('this.n += step produces assign anim capsule and hot="n" on `this` card',
+    Boolean(incStep && incStep.anim && incStep.anim.type === 'assign' && incStep.anim.to === 'this.n' && incStep.ds.this.hot === 'n'),
+    JSON.stringify(incStep && { anim: incStep.anim, hot: incStep.ds.this && incStep.ds.this.hot }));
+  const renderedCard = VIZ.interface(incStep.ds.this);
+  check('VIZ.interface renders class keyword badge for class instances',
+    renderedCard.includes('viface-kw">class<') && renderedCard.includes('Counter'),
+    renderedCard.slice(0, 160));
+  check('hoverInfoFor supports `this` and `self` when debugging inside a method',
+    Boolean(hoverInsideMethod && hoverSelfInsideMethod && hoverInsideMethod.kind === 'class · Counter' && hoverInsideMethod.d && hoverInsideMethod.d.kind === 'interface'));
+
+  // Class typechecking diagnostics
+  const errProp = typecheckTS('class Box {\n  v: number;\n  constructor(v: number) { this.v = v; }\n  bad(): number { return this.missing; }\n}\n', true);
+  check('typecheckTS catches TS2339 unknown property on `this` inside class method',
+    errProp.some(d => d.code === 'TS2339' && /missing/.test(d.message)), JSON.stringify(errProp));
+
+  const errAssign = typecheckTS('class Box {\n  v: number;\n  constructor(v: number) { this.v = "wrong"; }\n}\n', true);
+  check('typecheckTS catches TS2322 wrong type assigned to `this.v`',
+    errAssign.some(d => d.code === 'TS2322'), JSON.stringify(errAssign));
+
+  const errCtor = typecheckTS('class Box {\n  v: number;\n  constructor(v: number) { this.v = v; }\n}\nconst b = new Box("wrong");\n', true);
+  check('typecheckTS catches TS2345 wrong constructor argument type in new Box(...)',
+    errCtor.some(d => d.code === 'TS2345'), JSON.stringify(errCtor));
+}
+
+// --- CodeMirror wordMatchPlugin ignores keywords like def, in, for, if, return
+{
+  const cmEntry = fs.readFileSync(new URL('./editor/cm-entry.js', import.meta.url), 'utf8');
+  check('cm-entry.js defines IGNORED_MATCH_WORDS excluding def, in, for, if, return',
+    cmEntry.includes('IGNORED_MATCH_WORDS') &&
+    ['def', 'in', 'for', 'if', 'return'].every(kw => new RegExp(`['"]${kw}['"]`).test(cmEntry)));
+}
+
+// --- Undeclared variable detection (TS2304) & first-line step capsule upward guide (╰─)
+{
+  const undeclAssignDiags = typecheckTS('strs = ["flower", "flow", "flight"];\nlet ans = "";\n', true);
+  check('typecheckTS catches TS2304 on undeclared variable assignment `strs = [...]`',
+    undeclAssignDiags.some(d => d.line === 1 && d.code === 'TS2304' && /strs/.test(d.message)),
+    JSON.stringify(undeclAssignDiags));
+
+  setEditorVal('strs = ["flower", "flow", "flight"];\nlet ans = "";\n');
+  check('startDebug rejects undeclared variable assignment with TS2304',
+    startDebug(0) === false && getDebugState().TRACE.steps.length === 0);
+
+  const undeclExprDiags = typecheckTS('const x: number = ghostVar + 1;\n', true);
+  check('typecheckTS catches TS2304 on undeclared variable in expression',
+    undeclExprDiags.some(d => d.line === 1 && d.code === 'TS2304' && /ghostVar/.test(d.message)),
+    JSON.stringify(undeclExprDiags));
+
+  const undeclIncDiags = typecheckTS('ghostCount++;\n', true);
+  check('typecheckTS catches TS2304 on undeclared variable increment',
+    undeclIncDiags.some(d => d.line === 1 && d.code === 'TS2304' && /ghostCount/.test(d.message)),
+    JSON.stringify(undeclIncDiags));
+
+  // First-line step capsule (dropped below line 1) points upward with ╰─, while line 2+ points downward with ╭─
+  setEditorVal('let strs: string[] = ["flower", "flow", "flight"];\nlet ans: string = strs[0];\n\n// 调用：ans\n');
+  const line1Ok = startDebug(0);
+  const line1State = getDebugState();
+  check('first-line step capsule is placed below line 1 and its guide points upward (╰─)',
+    line1Ok &&
+    line1State.TRACE.steps[0].line === 1 &&
+    line1State.stepVizTop === '39px' &&
+    line1State.stepVizHtml.includes('╰─') &&
+    !line1State.stepVizHtml.includes('╭─'),
+    line1State.stepVizHtml);
+
+  stepNext();
+  const line2State = getDebugState();
+  check('second-line step capsule floats above line 2 and its guide points downward (╭─)',
+    line2State.TRACE.steps[1].line === 2 &&
+    parseInt(line2State.stepVizTop, 10) < 36 &&
+    line2State.stepVizHtml.includes('╭─') &&
+    !line2State.stepVizHtml.includes('╰─'),
+    line2State.stepVizHtml);
+}
+
 console.log(failed ? `\n${failed} FAILED` : '\nall passed');
 process.exit(failed ? 1 : 0);
+
+
 
 
 

@@ -169,6 +169,17 @@ function init() {
   const NON_CODE_NODES = new Set([
     'String', 'Comment', 'LineComment', 'BlockComment', 'RegExp', 'Number',
   ]);
+  const IGNORED_MATCH_WORDS = new Set([
+    'False', 'None', 'True', 'and', 'as', 'assert', 'async', 'await', 'break', 'class', 'continue',
+    'def', 'del', 'elif', 'else', 'except', 'finally', 'for', 'from', 'global', 'if', 'import', 'in',
+    'is', 'lambda', 'nonlocal', 'not', 'or', 'pass', 'raise', 'return', 'try', 'while', 'with',
+    'yield', 'match', 'case',
+    'function', 'const', 'let', 'var', 'do', 'switch', 'default', 'catch', 'throw', 'new', 'delete',
+    'typeof', 'instanceof', 'void', 'of', 'extends', 'super', 'export', 'true', 'false', 'null',
+    'undefined', 'interface', 'type', 'enum', 'implements', 'public', 'private', 'protected',
+    'readonly', 'static', 'abstract', 'declare', 'namespace', 'module', 'satisfies', 'keyof', 'infer',
+    'number', 'string', 'boolean', 'any', 'unknown', 'never', 'object', 'symbol', 'bigint',
+  ]);
   const wordMatchMark = Decoration.mark({ class: 'cm-wordMatch' });
   const wordMatchMain = Decoration.mark({ class: 'cm-wordMatch-main' });
 
@@ -243,7 +254,8 @@ function init() {
         mainFrom = range.from;
         mainTo = range.to;
       }
-      if (!query.trim()) return Decoration.none;
+      const trimmedQuery = query.trim();
+      if (!trimmedQuery || IGNORED_MATCH_WORDS.has(trimmedQuery)) return Decoration.none;
 
       const nonCode = nonCodeRanges(state, view.visibleRanges);
       if (overlapsNonCode(nonCode, mainFrom, mainTo)) return Decoration.none;

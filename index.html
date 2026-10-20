@@ -428,6 +428,16 @@
     0%{opacity:0;transform:translateY(4px)}
     100%{opacity:1;transform:translateY(0)}
   }
+  @keyframes vizRowInBelow{
+    0%{opacity:0;transform:translateY(-4px)}
+    100%{opacity:1;transform:translateY(0)}
+  }
+  #stepViz.below-line .step-viz-row{
+    animation-name:vizRowInBelow;
+  }
+  #stepViz.below-line .step-viz-row .sv-guide{
+    transform:translateY(-1px);
+  }
   @keyframes valSlideLeft{
     0%{opacity:.25;transform:translateX(20px) scale(.88);background:var(--accent)}
     70%{opacity:1;transform:translateX(-2px) scale(1.04);background:var(--green)}
@@ -2520,6 +2530,14 @@ function cloneDeepBounded(val, depth = 0) {
     return items.slice(0, 40);
   }
   const out = {};
+  const clsName = val.__py_cls__ || (val.constructor && val.constructor !== Object && val.constructor.name ? val.constructor.name : '');
+  if (clsName) {
+    try {
+      Object.defineProperty(out, '__py_cls__', {
+        value: clsName, enumerable: false, configurable: true, writable: true,
+      });
+    } catch (_) {}
+  }
   Object.keys(val).slice(0, 20).forEach(k => {
     out[k] = cloneDeepBounded(val[k], depth + 1);
   });
@@ -2632,7 +2650,7 @@ function snapshot(kind, value, extra) {
 
 /* Metadata extracted from TypeScript source for interface & variable type visualization */
 let CURRENT_TS_META = {
-  interfaces: new Map(), // ifaceName -> { name, line, fields: [{ k, declaredType, optional }] }
+  interfaces: new Map(), // ifaceName -> { name, line, isClass, fields: [{ k, declaredType, optional }] }
   varTypes: new Map(),   // varName -> declaredType
 };
 
@@ -2658,25 +2676,72 @@ function extractTsInterfaceMetadata(src) {
   const lines = src.replace(/\r\n?/g, '\n').split('\n');
   let activeIface = null;
   let activeIfaceLine = 1;
+  let activeIsClass = false;
   let activeBody = '';
   let depth = 0;
 
-  function parseFieldsFromBody(bodyStr) {
+  function parseFieldsFromBody(bodyStr, isClass = false) {
     const inner = bodyStr.trim().replace(/^\{/, '').replace(/\}$/, '').trim();
     const fields = [];
+    const seen = new Set();
     if (!inner) return fields;
-    const members = inner.split(/[;,\n]/).map(s => stripInlineCommentSafe(s).trim()).filter(Boolean);
+    // Strip nested method bodies `{ ... }` when parsing top-level class/interface fields
+    let topLevelOnly = '';
+    let bDepth = 0;
+    for (let i = 0; i < inner.length; i++) {
+      const ch = inner[i];
+      if (ch === '"' || ch === "'" || ch === '`') {
+        const end = skipString(inner, i);
+        if (bDepth === 0) topLevelOnly += inner.slice(i, end);
+        i = end - 1;
+        continue;
+      }
+      if (ch === '{') { bDepth++; continue; }
+      if (ch === '}') { bDepth = Math.max(0, bDepth - 1); continue; }
+      if (bDepth === 0) topLevelOnly += ch;
+    }
+    const members = topLevelOnly.split(/[;,\n]/).map(s => stripInlineCommentSafe(s).trim()).filter(Boolean);
     members.forEach(mem => {
-      const cleaned = mem.replace(/^(?:readonly|public|private|protected|static)\s+/, '');
-      const m = cleaned.match(/^([A-Za-z_$][\w$]*)(\?)?\s*:\s*(.+)$/);
-      if (m) {
+      const cleaned = mem.replace(/^(?:(?:readonly|public|private|protected|static)\s+)+/, '');
+      if (/^(?:constructor|get\s+|set\s+|async\s+|[A-Za-z_$][\w$]*\s*\()/.test(cleaned)) return;
+      const m = cleaned.match(/^([A-Za-z_$][\w$]*)(\?)?\s*:\s*([^=]+?)(?:\s*=[\s\S]+)?$/);
+      if (m && !seen.has(m[1])) {
+        seen.add(m[1]);
         fields.push({
           k: m[1],
           declaredType: m[3].trim(),
           optional: Boolean(m[2]),
         });
+        return;
+      }
+      if (isClass) {
+        const initOnly = cleaned.match(/^([A-Za-z_$][\w$]*)\s*=\s*(.+)$/);
+        if (initOnly && !seen.has(initOnly[1])) {
+          const rhs = initOnly[2].trim();
+          let inferred = 'any';
+          if (/^[+-]?\d+(?:\.\d+)?$/.test(rhs)) inferred = 'number';
+          else if (/^(true|false)$/.test(rhs)) inferred = 'boolean';
+          else if (/^["'`]/.test(rhs)) inferred = 'string';
+          else if (rhs.startsWith('[')) inferred = 'any[]';
+          seen.add(initOnly[1]);
+          fields.push({
+            k: initOnly[1],
+            declaredType: inferred,
+            optional: false,
+          });
+        }
       }
     });
+    if (isClass) {
+      const thisAssignRe = /\bthis\.([A-Za-z_$][\w$]*)\s*=/g;
+      let tm;
+      while ((tm = thisAssignRe.exec(inner))) {
+        if (!seen.has(tm[1])) {
+          seen.add(tm[1]);
+          fields.push({ k: tm[1], declaredType: 'any', optional: false });
+        }
+      }
+    }
     return fields;
   }
 
@@ -2692,21 +2757,27 @@ function extractTsInterfaceMetadata(src) {
         else if (ch === '}') depth--;
       }
       if (depth <= 0) {
-        interfaces.set(activeIface, {
-          name: activeIface,
-          line: activeIfaceLine,
-          fields: parseFieldsFromBody(activeBody),
-        });
+        const parsedFields = parseFieldsFromBody(activeBody, activeIsClass);
+        if (!activeIsClass || parsedFields.length > 0) {
+          interfaces.set(activeIface, {
+            name: activeIface,
+            line: activeIfaceLine,
+            isClass: activeIsClass,
+            fields: parsedFields,
+          });
+        }
         activeIface = null;
+        activeIsClass = false;
         activeBody = '';
       }
       continue;
     }
 
-    const ifaceM = trimmed.match(/^(?:export\s+)?interface\s+([A-Za-z_$][\w$]*)\s*\{(.*)$/);
+    const ifaceM = trimmed.match(/^(?:export\s+)?(interface|class)\s+([A-Za-z_$][\w$]*)(?:\s*<[^>]*>)?(?:\s+extends\s+[^{]+)?(?:\s+implements\s+[^{]+)?\s*\{(.*)$/);
     if (ifaceM) {
-      const name = ifaceM[1];
-      const rest = '{' + ifaceM[2];
+      const isClass = ifaceM[1] === 'class';
+      const name = ifaceM[2];
+      const rest = '{' + ifaceM[3];
       let d = 0;
       for (const ch of rest) {
         if (ch === '{') d++;
@@ -2714,14 +2785,19 @@ function extractTsInterfaceMetadata(src) {
       }
       if (d <= 0 && rest.includes('}')) {
         const bodyPart = rest.slice(0, rest.lastIndexOf('}') + 1);
-        interfaces.set(name, {
-          name,
-          line: i + 1,
-          fields: parseFieldsFromBody(bodyPart),
-        });
+        const parsedFields = parseFieldsFromBody(bodyPart, isClass);
+        if (!isClass || parsedFields.length > 0) {
+          interfaces.set(name, {
+            name,
+            line: i + 1,
+            isClass,
+            fields: parsedFields,
+          });
+        }
       } else {
         activeIface = name;
         activeIfaceLine = i + 1;
+        activeIsClass = isClass;
         activeBody = rest;
         depth = d;
       }
@@ -2733,7 +2809,8 @@ function extractTsInterfaceMetadata(src) {
       interfaces.set(typeObjM[1], {
         name: typeObjM[1],
         line: i + 1,
-        fields: parseFieldsFromBody(typeObjM[2]),
+        isClass: false,
+        fields: parseFieldsFromBody(typeObjM[2], false),
       });
       continue;
     }
@@ -2749,6 +2826,11 @@ function extractTsInterfaceMetadata(src) {
     const varM = trimmed.match(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*:\s*([^=]+?)(?:\s*=|$)/);
     if (varM) {
       varTypes.set(varM[1], varM[2].trim());
+    } else {
+      const varNewM = trimmed.match(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*new\s+([A-Za-z_$][\w$]*)\s*(?:<[^>]*>)?\s*\(/);
+      if (varNewM && !/^(Map|Set|Array)$/.test(varNewM[2])) {
+        varTypes.set(varNewM[1], varNewM[2]);
+      }
     }
   }
 
@@ -2761,6 +2843,9 @@ function matchInterfaceForObject(name, value) {
   if (name && varTypes.has(name)) {
     const cleanT = varTypes.get(name).replace(/\[\]$/, '').trim();
     if (interfaces.has(cleanT)) return interfaces.get(cleanT);
+  }
+  if (value && typeof value === 'object' && value.__py_cls__ && interfaces.has(value.__py_cls__)) {
+    return interfaces.get(value.__py_cls__);
   }
   if (!value || typeof value !== 'object') return null;
   const valKeys = Object.keys(value);
@@ -2803,13 +2888,16 @@ function classifyValue(name, value) {
   if (typeof value === 'object') {
     if (Array.isArray(value.nodes) && Array.isArray(value.edges)) return snapshot('graph', value);
     if (Array.isArray(value.nodes) && 'root' in value) return snapshot('tree', value);
-    if (('val' in value || 'value' in value) && ('left' in value || 'right' in value)) return snapshot('tree', value);
-    if (('val' in value || 'value' in value) && 'next' in value) return snapshot('list', value);
+    if (n !== 'this') {
+      if (('val' in value || 'value' in value) && ('left' in value || 'right' in value)) return snapshot('tree', value);
+      if (('val' in value || 'value' in value) && 'next' in value) return snapshot('list', value);
+    }
 
-    // Plain object or TypeScript interface instance
+    // Plain object, class instance, or TypeScript interface instance
     const ifaceDef = matchInterfaceForObject(n, value);
     const annotType = CURRENT_TS_META.varTypes.get(n);
     const ifaceName = ifaceDef ? ifaceDef.name : (annotType || value.__py_cls__ || 'object');
+    const isClass = Boolean((ifaceDef && ifaceDef.isClass) || value.__py_cls__);
     const fieldMap = new Map();
     if (ifaceDef) {
       ifaceDef.fields.forEach(f => {
@@ -2832,9 +2920,10 @@ function classifyValue(name, value) {
       }
     });
     const fields = [...fieldMap.values()];
-    if (fields.length > 0) {
+    if (fields.length > 0 || isClass) {
       return snapshot('interface', value, {
         interfaceName: ifaceName,
+        isClass,
         isSchema: false,
         fields,
         entries: fields.map(f => ({ k: f.k, v: f.v })),
@@ -2845,10 +2934,12 @@ function classifyValue(name, value) {
 }
 
 function populateInterfaceSchemas(ds) {
-  const { interfaces } = CURRENT_TS_META;
+  const { interfaces, varTypes } = CURRENT_TS_META;
   if (!interfaces || !interfaces.size) return;
   interfaces.forEach(iface => {
-    const slotKey = (iface.name in ds) ? ('interface ' + iface.name) : iface.name;
+    if (iface.isClass && (!iface.fields || !iface.fields.length)) return;
+    const prefix = iface.isClass ? 'class ' : 'interface ';
+    const slotKey = (iface.name in ds) ? (prefix + iface.name) : iface.name;
     let boundInstance = null;
     let boundVarName = null;
     Object.keys(ds).forEach(k => {
@@ -2858,6 +2949,13 @@ function populateInterfaceSchemas(ds) {
         boundVarName = k;
       }
     });
+    if (!boundVarName && varTypes) {
+      Object.keys(ds).forEach(k => {
+        if (!boundVarName && varTypes.get(k) === iface.name) {
+          boundVarName = k;
+        }
+      });
+    }
     const fields = iface.fields.map(f => {
       const instField = boundInstance && boundInstance.fields ? boundInstance.fields.find(x => x.k === f.k) : null;
       return {
@@ -2870,6 +2968,7 @@ function populateInterfaceSchemas(ds) {
     ds[slotKey] = {
       kind: 'interface',
       interfaceName: iface.name,
+      isClass: Boolean(iface.isClass),
       isSchema: true,
       instanceName: boundVarName,
       fields,
@@ -2901,11 +3000,12 @@ function enrichFromNote(ds, v, note) {
     });
   }
 
-  // Highlight accessed property on interface / object cards (e.g. user.name, u.age)
+  // Highlight accessed property on interface / class / object cards (e.g. user.name, this.total, self.val)
   const propRe = /\b([A-Za-z_$][\w$]*)\s*\.\s*([A-Za-z_$][\w$]*)\b/g;
   let pm;
   while ((pm = propRe.exec(note))) {
-    const objName = pm[1], propName = pm[2];
+    const rawObj = pm[1], propName = pm[2];
+    const objName = (rawObj === 'self' && !ds.self && ds.this) ? 'this' : rawObj;
     if (ds[objName] && (ds[objName].kind === 'interface' || ds[objName].kind === 'object')) {
       ds[objName].hot = propName;
       const ifaceName = ds[objName].interfaceName;
@@ -3002,7 +3102,8 @@ function safeEvalExpr(expr, v) {
     const keys = Object.keys(v).filter(k => /^[A-Za-z_$][\w$]*$/.test(k) && !RESERVED_WORDS.has(k));
     const vals = keys.map(k => v[k]);
     const fn = new Function(...keys, 'return (' + clean + ');');
-    return fn(...vals);
+    const thisCtx = (v && Object.prototype.hasOwnProperty.call(v, 'this')) ? v.this : undefined;
+    return fn.call(thisCtx, ...vals);
   } catch {
     return undefined;
   }
@@ -3103,7 +3204,7 @@ function deriveAnimAndNote(rawLine, v, nextV) {
     return { anim, note: `◉ ${fnName}(${detail})`, isCheckpoint: true };
   }
 
-  const callOnly = clean.match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)?)\s*\((.*)\)$/);
+  const callOnly = clean.match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\((.*)\)$/);
   if (callOnly) {
     const fnName = callOnly[1];
     const args = splitTopLevel(callOnly[2]).map(s => s.trim()).filter(Boolean);
@@ -3112,7 +3213,7 @@ function deriveAnimAndNote(rawLine, v, nextV) {
     return { anim, note: `${fnName}(${argVals.join(', ')})` };
   }
 
-  const compoundAssign = clean.match(/^([A-Za-z_$][\w$]*(?:\s*\[[^\]]+\])*)\s*(\+=|-=|\*=|\/=)\s*(.+)$/);
+  const compoundAssign = clean.match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\s*\[[^\]]+\])*)\s*(\+=|-=|\*=|\/=)\s*(.+)$/);
   if (compoundAssign) {
     const to = compoundAssign[1].trim();
     const op = compoundAssign[2][0];
@@ -3126,7 +3227,7 @@ function deriveAnimAndNote(rawLine, v, nextV) {
     }
   }
 
-  const assignMatch = clean.match(/^(?:(?:const|let|var)\s+)?([A-Za-z_$][\w$]*(?:\s*\[[^\]]+\])*)\s*=\s*(?!=)(.+)$/);
+  const assignMatch = clean.match(/^(?:(?:const|let|var)\s+)?([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\s*\[[^\]]+\])*)\s*=\s*(?!=)(.+)$/);
   if (assignMatch) {
     const to = assignMatch[1].trim();
     const from = assignMatch[2].trim();
@@ -3138,7 +3239,7 @@ function deriveAnimAndNote(rawLine, v, nextV) {
       }
       const valStr = val !== undefined ? formatShortVal(val) : null;
 
-      const rhsCall = from.match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)?)\s*\((.*)\)$/);
+      const rhsCall = from.match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\((.*)\)$/);
       if (rhsCall && valStr !== null) {
         const fnName = rhsCall[1];
         const args = splitTopLevel(rhsCall[2]).map(s => s.trim()).filter(Boolean);
@@ -3245,6 +3346,8 @@ function isTsAssignable(actual, expected) {
   const a = normalizeTsType(actual);
   const e = normalizeTsType(expected);
   if (a === e || a === 'any' || a === 'unknown' || e === 'any' || e === 'unknown' || a === 'never') return true;
+  // Generic type parameters (e.g. T, U, K, V)
+  if (/^[A-Z]\d*$/.test(a) || /^[A-Z]\d*$/.test(e)) return true;
   if (a === 'any[]' && e.endsWith('[]')) return true;
   if (a === 'any[][]' && e.endsWith('[][]')) return true;
   if (a.endsWith('[]') && e.endsWith('[]')) {
@@ -3270,12 +3373,69 @@ function typecheckTS(src, strict = STRICT_TS) {
   const fns = new Map();
   const typeAliases = new Map();
   const interfaces = new Map(); // name -> Map<propName, { type, optional }>
+  const classParents = new Map(); // className -> parentClassName
+  const enumsSet = new Set();
   const env = new Map();
+
+  const BUILTIN_TS_GLOBALS = new Set([
+    'Math', 'JSON', 'Number', 'String', 'Boolean', 'Array', 'Object', 'Map', 'Set',
+    'WeakMap', 'WeakSet', 'Date', 'RegExp', 'Error', 'TypeError', 'RangeError',
+    'SyntaxError', 'ReferenceError', 'URIError', 'EvalError', 'AggregateError',
+    'Promise', 'Symbol', 'BigInt', 'Intl', 'Reflect', 'Proxy',
+    'ArrayBuffer', 'SharedArrayBuffer', 'DataView',
+    'Int8Array', 'Uint8Array', 'Uint8ClampedArray', 'Int16Array', 'Uint16Array',
+    'Int32Array', 'Uint32Array', 'Float32Array', 'Float64Array', 'BigInt64Array', 'BigUint64Array',
+    'parseInt', 'parseFloat', 'isNaN', 'isFinite', 'encodeURI', 'decodeURI',
+    'encodeURIComponent', 'decodeURIComponent', 'structuredClone', 'atob', 'btoa',
+    'console', 'window', 'globalThis', 'self', 'document', 'navigator', 'location', 'performance',
+    'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'requestAnimationFrame', 'cancelAnimationFrame', 'queueMicrotask',
+    'Infinity', 'NaN', 'undefined', 'null', 'true', 'false', 'this', 'super', 'arguments',
+    'checkpoint', '断点',
+  ]);
+
+  function isKnownIdentifier(name) {
+    if (!name || !/^[A-Za-z_$][\w$]*$/.test(name)) return true;
+    return (
+      env.has(name) ||
+      fns.has(name) ||
+      interfaces.has(name) ||
+      typeAliases.has(name) ||
+      enumsSet.has(name) ||
+      BUILTIN_TS_GLOBALS.has(name) ||
+      RESERVED_WORDS.has(name)
+    );
+  }
 
   function addDiag(line, code, message) {
     if (!diagnostics.some(d => d.line === line && d.code === code && d.message === message)) {
       diagnostics.push({ line, code, message });
     }
+  }
+
+  function splitTopLevelDecl(s) {
+    const parts = [];
+    let depth = 0, angleDepth = 0, cur = '';
+    for (let i = 0; i < s.length; i++) {
+      const ch = s[i];
+      if (ch === '"' || ch === "'" || ch === '`') {
+        const end = skipString(s, i);
+        cur += s.slice(i, end);
+        i = end - 1;
+        continue;
+      }
+      if (ch === '(' || ch === '[' || ch === '{') depth++;
+      else if (ch === ')' || ch === ']' || ch === '}') depth = Math.max(0, depth - 1);
+      else if (ch === '<' && s.indexOf('>', i + 1) > i) angleDepth++;
+      else if (ch === '>' && angleDepth > 0 && s[i - 1] !== '=') angleDepth--;
+      if (ch === ',' && depth === 0 && angleDepth === 0) {
+        parts.push(cur);
+        cur = '';
+      } else {
+        cur += ch;
+      }
+    }
+    if (cur) parts.push(cur);
+    return parts;
   }
 
   function resolveAlias(t) {
@@ -3299,11 +3459,39 @@ function typecheckTS(src, strict = STRICT_TS) {
   }
 
   function getInterfaceShape(typeName) {
-    const resolved = resolveAlias(typeName);
-    if (interfaces.has(resolved)) return interfaces.get(resolved);
-    if (interfaces.has(typeName)) return interfaces.get(typeName);
+    const resolved = resolveAlias(typeName).replace(/<[^>]*>$/, '');
+    const baseName = typeName.replace(/<[^>]*>$/, '');
+    const direct = interfaces.get(resolved) || interfaces.get(baseName);
+    if (direct) {
+      if (classParents.has(resolved) || classParents.has(baseName)) {
+        const merged = new Map();
+        let p = classParents.get(resolved) || classParents.get(baseName);
+        const visited = new Set([resolved, baseName]);
+        while (p && !visited.has(p)) {
+          visited.add(p);
+          const pShape = interfaces.get(p);
+          if (pShape) pShape.forEach((v, k) => { if (!merged.has(k)) merged.set(k, v); });
+          p = classParents.get(p);
+        }
+        direct.forEach((v, k) => merged.set(k, v));
+        return merged;
+      }
+      return direct;
+    }
     if (resolved.startsWith('{') && resolved.endsWith('}')) {
       return parseObjectShapeLiteral(resolved);
+    }
+    return null;
+  }
+
+  function getClassMethodSig(className, methodName) {
+    let cur = resolveAlias(className).replace(/<[^>]*>$/, '');
+    const visited = new Set();
+    while (cur && !visited.has(cur)) {
+      visited.add(cur);
+      const key = cur + '.' + methodName;
+      if (fns.has(key)) return fns.get(key);
+      cur = classParents.get(cur);
     }
     return null;
   }
@@ -3453,9 +3641,35 @@ function typecheckTS(src, strict = STRICT_TS) {
       const explicitT = arrCtor[1] ? resolveAlias(arrCtor[1]) : 'any';
       return explicitT + '[]';
     }
-    const newClassM = s.match(/^new\s+([A-Za-z_$][\w$]*)\s*(?:<[^>]*>)?\s*\(/);
-    if (newClassM && !/^(Map|Set|Array)$/.test(newClassM[1])) {
-      return resolveAlias(newClassM[1]);
+    const newClassM = s.match(/^new\s+([A-Za-z_$][\w$]*)\s*(?:<[^>]*>)?\s*\(([\s\S]*)\)$/);
+    if (newClassM && !/^(Map|Set|Array)$/.test(newClassM[1]) && findBalancedParen(s, s.indexOf('(')) === s.length - 1) {
+      const clsName = newClassM[1];
+      const argsRaw = newClassM[2].trim();
+      const args = argsRaw ? splitTopLevel(argsRaw).map(a => a.trim()) : [];
+      const argTypes = args.map(a => inferType(a, lineNum));
+      const ctorSig = getClassMethodSig(clsName, 'constructor');
+      if (ctorSig) {
+        if (args.length < ctorSig.minArgs || args.length > ctorSig.params.length) {
+          addDiag(lineNum, 'TS2554', `构造函数 "new ${clsName}" 应有 ${ctorSig.minArgs === ctorSig.params.length ? ctorSig.params.length : ctorSig.minArgs + '-' + ctorSig.params.length} 个参数，但获得 ${args.length} 个`);
+        } else {
+          for (let idx = 0; idx < args.length; idx++) {
+            const p = ctorSig.params[idx];
+            const at = argTypes[idx];
+            if (p && p.type !== 'any' && !isTsAssignable(at, p.type)) {
+              addDiag(lineNum, 'TS2345', `类型 "${at}" 的参数不能赋给类型 "${p.type}" 的参数 ("new ${clsName}" 的参数 "${p.name}")`);
+            }
+          }
+        }
+      }
+      return resolveAlias(clsName);
+    }
+    const newClassPrefixM = s.match(/^new\s+([A-Za-z_$][\w$]*)\s*(?:<[^>]*>)?\s*\(/);
+    if (newClassPrefixM && !/^(Map|Set|Array)$/.test(newClassPrefixM[1])) {
+      const openIdx = s.indexOf('(');
+      const closeIdx = findBalancedParen(s, openIdx);
+      if (closeIdx === s.length - 1) {
+        return resolveAlias(newClassPrefixM[1]);
+      }
     }
 
     if (s.startsWith('[') && s.endsWith(']') && findBalancedParen(s, 0) === s.length - 1) {
@@ -3485,6 +3699,44 @@ function typecheckTS(src, strict = STRICT_TS) {
         return `{${shapeParts.join(';')}}`;
       }
       return 'object';
+    }
+
+    // Inline arrow function expression: (a, b) => expr or x => expr
+    const arrowExprM = s.match(/^(?:async\s+)?(?:\(([^)]*)\)|([A-Za-z_$][\w$]*))\s*(?::\s*[^=]+?)?\s*=>\s*([\s\S]+)$/);
+    if (arrowExprM) {
+      const rawParamStr = arrowExprM[1] !== undefined ? arrowExprM[1] : arrowExprM[2];
+      const bodyStr = arrowExprM[3].trim();
+      const saved = new Map();
+      const boundNames = new Set();
+      splitTopLevel(rawParamStr || '').forEach(p => {
+        const cleanP = p.trim().replace(/^\.\.\./, '');
+        const pm = cleanP.match(/^([A-Za-z_$][\w$]*)(\?)?(?:\s*:\s*([^=]+))?/);
+        if (pm) {
+          const pName = pm[1];
+          const pType = pm[3] ? resolveAlias(pm[3].trim()) : 'any';
+          boundNames.add(pName);
+          saved.set(pName, env.get(pName));
+          env.set(pName, { type: pType, isConst: false, line: lineNum, declaredType: pType });
+        } else {
+          const dSet = new Set();
+          extractBindingNames(cleanP, dSet);
+          dSet.forEach(pName => {
+            boundNames.add(pName);
+            saved.set(pName, env.get(pName));
+            env.set(pName, { type: 'any', isConst: false, line: lineNum, declaredType: 'any' });
+          });
+        }
+      });
+      let retT = 'any';
+      if (!bodyStr.startsWith('{')) {
+        retT = inferType(bodyStr, lineNum);
+      }
+      boundNames.forEach(pName => {
+        const prev = saved.get(pName);
+        if (prev !== undefined) env.set(pName, prev);
+        else env.delete(pName);
+      });
+      return retT;
     }
 
     // Ternary: cond ? a : b (top-level)
@@ -3636,6 +3888,32 @@ function typecheckTS(src, strict = STRICT_TS) {
       return 'number';
     }
 
+    // Method call on `new ClassName(...).method(...)`
+    const newChainCallM = s.match(/^(new\s+[A-Za-z_$][\w$]*\s*(?:<[^>]*>)?\s*\([^)]*\))\.([A-Za-z_$][\w$]*)\s*\(([\s\S]*)\)$/);
+    if (newChainCallM && findBalancedParen(s, s.lastIndexOf('(')) === s.length - 1) {
+      const objType = inferType(newChainCallM[1], lineNum);
+      const method = newChainCallM[2];
+      const argsRaw = newChainCallM[3].trim();
+      const args = argsRaw ? splitTopLevel(argsRaw).map(a => a.trim()) : [];
+      const argTypes = args.map(a => inferType(a, lineNum));
+      const mSig = getClassMethodSig(objType, method);
+      if (mSig) {
+        if (args.length < mSig.minArgs || args.length > mSig.params.length) {
+          addDiag(lineNum, 'TS2554', `方法 "${objType}.${method}" 应有 ${mSig.minArgs === mSig.params.length ? mSig.params.length : mSig.minArgs + '-' + mSig.params.length} 个参数，但获得 ${args.length} 个`);
+        } else {
+          for (let idx = 0; idx < args.length; idx++) {
+            const p = mSig.params[idx];
+            const at = argTypes[idx];
+            if (p && p.type !== 'any' && !isTsAssignable(at, p.type)) {
+              addDiag(lineNum, 'TS2345', `类型 "${at}" 的参数不能赋给类型 "${p.type}" 的参数 (方法 "${objType}.${method}" 的参数 "${p.name}")`);
+            }
+          }
+        }
+        return mSig.returnType || 'any';
+      }
+      return 'any';
+    }
+
     // Function or method call: callee(args)
     const callM = s.match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\(([\s\S]*)\)$/);
     if (callM && findBalancedParen(s, s.indexOf('(')) === s.length - 1) {
@@ -3717,6 +3995,27 @@ function typecheckTS(src, strict = STRICT_TS) {
           if (method === 'includes' || method === 'startsWith' || method === 'endsWith') return 'boolean';
           if (method === 'indexOf' || method === 'charCodeAt') return 'number';
         }
+
+        const classMethodSig = getClassMethodSig(objType, method);
+        if (classMethodSig) {
+          if (args.length < classMethodSig.minArgs || args.length > classMethodSig.params.length) {
+            addDiag(lineNum, 'TS2554', `方法 "${objName}.${method}" 应有 ${classMethodSig.minArgs === classMethodSig.params.length ? classMethodSig.params.length : classMethodSig.minArgs + '-' + classMethodSig.params.length} 个参数，但获得 ${args.length} 个`);
+          } else {
+            for (let idx = 0; idx < args.length; idx++) {
+              const p = classMethodSig.params[idx];
+              const at = argTypes[idx];
+              const rawArg = args[idx] ? args[idx].trim() : '';
+              if (p && p.type !== 'any') {
+                if (rawArg.startsWith('{') && getInterfaceShape(p.type)) {
+                  checkObjectLiteralAgainstShape(rawArg, p.type, lineNum, `方法 "${objName}.${method}" 的参数 "${p.name}"`);
+                } else if (!isTsAssignable(at, p.type)) {
+                  addDiag(lineNum, 'TS2345', `类型 "${at}" 的参数不能赋给类型 "${p.type}" 的参数 (方法 "${objName}.${method}" 的参数 "${p.name}")`);
+                }
+              }
+            }
+          }
+          return classMethodSig.returnType || 'any';
+        }
       }
 
       if (fns.has(callee)) {
@@ -3738,6 +4037,10 @@ function typecheckTS(src, strict = STRICT_TS) {
           }
         }
         return sig.returnType || 'any';
+      }
+
+      if (dotIdx < 0 && !isKnownIdentifier(callee)) {
+        addDiag(lineNum, 'TS2304', `找不到名称 "${callee}"`);
       }
 
       return 'any';
@@ -3775,7 +4078,11 @@ function typecheckTS(src, strict = STRICT_TS) {
     if (/^[A-Za-z_$][\w$]*!*(?:\.[A-Za-z_$][\w$]*!*)+$/.test(s)) {
       const rawParts = s.split('.');
       const firstBase = rawParts[0].replace(/!+$/, '');
-      let curType = env.has(firstBase) ? env.get(firstBase).type : 'any';
+      if (!isKnownIdentifier(firstBase)) {
+        addDiag(lineNum, 'TS2304', `找不到名称 "${firstBase}"（变量未声明，请使用 let 或 const 声明）`);
+        return 'any';
+      }
+      let curType = env.has(firstBase) ? env.get(firstBase).type : (interfaces.has(firstBase) ? firstBase : 'any');
       if (rawParts[0].endsWith('!')) {
         curType = stripNullableFromType(stripNullableFromType(curType, 'null'), 'undefined');
       }
@@ -3810,9 +4117,20 @@ function typecheckTS(src, strict = STRICT_TS) {
       return curType;
     }
 
+    // Prefix / postfix ++ or -- inside expression
+    const exprIncM = s.match(/^(?:(\+\+|--)\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)|([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*(\+\+|--))$/);
+    if (exprIncM) {
+      const target = exprIncM[2] || exprIncM[3];
+      inferType(target, lineNum);
+      return 'number';
+    }
+
     // Identifier lookup
     if (/^[A-Za-z_$][\w$]*$/.test(s)) {
       if (env.has(s)) return env.get(s).type;
+      if (!isKnownIdentifier(s)) {
+        addDiag(lineNum, 'TS2304', `找不到名称 "${s}"（变量未声明，请使用 let 或 const 声明）`);
+      }
     }
 
     return 'any';
@@ -3834,51 +4152,157 @@ function typecheckTS(src, strict = STRICT_TS) {
     });
   }
 
-  // Pass 1: Collect interfaces, type aliases & function signatures
+  function parseParamList(paramStr, lineNum, checkImplicitAny = true) {
+    const rawParams = paramStr ? splitTopLevelDecl(paramStr) : [];
+    const params = [];
+    let minArgs = 0;
+    rawParams.forEach(pRaw => {
+      const p = pRaw.trim().replace(/^(?:public|private|protected|readonly)\s+/, '');
+      if (!p) return;
+      const pm = p.match(/^(?:\.\.\.)?([A-Za-z_$][\w$]*)(\?)?(?:\s*:\s*([^=]+))?(?:\s*=\s*(.+))?$/);
+      if (pm) {
+        const pName = pm[1];
+        const isOpt = Boolean(pm[2] || pm[4]);
+        let pType = pm[3] ? resolveAlias(pm[3].trim()) : null;
+        if (!pType && pm[4]) {
+          pType = inferType(pm[4].trim(), lineNum);
+        }
+        if (!pType) {
+          if (checkImplicitAny) {
+            addDiag(lineNum, 'TS7006', `参数 "${pName}" 隐式具有 "any" 类型（严格模式下请显式添加类型注解，如 ${pName}: number）`);
+          }
+          pType = 'any';
+        }
+        if (!isOpt) minArgs++;
+        params.push({ name: pName, type: pType, optional: isOpt });
+      }
+    });
+    return { params, minArgs };
+  }
+
+  function parseClassTopMember(mem, propMap, clsName, lineNum) {
+    const s = mem.trim();
+    if (!s) return;
+    const getterM = s.match(/^(?:(?:public|private|protected|static|readonly)\s+)*get\s+([A-Za-z_$][\w$]*)\s*\(\s*\)\s*(?::\s*([^{]+))?/);
+    if (getterM) {
+      const gType = getterM[2] ? resolveAlias(getterM[2].trim()) : 'any';
+      propMap.set(getterM[1], { type: gType, optional: false });
+      return;
+    }
+    const methodM = s.match(/^(?:(?:public|private|protected|static|async|readonly)\s+)*([A-Za-z_$][\w$]*)\s*(?:<[^>]*>)?\s*\(([^)]*)\)\s*(?::\s*([^{]+))?/);
+    if (methodM && !RESERVED_WORDS.has(methodM[1])) {
+      const mName = methodM[1];
+      const paramStr = methodM[2].trim();
+      const retType = mName === 'constructor' ? 'void' : (methodM[3] ? resolveAlias(methodM[3].trim()) : 'any');
+      const { params, minArgs } = parseParamList(paramStr, lineNum, true);
+      const hasValRet = /\breturn\s+[^;}\s]/.test(s);
+      fns.set(clsName + '.' + mName, {
+        name: clsName + '.' + mName,
+        params,
+        minArgs,
+        returnType: retType,
+        line: lineNum,
+        hasValueReturn: hasValRet,
+      });
+      return;
+    }
+    if (s.includes('(') && (!s.includes('=') || s.indexOf('(') < s.indexOf('='))) return;
+    const cleaned = s.replace(/^(?:(?:readonly|public|private|protected|static)\s+)+/, '');
+    const pm = cleaned.match(/^([A-Za-z_$][\w$]*)(\?)?\s*:\s*([^=]+?)(?:\s*=[\s\S]+)?$/);
+    if (pm) {
+      propMap.set(pm[1], { type: resolveAlias(pm[3].trim()), optional: Boolean(pm[2]) });
+      return;
+    }
+    const initM = cleaned.match(/^([A-Za-z_$][\w$]*)\s*=\s*(.+)$/);
+    if (initM) {
+      propMap.set(initM[1], { type: inferType(initM[2].trim(), lineNum), optional: false });
+    }
+  }
+
+  // Pass 1: Collect interfaces, classes, type aliases & function signatures
   let activeInterface = null;
+  let activeInterfaceName = '';
+  let activeInterfaceIsClass = false;
+  let activeInterfaceDepth = 0;
   for (let i = 0; i < lines.length; i++) {
     const lineNum = i + 1;
     const raw = stripInlineCommentSafe(lines[i]).trim();
     if (!raw) continue;
 
     if (activeInterface) {
-      const closeIdx = raw.indexOf('}');
-      const memberPart = closeIdx >= 0 ? raw.slice(0, closeIdx).trim() : raw;
-      if (memberPart && !/^(?:constructor|[A-Za-z_$][\w$]*)\s*\(/.test(memberPart)) {
-        memberPart.split(/[;,]/).map(s => s.trim()).filter(Boolean).forEach(mem => {
-          if (mem.includes('(')) return;
-          const cleaned = mem.replace(/^(?:readonly|public|private|protected|static)\s+/, '');
-          const pm = cleaned.match(/^([A-Za-z_$][\w$]*)(\?)?\s*:\s*([^=]+?)(?:\s*=[\s\S]+)?$/);
-          if (pm) {
-            activeInterface.set(pm[1], { type: resolveAlias(pm[3].trim()), optional: Boolean(pm[2]) });
-          }
-        });
+      const depthBefore = activeInterfaceDepth;
+      for (let k = 0; k < raw.length; k++) {
+        const ch = raw[k];
+        if (ch === '"' || ch === "'" || ch === '`') { k = skipString(raw, k) - 1; continue; }
+        if (ch === '{') activeInterfaceDepth++;
+        else if (ch === '}') activeInterfaceDepth--;
       }
-      if (closeIdx >= 0) {
+      if (depthBefore === 1) {
+        const memberPart = activeInterfaceDepth <= 0 && raw.includes('}') ? raw.slice(0, raw.lastIndexOf('}')).trim() : raw;
+        if (memberPart) {
+          if (activeInterfaceIsClass && /^(?:(?:public|private|protected|static|async|readonly|get|set)\s+)*[A-Za-z_$][\w$]*\s*(?:<[^>]*>)?\s*\(/.test(memberPart)) {
+            parseClassTopMember(memberPart, activeInterface, activeInterfaceName, lineNum);
+          } else {
+            memberPart.split(/[;,]/).map(s => s.trim()).filter(Boolean).forEach(mem => {
+              parseClassTopMember(mem, activeInterface, activeInterfaceName, lineNum);
+            });
+          }
+        }
+      }
+      // Also record `this.prop = ...` inside class methods/constructors if not already declared
+      if (activeInterfaceIsClass) {
+        const thisAssignRe = /\bthis\.([A-Za-z_$][\w$]*)\s*=\s*(?!=)/g;
+        let tm;
+        while ((tm = thisAssignRe.exec(raw))) {
+          if (!activeInterface.has(tm[1])) {
+            activeInterface.set(tm[1], { type: 'any', optional: false });
+          }
+        }
+      }
+      if (activeInterfaceDepth <= 0) {
         activeInterface = null;
+        activeInterfaceName = '';
+        activeInterfaceIsClass = false;
+        activeInterfaceDepth = 0;
       }
       continue;
     }
 
-    const ifaceStart = raw.match(/^(?:export\s+)?(?:interface|class)\s+([A-Za-z_$][\w$]*)(?:\s*<[^>]*>)?(?:\s+extends\s+[^{]+)?(?:\s+implements\s+[^{]+)?\s*\{(.*)$/);
+    const ifaceStart = raw.match(/^(?:export\s+)?(interface|class)\s+([A-Za-z_$][\w$]*)(?:\s*<[^>]*>)?(?:\s+extends\s+([A-Za-z_$][\w$]*)(?:<[^>]*>)?)?(?:\s+implements\s+[^{]+)?\s*\{(.*)$/);
     if (ifaceStart) {
-      const ifaceName = ifaceStart[1];
-      const rest = ifaceStart[2].trim();
+      const isClass = ifaceStart[1] === 'class';
+      const ifaceName = ifaceStart[2];
+      const parentName = ifaceStart[3] || null;
+      const rest = ifaceStart[4].trim();
       const propMap = new Map();
       interfaces.set(ifaceName, propMap);
-      if (rest.includes('}')) {
-        const inner = rest.slice(0, rest.indexOf('}')).trim();
+      if (isClass && parentName) {
+        classParents.set(ifaceName, parentName);
+      }
+      let d = 1;
+      for (let k = 0; k < rest.length; k++) {
+        const ch = rest[k];
+        if (ch === '"' || ch === "'" || ch === '`') { k = skipString(rest, k) - 1; continue; }
+        if (ch === '{') d++;
+        else if (ch === '}') d--;
+      }
+      if (d <= 0 && rest.includes('}')) {
+        const inner = rest.slice(0, rest.lastIndexOf('}')).trim();
         inner.split(/[;,]/).map(s => s.trim()).filter(Boolean).forEach(mem => {
-          if (mem.includes('(')) return;
-          const cleaned = mem.replace(/^(?:readonly|public|private|protected|static)\s+/, '');
-          const pm = cleaned.match(/^([A-Za-z_$][\w$]*)(\?)?\s*:\s*([^=]+?)(?:\s*=[\s\S]+)?$/);
-          if (pm) {
-            propMap.set(pm[1], { type: resolveAlias(pm[3].trim()), optional: Boolean(pm[2]) });
-          }
+          parseClassTopMember(mem, propMap, ifaceName, lineNum);
         });
       } else {
         activeInterface = propMap;
+        activeInterfaceName = ifaceName;
+        activeInterfaceIsClass = isClass;
+        activeInterfaceDepth = d;
       }
+      continue;
+    }
+
+    const enumMatch = raw.match(/^(?:export\s+)?(?:const\s+)?enum\s+([A-Za-z_$][\w$]*)\b/);
+    if (enumMatch) {
+      enumsSet.add(enumMatch[1]);
       continue;
     }
 
@@ -3893,7 +4317,7 @@ function typecheckTS(src, strict = STRICT_TS) {
       continue;
     }
 
-    const fnMatch = raw.match(/^(?:export\s+)?(?:default\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(/);
+    const fnMatch = raw.match(/^(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*(?:<[^>]*>)?\s*\(/);
     if (fnMatch && raw.indexOf('(') >= 0) {
       const fnName = fnMatch[1];
       let headerStr = raw;
@@ -3909,31 +4333,7 @@ function typecheckTS(src, strict = STRICT_TS) {
         const afterClose = headerStr.slice(closeP + 1).trim();
         const retM = afterClose.match(/^:\s*([^{]+?)\s*\{?$/);
         const retType = retM ? resolveAlias(retM[1].trim()) : 'any';
-        const rawParams = paramStr ? splitTopLevel(paramStr) : [];
-        const params = [];
-        let minArgs = 0;
-
-        rawParams.forEach(pRaw => {
-          const p = pRaw.trim();
-          if (!p) return;
-          const pm = p.match(/^(?:\.\.\.)?([A-Za-z_$][\w$]*)(\?)?(?:\s*:\s*([^=]+))?(?:\s*=\s*(.+))?$/);
-          if (pm) {
-            const pName = pm[1];
-            const isOpt = Boolean(pm[2] || pm[4]);
-            let pType = pm[3] ? resolveAlias(pm[3].trim()) : null;
-            if (!pType && pm[4]) {
-              pType = inferType(pm[4].trim(), lineNum);
-            }
-            if (!pType) {
-              addDiag(lineNum, 'TS7006', `参数 "${pName}" 隐式具有 "any" 类型（严格模式下请显式添加类型注解，如 ${pName}: number）`);
-              pType = 'any';
-            }
-            if (!isOpt) minArgs++;
-            params.push({ name: pName, type: pType, optional: isOpt });
-            env.set(pName, { type: pType, isConst: false, line: lineNum, declaredType: pType });
-          }
-        });
-
+        const { params, minArgs } = parseParamList(paramStr, lineNum, true);
         fns.set(fnName, { name: fnName, params, minArgs, returnType: retType, line: lineNum, hasValueReturn: false });
       }
     }
@@ -3942,13 +4342,16 @@ function typecheckTS(src, strict = STRICT_TS) {
   // Pass 2: Check statements, declarations, reassignments, returns, and calls line-by-line
   let currentFn = null;
   const fnScopeStack = [];
+  let currentClass = null;
+  let classStartBraceDepth = 0;
   let braceDepth = 0;
   let fnStartBraceDepth = 0;
   let inInterfaceBlock = false;
+  let inEnumBlock = false;
 
   for (let i = 0; i < lines.length; i++) {
     const lineNum = i + 1;
-    const rawLine = lines[i];
+    let rawLine = lines[i];
     const rawTrimmed = rawLine.trim();
 
     const callComment = rawTrimmed.match(/^\/\/\s*调用[:：]\s*(.+)$/);
@@ -3957,31 +4360,102 @@ function typecheckTS(src, strict = STRICT_TS) {
       continue;
     }
 
-    const trimmed = stripInlineCommentSafe(rawLine).trim();
+    let trimmed = stripInlineCommentSafe(rawLine).trim();
     if (!trimmed) continue;
 
     if (inInterfaceBlock) {
       if (trimmed.includes('}')) inInterfaceBlock = false;
       continue;
     }
+    if (inEnumBlock) {
+      if (trimmed.includes('}')) inEnumBlock = false;
+      continue;
+    }
     if (/^(?:export\s+)?interface\s+[A-Za-z_$][\w$]*\s*\{/.test(trimmed)) {
       if (!trimmed.includes('}')) inInterfaceBlock = true;
+      continue;
+    }
+    if (/^(?:export\s+)?(?:const\s+)?enum\s+[A-Za-z_$][\w$]*\s*\{/.test(trimmed)) {
+      if (!trimmed.includes('}')) inEnumBlock = true;
       continue;
     }
     if (/^(?:export\s+)?type\s+[A-Za-z_$][\w$]*\s*=/.test(trimmed)) {
       continue;
     }
 
-    const fnOpen = trimmed.match(/^(?:export\s+)?(?:default\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(/);
-    const arrowFnOpen = !fnOpen ? trimmed.match(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?\(([^)]*)\)\s*(?::\s*([^=]+?))?\s*=>\s*\{/) : null;
-    if (fnOpen || arrowFnOpen) {
-      if (currentFn) {
-        fnScopeStack.push({ fn: currentFn, startDepth: fnStartBraceDepth });
+    const classOpen = trimmed.match(/^(?:export\s+)?class\s+([A-Za-z_$][\w$]*)(?:\s*<[^>]*>)?(?:\s+extends\s+[^{]+)?(?:\s+implements\s+[^{]+)?\s*\{/);
+    const classExprOpen = !classOpen ? trimmed.match(/^(?:export\s+)?(const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*class\b(?:\s+[A-Za-z_$][\w$]*)?\s*\{/) : null;
+    if (classOpen || classExprOpen) {
+      const clsName = classOpen ? classOpen[1] : classExprOpen[2];
+      if (classExprOpen) {
+        env.set(clsName, { type: clsName, isConst: classExprOpen[1] === 'const', line: lineNum, declaredType: clsName });
+        if (!interfaces.has(clsName)) interfaces.set(clsName, new Map());
       }
+      let d = 0;
+      for (let k = 0; k < rawLine.length; k++) {
+        const ch = rawLine[k];
+        if (ch === '"' || ch === "'" || ch === '`') { k = skipString(rawLine, k) - 1; continue; }
+        if (ch === '/' && rawLine[k + 1] === '/') break;
+        if (ch === '{') d++;
+        else if (ch === '}') d--;
+      }
+      if (d > 0) {
+        currentClass = clsName;
+        classStartBraceDepth = braceDepth;
+        braceDepth += d;
+        env.set('this', { type: clsName, isConst: true, line: lineNum, declaredType: clsName });
+      }
+      continue;
+    }
+
+    // Class field declaration inside class body (at top level of class body)
+    if (currentClass && braceDepth === classStartBraceDepth + 1) {
+      const isMethodHdr = /^(?:(?:public|private|protected|static|async|readonly|get|set)\s+)*[A-Za-z_$][\w$]*\s*(?:<[^>]*>)?\s*\(/.test(trimmed);
+      if (!isMethodHdr && trimmed !== '}' && trimmed !== '};') {
+        const cleanedField = trimmed.replace(/^(?:(?:readonly|public|private|protected|static)\s+)+/, '').replace(/;$/, '').trim();
+        const fm = cleanedField.match(/^([A-Za-z_$][\w$]*)(\?)?(?:\s*:\s*([^=]+?))?(?:\s*=\s*([\s\S]+))?$/);
+        if (fm) {
+          const fName = fm[1];
+          const declT = fm[3] ? resolveAlias(fm[3].trim()) : null;
+          const initExpr = fm[4] ? fm[4].trim() : null;
+          if (declT && initExpr) {
+            const initT = inferType(initExpr, lineNum);
+            if (!isTsAssignable(initT, declT)) {
+              addDiag(lineNum, 'TS2322', `不能将类型 "${initT}" 分配给类型 "${declT}" (属性 "${currentClass}.${fName}")`);
+            }
+          }
+          continue;
+        }
+      }
+    }
+
+    const fnOpen = trimmed.match(/^(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*(?:<[^>]*>)?\s*\(/);
+    const arrowFnOpen = !fnOpen ? trimmed.match(/^(?:export\s+)?(const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:function(?:\s+[A-Za-z_$][\w$]*)?\s*)?(?:<[^>]*>\s*)?\(([^)]*)\)\s*(?::\s*([^=]+?))?\s*(?:=>\s*)?\{/) : null;
+    const methodOpen = (!fnOpen && !arrowFnOpen && currentClass && braceDepth === classStartBraceDepth + 1)
+      ? trimmed.match(/^(?:(?:public|private|protected|static|async|readonly|get|set)\s+)*([A-Za-z_$][\w$]*)\s*(?:<[^>]*>)?\s*\(([^)]*)\)\s*(?::\s*([^{]+?))?\s*\{/)
+      : null;
+    const validMethodOpen = (methodOpen && !RESERVED_WORDS.has(methodOpen[1])) ? methodOpen : null;
+
+    if (fnOpen || arrowFnOpen || validMethodOpen) {
+      if (fnOpen) {
+        while (findBalancedParen(trimmed, trimmed.indexOf('(')) < 0 && i + 1 < lines.length) {
+          i++;
+          rawLine += '\n' + lines[i];
+          trimmed += ' ' + stripInlineCommentSafe(lines[i]).trim();
+        }
+      }
+      if (arrowFnOpen) {
+        const fnVarName = arrowFnOpen[2];
+        const isConstFn = arrowFnOpen[1] === 'const';
+        env.set(fnVarName, { type: 'function', isConst: isConstFn, line: lineNum, declaredType: 'function' });
+      }
+      fnScopeStack.push({ fn: currentFn, startDepth: fnStartBraceDepth, prevEnv: new Map(env) });
       if (fnOpen && fns.has(fnOpen[1])) {
         currentFn = fns.get(fnOpen[1]);
+      } else if (validMethodOpen && currentClass && fns.has(currentClass + '.' + validMethodOpen[1])) {
+        currentFn = fns.get(currentClass + '.' + validMethodOpen[1]);
       } else {
-        const fName = fnOpen ? fnOpen[1] : arrowFnOpen[1];
+        const fName = fnOpen ? fnOpen[1] : (arrowFnOpen ? arrowFnOpen[2] : (currentClass + '.' + validMethodOpen[1]));
         let paramStr = '';
         let retType = 'any';
         if (fnOpen) {
@@ -3993,26 +4467,14 @@ function typecheckTS(src, strict = STRICT_TS) {
             const retM = afterClose.match(/^:\s*([^{]+?)\s*\{?$/);
             if (retM) retType = resolveAlias(retM[1].trim());
           }
-        } else {
-          paramStr = (arrowFnOpen[2] || '').trim();
-          retType = arrowFnOpen[3] ? resolveAlias(arrowFnOpen[3].trim()) : 'any';
+        } else if (arrowFnOpen) {
+          paramStr = (arrowFnOpen[3] || '').trim();
+          retType = arrowFnOpen[4] ? resolveAlias(arrowFnOpen[4].trim()) : 'any';
+        } else if (validMethodOpen) {
+          paramStr = (validMethodOpen[2] || '').trim();
+          retType = validMethodOpen[1] === 'constructor' ? 'void' : (validMethodOpen[3] ? resolveAlias(validMethodOpen[3].trim()) : 'any');
         }
-        const rawParams = paramStr ? splitTopLevel(paramStr) : [];
-        const params = [];
-        let minArgs = 0;
-        rawParams.forEach(pRaw => {
-          const p = pRaw.trim();
-          if (!p) return;
-          const pm = p.match(/^(?:\.\.\.)?([A-Za-z_$][\w$]*)(\?)?(?:\s*:\s*([^=]+))?(?:\s*=\s*(.+))?$/);
-          if (pm) {
-            const pName = pm[1];
-            const isOpt = Boolean(pm[2] || pm[4]);
-            let pType = pm[3] ? resolveAlias(pm[3].trim()) : (pm[4] ? inferType(pm[4].trim(), lineNum) : 'any');
-            if (!isOpt) minArgs++;
-            params.push({ name: pName, type: pType, optional: isOpt });
-            env.set(pName, { type: pType, isConst: false, line: lineNum, declaredType: pType });
-          }
-        });
+        const { params, minArgs } = parseParamList(paramStr, lineNum, Boolean(fnOpen || validMethodOpen));
         currentFn = { name: fName, params, minArgs, returnType: retType, line: lineNum, hasValueReturn: false };
         fns.set(fName, currentFn);
       }
@@ -4021,7 +4483,34 @@ function typecheckTS(src, strict = STRICT_TS) {
       });
       fnStartBraceDepth = braceDepth;
       const rm = stripInlineCommentSafe(rawLine).match(/\breturn\b([^;}\n]*)/);
-      if (rm && rm[1].trim()) currentFn.hasValueReturn = true;
+      if (rm && rm[1].trim()) {
+        currentFn.hasValueReturn = true;
+        const inlineRetExpr = rm[1].trim();
+        const inlineRetT = inferType(inlineRetExpr, lineNum);
+        if (currentFn.returnType && currentFn.returnType !== 'any' && !isTsAssignable(inlineRetT, currentFn.returnType)) {
+          addDiag(lineNum, 'TS2322', `不能将返回值类型 "${inlineRetT}" 分配给函数 "${currentFn.name}" 声明的返回类型 "${currentFn.returnType}"`);
+        }
+      }
+      const openBraceIdx = trimmed.indexOf('{');
+      const closeBraceIdx = trimmed.lastIndexOf('}');
+      if (openBraceIdx >= 0 && closeBraceIdx > openBraceIdx) {
+        const inlineBody = trimmed.slice(openBraceIdx + 1, closeBraceIdx).trim();
+        inlineBody.split(';').map(s => s.trim()).filter(Boolean).forEach(stmt => {
+          const inlineAssign = stmt.match(/^([A-Za-z_$][\w$!]*(?:\.[A-Za-z_$][\w$!]*|\s*\[[^\]]+\])*)\s*(\+=|-=|\*=|\/=|=(?!=))\s*([\s\S]+)$/);
+          if (inlineAssign) {
+            const lhs = inlineAssign[1].trim();
+            const rhsT = inferType(inlineAssign[3].trim(), lineNum);
+            if (lhs.includes('.') || lhs.includes('[')) {
+              const lhsT = inferType(lhs, lineNum);
+              if (lhsT !== 'any' && !isTsAssignable(rhsT, lhsT)) {
+                addDiag(lineNum, 'TS2322', `不能将类型 "${rhsT}" 分配给类型 "${lhsT}" ("${lhs}")`);
+              }
+            } else if (/^[A-Za-z_$][\w$]*$/.test(lhs) && !isKnownIdentifier(lhs)) {
+              addDiag(lineNum, 'TS2304', `找不到名称 "${lhs}"（变量未声明，请使用 let 或 const 声明）`);
+            }
+          }
+        });
+      }
     }
 
     for (let k = 0; k < rawLine.length; k++) {
@@ -4039,57 +4528,159 @@ function typecheckTS(src, strict = STRICT_TS) {
             const prev = fnScopeStack.pop();
             currentFn = prev.fn;
             fnStartBraceDepth = prev.startDepth;
+            if (prev.prevEnv) {
+              env.clear();
+              prev.prevEnv.forEach((v, kName) => env.set(kName, v));
+              if (currentClass) env.set('this', { type: currentClass, isConst: true, line: lineNum, declaredType: currentClass });
+            }
           } else {
             currentFn = null;
           }
         }
+        if (currentClass && braceDepth <= classStartBraceDepth) {
+          currentClass = null;
+          env.delete('this');
+        }
       }
     }
-    if (fnOpen || arrowFnOpen) continue;
+    if (fnOpen || arrowFnOpen || validMethodOpen) continue;
 
-    // For-loop header: for (let i = 0; i < n; i++)
-    const forM = trimmed.match(/^for\s*\(\s*(const|let|var)\s+([^;]+);([^;]*);([^)]*)\)/);
-    if (forM) {
-      const kind = forM[1];
-      const decls = splitTopLevel(forM[2]);
-      decls.forEach(d => {
-        const dm = d.trim().match(/^([A-Za-z_$][\w$]*)(?:\s*:\s*([^=]+))?\s*=\s*(.+)$/);
-        if (dm) {
-          const vName = dm[1];
-          const declT = dm[2] ? resolveAlias(dm[2].trim()) : null;
-          const initT = inferType(dm[3].trim(), lineNum);
-          if (declT && !isTsAssignable(initT, declT)) {
-            addDiag(lineNum, 'TS2322', `不能将类型 "${initT}" 分配给类型 "${declT}" (循环变量 "${vName}")`);
-          }
-          env.set(vName, { type: declT || initT, isConst: kind === 'const', line: lineNum });
+    // Catch clause: catch (e) {
+    const catchM = trimmed.match(/^(?:}\s*)?catch\s*\(\s*([A-Za-z_$][\w$]*)(?:\s*:\s*[^)]+)?\s*\)/);
+    if (catchM) {
+      env.set(catchM[1], { type: 'any', isConst: false, line: lineNum, declaredType: 'any' });
+      continue;
+    }
+
+    // Pure structural braces / keywords: }, };, else {, try {, finally {, do {, default:
+    if (/^(?:\}\s*;?|\}\s*else\s*\{?|else\s*\{?|try\s*\{?|\}\s*finally\s*\{?|finally\s*\{?|do\s*\{?|default\s*:)$/.test(trimmed)) {
+      continue;
+    }
+
+    // For-of / For-in loop header: for (const/let/var x of/in expr)
+    const forOfInM = trimmed.match(/^for\s*\(\s*(?:(const|let|var)\s+)?(.+?)\s+(of|in)\s+([\s\S]+?)\)\s*\{?$/);
+    if (forOfInM) {
+      const kind = forOfInM[1] || null;
+      const lhsRaw = forOfInM[2].trim();
+      const mode = forOfInM[3];
+      const rhsExpr = forOfInM[4].trim();
+      const rhsT = inferType(rhsExpr, lineNum);
+      let elemT = 'any';
+      if (mode === 'in') {
+        elemT = 'string';
+      } else if (rhsT.endsWith('[]')) {
+        elemT = rhsT.slice(0, -2);
+      } else if (rhsT === 'string') {
+        elemT = 'string';
+      }
+      if (kind) {
+        const simpleVar = lhsRaw.match(/^([A-Za-z_$][\w$]*)(?:\s*:\s*([^=]+))?$/);
+        if (simpleVar) {
+          const vName = simpleVar[1];
+          const declT = simpleVar[2] ? resolveAlias(simpleVar[2].trim()) : elemT;
+          env.set(vName, { type: declT, isConst: kind === 'const', line: lineNum, declaredType: declT });
+        } else {
+          const bound = new Set();
+          extractBindingNames(lhsRaw, bound);
+          bound.forEach(vName => {
+            env.set(vName, { type: 'any', isConst: kind === 'const', line: lineNum, declaredType: 'any' });
+          });
         }
-      });
-      if (forM[3].trim()) inferType(forM[3].trim(), lineNum);
-      if (forM[4].trim()) {
-        const updVar = forM[4].trim().match(/^([A-Za-z_$][\w$]*)\s*(?:\+\+|--|\+=|-=|=)/);
-        if (updVar && env.has(updVar[1]) && env.get(updVar[1]).isConst) {
-          addDiag(lineNum, 'TS2588', `无法分配到 "${updVar[1]}"，因为它是常数 (const)`);
+      } else if (/^[A-Za-z_$][\w$]*$/.test(lhsRaw)) {
+        if (!isKnownIdentifier(lhsRaw)) {
+          addDiag(lineNum, 'TS2304', `找不到名称 "${lhsRaw}"（变量未声明，请使用 let 或 const 声明）`);
+        } else if (env.has(lhsRaw) && env.get(lhsRaw).isConst) {
+          addDiag(lineNum, 'TS2588', `无法分配到 "${lhsRaw}"，因为它是常数 (const)`);
         }
       }
       continue;
     }
 
-    // Variable declarations: const/let/var ...
-    const varM = trimmed.match(/^(?:export\s+)?(const|let|var)\s+(.+?);?$/);
+    // For-loop header: for (let i = 0; i < n; i++) or for (i = 0; i < n; i++)
+    const forM = trimmed.match(/^for\s*\(\s*(?:(const|let|var)\s+)?([^;]*);([^;]*);([^)]*)\)/);
+    if (forM) {
+      const kind = forM[1] || null;
+      const initPart = forM[2].trim();
+      if (kind && initPart) {
+        const decls = splitTopLevel(initPart);
+        decls.forEach(d => {
+          const dm = d.trim().match(/^([A-Za-z_$][\w$]*)(?:\s*:\s*([^=]+))?\s*=\s*(.+)$/);
+          if (dm) {
+            const vName = dm[1];
+            const declT = dm[2] ? resolveAlias(dm[2].trim()) : null;
+            const initT = inferType(dm[3].trim(), lineNum);
+            if (declT && !isTsAssignable(initT, declT)) {
+              addDiag(lineNum, 'TS2322', `不能将类型 "${initT}" 分配给类型 "${declT}" (循环变量 "${vName}")`);
+            }
+            env.set(vName, { type: declT || initT, isConst: kind === 'const', line: lineNum });
+          }
+        });
+      } else if (initPart) {
+        splitTopLevel(initPart).forEach(d => {
+          const am = d.trim().match(/^([A-Za-z_$][\w$]*)\s*=\s*(.+)$/);
+          if (am) {
+            inferType(am[2].trim(), lineNum);
+            if (!isKnownIdentifier(am[1])) {
+              addDiag(lineNum, 'TS2304', `找不到名称 "${am[1]}"（变量未声明，请使用 let 或 const 声明）`);
+            } else if (env.has(am[1]) && env.get(am[1]).isConst) {
+              addDiag(lineNum, 'TS2588', `无法分配到 "${am[1]}"，因为它是常数 (const)`);
+            }
+          } else {
+            inferType(d.trim(), lineNum);
+          }
+        });
+      }
+      if (forM[3].trim()) inferType(forM[3].trim(), lineNum);
+      if (forM[4].trim()) {
+        const updVar = forM[4].trim().match(/^([A-Za-z_$][\w$]*)\s*(?:\+\+|--|\+=|-=|=)/);
+        if (updVar) {
+          if (!isKnownIdentifier(updVar[1])) {
+            addDiag(lineNum, 'TS2304', `找不到名称 "${updVar[1]}"（变量未声明，请使用 let 或 const 声明）`);
+          } else if (env.has(updVar[1]) && env.get(updVar[1]).isConst) {
+            addDiag(lineNum, 'TS2588', `无法分配到 "${updVar[1]}"，因为它是常数 (const)`);
+          }
+        }
+      }
+      continue;
+    }
+
+    // Variable declarations: const/let/var ... (supporting multi-line array/object/call expressions & destructuring)
+    const varM = trimmed.match(/^(?:export\s+)?(const|let|var)\s+([\s\S]+?);?$/);
     if (varM) {
       const isConst = varM[1] === 'const';
-      const rest = varM[2];
-      let openB = 0;
-      for (let cIdx = 0; cIdx < rest.length; cIdx++) {
-        const ch = rest[cIdx];
-        if (ch === '"' || ch === "'" || ch === '`') { cIdx = skipString(rest, cIdx) - 1; continue; }
-        if (ch === '{' || ch === '[' || ch === '(') openB++;
-        else if (ch === '}' || ch === ']' || ch === ')') openB--;
+      let rest = varM[2];
+      const countOpenBrackets = (str) => {
+        let b = 0;
+        for (let cIdx = 0; cIdx < str.length; cIdx++) {
+          const ch = str[cIdx];
+          if (ch === '"' || ch === "'" || ch === '`') { cIdx = skipString(str, cIdx) - 1; continue; }
+          if (ch === '{' || ch === '[' || ch === '(') b++;
+          else if (ch === '}' || ch === ']' || ch === ')') b--;
+        }
+        return b;
+      };
+      let openB = countOpenBrackets(rest);
+      while ((openB > 0 || /[=.,+\-*/|&(\[]$/.test(rest.trim())) && i + 1 < lines.length) {
+        const nextLineRaw = lines[i + 1];
+        const nextLineClean = stripInlineCommentSafe(nextLineRaw).trim();
+        for (let k = 0; k < nextLineRaw.length; k++) {
+          const ch = nextLineRaw[k];
+          if (ch === '"' || ch === "'" || ch === '`') { k = skipString(nextLineRaw, k) - 1; continue; }
+          if (ch === '/' && nextLineRaw[k + 1] === '/') break;
+          if (ch === '{') braceDepth++;
+          else if (ch === '}') braceDepth = Math.max(0, braceDepth - 1);
+        }
+        i++;
+        rest += ' ' + nextLineClean;
+        openB = countOpenBrackets(rest);
+        if (openB <= 0 && /;\s*$/.test(nextLineClean)) break;
       }
+      rest = rest.replace(/;\s*$/, '').trim();
       if (openB === 0) {
-        const parts = splitTopLevel(rest);
+        const parts = splitTopLevelDecl(rest);
         parts.forEach(part => {
-          const pm = part.trim().match(/^([A-Za-z_$][\w$]*)(?:\s*:\s*([^=]+))?(?:\s*=\s*([\s\S]+))?$/);
+          const pTrim = part.trim();
+          const pm = pTrim.match(/^([A-Za-z_$][\w$]*)(?:\s*:\s*([^=]+))?(?:\s*=\s*([\s\S]+))?$/);
           if (pm) {
             const vName = pm[1];
             const declT = pm[2] ? resolveAlias(pm[2].trim()) : null;
@@ -4111,6 +4702,23 @@ function typecheckTS(src, strict = STRICT_TS) {
               }
             }
             env.set(vName, { type: declT || initT, isConst, line: lineNum, declaredType: declT || initT });
+          } else if (pTrim.startsWith('[') || pTrim.startsWith('{')) {
+            let eqIdx = -1, d = 0;
+            for (let k = 0; k < pTrim.length; k++) {
+              const ch = pTrim[k];
+              if (ch === '"' || ch === "'" || ch === '`') { k = skipString(pTrim, k) - 1; continue; }
+              if (ch === '(' || ch === '[' || ch === '{') d++;
+              else if (ch === ')' || ch === ']' || ch === '}') d--;
+              else if (ch === '=' && d === 0 && pTrim[k + 1] !== '=' && pTrim[k + 1] !== '>') { eqIdx = k; break; }
+            }
+            if (eqIdx > 0) {
+              inferType(pTrim.slice(eqIdx + 1).trim(), lineNum);
+            }
+            const bound = new Set();
+            extractBindingNames(pTrim, bound);
+            bound.forEach(vName => {
+              env.set(vName, { type: 'any', isConst, line: lineNum, declaredType: 'any' });
+            });
           }
         });
       }
@@ -4135,6 +4743,25 @@ function typecheckTS(src, strict = STRICT_TS) {
           }
         }
       }
+      continue;
+    }
+
+    // Throw statement
+    const throwM = trimmed.match(/^throw\s+([\s\S]+?);?$/);
+    if (throwM) {
+      inferType(throwM[1].trim(), lineNum);
+      continue;
+    }
+
+    // Switch / case statements
+    const switchM = trimmed.match(/^switch\s*\(([\s\S]+)\)\s*\{?$/);
+    if (switchM) {
+      inferType(switchM[1].trim(), lineNum);
+      continue;
+    }
+    const caseM = trimmed.match(/^case\s+([^:]+):(.*)$/);
+    if (caseM) {
+      inferType(caseM[1].trim(), lineNum);
       continue;
     }
 
@@ -4171,55 +4798,103 @@ function typecheckTS(src, strict = STRICT_TS) {
       continue;
     }
 
-    // If / while / else if conditions
-    const condM = trimmed.match(/^(?:}\s*)?(?:if|while|else\s+if)\s*\(([\s\S]+)\)\s*\{?$/);
-    if (condM) {
-      const condStr = condM[1].trim();
-      inferType(condStr, lineNum);
-      // Narrow x !== null / x !== undefined inside while/if body
-      condStr.split('&&').forEach(clause => {
-        const cm = clause.trim().match(/^([A-Za-z_$][\w$]*)\s*!==\s*(null|undefined)$/);
-        if (cm && env.has(cm[1])) {
-          const curInfo = env.get(cm[1]);
-          env.set(cm[1], { ...curInfo, type: stripNullableFromType(curInfo.type, cm[2]) });
+    // If / while / else if conditions (including single-line bodies like `while (i >= 0) { i = i + 1; }` or `while (true) i = i + 1;`)
+    const condPrefixM = trimmed.match(/^(?:}\s*)?(?:if|while|else\s+if)\s*\(/);
+    if (condPrefixM) {
+      const openIdx = trimmed.indexOf('(', condPrefixM[0].length - 1);
+      const closeIdx = findBalancedParen(trimmed, openIdx);
+      if (closeIdx > openIdx) {
+        const condStr = trimmed.slice(openIdx + 1, closeIdx).trim();
+        inferType(condStr, lineNum);
+        const tail = trimmed.slice(closeIdx + 1).trim();
+        if (tail && tail !== '{') {
+          const bodyInner = (tail.startsWith('{') && tail.endsWith('}')) ? tail.slice(1, -1).trim() : tail;
+          bodyInner.split(';').map(s => s.trim()).filter(Boolean).forEach(stmt => {
+            const inlineAssign = stmt.match(/^([A-Za-z_$][\w$!]*(?:\.[A-Za-z_$][\w$!]*|\s*\[[^\]]+\])*)\s*(\+=|-=|\*=|\/=|=(?!=))\s*([\s\S]+)$/);
+            if (inlineAssign) {
+              const lhs = inlineAssign[1].trim();
+              const rhsT = inferType(inlineAssign[3].trim(), lineNum);
+              if (/^[A-Za-z_$][\w$]*$/.test(lhs) && !isKnownIdentifier(lhs)) {
+                addDiag(lineNum, 'TS2304', `找不到名称 "${lhs}"（变量未声明，请使用 let 或 const 声明）`);
+              } else if (lhs.includes('.') || lhs.includes('[')) {
+                const lhsT = inferType(lhs, lineNum);
+                if (lhsT !== 'any' && !isTsAssignable(rhsT, lhsT)) {
+                  addDiag(lineNum, 'TS2322', `不能将类型 "${rhsT}" 分配给类型 "${lhsT}" ("${lhs}")`);
+                }
+              }
+            }
+          });
         }
-        // If condition checks x.prop !== null, verify if next line assigns const v = x.prop; and narrow it
-        const propCm = clause.trim().match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+)\s*!==\s*(null|undefined)$/);
-        if (propCm && i + 1 < lines.length) {
-          const propExpr = propCm[1];
-          const nextTrim = stripInlineCommentSafe(lines[i + 1]).trim();
-          const nextDecl = nextTrim.match(/^(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+)\s*;?$/);
-          if (nextDecl && nextDecl[2] === propExpr) {
-            const propT = stripNullableFromType(inferType(propExpr, lineNum), propCm[2]);
-            env.set('__narrowed_prop_' + propExpr, { type: propT });
-          }
-        }
-      });
-      // Check if an upcoming line right after if (...) is a return/break/continue statement for early-exit narrowing
-      if (/^if\s*\(/.test(trimmed) && i + 1 < lines.length && /^\s*(?:return|break|continue)\b/.test(lines[i + 1])) {
-        condStr.split('||').forEach(clause => {
-          const cm = clause.trim().match(/^([A-Za-z_$][\w$]*)\s*===\s*(null|undefined)$/);
+        // Narrow x !== null / x !== undefined inside while/if body
+        condStr.split('&&').forEach(clause => {
+          const cm = clause.trim().match(/^([A-Za-z_$][\w$]*)\s*!==\s*(null|undefined)$/);
           if (cm && env.has(cm[1])) {
             const curInfo = env.get(cm[1]);
             env.set(cm[1], { ...curInfo, type: stripNullableFromType(curInfo.type, cm[2]) });
           }
+          // If condition checks x.prop !== null, verify if next line assigns const v = x.prop; and narrow it
+          const propCm = clause.trim().match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+)\s*!==\s*(null|undefined)$/);
+          if (propCm && i + 1 < lines.length) {
+            const propExpr = propCm[1];
+            const nextTrim = stripInlineCommentSafe(lines[i + 1]).trim();
+            const nextDecl = nextTrim.match(/^(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+)\s*;?$/);
+            if (nextDecl && nextDecl[2] === propExpr) {
+              const propT = stripNullableFromType(inferType(propExpr, lineNum), propCm[2]);
+              env.set('__narrowed_prop_' + propExpr, { type: propT });
+            }
+          }
         });
+        // Check if an upcoming line right after if (...) is a return/break/continue statement for early-exit narrowing
+        if (/^if\s*\(/.test(trimmed) && i + 1 < lines.length && /^\s*(?:return|break|continue)\b/.test(lines[i + 1])) {
+          condStr.split('||').forEach(clause => {
+            const cm = clause.trim().match(/^([A-Za-z_$][\w$]*)\s*===\s*(null|undefined)$/);
+            if (cm && env.has(cm[1])) {
+              const curInfo = env.get(cm[1]);
+              env.set(cm[1], { ...curInfo, type: stripNullableFromType(curInfo.type, cm[2]) });
+            }
+          });
+        }
+        continue;
       }
-      continue;
     }
 
     // Unary ++ / -- statement
-    const incM = trimmed.match(/^([A-Za-z_$][\w$]*)\s*(\+\+|--);?$/);
+    const incM = trimmed.match(/^(?:(\+\+|--)\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)|([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*(\+\+|--));?$/);
     if (incM) {
-      const vName = incM[1];
-      if (env.has(vName)) {
+      const vName = incM[2] || incM[3];
+      if (vName.includes('.')) {
+        const propT = inferType(vName, lineNum);
+        if (propT !== 'any' && !isTsAssignable('number', propT)) {
+          addDiag(lineNum, 'TS2322', `不能对类型 "${propT}" 的属性 "${vName}" 执行自增/自减运算`);
+        }
+      } else if (env.has(vName)) {
         const info = env.get(vName);
         if (info.isConst) {
           addDiag(lineNum, 'TS2588', `无法分配到 "${vName}"，因为它是常数 (const)`);
         } else if (info.type !== 'any' && !isTsAssignable('number', info.type)) {
           addDiag(lineNum, 'TS2322', `不能对类型 "${info.type}" 的变量 "${vName}" 执行自增/自减运算`);
         }
+      } else if (!isKnownIdentifier(vName)) {
+        addDiag(lineNum, 'TS2304', `找不到名称 "${vName}"（变量未声明，请使用 let 或 const 声明）`);
       }
+      continue;
+    }
+
+    // Destructuring assignment: [a, b] = [b, a]
+    if (/^\[[^\]]+\]\s*=\s*[\s\S]+$/.test(trimmed)) {
+      const eqIdx = trimmed.indexOf('=');
+      const lhsPart = trimmed.slice(0, eqIdx).trim();
+      const rhsPart = trimmed.slice(eqIdx + 1).replace(/;\s*$/, '').trim();
+      inferType(rhsPart, lineNum);
+      const bound = new Set();
+      extractBindingNames(lhsPart, bound);
+      bound.forEach(vName => {
+        if (!isKnownIdentifier(vName)) {
+          addDiag(lineNum, 'TS2304', `找不到名称 "${vName}"（变量未声明，请使用 let 或 const 声明）`);
+        } else if (env.has(vName) && env.get(vName).isConst) {
+          addDiag(lineNum, 'TS2588', `无法分配到 "${vName}"，因为它是常数 (const)`);
+        }
+      });
       continue;
     }
 
@@ -4231,20 +4906,24 @@ function typecheckTS(src, strict = STRICT_TS) {
       const rhs = assignM[3].trim();
       const rhsT = inferType(rhs, lineNum);
 
-      if (/^[A-Za-z_$][\w$]*$/.test(lhs) && env.has(lhs)) {
-        const info = env.get(lhs);
-        const checkTargetT = info.declaredType || info.type;
-        if (info.isConst) {
-          addDiag(lineNum, 'TS2588', `无法分配到 "${lhs}"，因为它是常数 (const)`);
-        } else if (checkTargetT !== 'any') {
-          if (op === '=' && rhs.startsWith('{') && getInterfaceShape(checkTargetT)) {
-            checkObjectLiteralAgainstShape(rhs, checkTargetT, lineNum, `变量 "${lhs}"`);
-          } else {
-            const effectiveT = op === '=' ? rhsT : inferType(`${lhs} ${op[0]} (${rhs})`, lineNum);
-            if (!isTsAssignable(effectiveT, checkTargetT)) {
-              addDiag(lineNum, 'TS2322', `不能将类型 "${effectiveT}" 分配给类型 "${checkTargetT}" (变量 "${lhs}")`);
+      if (/^[A-Za-z_$][\w$]*$/.test(lhs)) {
+        if (env.has(lhs)) {
+          const info = env.get(lhs);
+          const checkTargetT = info.declaredType || info.type;
+          if (info.isConst) {
+            addDiag(lineNum, 'TS2588', `无法分配到 "${lhs}"，因为它是常数 (const)`);
+          } else if (checkTargetT !== 'any') {
+            if (op === '=' && rhs.startsWith('{') && getInterfaceShape(checkTargetT)) {
+              checkObjectLiteralAgainstShape(rhs, checkTargetT, lineNum, `变量 "${lhs}"`);
+            } else {
+              const effectiveT = op === '=' ? rhsT : inferType(`${lhs} ${op[0]} (${rhs})`, lineNum);
+              if (!isTsAssignable(effectiveT, checkTargetT)) {
+                addDiag(lineNum, 'TS2322', `不能将类型 "${effectiveT}" 分配给类型 "${checkTargetT}" (变量 "${lhs}")`);
+              }
             }
           }
+        } else if (!isKnownIdentifier(lhs)) {
+          addDiag(lineNum, 'TS2304', `找不到名称 "${lhs}"（变量未声明，请使用 let 或 const 声明）`);
         }
       } else if (lhs.includes('.') || lhs.includes('[')) {
         const lhsT = inferType(lhs, lineNum);
@@ -5295,10 +5974,11 @@ function renderCallStack(st) {
   }
 }
 
-function buildStepVizRow(rawLine, anim, stError) {
+function buildStepVizRow(rawLine, anim, stError, isBelow = false) {
+  const guideChar = isBelow ? '╰─' : '╭─';
   if (stError) {
     return `<div class="step-viz-row">` +
-      `<span class="sv-guide err">╭─</span>` +
+      `<span class="sv-guide err">${guideChar}</span>` +
       `<div class="sv-box sv-err-box">` +
         `<span class="sv-err-tag">✗ RUNTIME ERROR</span>` +
         `<span class="sv-err-msg">${esc(stError)}</span>` +
@@ -5310,7 +5990,7 @@ function buildStepVizRow(rawLine, anim, stError) {
 
   if (anim.type === 'error' && anim.message) {
     return `<div class="step-viz-row">` +
-      `<span class="sv-guide err">╭─</span>` +
+      `<span class="sv-guide err">${guideChar}</span>` +
       `<div class="sv-box sv-err-box">` +
         `<span class="sv-err-tag">✗ RUNTIME ERROR</span>` +
         `<span class="sv-err-msg">${esc(anim.message)}</span>` +
@@ -5329,7 +6009,7 @@ function buildStepVizRow(rawLine, anim, stError) {
         }).join('<span class="sv-dim">,</span>')
       : `<span class="sv-dim">已暂停于检查点函数 ${esc(anim.fn || 'checkpoint')}()</span>`;
     return `<div class="step-viz-row">` +
-      `<span class="sv-guide ckpt">╭─</span>` +
+      `<span class="sv-guide ckpt">${guideChar}</span>` +
       `<div class="sv-box sv-ckpt-box">` +
         `<span class="sv-ckpt-tag">◉ CHECKPOINT</span>` +
         chips +
@@ -5341,7 +6021,7 @@ function buildStepVizRow(rawLine, anim, stError) {
     const valTxt = anim.val != null ? anim.val : '…';
     const showFrom = anim.from && anim.from !== valTxt;
     return `<div class="step-viz-row">` +
-      `<span class="sv-guide">╭─</span>` +
+      `<span class="sv-guide">${guideChar}</span>` +
       `<div class="sv-box">` +
         `<span class="sv-dst">${esc(anim.to)}</span>` +
         `<span class="sv-arrow">⟵</span>` +
@@ -5360,7 +6040,7 @@ function buildStepVizRow(rawLine, anim, stError) {
       ? `<span class="sv-op">${esc(anim.op)}</span><span class="sv-cmp"><span>${esc(anim.rhs)}</span>${rhsShowVal ? `<span class="sv-eval">= ${esc(anim.rhsVal)}</span>` : ''}</span>`
       : '';
     return `<div class="step-viz-row">` +
-      `<span class="sv-guide">╭─</span>` +
+      `<span class="sv-guide">${guideChar}</span>` +
       `<div class="sv-box">` +
         lhsHtml +
         rhsHtml +
@@ -5381,7 +6061,7 @@ function buildStepVizRow(rawLine, anim, stError) {
       ? `<span class="sv-dst">${esc(anim.to)}</span><span class="sv-arrow">⟵</span><span class="sv-val">${esc(anim.result)}</span><span class="sv-dim">from</span>`
       : (anim.result != null ? `<span class="sv-val">${esc(anim.result)}</span><span class="sv-arrow">⟵</span>` : '');
     return `<div class="step-viz-row">` +
-      `<span class="sv-guide">╭─</span>` +
+      `<span class="sv-guide">${guideChar}</span>` +
       `<div class="sv-box">` +
         prefix +
         `<span class="sv-fn">${esc(anim.fn)}</span>` +
@@ -5456,7 +6136,7 @@ let STEP_VIZ_LINE = -1;
 
 function updateStepViz(st, line, show, rawLine) {
   if (!stepVizEl) return;
-  const html = (show && st) ? buildStepVizRow(rawLine, st.anim, st.error) : '';
+  const html = (show && st) ? buildStepVizRow(rawLine, st.anim, st.error, line === 1) : '';
   if (!html) {
     STEP_VIZ_LINE = -1;
     if (stepVizEl.__vizHtml !== '') {
@@ -5485,34 +6165,57 @@ function positionStepViz() {
     stepVizEl.style.display = 'none';
     return;
   }
+  let placedBelow = false;
   if (window.PlaygroundCM) {
     const cm = window.PlaygroundCM;
     const lineTop = cm.lineTop(STEP_VIZ_LINE);
     const h = stepVizEl.offsetHeight || 22;
     let top = lineTop - h - 3;
-    if (top < 2) top = lineTop + 24 + 3;
+    if (top < 2) {
+      top = lineTop + 24 + 3;
+      placedBelow = true;
+    }
     const boxH = cm.viewportHeight() || 0;
     if (boxH && top + h > boxH - 2) {
       top = lineTop - h - 3;
+      placedBelow = false;
       if (top < 2) top = Math.max(2, boxH - h - 4);
     }
     stepVizEl.style.left = cm.contentLeft() + 'px';
     stepVizEl.style.top = Math.round(top) + 'px';
     stepVizEl.style.display = 'block';
-    return;
+  } else {
+    const m = hoverMetrics();
+    const lineTop = m.padTop + (STEP_VIZ_LINE - 1) * m.lh - (editor.scrollTop || 0);
+    const h = stepVizEl.offsetHeight || 22;
+    let top = lineTop - h - 3;                     // preferred: float directly above the line
+    if (top < 2) {
+      top = lineTop + m.lh + 3;                    // no room above → drop below the line
+      placedBelow = true;
+    }
+    const boxH = editor.clientHeight || 0;
+    if (boxH && top + h > boxH - 2) {              // keep it inside the code box at the bottom edge
+      top = lineTop - h - 3;
+      placedBelow = false;
+      if (top < 2) top = Math.max(2, boxH - h - 4);
+    }
+    stepVizEl.style.top = Math.round(top) + 'px';
+    stepVizEl.style.display = 'block';
   }
-  const m = hoverMetrics();
-  const lineTop = m.padTop + (STEP_VIZ_LINE - 1) * m.lh - (editor.scrollTop || 0);
-  const h = stepVizEl.offsetHeight || 22;
-  let top = lineTop - h - 3;                     // preferred: float directly above the line
-  if (top < 2) top = lineTop + m.lh + 3;         // no room above → drop below the line
-  const boxH = editor.clientHeight || 0;
-  if (boxH && top + h > boxH - 2) {              // keep it inside the code box at the bottom edge
-    top = lineTop - h - 3;
-    if (top < 2) top = Math.max(2, boxH - h - 4);
+  if (stepVizEl.classList) {
+    stepVizEl.classList.toggle('below-line', placedBelow);
   }
-  stepVizEl.style.top = Math.round(top) + 'px';
-  stepVizEl.style.display = 'block';
+  if (typeof stepVizEl.innerHTML === 'string' && stepVizEl.innerHTML) {
+    const targetGuide = placedBelow ? '╰─' : '╭─';
+    const nextHtml = stepVizEl.innerHTML.replace(
+      /(<span class="sv-guide(?:\s+[^"]*)?">)(?:╭─|╰─)(<\/span>)/,
+      `$1${targetGuide}$2`
+    );
+    if (nextHtml !== stepVizEl.innerHTML) {
+      stepVizEl.innerHTML = nextHtml;
+      stepVizEl.__vizHtml = nextHtml;
+    }
+  }
 }
 
 function clearFlyLayer() {
@@ -5625,7 +6328,7 @@ function hoverWordAt(lineText, col) {
    (falling back to the global frame so outer variables stay inspectable inside functions). */
 function hoverInfoFor(name) {
   if (!name || !TRACE.steps.length) return null;
-  if (typeof RESERVED_WORDS !== 'undefined' && RESERVED_WORDS.has(name)) return null;
+  if (typeof RESERVED_WORDS !== 'undefined' && RESERVED_WORDS.has(name) && name !== 'this') return null;
   const st = TRACE.steps[cur];
   if (!st) return null;
   const frame = getActiveFrame(st);
@@ -5633,24 +6336,32 @@ function hoverInfoFor(name) {
   let ds = (frame && frame.ds) || st.ds || {};
   let frameLabel = frame ? frame.label : 'global';
   const found = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
-  if (!found(v, name) && !ds[name]) {
+  let lookupKey = name;
+  if (name === 'self' && !found(v, 'self') && !ds.self && (found(v, 'this') || ds.this)) {
+    lookupKey = 'this';
+  }
+  if (!found(v, lookupKey) && !ds[lookupKey]) {
     const globalFrame = st.callStack && st.callStack[0];
-    if (globalFrame && globalFrame.v && (found(globalFrame.v, name) || (globalFrame.ds && globalFrame.ds[name]))) {
+    if (globalFrame && globalFrame.v && (found(globalFrame.v, lookupKey) || (globalFrame.ds && globalFrame.ds[lookupKey]))) {
       v = globalFrame.v;
       ds = globalFrame.ds || {};
       frameLabel = globalFrame.label || 'global';
     }
   }
-  const hasVal = found(v, name);
-  const d = ds[name] || null;
+  const hasVal = found(v, lookupKey);
+  const d = ds[lookupKey] || null;
   if (!hasVal && !d) return null;
-  const val = hasVal ? v[name] : undefined;
-  const declaredType = CURRENT_TS_META && CURRENT_TS_META.varTypes ? CURRENT_TS_META.varTypes.get(name) : null;
+  const val = hasVal ? v[lookupKey] : undefined;
+  const declaredType = (CURRENT_TS_META && CURRENT_TS_META.varTypes ? CURRENT_TS_META.varTypes.get(lookupKey) : null) ||
+    (d && d.interfaceName && d.interfaceName !== 'object' ? d.interfaceName : null);
+  const kindStr = d
+    ? (d.kind === 'interface' && d.isClass ? (d.interfaceName ? 'class · ' + d.interfaceName : 'class') : d.kind)
+    : (declaredType || inferRuntimeTsType(val));
   return {
     name,
     val,
     d,
-    kind: d ? d.kind : (declaredType || inferRuntimeTsType(val)),
+    kind: kindStr,
     declaredType: declaredType || null,
     frame: frameLabel,
   };
@@ -6022,28 +6733,31 @@ function vizGraph(d) {
 function vizInterface(d) {
   if (!d) return null;
   const fields = d.fields || (d.entries ? d.entries.map(e => ({ k: e.k, v: e.v, declaredType: typeof e.v })) : []);
-  if (!fields.length) return null;
+  if (!fields.length && !d.isClass) return null;
   const ifaceTitle = d.interfaceName && d.interfaceName !== 'object' ? d.interfaceName : 'Object';
+  const kwTxt = d.isClass ? 'class' : 'interface';
   const badgeTxt = d.isSchema
     ? (d.instanceName ? `schema · 绑定 ${d.instanceName}` : 'schema')
     : 'instance';
-  const rows = fields.slice(0, 12).map(f => {
-    const isHot = d.hot === f.k;
-    const hasVal = f.v !== undefined;
-    const isStr = typeof f.v === 'string';
-    const valDisplay = hasVal
-      ? (isStr ? JSON.stringify(f.v) : (f.v !== null && typeof f.v === 'object' ? safeJSONStringify(f.v) : String(f.v)))
-      : '未实例化';
-    return '<div class="viface-row' + (isHot ? ' hot' : '') + '">' +
-      '<span class="viface-k">' + esc(f.k) + (f.optional ? '<span class="viface-opt">?</span>' : '') + '</span>' +
-      (f.declaredType ? '<span class="viface-t">: ' + esc(f.declaredType) + '</span>' : '') +
-      (hasVal
-        ? '<span class="viface-eq">=</span><span class="viface-v' + (isStr ? ' str' : '') + '">' + esc(valDisplay) + '</span>'
-        : '<span class="viface-v schema-only">' + esc(valDisplay) + '</span>') +
-      '</div>';
-  }).join('');
+  const rows = fields.length
+    ? fields.slice(0, 12).map(f => {
+        const isHot = d.hot === f.k;
+        const hasVal = f.v !== undefined;
+        const isStr = typeof f.v === 'string';
+        const valDisplay = hasVal
+          ? (isStr ? JSON.stringify(f.v) : (f.v !== null && typeof f.v === 'object' ? safeJSONStringify(f.v) : String(f.v)))
+          : '未实例化';
+        return '<div class="viface-row' + (isHot ? ' hot' : '') + '">' +
+          '<span class="viface-k">' + esc(f.k) + (f.optional ? '<span class="viface-opt">?</span>' : '') + '</span>' +
+          (f.declaredType ? '<span class="viface-t">: ' + esc(f.declaredType) + '</span>' : '') +
+          (hasVal
+            ? '<span class="viface-eq">=</span><span class="viface-v' + (isStr ? ' str' : '') + '">' + esc(valDisplay) + '</span>'
+            : '<span class="viface-v schema-only">' + esc(valDisplay) + '</span>') +
+          '</div>';
+      }).join('')
+    : '<div class="viface-row"><span class="viface-v schema-only">（无实例属性）</span></div>';
   return '<div class="viz"><div class="viface">' +
-    '<div class="viface-head"><span class="viface-kw">interface</span><span class="viface-title">' + esc(ifaceTitle) + '</span><span class="viface-badge">' + esc(badgeTxt) + '</span></div>' +
+    '<div class="viface-head"><span class="viface-kw">' + kwTxt + '</span><span class="viface-title">' + esc(ifaceTitle) + '</span><span class="viface-badge">' + esc(badgeTxt) + '</span></div>' +
     '<div class="viface-body">' + rows + '</div>' +
     '</div></div>';
 }
@@ -6157,9 +6871,10 @@ function renderSlots() {
     const body = d ? (fn ? (fn(d) || '<div class="vempty">empty</div>') : '<div class="vempty">…</div>') : '<div class="vempty">empty</div>';
     const winTag = d && d.win ? `<span class="win-tag">[${d.win[0]}..${d.win[1]}]</span>` : '';
     const isHotSlot = d && (d.hot !== undefined || d.mark != null);
+    const kindPrefix = (d && d.isClass) ? 'class' : 'interface';
     const kindBadge = (kind === 'interface' && d && d.interfaceName && d.interfaceName !== 'object' && !d.isSchema)
-      ? `interface · ${d.interfaceName}`
-      : kind;
+      ? `${kindPrefix} · ${d.interfaceName}`
+      : (kind === 'interface' && d && d.isClass ? 'class' : kind);
     return '<div class="slot' + (span === 2 ? ' span-2' : '') + (isHotSlot ? ' pulse' : '') + '" data-var="' + esc(s.name) + '">' +
       '<div class="name"><span>' + esc(s.name) + '</span><span class="kind">' + esc(kindBadge) + '</span>' + winTag + '</div>' +
       body + '</div>';
