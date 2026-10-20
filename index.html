@@ -2144,9 +2144,27 @@ function collectNames(js) {
     splitTopLevel(m[2]).forEach(p => extractBindingNames(p, names));
   }
 
-  const arrow = /\(([^)]*)\)\s*=>/g;
-  while ((m = arrow.exec(clean))) {
-    splitTopLevel(m[1]).forEach(p => extractBindingNames(p, names));
+  for (let i = 0; i < clean.length - 1; i++) {
+    if (clean[i] !== '=' || clean[i + 1] !== '>') continue;
+    let k = i - 1;
+    while (k >= 0 && isWS(clean[k])) k--;
+    if (k >= 0 && clean[k] === ')') {
+      let depth = 0, openIdx = -1;
+      for (let p = k; p >= 0; p--) {
+        const ch = clean[p];
+        if (ch === ')' || ch === ']' || ch === '}') depth++;
+        else if (ch === '(' || ch === '[' || ch === '{') {
+          depth--;
+          if (depth === 0) {
+            if (ch === '(') openIdx = p;
+            break;
+          }
+        }
+      }
+      if (openIdx >= 0) {
+        splitTopLevel(clean.slice(openIdx + 1, k)).forEach(p => extractBindingNames(p, names));
+      }
+    }
   }
   const singleArrow = /\b([A-Za-z_$][\w$]*)\s*=>/g;
   while ((m = singleArrow.exec(clean))) {
@@ -3708,7 +3726,7 @@ function typecheckTS(src, strict = STRICT_TS) {
       const bodyStr = arrowExprM[3].trim();
       const saved = new Map();
       const boundNames = new Set();
-      splitTopLevel(rawParamStr || '').forEach(p => {
+      splitTopLevelDecl(rawParamStr || '').forEach(p => {
         const cleanP = p.trim().replace(/^\.\.\./, '');
         const pm = cleanP.match(/^([A-Za-z_$][\w$]*)(\?)?(?:\s*:\s*([^=]+))?/);
         if (pm) {
@@ -8908,6 +8926,6 @@ addEventListener('keydown', e => {
 })();
 </script>
 <script src="app-session.js"></script>
-<script src="editor/cm.bundle.js?v=20261020r"></script>
+<script src="editor/cm.bundle.js?v=20261020s"></script>
 </body>
 </html>

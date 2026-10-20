@@ -923,8 +923,16 @@ run_counter(1, 3)
     let dm;
     while ((dm = defRe.exec(text))) {
       pySplitTop(dm[1]).forEach(part => {
-        const pm = part.match(/^([A-Za-z_]\w*)/);
-        if (pm) names.add(pm[1]);
+        const pm = part.match(/^(?:\*{1,2})?([A-Za-z_]\w*)/);
+        if (pm && !PY_KEYWORDS.has(pm[1])) names.add(pm[1]);
+      });
+    }
+    const lambdaRe = /\blambda\s+([^:]+):/g;
+    let lm;
+    while ((lm = lambdaRe.exec(text))) {
+      pySplitTop(lm[1]).forEach(part => {
+        const pm = part.match(/^(?:\*{1,2})?([A-Za-z_]\w*)/);
+        if (pm && !PY_KEYWORDS.has(pm[1])) names.add(pm[1]);
       });
     }
     return names;

@@ -10,6 +10,7 @@ import { python } from '@codemirror/lang-python';
 import { HighlightStyle, syntaxHighlighting, indentUnit, syntaxTree } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
 import { search, openSearchPanel, selectNextOccurrence, SearchCursor } from '@codemirror/search';
+import { indentWithTab } from '@codemirror/commands';
 import { linter, setDiagnostics } from '@codemirror/lint';
 
 const container = document.getElementById('cmEditor');
@@ -304,6 +305,7 @@ function init() {
       doc: textarea.value,
       extensions: [
         basicSetup,
+        keymap.of([indentWithTab]),
         wordMatchPlugin,
         theme,
         syntaxHighlighting(highlightStyle),

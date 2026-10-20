@@ -1061,6 +1061,21 @@ check('circular structure in return value runs and finishes debug without JSON c
     line2State.stepVizHtml.includes('╭─') &&
     !line2State.stepVizHtml.includes('╰─'),
     line2State.stepVizHtml);
+
+  // Arrow function parameters inside call parens `s.sort((a, b) => a - b)` are recognized as declared
+  const sortSrc = 'const s: number[] = [3, 1, 2];\ns.sort((a, b) => a - b);\n';
+  const sortDeclared = collectDeclaredNames(sortSrc);
+  const sortHl = hl('s.sort((a, b) => a - b);', sortDeclared);
+  check('collectDeclaredNames & hl color arrow params (a, b) inside s.sort((a, b) => a - b)',
+    sortDeclared.has('a') &&
+    sortDeclared.has('b') &&
+    sortHl.includes('<span class="prop">a</span>') &&
+    sortHl.includes('<span class="prop">b</span>'),
+    sortHl);
+
+  const cmSrc = fs.readFileSync(new URL('./editor/cm-entry.js', import.meta.url), 'utf8');
+  check('cm-entry.js binds indentWithTab in keymap for Tab/Shift-Tab indentation',
+    cmSrc.includes('indentWithTab') && cmSrc.includes('keymap.of([indentWithTab])'));
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nall passed');

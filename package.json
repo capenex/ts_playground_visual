@@ -11,7 +11,7 @@
     "test": "node test-pipeline.mjs",
     "lint": "node test-pipeline.mjs",
     "build:editor": "node scripts/build-editor.mjs",
-    "build": "node test-pipeline.mjs && node scripts/build.mjs"
+    "build": "node scripts/build-editor.mjs && node test-pipeline.mjs && node scripts/build.mjs"
   },
   "engines": {
     "node": ">=18"
