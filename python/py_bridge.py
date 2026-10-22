@@ -735,6 +735,7 @@ def run_trace_json(src, options_json="{}"):
     options = json.loads(options_json or "{}")
     max_steps = int(options.get("maxSteps", MAX_STEPS))
     time_limit = float(options.get("timeLimit", DEFAULT_TIME_LIMIT))
+    enable_trace = bool(options.get("trace", True))
     recorder = _Recorder(src.splitlines(), max_steps, time_limit)
     try:
         tree = ast.parse(src)
@@ -754,12 +755,24 @@ def run_trace_json(src, options_json="{}"):
     module_globals = {
         "__name__": "__main__",
         "__builtins__": __builtins__,
-        "checkpoint": recorder.checkpoint,
-        "断点": recorder.checkpoint,
+        "checkpoint": recorder.checkpoint if enable_trace else (lambda *a, **kw: None),
+        "断点": recorder.checkpoint if enable_trace else (lambda *a, **kw: None),
         "print": recorder.print_fn,
     }
+    fast_state = [0, 1]
+
+    def _fast_guard(frame, event, arg):
+        if frame.f_code.co_filename != FILENAME:
+            return None
+        if event == "line":
+            fast_state[1] = frame.f_lineno
+            fast_state[0] += 1
+            if (fast_state[0] & 255) == 0 and (time.monotonic() - recorder.start) > time_limit:
+                raise _TraceTimeout()
+        return _fast_guard
+
     try:
-        sys.settrace(recorder.trace)
+        sys.settrace(recorder.trace if enable_trace else _fast_guard)
         try:
             exec(code_obj, module_globals)
             if call_expr:
@@ -771,7 +784,7 @@ def run_trace_json(src, options_json="{}"):
         recorder.error_line = recorder.steps[-1]["line"] if recorder.steps else 1
     except _TraceTimeout:
         recorder.error = "执行超过 %.1fs，已强制终止（疑似死循环）" % time_limit
-        recorder.error_line = recorder.steps[-1]["line"] if recorder.steps else 1
+        recorder.error_line = (recorder.steps[-1]["line"] if recorder.steps else fast_state[1]) or 1
     except BaseException as exc:
         recorder.error = "%s: %s" % (type(exc).__name__, exc)
         recorder.error_line = None
@@ -781,11 +794,11 @@ def run_trace_json(src, options_json="{}"):
                 recorder.error_line = tb.tb_lineno
             tb = tb.tb_next
         if recorder.error_line is None:
-            recorder.error_line = recorder.steps[-1]["line"] if recorder.steps else 1
+            recorder.error_line = (recorder.steps[-1]["line"] if recorder.steps else fast_state[1]) or 1
     finally:
         sys.settrace(None)
 
-    if recorder.error:
+    if enable_trace and recorder.error:
         if recorder.steps and recorder.steps[-1]["line"] == recorder.error_line:
             recorder.steps[-1]["error"] = recorder.error
         else:
@@ -798,14 +811,14 @@ def run_trace_json(src, options_json="{}"):
                 "checkpointVals": None,
                 "error": recorder.error,
             })
-    elif recorder.steps:
+    elif enable_trace and recorder.steps:
         final_locals = _capture_locals({
             key: value for key, value in module_globals.items() if not key.startswith("__")
         })
         tagged = {}
         budget = [NODE_BUDGET]
         for key, value in final_locals.items():
-            tagged[key] = _tag_value(value, 0, {}, budget)
+            tagged[key] = _tag_value(value, 0, {}, budget, final_locals)
         final_line = call_line or recorder.steps[-1]["line"]
         recorder.steps.append({
             "line": final_line,

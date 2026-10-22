@@ -10,23 +10,28 @@ const FILES = [
   'share.html',
   'app-session.js',
   'editor/cm.bundle.js',
+  'editor/ts-worker.bundle.js',
   'README.md',
   'USER_GUIDE.md',
   'SYNTAX_REFERENCE.md',
   'DEPLOY.md',
 ];
-const DIRS = ['python'];
+const DIRS = ['python', 'js', 'css'];
 
 const REQUIRED = [
   'index.html',
   'share.html',
   'app-session.js',
   'editor/cm.bundle.js',
+  'editor/ts-worker.bundle.js',
   'DEPLOY.md',
   'python/py_engine.js',
   'python/py_worker.js',
   'python/py_bridge.py',
   'python/serve.mjs',
+  'css/app.css',
+  'js/01-prelude-and-samples.js',
+  'js/10-video-export-and-boot.js',
 ];
 
 function copyFile(rel) {

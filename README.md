@@ -1,6 +1,6 @@
 # TypeScript Playground VISUAL · 项目架构与技术文档
 
-**TypeScript Playground VISUAL** 是一个**零前端框架依赖**的 **TypeScript / Python 可视化演练场与按需逐行 Debug 调试器**。核心界面、类型剥离器、内置子集类型检查器、插桩引擎与 12 种数据结构渲染器集中在 `index.html`；自动保存 / 分享链接拆在 `app-session.js`，Python 模式拆在 `python/`。TypeScript 模式不依赖 CDN 或后端，但当前版本请通过静态 HTTP 服务打开（`node python/serve.mjs`）；若要恢复单文件离线分发，需要在构建时把这些脚本内联。
+**TypeScript Playground VISUAL** 是一个**零前端框架依赖**的 **TypeScript / Python 可视化演练场与按需逐行 Debug 调试器**。核心管线按职责拆在 `js/`（10 个按顺序加载的脚本：样例与状态 → 类型剥离 → 插桩 → 快照/分类 → 类型检查 → 运行/追踪 → 高亮 → 渲染器 → 步进控制 → 导出/启动），样式在 `css/app.css`，`index.html` 只保留界面结构与脚本加载顺序；自动保存 / 分享链接拆在 `app-session.js`，Python 模式拆在 `python/`。TypeScript 模式不依赖 CDN 或后端，但当前版本请通过静态 HTTP 服务打开（`node python/serve.mjs`）；若要恢复单文件离线分发，需要在构建时把这些脚本内联。
 
 > **类型检查边界**：内置 `typecheckTS` 是项目自带的**子集检查器**，不是 TypeScript 官方 `tsc`，也不调用语言服务。它覆盖常用语法，可能漏报 / 误报；以实际运行和 `tsc` 为准。页面 SOURCE 旁的「TS 子集检查」可查看完整边界。
 
@@ -146,7 +146,7 @@
 ## 五、 构建、测试与部署
 
 ### 1. 运行所需文件
-- `index.html`、`app-session.js`、`editor/cm.bundle.js`、`share.html`、`python/`（Python 模式）以及三份文档。
+- `index.html`、`js/`（10 个应用脚本，按 `index.html` 中的顺序加载）、`css/app.css`、`app-session.js`、`editor/cm.bundle.js`、`share.html`、`python/`（Python 模式）以及三份文档。
 - `editor/cm.bundle.js` 是 CodeMirror 6 的构建产物；源码在 `editor/cm-entry.js`。首次使用需要 `npm ci && npm run build:editor`。
 - Python 模式必须通过 HTTP(S) 打开；`file://` 双击只适合 TypeScript 模式，且不保证外部脚本加载。
 

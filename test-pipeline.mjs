@@ -1,8 +1,12 @@
 import fs from 'fs';
 import vm from 'vm';
 
-const html = fs.readFileSync(new URL('./index.html', import.meta.url), 'utf8');
-const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+const ROOT = new URL('./', import.meta.url);
+const html = fs.readFileSync(new URL('./index.html', ROOT), 'utf8');
+// App code is split into js/*.js parts, loaded in order from index.html.
+const appParts = [...html.matchAll(/<script src="(js\/[^"?]+)/g)].map((m) => m[1]);
+if (!appParts.length) throw new Error('index.html does not reference any js/*.js app parts');
+const script = appParts.map((rel) => fs.readFileSync(new URL(rel, ROOT), 'utf8')).join('\n');
 
 const makeClassList = () => {
   const set = new Set();
@@ -82,8 +86,9 @@ function check(name, cond, extra) {
 }
 
 // --- syntax highlight CSS classes & draggable resizer exist
-check('syntax highlight CSS defined', /\.com\b/.test(html) && /\.str\b/.test(html) && /\.kw\b/.test(html));
-check('draggable resizer defined', html.includes('id="resizer"') && html.includes('col-resize'));
+const css = fs.readFileSync(new URL('./css/app.css', ROOT), 'utf8');
+check('syntax highlight CSS defined', /\.com\b/.test(css) && /\.str\b/.test(css) && /\.kw\b/.test(css));
+check('draggable resizer defined', html.includes('id="resizer"') && css.includes('col-resize'));
 check('CodeMirror editor wired (container + bundle)', html.includes('id="cmEditor"') && html.includes('editor/cm.bundle.js'));
 
 // --- stripTypes: strings with //
@@ -1142,6 +1147,226 @@ check('circular structure in return value runs and finishes debug without JSON c
     dList.pointers && dList.pointers[50] && dList.pointers[50].includes('slow') &&
     dList.pointers[100] && dList.pointers[100].includes('fast') &&
     htmlList.includes('500') && htmlList.includes('1000'));
+
+  // P1-1: O(n) stripTypes on 1400 lines of `<` comparisons without `>`
+  const heavyLtSrc = Array.from({ length: 1400 }, (_, i) => `let x${i}: number = a < b ? ${i} : 0;`).join('\n');
+  const t0 = Date.now();
+  const strippedHeavy = stripTypes(heavyLtSrc);
+  const elapsedMs = Date.now() - t0;
+  check('stripTypes handles 1400 lines of `<` without `>` in O(n) (< 150ms vs 1960ms baseline)',
+    elapsedMs < 150 && strippedHeavy.includes('let x1399 = a < b ? 1399 : 0;'), `elapsed=${elapsedMs}ms`);
+
+  // Typechecker coverage for ternary narrowing, inline-if narrowing, tuple arrays, and function-typed fields
+  check('typecheckTS narrows property inside ternary branch (current.next === null ? null : map.get(current.next))',
+    typecheckTS('class N { next: N | null = null; }\nconst map = new Map<N, N>();\nconst cur = new N();\nconst x: N | null = cur.next === null ? null : map.get(cur.next) ?? null;\n', true).length === 0);
+  check('typecheckTS narrows local inside inline if-return (if (existing !== undefined) return existing;)',
+    typecheckTS('function f(m: Map<number, string>): string {\n  const existing = m.get(1);\n  if (existing !== undefined) return existing;\n  return "a";\n}\n', true).length === 0);
+  check('typecheckTS accepts tuple array literal [number, number][]',
+    typecheckTS('const dirs: [number, number][] = [[1, 0], [-1, 0]];\n', true).length === 0);
+  check('typecheckTS accepts function-typed class field and constructor parameter (a: number, b: number) => number',
+    typecheckTS('class Heap {\n  private cmp: (a: number, b: number) => number;\n  constructor(cmp: (a: number, b: number) => number) { this.cmp = cmp; }\n  test(): number { return this.cmp(1, 2); }\n}\nconst h = new Heap((a: number, b: number) => b - a);\n', true).length === 0);
+  const cmSrc = fs.readFileSync(new URL('./editor/cm-entry.js', import.meta.url), 'utf8');
+  check('cm-entry.js places horizontal padding on .cm-line and keeps native ::selection transparent so selection stays inside input bounds',
+    cmSrc.includes("'.cm-line': { padding: '0 64px 0 16px' }") &&
+    cmSrc.includes("'.cm-content': { padding: '12px 0 48px 0'") &&
+    cmSrc.includes("'.cm-content ::selection, .cm-line ::selection, .cm-line::selection': { backgroundColor: 'transparent !important' }"));
+  check('cm-entry.js sets textDecorationSkipInk: none on .cm-wordMatch so descenders like g and y have continuous underlines',
+    cmSrc.includes("textDecorationSkipInk: 'none'") && cmSrc.includes("textUnderlineOffset: '4px'"));
+}
+
+// --- Advanced TypeScript Type System (Plan B: Full Generics, Conditional Types, Mapped Types, infer, Utility Types & Worker Bundle)
+{
+  // 1. Verify ts-worker.bundle.js is built and present
+  const workerBundlePath = new URL('./editor/ts-worker.bundle.js', import.meta.url);
+  check('editor/ts-worker.bundle.js is built by build-editor.mjs',
+    fs.existsSync(workerBundlePath) && fs.statSync(workerBundlePath).size > 10000);
+
+  // 2. Generic functions with constraints & keyof (stripTypes + typecheckTS + execution)
+  const genericFnSrc = [
+    'interface User {',
+    '  id: number;',
+    '  name: string;',
+    '}',
+    'function getProp<T, K extends keyof T>(obj: T, key: K): T[K] {',
+    '  return obj[key];',
+    '}',
+    'const u: User = { id: 42, name: "Alice" };',
+    'const idVal: number = getProp(u, "id");',
+    'const nameVal: string = getProp(u, "name");',
+    'idVal;',
+  ].join('\n');
+  const genericFnDiags = typecheckTS(genericFnSrc, true);
+  check('typecheckTS accepts generic function getProp<T, K extends keyof T>(obj: T, key: K): T[K]',
+    genericFnDiags.length === 0, JSON.stringify(genericFnDiags));
+
+  const badGenericKeySrc = [
+    'interface User { id: number; name: string; }',
+    'function getProp<T, K extends keyof T>(obj: T, key: K): T[K] { return obj[key]; }',
+    'const u: User = { id: 42, name: "Alice" };',
+    'const bad = getProp(u, "missingKey");',
+  ].join('\n');
+  const badGenericKeyDiags = typecheckTS(badGenericKeySrc, true);
+  check('typecheckTS rejects invalid keyof constraint argument with TS2345',
+    badGenericKeyDiags.some(d => d.code === 'TS2345'), JSON.stringify(badGenericKeyDiags));
+
+  const badGenericRetSrc = [
+    'interface User { id: number; name: string; }',
+    'function getProp<T, K extends keyof T>(obj: T, key: K): T[K] { return obj[key]; }',
+    'const u: User = { id: 42, name: "Alice" };',
+    'const wrongType: string = getProp(u, "id");',
+  ].join('\n');
+  const badGenericRetDiags = typecheckTS(badGenericRetSrc, true);
+  check('typecheckTS infers T[K] return type ("id" -> number) and catches TS2322 when assigned to string',
+    badGenericRetDiags.some(d => d.code === 'TS2322'), JSON.stringify(badGenericRetDiags));
+
+  // 3. Conditional types & infer (UnwrapArray, MyReturnType, UnwrapPromise, Tuple Head/Tail, Template Literal infer)
+  const condInferSrc = [
+    'type UnwrapArray<T> = T extends (infer U)[] ? U : T;',
+    'type MyReturnType<F> = F extends (...args: any[]) => infer R ? R : never;',
+    'type UnwrapPromise<T> = T extends Promise<infer U> ? UnwrapPromise<U> : T;',
+    'type FirstOfTuple<T> = T extends [infer H, ...infer _Rest] ? H : never;',
+    'type ParseKey<S> = S extends `get_${infer Name}` ? Name : never;',
+    'const a: UnwrapArray<number[]> = 123;',
+    'const b: UnwrapArray<string> = "hello";',
+    'const c: MyReturnType<(x: number) => boolean> = true;',
+    'const d: UnwrapPromise<Promise<Promise<number>>> = 99;',
+    'const e: FirstOfTuple<[string, number, boolean]> = "head";',
+    'const f: ParseKey<"get_token"> = "token";',
+    'a + d;',
+  ].join('\n');
+  const condInferDiags = typecheckTS(condInferSrc, true);
+  check('typecheckTS evaluates conditional types and `infer` (array, function return, recursive Promise, tuple, template literal)',
+    condInferDiags.length === 0, JSON.stringify(condInferDiags));
+
+  const badCondInferSrc = [
+    'type UnwrapArray<T> = T extends (infer U)[] ? U : T;',
+    'const bad: UnwrapArray<number[]> = "not-a-number";',
+  ].join('\n');
+  const badCondInferDiags = typecheckTS(badCondInferSrc, true);
+  check('typecheckTS catches TS2322 when conditional `infer` resolves UnwrapArray<number[]> to number',
+    badCondInferDiags.some(d => d.code === 'TS2322'), JSON.stringify(badCondInferDiags));
+
+  // 4. Distributive Conditional Types (MyExclude, MyExtract, MyNonNullable)
+  const distCondSrc = [
+    'type MyExclude<T, U> = T extends U ? never : T;',
+    'type MyExtract<T, U> = T extends U ? T : never;',
+    'type NumOrBool = MyExclude<string | number | boolean, string>;',
+    'type OnlyStr = MyExtract<string | number, string>;',
+    'const x: NumOrBool = 10;',
+    'const y: NumOrBool = false;',
+    'const z: OnlyStr = "ok";',
+  ].join('\n');
+  check('typecheckTS evaluates distributive conditional types over unions',
+    typecheckTS(distCondSrc, true).length === 0);
+
+  const badDistCondDiags = typecheckTS(distCondSrc + '\nconst bad: OnlyStr = 123;\n', true);
+  check('typecheckTS catches TS2322 on distributive conditional type mismatch',
+    badDistCondDiags.some(d => d.code === 'TS2322'), JSON.stringify(badDistCondDiags));
+
+  // 5. Mapped Types ({ [K in keyof T]?: T[K] }, -?, readonly, key remapping with `as`)
+  const mappedSrc = [
+    'interface Config {',
+    '  host: string;',
+    '  port: number;',
+    '}',
+    'type PartialConfig = {',
+    '  [K in keyof Config]?: Config[K];',
+    '};',
+    'type Nullable<T> = {',
+    '  [K in keyof T]: T[K] | null;',
+    '};',
+    'const p: PartialConfig = { host: "localhost" };',
+    'const n: Nullable<Config> = { host: null, port: 8080 };',
+  ].join('\n');
+  const mappedDiags = typecheckTS(mappedSrc, true);
+  check('typecheckTS evaluates multi-line mapped types ({ [K in keyof T]?: ... } and generic Nullable<T>)',
+    mappedDiags.length === 0, JSON.stringify(mappedDiags));
+
+  const badMappedSrc = mappedSrc + '\nconst bad: Nullable<Config> = { host: 123, port: 8080 };\n';
+  const badMappedDiags = typecheckTS(badMappedSrc, true);
+  check('typecheckTS catches TS2322 when mapped type field has wrong value type',
+    badMappedDiags.some(d => d.code === 'TS2322'), JSON.stringify(badMappedDiags));
+
+  // 6. Built-in Utility Types (Partial, Required, Pick, Omit, Record, ReturnType, Parameters, Awaited)
+  const utilitySrc = [
+    'interface Task {',
+    '  id: number;',
+    '  title: string;',
+    '  done?: boolean;',
+    '}',
+    'const tPartial: Partial<Task> = {};',
+    'const tPick: Pick<Task, "id" | "title"> = { id: 1, title: "Write tests" };',
+    'const tOmit: Omit<Task, "done" | "title"> = { id: 2 };',
+    'const tRecord: Record<string, number> = { a: 1, b: 2 };',
+    'type AddFn = (a: number, b: string) => boolean;',
+    'const ret: ReturnType<AddFn> = false;',
+    'const params: Parameters<AddFn> = [1, "x"];',
+    'const aw: Awaited<Promise<string>> = "done";',
+  ].join('\n');
+  const utilityDiags = typecheckTS(utilitySrc, true);
+  check('typecheckTS supports built-in utility types (Partial, Pick, Omit, Record, ReturnType, Parameters, Awaited)',
+    utilityDiags.length === 0, JSON.stringify(utilityDiags));
+
+  const badPickDiags = typecheckTS(
+    'interface Task { id: number; title: string; done: boolean; }\nconst p: Pick<Task, "id"> = { id: 1, title: "extra" };\n',
+    true
+  );
+  check('typecheckTS catches TS2353 excess property on Pick<Task, "id">',
+    badPickDiags.some(d => d.code === 'TS2353'), JSON.stringify(badPickDiags));
+
+  // 7. Generic class instantiation and method type substitution
+  const genericClassSrc = [
+    'class Box<T> {',
+    '  val: T;',
+    '  constructor(v: T) { this.val = v; }',
+    '  get(): T { return this.val; }',
+    '}',
+    'const numBox = new Box<number>(100);',
+    'const n: number = numBox.get();',
+  ].join('\n');
+  check('typecheckTS instantiates generic class Box<number> and resolves numBox.get() as number',
+    typecheckTS(genericClassSrc, true).length === 0);
+
+  const badGenericClassDiags = typecheckTS(
+    genericClassSrc + '\nconst wrong: string = numBox.get();\n',
+    true
+  );
+  check('typecheckTS catches TS2322 when assigning Box<number>.get() to string',
+    badGenericClassDiags.some(d => d.code === 'TS2322'), JSON.stringify(badGenericClassDiags));
+
+  // 8. End-to-end Debug execution of code with complex generics, conditional types, infer, and mapped types
+  setEditorVal([
+    'type Unwrap<T> = T extends (infer U)[] ? U : T;',
+    'type Optionalize<T> = {',
+    '  [K in keyof T]?: T[K];',
+    '};',
+    'interface Item {',
+    '  id: number;',
+    '  score: number;',
+    '}',
+    'function pluck<T, K extends keyof T>(items: T[], key: K): T[K][] {',
+    '  const out: T[K][] = [];',
+    '  for (let i = 0; i < items.length; i++) {',
+    '    out.push(items[i][key]);',
+    '  }',
+    '  return out;',
+    '}',
+    'function runAdvanced(): number {',
+    '  const list: Item[] = [{ id: 1, score: 10 }, { id: 2, score: 25 }];',
+    '  const patch: Optionalize<Item> = { score: 30 };',
+    '  const scores: Unwrap<number[][]> = pluck(list, "score");',
+    '  return scores[0] + scores[1] + (patch.score ?? 0);',
+    '}',
+    'runAdvanced();',
+  ].join('\n'));
+  const advDebugOk = startDebug(0);
+  while (getDebugState().DEBUG_SESSION.active && !getDebugState().DEBUG_SESSION.finished) {
+    stepNext();
+  }
+  const advDebugState = getDebugState();
+  check('Debug session compiles, strips multi-line conditional/mapped/generic types with 1:1 line mapping, and computes return value 65',
+    advDebugOk && advDebugState.DEBUG_SESSION.returnValue === 65,
+    JSON.stringify({ ok: advDebugOk, ret: advDebugState.DEBUG_SESSION.returnValue }));
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nall passed');

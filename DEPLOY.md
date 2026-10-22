@@ -7,7 +7,9 @@
 ## 1. 包内文件
 
 ```
-index.html                 主页面（TS / PY 均从这里进入）
+index.html                 主页面（TS / PY 均从这里进入；只含界面结构与脚本顺序）
+css/app.css                全部样式
+js/01…10-*.js              应用代码，10 个分片，按 index.html 中的顺序加载
 share.html                 分享链接的沙箱预览页
 app-session.js             自动保存 / 分享链接
 editor/cm.bundle.js        CodeMirror 6 编辑器（构建产物，必须保留）
@@ -21,7 +23,7 @@ SYNTAX_REFERENCE.md        TypeScript 语法与可视化范围
 DEPLOY.md                  本文件
 ```
 
-⚠️ 不要单独只上传 `index.html`：编辑器、分享页和 Python 模式依赖上面这些相对路径文件。
+⚠️ 不要单独只上传 `index.html`：页面逻辑在 `js/`、样式在 `css/`，编辑器、分享页和 Python 模式还依赖上面这些相对路径文件。
 
 ## 2. 本地试跑
 

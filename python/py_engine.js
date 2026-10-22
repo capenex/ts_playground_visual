@@ -739,19 +739,6 @@ run_counter(1, 3)
       setDiags([]);
       setStatus('… Python 运行中', 'running');
       say('… 正在检查 Python 语法并加载运行时（首次约 1–3 秒）', 'dim');
-      const checked = await check(src);
-      if (!checked.ok) {
-        const err = checked.syntaxError || checked || { line: 1, msg: '语法错误' };
-        const diag = { line: err.line || 1, code: 'PY', message: err.msg || '语法错误' };
-        setDiags([diag]);
-        resetTraceState();
-        cur = 0;
-        say('✗ 第 ' + diag.line + ' 行语法错误: ' + diag.message, 'err', diag.line);
-        revealErrorLine(diag.line);
-        updateEditorChrome();
-        setStatus('未在调试', '');
-        return false;
-      }
       const payload = await run(src, { maxSteps: 2000, timeLimit: 6 });
       if (payload.syntaxError) {
         const err = payload.syntaxError;
@@ -830,9 +817,9 @@ run_counter(1, 3)
       setDiags([]);
       setStatus('… Python 运行中', 'running');
       say('… 正在检查 Python 语法并运行', 'dim');
-      const checked = await check(src);
-      if (!checked.ok) {
-        const err = checked.syntaxError || checked || { line: 1, msg: '语法错误' };
+      const payload = await run(src, { trace: false, timeLimit: 6 });
+      if (payload.syntaxError) {
+        const err = payload.syntaxError;
         const diag = { line: err.line || 1, code: 'PY', message: err.msg || '语法错误' };
         setDiags([diag]);
         say('✗ 第 ' + diag.line + ' 行语法错误: ' + diag.message, 'err', diag.line);
@@ -841,7 +828,6 @@ run_counter(1, 3)
         setStatus('未在调试', '');
         return false;
       }
-      const payload = await run(src, { maxSteps: 2000, timeLimit: 6 });
       TYPE_ERROR_LINES.clear();
       RUNTIME_ERROR_LINES.clear();
       if (payload.errorLine) RUNTIME_ERROR_LINES.add(payload.errorLine);
