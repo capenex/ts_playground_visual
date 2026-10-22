@@ -25,6 +25,11 @@ function defineHidden(obj, key, val) {
 
 function cloneDeepBounded(val, depth = 0) {
   if (val === null || typeof val !== 'object') return val;
+  if (val.__isVirtualPromise) {
+    if (val.state === 'pending') return 'Promise <pending>';
+    if (val.state === 'fulfilled') return 'Promise <fulfilled: ' + formatShortVal(val.value) + '>';
+    return 'Promise <rejected: ' + formatShortVal(val.reason) + '>';
+  }
   if (depth >= 4) return String(val);
   if (Array.isArray(val)) return val.slice(0, 40).map(x => cloneDeepBounded(x, depth + 1));
   if (isMapLike(val)) {
@@ -338,6 +343,24 @@ function extractTsInterfaceMetadata(src) {
       }
     });
     if (isClass) {
+      const ctorM = inner.match(/\bconstructor\s*\(([^)]*)\)/);
+      if (ctorM && ctorM[1].trim()) {
+        splitTopLevel(ctorM[1]).forEach(rawP => {
+          const p = rawP.trim();
+          const pm = p.match(/^(?:(?:public|private|protected|readonly)\s+)+([A-Za-z_$][\w$]*)(\?)?(?:\s*:\s*([^=]+?))?(?:\s*=\s*([\s\S]+))?$/);
+          if (pm && !seen.has(pm[1])) {
+            seen.add(pm[1]);
+            let pType = pm[3] ? pm[3].trim() : 'any';
+            if (pType === 'any' && pm[4]) {
+              const rhs = pm[4].trim();
+              if (/^[+-]?\d+(?:\.\d+)?$/.test(rhs)) pType = 'number';
+              else if (/^(true|false)$/.test(rhs)) pType = 'boolean';
+              else if (/^["'`]/.test(rhs)) pType = 'string';
+            }
+            fields.push({ k: pm[1], declaredType: pType, optional: Boolean(pm[2]) });
+          }
+        });
+      }
       const thisAssignRe = /\bthis\.([A-Za-z_$][\w$]*)\s*=/g;
       let tm;
       while ((tm = thisAssignRe.exec(inner))) {
@@ -378,7 +401,7 @@ function extractTsInterfaceMetadata(src) {
       continue;
     }
 
-    const ifaceM = trimmed.match(/^(?:export\s+)?(interface|class)\s+([A-Za-z_$][\w$]*)(?:\s*<[^>]*>)?(?:\s+extends\s+[^{]+)?(?:\s+implements\s+[^{]+)?\s*\{(.*)$/);
+    const ifaceM = trimmed.match(/^(?:export\s+)?(?:abstract\s+)?(interface|class)\s+([A-Za-z_$][\w$]*)(?:\s*<[^>]*>)?(?:\s+extends\s+[^{]+)?(?:\s+implements\s+[^{]+)?\s*\{(.*)$/);
     if (ifaceM) {
       const isClass = ifaceM[1] === 'class';
       const name = ifaceM[2];
@@ -491,6 +514,7 @@ function classifyValue(name, value) {
     return null;
   }
   if (typeof value === 'object') {
+    if (value.__isVirtualPromise) return null;
     if (Array.isArray(value.nodes) && Array.isArray(value.edges)) return snapshot('graph', value);
     if (Array.isArray(value.nodes) && 'root' in value) return snapshot('tree', value);
     if (n !== 'this') {

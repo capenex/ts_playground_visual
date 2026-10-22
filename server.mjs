@@ -47,15 +47,18 @@ const server = http.createServer((req, res) => {
       }
     }
 
-    // SPA fallback to index.html
-    const indexFile = path.resolve(__dirname, 'index.html');
-    if (fs.existsSync(indexFile)) {
-      res.writeHead(200, {
-        'Content-Type': 'text/html; charset=utf-8',
-        'Cache-Control': 'no-cache',
-      });
-      fs.createReadStream(indexFile).pipe(res);
-      return;
+    // SPA fallback to index.html ONLY for HTML / extensionless routes (never serve HTML for missing .js/.css/.wasm)
+    const reqExt = path.extname(relPath).toLowerCase();
+    if (!reqExt || reqExt === '.html') {
+      const indexFile = path.resolve(__dirname, 'index.html');
+      if (fs.existsSync(indexFile)) {
+        res.writeHead(200, {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'no-cache',
+        });
+        fs.createReadStream(indexFile).pipe(res);
+        return;
+      }
     }
 
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });

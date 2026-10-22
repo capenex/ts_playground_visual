@@ -5,8 +5,8 @@
   "type": "module",
   "description": "TypeScript / Python visual playground and step debugger",
   "scripts": {
-    "dev": "node server.mjs",
-    "start": "node server.mjs",
+    "dev": "node scripts/build-editor.mjs && node server.mjs",
+    "start": "node scripts/build-editor.mjs && node server.mjs",
     "serve": "node python/serve.mjs",
     "test": "node test-pipeline.mjs",
     "lint": "node test-pipeline.mjs",

@@ -528,18 +528,135 @@ function transpileEnums(src) {
   return { code: out, error: null };
 }
 
+/* Transpile `namespace N { export const x = 1; export function f() {} }` while keeping 1:1 line numbers. */
+function transpileNamespaces(src) {
+  if (!/\b(?:namespace|module)\s+[A-Za-z_$]/.test(src)) return src;
+  const lines = src.split('\n');
+  const nsStack = [];
+  let braceDepth = 0;
+  for (let i = 0; i < lines.length; i++) {
+    let raw = lines[i];
+    const trimmed = stripCommentsOnly(raw).trim();
+    const depthBefore = braceDepth;
+    const nsOpen = trimmed.match(/^(?:export\s+)?(?:namespace|module)\s+([A-Za-z_$][\w$]*)\s*\{(.*)$/);
+    if (nsOpen && !/^declare\b/.test(trimmed)) {
+      const nsName = nsOpen[1];
+      const indent = raw.match(/^\s*/)[0];
+      const openBraceIdx = raw.indexOf('{');
+      const afterBrace = openBraceIdx >= 0 ? raw.slice(openBraceIdx + 1) : '';
+      let d = 1;
+      for (let k = 0; k < afterBrace.length; k++) {
+        const ch = afterBrace[k];
+        if (ch === '"' || ch === "'" || ch === '`') { k = skipString(afterBrace, k) - 1; continue; }
+        if (ch === '{') d++;
+        else if (ch === '}') d--;
+      }
+      if (d <= 0 && afterBrace.includes('}')) {
+        const lastClose = afterBrace.lastIndexOf('}');
+        const innerBody = afterBrace.slice(0, lastClose);
+        const transformedInner = rewriteNamespaceExportsOnLine(innerBody, nsName);
+        lines[i] = `${indent}var ${nsName} = ${nsName} || {}; {${transformedInner}}`;
+        continue;
+      }
+      const hoistedFns = [];
+      let scanD = d;
+      for (let sIdx = i + 1; sIdx < lines.length && scanD > 0; sIdx++) {
+        const sLine = stripCommentsOnly(lines[sIdx]);
+        if (scanD === 1) {
+          const fm = sLine.match(/^\s*export\s+(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*(?:<|\()/);
+          if (fm) hoistedFns.push(fm[1]);
+        }
+        for (let k = 0; k < sLine.length; k++) {
+          const ch = sLine[k];
+          if (ch === '"' || ch === "'" || ch === '`') { k = skipString(sLine, k) - 1; continue; }
+          if (ch === '{') scanD++;
+          else if (ch === '}') scanD--;
+        }
+      }
+      const hoistAssigns = hoistedFns.map(fn => ` ${nsName}.${fn} = ${fn};`).join('');
+      nsStack.push({ name: nsName, startDepth: depthBefore });
+      braceDepth += d;
+      lines[i] = `${indent}var ${nsName} = ${nsName} || {}; {${hoistAssigns}${rewriteNamespaceExportsOnLine(afterBrace, nsName)}`;
+      continue;
+    }
+
+    let closedNs = null;
+    for (let k = 0; k < raw.length; k++) {
+      const ch = raw[k];
+      if (ch === '"' || ch === "'" || ch === '`') { k = skipString(raw, k) - 1; continue; }
+      if (ch === '/' && raw[k + 1] === '/') break;
+      if (ch === '{') braceDepth++;
+      else if (ch === '}') {
+        braceDepth = Math.max(0, braceDepth - 1);
+        if (nsStack.length > 0 && braceDepth <= nsStack[nsStack.length - 1].startDepth) {
+          closedNs = { ns: nsStack.pop(), closeIdx: k };
+          break;
+        }
+      }
+    }
+
+    if (closedNs) {
+      const nsName = closedNs.ns.name;
+      const beforeClose = raw.slice(0, closedNs.closeIdx);
+      const afterClose = raw.slice(closedNs.closeIdx + 1);
+      lines[i] = `${rewriteNamespaceExportsOnLine(beforeClose, nsName)}}${afterClose}`;
+      continue;
+    }
+
+    if (nsStack.length > 0) {
+      const topNs = nsStack[nsStack.length - 1];
+      if (depthBefore === topNs.startDepth + 1) {
+        lines[i] = rewriteNamespaceExportsOnLine(raw, topNs.name);
+      }
+    }
+  }
+  return lines.join('\n');
+}
+
+function rewriteNamespaceExportsOnLine(line, nsName) {
+  const fnExp = line.match(/^(\s*)export\s+(async\s+)?function\s+([A-Za-z_$][\w$]*)([\s\S]*)$/);
+  if (fnExp) {
+    return `${fnExp[1]}${fnExp[2] || ''}function ${fnExp[3]}${fnExp[4]}`;
+  }
+  const clsExp = line.match(/^(\s*)export\s+(abstract\s+)?class\s+([A-Za-z_$][\w$]*)([\s\S]*)$/);
+  if (clsExp) {
+    return `${clsExp[1]}const ${clsExp[3]} = ${nsName}.${clsExp[3]} = class ${clsExp[3]}${clsExp[4]}`;
+  }
+  const varExp = line.match(/^(\s*)export\s+(const|let|var)\s+([A-Za-z_$][\w$]*)(\s*:\s*[^=]+)?\s*=\s*([\s\S]+)$/);
+  if (varExp) {
+    return `${varExp[1]}${varExp[2]} ${varExp[3]}${varExp[4] || ''} = ${nsName}.${varExp[3]} = ${varExp[5]}`;
+  }
+  return line;
+}
+
+/* Extract constructor parameter property names (`private x`, `public readonly y`) from a parameter list string. */
+function extractConstructorParamProps(paramSlice) {
+  const parts = splitTopLevel(stripCommentsOnly(paramSlice));
+  const props = [];
+  for (const rawP of parts) {
+    const p = rawP.trim();
+    const m = p.match(/^(?:(?:public|private|protected|readonly)\s+)+([A-Za-z_$][\w$]*)/);
+    if (m) props.push(m[1]);
+  }
+  return props;
+}
+
 let _STRIP_TYPES_CACHE = { src: null, out: '' };
 
-function stripTypes(src) {
-  if (typeof src === 'string' && _STRIP_TYPES_CACHE.src === src) {
+function stripTypes(rawSrc) {
+  if (typeof rawSrc === 'string' && _STRIP_TYPES_CACHE.src === rawSrc) {
     return _STRIP_TYPES_CACHE.out;
   }
+  const src = typeof rawSrc === 'string' ? transpileNamespaces(rawSrc) : rawSrc;
   let out = '';
   let i = 0;
   const n = src.length;
   const ternaryStack = [];
   let parenDepth = 0;
   const braceStack = [];
+  let pendingCtorProps = null;
+  let pendingAfterSuperAssigns = null;
+  let superCallTargetDepth = -1;
 
   function lookBackSignificant(from) {
     let k = from - 1;
@@ -603,6 +720,37 @@ function stripTypes(src) {
       }
     }
 
+    // Strip TypeScript decorators `@sealed` or `@log("meta")` while preserving newlines
+    if (c === '@') {
+      let j = i + 1;
+      while (j < n && (isIdentPart(src[j]) || src[j] === '.')) j++;
+      if (j > i + 1) {
+        while (j < n && (src[j] === ' ' || src[j] === '\t')) j++;
+        if (src[j] === '<') {
+          let ad = 1; j++;
+          while (j < n && ad > 0) {
+            if (src[j] === '"' || src[j] === "'" || src[j] === '`') { j = skipString(src, j); continue; }
+            if (src[j] === '<') ad++;
+            else if (src[j] === '>' && src[j - 1] !== '=') ad--;
+            j++;
+          }
+        }
+        if (src[j] === '(') {
+          let pd = 1; j++;
+          while (j < n && pd > 0) {
+            if (src[j] === '"' || src[j] === "'" || src[j] === '`') { j = skipString(src, j); continue; }
+            if (src[j] === '(') pd++;
+            else if (src[j] === ')') pd--;
+            j++;
+          }
+        }
+        while (j < n && (src[j] === ' ' || src[j] === '\t')) j++;
+        out += newlinesOf(src.slice(i, j));
+        i = j;
+        continue;
+      }
+    }
+
     if (c === '<') {
       const genericEnd = tryStripGenericArrow(src, i);
       if (genericEnd > i) { i = genericEnd; continue; }
@@ -620,6 +768,16 @@ function stripTypes(src) {
       out += c;
       i++;
       while (i < n && src[i] === '!' && src[i + 1] !== '=') i++;
+      if (c === ')' && superCallTargetDepth >= 0 && parenDepth === superCallTargetDepth && pendingAfterSuperAssigns) {
+        if (src[i] === ';') {
+          out += ';' + pendingAfterSuperAssigns;
+          i++;
+        } else {
+          out += ';' + pendingAfterSuperAssigns;
+        }
+        pendingAfterSuperAssigns = null;
+        superCallTargetDepth = -1;
+      }
       continue;
     }
 
@@ -628,6 +786,14 @@ function stripTypes(src) {
       const word = id.name;
       const wordStart = i;
       i = id.end;
+
+      if (word === 'super' && pendingAfterSuperAssigns) {
+        let js = i;
+        while (js < n && isWS(src[js])) js++;
+        if (src[js] === '(') {
+          superCallTargetDepth = parenDepth;
+        }
+      }
 
       if (word === 'import') {
         let j = i;
@@ -678,6 +844,32 @@ function stripTypes(src) {
           i = j;
           continue;
         }
+        continue;
+      }
+      if (word === 'declare') {
+        let j = i;
+        while (j < n && (src[j] === ' ' || src[j] === '\t')) j++;
+        const nextId = readIdent(src, j);
+        if (nextId && (nextId.name === 'interface' || nextId.name === 'type')) {
+          continue;
+        }
+        let depth = 0;
+        let seenBraceBlock = false;
+        while (j < n) {
+          const ch = src[j];
+          if (ch === '"' || ch === "'" || ch === '`') { j = skipString(src, j); continue; }
+          if (ch === '{') { depth++; seenBraceBlock = true; }
+          else if (ch === '}') {
+            depth = Math.max(0, depth - 1);
+            if (seenBraceBlock && depth === 0) { j++; break; }
+          } else if (ch === '(' || ch === '[') depth++;
+          else if (ch === ')' || ch === ']') depth = Math.max(0, depth - 1);
+          else if (ch === ';' && depth === 0) { j++; break; }
+          else if (ch === '\n' && depth === 0) break;
+          j++;
+        }
+        out += newlinesOf(src.slice(wordStart, j));
+        i = j;
         continue;
       }
       if (word === 'interface') {
@@ -790,8 +982,120 @@ function stripTypes(src) {
         continue;
       }
 
-      if (/^(public|private|protected|readonly|abstract|declare|namespace|implements)$/.test(word)) {
+      // Abstract method stub: `abstract f(x: number): number;` -> `f() {}`
+      if (word === 'abstract') {
+        let j = i;
+        while (j < n && (src[j] === ' ' || src[j] === '\t')) j++;
+        const nextId = readIdent(src, j);
+        if (nextId && nextId.name !== 'class') {
+          let k = nextId.end;
+          while (k < n && (src[k] === ' ' || src[k] === '\t')) k++;
+          if (src[k] === '<') {
+            let ad = 1; k++;
+            while (k < n && ad > 0) {
+              if (src[k] === '"' || src[k] === "'" || src[k] === '`') { k = skipString(src, k); continue; }
+              if (src[k] === '<') ad++;
+              else if (src[k] === '>' && src[k - 1] !== '=') ad--;
+              k++;
+            }
+            while (k < n && (src[k] === ' ' || src[k] === '\t')) k++;
+          }
+          if (src[k] === '(') {
+            let pd = 1, m = k + 1;
+            while (m < n && pd > 0) {
+              if (src[m] === '"' || src[m] === "'" || src[m] === '`') { m = skipString(src, m); continue; }
+              if (src[m] === '(') pd++;
+              else if (src[m] === ')') pd--;
+              m++;
+            }
+            if (pd === 0) {
+              let p = m;
+              while (p < n && (src[p] === ' ' || src[p] === '\t')) p++;
+              if (src[p] === ':') {
+                const tEnd = tryParseType(src, p + 1);
+                if (tEnd > p + 1) p = tEnd;
+              }
+              while (p < n && (src[p] === ' ' || src[p] === '\t')) p++;
+              if (src[p] === ';' || src[p] === '\n' || src[p] === '\r') {
+                if (src[p] === ';') p++;
+                out += nextId.name + '() {}' + newlinesOf(src.slice(wordStart, p));
+                i = p;
+                continue;
+              }
+            }
+          }
+        }
         continue;
+      }
+
+      if (/^(public|private|protected|readonly|namespace|implements)$/.test(word)) {
+        continue;
+      }
+
+      // Function overload signature without body: `function add(a: number, b: number): number;`
+      if (word === 'function') {
+        let j = i;
+        while (j < n && (src[j] === ' ' || src[j] === '\t' || src[j] === '*')) j++;
+        const fnId = readIdent(src, j);
+        if (fnId) {
+          let k = fnId.end;
+          while (k < n && (src[k] === ' ' || src[k] === '\t')) k++;
+          if (src[k] === '<') {
+            let ad = 1; k++;
+            while (k < n && ad > 0) {
+              if (src[k] === '"' || src[k] === "'" || src[k] === '`') { k = skipString(src, k); continue; }
+              if (src[k] === '<') ad++;
+              else if (src[k] === '>' && src[k - 1] !== '=') ad--;
+              k++;
+            }
+            while (k < n && (src[k] === ' ' || src[k] === '\t')) k++;
+          }
+          if (src[k] === '(') {
+            let pd = 1, m = k + 1;
+            while (m < n && pd > 0) {
+              if (src[m] === '"' || src[m] === "'" || src[m] === '`') { m = skipString(src, m); continue; }
+              if (src[m] === '(') pd++;
+              else if (src[m] === ')') pd--;
+              m++;
+            }
+            if (pd === 0) {
+              let p = m;
+              while (p < n && (src[p] === ' ' || src[p] === '\t')) p++;
+              if (src[p] === ':') {
+                const tEnd = tryParseType(src, p + 1);
+                if (tEnd > p + 1) p = tEnd;
+              }
+              while (p < n && (src[p] === ' ' || src[p] === '\t')) p++;
+              if (src[p] === ';') {
+                p++;
+                out += newlinesOf(src.slice(wordStart, p));
+                i = p;
+                continue;
+              }
+            }
+          }
+        }
+      }
+
+      // Constructor parameter properties: `constructor(private n: number, public name: string = "a") { ... }`
+      if (word === 'constructor') {
+        let j = i;
+        while (j < n && isWS(src[j])) j++;
+        if (src[j] === '(') {
+          let pd = 1, m = j + 1;
+          while (m < n && pd > 0) {
+            if (src[m] === '"' || src[m] === "'" || src[m] === '`') { m = skipString(src, m); continue; }
+            if (src[m] === '(') pd++;
+            else if (src[m] === ')') pd--;
+            m++;
+          }
+          if (pd === 0) {
+            const props = extractConstructorParamProps(src.slice(j + 1, m - 1));
+            if (props.length > 0) {
+              pendingCtorProps = props;
+            }
+          }
+        }
       }
 
       if (word === 'as' || word === 'satisfies') {
@@ -936,7 +1240,26 @@ function stripTypes(src) {
         }
       }
       braceStack.push(kind);
-      out += c;
+      if (pendingCtorProps && parenDepth === 0 && kind === 'block') {
+        const assigns = pendingCtorProps.map(p => ` this.${p} = ${p};`).join('');
+        pendingCtorProps = null;
+        let bd = 1, m = i + 1;
+        while (m < n && bd > 0) {
+          if (src[m] === '"' || src[m] === "'" || src[m] === '`') { m = skipString(src, m); continue; }
+          if (src[m] === '{') bd++;
+          else if (src[m] === '}') bd--;
+          m++;
+        }
+        const ctorBodySlice = stripCommentsOnly(src.slice(i + 1, m - 1));
+        if (/\bsuper\s*\(/.test(ctorBodySlice)) {
+          pendingAfterSuperAssigns = assigns;
+          out += c;
+        } else {
+          out += '{' + assigns;
+        }
+      } else {
+        out += c;
+      }
       i++;
       continue;
     }
@@ -957,8 +1280,8 @@ function stripTypes(src) {
     out += c;
     i++;
   }
-  if (typeof src === 'string') {
-    _STRIP_TYPES_CACHE = { src, out };
+  if (typeof rawSrc === 'string') {
+    _STRIP_TYPES_CACHE = { src: rawSrc, out };
   }
   return out;
 }

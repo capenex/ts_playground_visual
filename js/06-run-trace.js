@@ -96,6 +96,469 @@ function safeJSONStringify(val) {
   }
 }
 
+/* ================================================================
+   4.1) Deterministic Virtual Event Loop Sandbox (Promise / async-await / setTimeout / queueMicrotask)
+   Executes microtasks and timer macrotasks deterministically so step-by-step replay
+   and PAUSE_SIGNAL unwinding work across async boundaries.
+   ================================================================ */
+function hasAsyncConstructs(src) {
+  if (!src || typeof src !== 'string') return false;
+  const clean = blankStrings(src);
+  return /\b(?:async|await|Promise|setTimeout|queueMicrotask|sleep)\b/.test(clean);
+}
+
+function createVirtualEventLoop(__t, getCurLine, onSuspendFrame, onResumeFrame) {
+  let promiseSeq = 0;
+  let microSeq = 0;
+  let macroSeq = 0;
+  let coroSeq = 0;
+
+  const loop = {
+    used: false,
+    virtualTime: 0,
+    phase: 'sync', // 'sync' | 'microtask' | 'macrotask' | 'idle'
+    activeTaskLabel: '主线程同步栈 (Sync)',
+    coroutines: [],
+    microtasks: [],
+    macrotasks: [],
+    promises: [],
+    globalSnapFn: null,
+  };
+
+  function rethrowIfControlSignal(err) {
+    if (err && (err === PAUSE_SIGNAL || err.__debugPause || err.__timeout)) {
+      throw err;
+    }
+  }
+
+  function enqueueMicrotask(item) {
+    loop.used = true;
+    const task = {
+      id: ++microSeq,
+      label: item.label || ('microtask#' + microSeq),
+      line: item.line || getCurLine() || 1,
+      status: 'queued',
+      isInternalAwait: Boolean(item.isInternalAwait),
+      run: item.run,
+      rawCb: item.rawCb || null,
+    };
+    loop.microtasks.push(task);
+    return task;
+  }
+
+  class VirtualPromise {
+    constructor(executor, label) {
+      loop.used = true;
+      this.__isVirtualPromise = true;
+      this.id = ++promiseSeq;
+      this.label = label || ('Promise#' + this.id);
+      this.state = 'pending';
+      this.value = undefined;
+      this.reason = undefined;
+      this.line = getCurLine() || 1;
+      this._handlers = [];
+      loop.promises.push(this);
+
+      const resolve = (val) => this._resolve(val);
+      const reject = (reason) => this._reject(reason);
+      if (typeof executor === 'function') {
+        try {
+          executor(resolve, reject);
+        } catch (err) {
+          rethrowIfControlSignal(err);
+          this._reject(err);
+        }
+      }
+    }
+
+    _resolve(val) {
+      if (this.state !== 'pending') return;
+      if (val && (val.__isVirtualPromise || typeof val.then === 'function')) {
+        try {
+          val.then((v) => this._resolve(v), (r) => this._reject(r));
+        } catch (err) {
+          rethrowIfControlSignal(err);
+          this._reject(err);
+        }
+        return;
+      }
+      this.state = 'fulfilled';
+      this.value = val;
+      this._flush();
+    }
+
+    _reject(reason) {
+      if (this.state !== 'pending') return;
+      this.state = 'rejected';
+      this.reason = reason;
+      this._flush();
+    }
+
+    _flush() {
+      if (this.state === 'pending') return;
+      const pending = this._handlers.splice(0, this._handlers.length);
+      for (const h of pending) {
+        this._scheduleHandler(h);
+      }
+    }
+
+    _scheduleHandler(h) {
+      const isFulfilled = this.state === 'fulfilled';
+      const cb = isFulfilled ? h.onFulfilled : h.onRejected;
+      const arg = isFulfilled ? this.value : this.reason;
+      enqueueMicrotask({
+        label: h.label || (this.label + (isFulfilled ? '.then' : '.catch')),
+        line: h.line || this.line || 1,
+        isInternalAwait: Boolean(h.isInternalAwait),
+        rawCb: cb,
+        run: () => {
+          if (typeof cb !== 'function') {
+            if (isFulfilled) h.child._resolve(arg);
+            else h.child._reject(arg);
+            return;
+          }
+          try {
+            // If user wrote a single-line callback without inner __t hooks, emit a trace step for the microtask
+            const cbSrc = Function.prototype.toString.call(cb);
+            if (!h.isInternalAwait && !cbSrc.includes('__t(') && typeof __t === 'function') {
+              __t(h.line || 1, '⚡ [微任务 Microtask] ' + (h.label || 'Promise.then'), loop.globalSnapFn);
+            }
+            const res = cb(arg);
+            h.child._resolve(res);
+          } catch (err) {
+            rethrowIfControlSignal(err);
+            h.child._reject(err);
+          }
+        },
+      });
+    }
+
+    then(onFulfilled, onRejected, metaLabel, isInternalAwait) {
+      const callLine = getCurLine() || this.line || 1;
+      const child = new VirtualPromise(null, metaLabel || (this.label + '.then'));
+      // Hide internal child promises created purely for chaining from cluttering the promise list if needed
+      if (isInternalAwait) child._internal = true;
+      const handler = {
+        onFulfilled,
+        onRejected,
+        child,
+        line: callLine,
+        label: metaLabel || (this.label + '.then'),
+        isInternalAwait: Boolean(isInternalAwait),
+      };
+      if (this.state === 'pending') {
+        this._handlers.push(handler);
+      } else {
+        this._scheduleHandler(handler);
+      }
+      return child;
+    }
+
+    catch(onRejected) {
+      return this.then(null, onRejected, this.label + '.catch');
+    }
+
+    finally(onFinally) {
+      return this.then(
+        (v) => {
+          if (typeof onFinally === 'function') onFinally();
+          return v;
+        },
+        (err) => {
+          if (typeof onFinally === 'function') onFinally();
+          throw err;
+        },
+        this.label + '.finally'
+      );
+    }
+
+    static resolve(val) {
+      loop.used = true;
+      if (val && val.__isVirtualPromise) return val;
+      return new VirtualPromise((res) => res(val), 'Promise.resolve(' + formatShortVal(val) + ')');
+    }
+
+    static reject(reason) {
+      loop.used = true;
+      return new VirtualPromise((_, rej) => rej(reason), 'Promise.reject(' + formatShortVal(reason) + ')');
+    }
+
+    static all(items) {
+      loop.used = true;
+      const arr = Array.from(items || []);
+      return new VirtualPromise((resolve, reject) => {
+        if (arr.length === 0) { resolve([]); return; }
+        const out = new Array(arr.length);
+        let left = arr.length;
+        arr.forEach((item, idx) => {
+          VirtualPromise.resolve(item).then((val) => {
+            out[idx] = val;
+            if (--left === 0) resolve(out);
+          }, reject);
+        });
+      }, 'Promise.all');
+    }
+
+    static race(items) {
+      loop.used = true;
+      const arr = Array.from(items || []);
+      return new VirtualPromise((resolve, reject) => {
+        arr.forEach((item) => {
+          VirtualPromise.resolve(item).then(resolve, reject);
+        });
+      }, 'Promise.race');
+    }
+  }
+
+  const env = {
+    Promise: VirtualPromise,
+    queueMicrotask(cb) {
+      loop.used = true;
+      const line = getCurLine() || 1;
+      enqueueMicrotask({
+        label: 'queueMicrotask',
+        line,
+        rawCb: cb,
+        run: () => {
+          if (typeof cb !== 'function') return;
+          const cbSrc = Function.prototype.toString.call(cb);
+          if (!cbSrc.includes('__t(') && typeof __t === 'function') {
+            __t(line, '⚡ [微任务] queueMicrotask', loop.globalSnapFn);
+          }
+          cb();
+        },
+      });
+    },
+    setTimeout(cb, delay = 0, ...args) {
+      loop.used = true;
+      const d = Math.max(0, Number(delay) || 0);
+      const line = getCurLine() || 1;
+      const id = ++macroSeq;
+      loop.macrotasks.push({
+        id,
+        label: `setTimeout (${d}ms)`,
+        delay: d,
+        fireAt: loop.virtualTime + d,
+        line,
+        status: 'waiting',
+        cb,
+        args,
+      });
+      return id;
+    },
+    clearTimeout(id) {
+      const t = loop.macrotasks.find(m => m.id === id && m.status === 'waiting');
+      if (t) t.status = 'cancelled';
+    },
+    sleep(ms = 0, val = undefined) {
+      loop.used = true;
+      const d = Math.max(0, Number(ms) || 0);
+      return new VirtualPromise((resolve) => {
+        env.setTimeout(() => resolve(val), d);
+      }, `sleep(${d}ms)`);
+    },
+  };
+
+  function runAsyncCoroutine(genFn, self, fnName, defLine) {
+    loop.used = true;
+    const coro = {
+      id: ++coroSeq,
+      name: fnName || 'async',
+      line: defLine || getCurLine() || 1,
+      status: 'running',
+      awaitExpr: null,
+      fid: 0,
+    };
+    loop.coroutines.push(coro);
+    const outPromise = new VirtualPromise(null, `${coro.name}()`);
+    let gen;
+    try {
+      gen = genFn.call(self);
+    } catch (err) {
+      rethrowIfControlSignal(err);
+      coro.status = 'rejected';
+      outPromise._reject(err);
+      return outPromise;
+    }
+
+    function drive(method, arg) {
+      coro.status = 'running';
+      coro.awaitExpr = null;
+      let stepRes;
+      try {
+        stepRes = gen[method](arg);
+      } catch (err) {
+        rethrowIfControlSignal(err);
+        coro.status = 'rejected';
+        outPromise._reject(err);
+        return;
+      }
+      if (stepRes.done) {
+        coro.status = 'done';
+        outPromise._resolve(stepRes.value);
+        return;
+      }
+      const yielded = stepRes.value;
+      const isAwaitDesc = yielded && typeof yielded === 'object' && yielded.__isAwait;
+      const awaitedVal = isAwaitDesc ? yielded.value : yielded;
+      const fid = isAwaitDesc ? yielded.fid : 0;
+      const awaitLine = (isAwaitDesc && yielded.line) ? yielded.line : getCurLine() || coro.line;
+      const awaitExpr = (isAwaitDesc && yielded.expr) ? yielded.expr : 'await';
+
+      coro.status = 'suspended';
+      coro.line = awaitLine;
+      coro.awaitExpr = awaitExpr;
+      coro.fid = fid;
+      if (fid && typeof onSuspendFrame === 'function') {
+        onSuspendFrame(fid, awaitLine, awaitExpr);
+      }
+
+      const awaitedPromise = VirtualPromise.resolve(awaitedVal);
+      awaitedPromise.then(
+        (resolvedVal) => {
+          if (fid && typeof onResumeFrame === 'function') {
+            onResumeFrame(fid);
+          }
+          drive('next', resolvedVal);
+        },
+        (rejectedReason) => {
+          if (fid && typeof onResumeFrame === 'function') {
+            onResumeFrame(fid);
+          }
+          drive('throw', rejectedReason);
+        },
+        `await 恢复: ${coro.name} (L${awaitLine})`,
+        true
+      );
+    }
+
+    drive('next', undefined);
+    return outPromise;
+  }
+
+  function drainEventLoop(entryVal, fallbackSnapFn) {
+    if (fallbackSnapFn && !loop.globalSnapFn) loop.globalSnapFn = fallbackSnapFn;
+    if (!loop.used) return entryVal;
+
+    let safety = 0;
+    while (safety++ < 2000) {
+      // 1. Drain all queued microtasks (FIFO)
+      const nextMicro = loop.microtasks.find(m => m.status === 'queued');
+      if (nextMicro) {
+        nextMicro.status = 'running';
+        loop.phase = 'microtask';
+        loop.activeTaskLabel = nextMicro.label;
+        try {
+          nextMicro.run();
+        } finally {
+          if (nextMicro.status === 'running') nextMicro.status = 'done';
+        }
+        continue;
+      }
+
+      // 2. Pick the earliest waiting macrotask timer
+      let bestMacro = null;
+      for (const m of loop.macrotasks) {
+        if (m.status !== 'waiting') continue;
+        if (!bestMacro || m.fireAt < bestMacro.fireAt || (m.fireAt === bestMacro.fireAt && m.id < bestMacro.id)) {
+          bestMacro = m;
+        }
+      }
+      if (bestMacro) {
+        bestMacro.status = 'running';
+        loop.virtualTime = Math.max(loop.virtualTime, bestMacro.fireAt);
+        loop.phase = 'macrotask';
+        loop.activeTaskLabel = `${bestMacro.label} @ ${loop.virtualTime}ms`;
+        try {
+          if (typeof bestMacro.cb === 'function') {
+            const cbSrc = Function.prototype.toString.call(bestMacro.cb);
+            if (!cbSrc.includes('__t(') && typeof __t === 'function') {
+              __t(bestMacro.line || 1, `⚡ [宏任务 @ ${loop.virtualTime}ms] ${bestMacro.label}`, loop.globalSnapFn);
+            }
+            bestMacro.cb(...(bestMacro.args || []));
+          }
+        } catch (err) {
+          rethrowIfControlSignal(err);
+          throw err;
+        } finally {
+          if (bestMacro.status === 'running') bestMacro.status = 'done';
+        }
+        continue;
+      }
+
+      break;
+    }
+
+    loop.phase = 'idle';
+    loop.activeTaskLabel = '事件循环已清空 (Idle)';
+
+    if (entryVal && entryVal.__isVirtualPromise) {
+      if (entryVal.state === 'rejected') {
+        throw entryVal.reason instanceof Error ? entryVal.reason : new Error(String(entryVal.reason));
+      }
+      if (entryVal.state === 'fulfilled') {
+        return entryVal.value;
+      }
+    }
+    return entryVal;
+  }
+
+  function toVizSnapshot() {
+    return {
+      kind: 'eventloop',
+      now: loop.virtualTime,
+      virtualTime: loop.virtualTime,
+      phase: loop.phase,
+      activeTask: loop.activeTaskLabel,
+      activeTaskLabel: loop.activeTaskLabel,
+      coroutines: loop.coroutines.slice(-8).map(c => ({
+        id: c.id,
+        name: c.name,
+        line: c.line,
+        status: c.status,
+        awaitExpr: c.awaitExpr,
+        awaitingExpr: c.awaitExpr,
+      })),
+      microtasks: loop.microtasks.filter(m => m.status !== 'done').concat(
+        loop.microtasks.filter(m => m.status === 'done').slice(-3)
+      ).slice(0, 8).map(m => ({
+        id: m.id,
+        label: m.label,
+        line: m.line,
+        status: m.status,
+      })),
+      macrotasks: loop.macrotasks.filter(m => m.status !== 'done' && m.status !== 'cancelled').concat(
+        loop.macrotasks.filter(m => m.status === 'done').slice(-3)
+      ).slice(0, 8).map(m => ({
+        id: m.id,
+        label: m.label,
+        delay: m.delay,
+        due: m.fireAt,
+        fireAt: m.fireAt,
+        line: m.line,
+        status: m.status,
+      })),
+      promises: loop.promises.filter(p => !p._internal).slice(-8).map(p => ({
+        id: p.id,
+        label: p.label,
+        state: p.state,
+        value: p.state === 'fulfilled' ? formatShortVal(p.value) : (p.state === 'rejected' ? formatShortVal(p.reason) : 'pending'),
+        valStr: p.state === 'fulfilled' ? formatShortVal(p.value) : (p.state === 'rejected' ? formatShortVal(p.reason) : 'pending'),
+        reactions: p.reactions ? p.reactions.length : 0,
+        line: p.line,
+      })),
+    };
+  }
+
+  return {
+    loop,
+    env,
+    runAsyncCoroutine,
+    drainEventLoop,
+    toVizSnapshot,
+  };
+}
+
 function evalCall(js, call, opts) {
   const o = opts || {};
   const expr = stripTypes(call || 'undefined');
@@ -121,9 +584,14 @@ function evalCall(js, call, opts) {
       throw timeoutError();
     }
   };
-  __t.__initGlobal = function () {};
+  const evLoop = createVirtualEventLoop(__t, () => lastLine);
+  __t.__env = evLoop.env;
+  __t.__async = evLoop.runAsyncCoroutine;
+  __t.__await = (val, fid, line, exprText) => ({ __isAwait: true, value: val, fid, line, expr: exprText });
+  __t.__drain = evLoop.drainEventLoop;
+  __t.__initGlobal = function (snapFn) { evLoop.loop.globalSnapFn = snapFn; };
   __t.__ckpt = function () {};
-  const body = stub + js + '\n;return (function(){ try { return { ok:true, value:(' + expr + ') }; } catch (e) { return { ok:false, error: e && e.message ? e.message : String(e), stack: e && e.stack ? String(e.stack) : "", line: (e && e.__line) || 0, timeout: Boolean(e && e.__timeout) }; } })();';
+  const body = stub + js + '\n;return (function(){ try { var __v = (' + expr + '); if (__t && __t.__drain) __v = __t.__drain(__v); return { ok:true, value:__v }; } catch (e) { return { ok:false, error: e && e.message ? e.message : String(e), stack: e && e.stack ? String(e.stack) : "", line: (e && e.__line) || 0, timeout: Boolean(e && e.__timeout) }; } })();';
   const logs = [];
   const f = new Function('__t', 'console', body);
   let r;
@@ -324,10 +792,12 @@ function computeAndAppendNextStep(opts = {}) {
 
   let count = 0;
   let frameSeq = 0;
+  let curLineTracker = globalCallLine;
   let activeRecording = false;
   let unwindingPause = false;
   let pendingStep = null;
   let pendingStepSnapFn = null;
+  let pendingEventLoopPhase = null;
   let nextVRaw = null;
   const stepLogs = [];
   const t0 = Date.now();
@@ -342,8 +812,36 @@ function computeAndAppendNextStep(opts = {}) {
       snapFn: null,
     },
   ];
+  const suspendedFrames = new Map();
+
+  const evLoop = createVirtualEventLoop(
+    (line, note, snap, self) => __t(line, note, snap, self),
+    () => curLineTracker,
+    (fid) => {
+      if (unwindingPause) return;
+      for (let k = liveCallStack.length - 1; k >= 1; k--) {
+        if (liveCallStack[k].id === fid) {
+          const [removed] = liveCallStack.splice(k, 1);
+          suspendedFrames.set(fid, removed);
+          break;
+        }
+      }
+    },
+    (fid) => {
+      if (unwindingPause) return;
+      if (suspendedFrames.has(fid)) {
+        const frame = suspendedFrames.get(fid);
+        suspendedFrames.delete(fid);
+        liveCallStack.push(frame);
+      }
+    }
+  );
+  if (DEBUG_SESSION.hasAsync) {
+    evLoop.loop.used = true;
+  }
 
   const __t = (line, note, snap, self) => {
+    if (line) curLineTracker = line;
     const idx = count++;
     if ((idx & 63) === 63 && Date.now() - t0 > MAX_EXEC_MS) {
       throw new Error('执行超时 (>' + MAX_EXEC_MS + 'ms)，自动熔断以防页面卡死');
@@ -351,14 +849,15 @@ function computeAndAppendNextStep(opts = {}) {
     const topFrame = liveCallStack[liveCallStack.length - 1];
     if (topFrame) {
       topFrame.lastLine = line;
-      topFrame.snapFn = snap;
+      if (snap) topFrame.snapFn = snap;
       if (self && typeof self === 'object') topFrame.self = self;
     }
     if (idx < targetIdx) {
       return;
     }
     if (idx === targetIdx) {
-      const vRaw = (typeof snap === 'function' ? snap() : snap) || {};
+      const effectiveSnap = snap || (topFrame && topFrame.snapFn) || evLoop.loop.globalSnapFn;
+      const vRaw = (typeof effectiveSnap === 'function' ? effectiveSnap() : effectiveSnap) || {};
       if (self && typeof self === 'object') {
         try {
           const selfCopy = {};
@@ -383,7 +882,12 @@ function computeAndAppendNextStep(opts = {}) {
         const fNote = isTop ? note : (originalLines[(fr.lastLine || fr.line || 1) - 1] || '');
         return buildFrameSnapshotFromClosure(fr, isTop ? line : fr.line, fNote);
       });
-      pendingStepSnapFn = snap;
+      pendingStepSnapFn = effectiveSnap;
+      pendingEventLoopPhase = {
+        phase: evLoop.loop.phase,
+        activeTaskLabel: evLoop.loop.activeTaskLabel,
+        virtualTime: evLoop.loop.virtualTime,
+      };
       pendingStep = {
         line,
         note,
@@ -408,7 +912,13 @@ function computeAndAppendNextStep(opts = {}) {
     }
   };
 
+  __t.__env = evLoop.env;
+  __t.__async = evLoop.runAsyncCoroutine;
+  __t.__await = (val, fid, line, exprText) => ({ __isAwait: true, value: val, fid, line, expr: exprText });
+  __t.__drain = evLoop.drainEventLoop;
+
   __t.__initGlobal = (globalSnapFn) => {
+    evLoop.loop.globalSnapFn = globalSnapFn;
     if (liveCallStack[0]) {
       liveCallStack[0].snapFn = globalSnapFn;
     }
@@ -431,6 +941,7 @@ function computeAndAppendNextStep(opts = {}) {
 
   __t.__leave = (fid) => {
     if (unwindingPause) return;
+    suspendedFrames.delete(fid);
     for (let k = liveCallStack.length - 1; k >= 1; k--) {
       if (liveCallStack[k].id === fid) {
         liveCallStack.splice(k, 1);
@@ -535,17 +1046,31 @@ function computeAndAppendNextStep(opts = {}) {
     nextContext.__ckptVals = pendingStep.checkpointVals;
   }
 
-  // If the current line initializes a structured/interface variable (e.g. const u: User = { ... }), include it in ds on this step
+  // Update primitive/Promise summary values in `pendingStep.v` if a variable was initialized on this line
   if (nextVRaw) {
     Object.keys(nextVRaw).forEach(name => {
-      if (pendingStep.vRaw[name] === undefined && nextVRaw[name] !== undefined && !pendingStep.ds[name]) {
-        const d = classifyValue(name, nextVRaw[name]);
+      const nv = nextVRaw[name];
+      if (nv && nv.__isVirtualPromise) {
+        pendingStep.v[name] = cloneDeepBounded(nv, 2);
+      }
+      if (pendingStep.vRaw[name] === undefined && nv !== undefined && !pendingStep.ds[name]) {
+        const d = classifyValue(name, nv);
         if (d) pendingStep.ds[name] = d;
       }
     });
   }
   populateInterfaceSchemas(pendingStep.ds);
   enrichFromNote(pendingStep.ds, nextVRaw || pendingStep.vRaw, rawLine);
+
+  if (evLoop.loop.used) {
+    const elSnap = evLoop.toVizSnapshot();
+    if (pendingEventLoopPhase) {
+      elSnap.phase = pendingEventLoopPhase.phase;
+      elSnap.activeTaskLabel = pendingEventLoopPhase.activeTaskLabel;
+      elSnap.virtualTime = pendingEventLoopPhase.virtualTime;
+    }
+    pendingStep.ds['eventLoop'] = elSnap;
+  }
 
   if (pendingStep.callStack && pendingStep.callStack.length > 0) {
     const topF = pendingStep.callStack[pendingStep.callStack.length - 1];
@@ -599,38 +1124,10 @@ function computeAndAppendNextStep(opts = {}) {
   return true;
 }
 
-/* Syntax we deliberately do not execute yet — report it in plain words instead of
-   surfacing a raw `Unexpected token` from the JS engine. */
-function detectUnsupportedSyntax(src) {
-  const lines = String(src || '').replace(/\r\n?/g, '\n').split('\n');
-  const issues = [];
-  const add = (line, feature, hint) => {
-    if (!issues.some(x => x.line === line && x.feature === feature)) issues.push({ line, feature, hint });
-  };
-  for (let i = 0; i < lines.length; i++) {
-    const raw = blankStrings(stripInlineCommentSafe(lines[i]));
-    const t = raw.trim();
-    if (!t) continue;
-    if (/^@[A-Za-z_$]/.test(t)) {
-      add(i + 1, '装饰器 (decorator)', '去掉装饰器，或把装饰逻辑写成普通函数调用');
-    }
-    if (/\babstract\s+class\b/.test(t) || /^\s*(?:public|private|protected|static|readonly|async)?\s*abstract\b/.test(t)) {
-      add(i + 1, 'abstract 抽象类 / 抽象方法', '改成普通类，用空实现或 throw 代替');
-    }
-    if (/^\s*declare\b/.test(t)) {
-      add(i + 1, 'declare 环境声明', '删掉这一行（这里没有外部类型环境）');
-    }
-    if (/^\s*(?:export\s+)?(?:namespace|module)\s+[A-Za-z_$]/.test(t)) {
-      add(i + 1, 'namespace / module', '改用普通对象或 ES 模块');
-    }
-    if (/constructor\s*\([^)]*\b(?:private|public|protected|readonly)\b[^)]*\)/.test(t)) {
-      add(i + 1, '构造器参数属性 (constructor(private x))', '改成普通参数，再在构造器里写 this.x = x');
-    }
-    if (/^\s*static\s*\{/.test(t)) {
-      add(i + 1, '静态初始化块 (static { ... })', '改成 static 方法，在入口处调用一次');
-    }
-  }
-  return issues;
+/* Full TypeScript syntax (decorators, abstract classes, constructor parameter properties,
+   namespaces, declare, static blocks) is now supported directly by stripTypes & typecheckTS. */
+function detectUnsupportedSyntax(_src) {
+  return [];
 }
 
 function startDebug(initialStep = 0) {
@@ -674,8 +1171,13 @@ function startDebug(initialStep = 0) {
   try {
     const names = collectNames(jsBody);
     const js = instrument(jsBody, originalLines, names);
-    const finHook = '\n;try{if(typeof __t==="function"&&__t.__fin)__t.__fin(' + snapFnExpr(names) + ');}catch(_){}\n';
-    const body = js + finHook + ';return (' + expr + ');';
+    const snapStr = snapFnExpr(names);
+    const body =
+      js +
+      '\n;var __entryVal = (' + expr + ');\n' +
+      'if (typeof __t === "function" && __t.__drain) { __entryVal = __t.__drain(__entryVal, ' + snapStr + '); }\n' +
+      'try{if(typeof __t==="function"&&__t.__fin)__t.__fin(' + snapStr + ');}catch(_){}\n' +
+      'return __entryVal;';
     compiledFn = new Function('__t', 'console', body);
   } catch (e) {
     resetTraceState();
@@ -700,6 +1202,7 @@ function startDebug(initialStep = 0) {
     compiledFn,
     originalLines,
     callExpr: expr,
+    hasAsync: hasAsyncConstructs(src),
   };
   cur = 0;
   watched = new Set();

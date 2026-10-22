@@ -310,30 +310,103 @@ function tryInjectLoopOrElseIf(raw, callExpr) {
 function matchFunctionHeaderForStack(rawLine, lineNum) {
   const clean = stripInlineCommentSafe(rawLine).trim();
   if (!clean.endsWith('{')) return null;
-  let m = clean.match(/^(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(([^)]*)\)\s*\{$/);
-  if (!m) {
-    m = clean.match(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?function(?:\s+[A-Za-z_$][\w$]*)?\s*\(([^)]*)\)\s*\{$/);
+  let m = clean.match(/^(?:export\s+)?(?:default\s+)?(async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(([^)]*)\)\s*\{$/);
+  let isAsync = false;
+  let fnName = '';
+  let paramRaw = '';
+  if (m) {
+    isAsync = Boolean(m[1]);
+    fnName = m[2];
+    paramRaw = m[3] || '';
   }
   if (!m) {
-    m = clean.match(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?\(([^)]*)\)\s*=>\s*\{$/);
+    m = clean.match(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(async\s+)?function(?:\s+[A-Za-z_$][\w$]*)?\s*\(([^)]*)\)\s*\{$/);
+    if (m) { isAsync = Boolean(m[2]); fnName = m[1]; paramRaw = m[3] || ''; }
   }
   if (!m) {
-    m = clean.match(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?([A-Za-z_$][\w$]*)\s*=>\s*\{$/);
+    m = clean.match(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(async\s+)?\(([^)]*)\)\s*=>\s*\{$/);
+    if (m) { isAsync = Boolean(m[2]); fnName = m[1]; paramRaw = m[3] || ''; }
   }
   if (!m) {
-    m = clean.match(/^(?:(?:public|private|protected|static|async|readonly|get|set)\s+)*([A-Za-z_$][\w$]*)\s*\(([^)]*)\)\s*(?::\s*[^{]+)?\s*\{$/);
-    if (m && RESERVED_WORDS.has(m[1])) m = null;
+    m = clean.match(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(async\s+)?([A-Za-z_$][\w$]*)\s*=>\s*\{$/);
+    if (m) { isAsync = Boolean(m[2]); fnName = m[1]; paramRaw = m[3] || ''; }
+  }
+  if (!m) {
+    m = clean.match(/^((?:(?:public|private|protected|static|async|readonly|get|set)\s+)*)([A-Za-z_$][\w$]*)\s*\(([^)]*)\)\s*(?::\s*[^{]+)?\s*\{$/);
+    if (m && RESERVED_WORDS.has(m[2])) m = null;
+    if (m) {
+      isAsync = /\basync\b/.test(m[1] || '');
+      fnName = m[2];
+      paramRaw = m[3] || '';
+    }
   }
   if (!m) return null;
   const pSet = new Set();
-  splitTopLevel(m[2] || '').forEach(p => extractBindingNames(p, pSet));
+  splitTopLevel(paramRaw).forEach(p => extractBindingNames(p, pSet));
   return {
     kind: 'fn',
-    name: m[1],
+    name: fnName,
     params: [...pSet],
     line: lineNum,
     fidVar: `__fid_${lineNum}`,
+    isAsync,
   };
+}
+
+function rewriteAwaitExpressions(str, fidExpr, lineNum) {
+  if (!/\bawait\b/.test(str)) return str;
+  let out = '';
+  let i = 0;
+  const n = str.length;
+  while (i < n) {
+    const ch = str[i];
+    if (ch === '"' || ch === "'" || ch === '`') {
+      const end = skipString(str, i);
+      out += str.slice(i, end);
+      i = end;
+      continue;
+    }
+    if (ch === '/' && str[i + 1] === '/') {
+      out += str.slice(i);
+      break;
+    }
+    if (isIdentStart(ch)) {
+      const id = readIdent(str, i);
+      if (id.name === 'await') {
+        let j = id.end;
+        while (j < n && isWS(str[j])) j++;
+        let d = 0;
+        let k = j;
+        while (k < n) {
+          const c = str[k];
+          if (c === '"' || c === "'" || c === '`') { k = skipString(str, k); continue; }
+          if (c === '/' && str[k + 1] === '/') break;
+          if (c === '(' || c === '[' || c === '{') d++;
+          else if (c === ')' || c === ']' || c === '}') {
+            if (d === 0) break;
+            d--;
+          } else if (d === 0 && (c === ';' || c === ',' || c === '\n')) {
+            break;
+          }
+          k++;
+        }
+        const rawExpr = str.slice(j, k).trim();
+        if (rawExpr) {
+          const innerRewritten = rewriteAwaitExpressions(rawExpr, fidExpr, lineNum);
+          const label = rawExpr.length > 36 ? rawExpr.slice(0, 33) + '…' : rawExpr;
+          out += `(yield (__t && __t.__await ? __t.__await((${innerRewritten}), ${fidExpr}, ${lineNum}, ${JSON.stringify(label)}) : (${innerRewritten})))`;
+          i = k;
+          continue;
+        }
+      }
+      out += str.slice(i, id.end);
+      i = id.end;
+      continue;
+    }
+    out += ch;
+    i++;
+  }
+  return out;
 }
 
 /* Index of a real `class` keyword on this line (outside strings/comments), or -1. */
@@ -395,6 +468,15 @@ function instrument(js, originalLines, names) {
       !prevContinued &&
       !prevUnbracedControl;
 
+    let activeAsyncFn = null;
+    for (let bIdx = braceStack.length - 1; bIdx >= 0; bIdx--) {
+      const bItem = braceStack[bIdx];
+      if (bItem && typeof bItem === 'object' && bItem.kind === 'fn') {
+        if (bItem.isAsync) activeAsyncFn = bItem;
+        break;
+      }
+    }
+
     const fnHeader = (!inObject && parenDepth === 0) ? matchFunctionHeaderForStack(raw, i + 1) : null;
     let openFnBraceIdx = -1;
     if (fnHeader) {
@@ -454,17 +536,35 @@ function instrument(js, originalLines, names) {
 
     let transformedRaw = raw;
     if (fnHeader && openFnBraceIdx >= 0 && !closeFnSplices.some(s => s.fnInfo === fnHeader)) {
-      const enterHook = ` var ${fnHeader.fidVar} = (typeof __t === "function" && __t.__enter) ? __t.__enter(${JSON.stringify(fnHeader.name)}, ${JSON.stringify(fnHeader.params)}, [${fnHeader.params.join(', ')}], ${fnHeader.line}, ${snapFnExpr(names)}) : 0; try {`;
-      transformedRaw = raw.slice(0, openFnBraceIdx + 1) + enterHook + raw.slice(openFnBraceIdx + 1);
+      const headPrefix = fnHeader.isAsync
+        ? raw.slice(0, openFnBraceIdx + 1).replace(/\basync\s+/, '')
+        : raw.slice(0, openFnBraceIdx + 1);
+      const enterHook = fnHeader.isAsync
+        ? ` return (__t && __t.__async ? __t.__async(function* () { var ${fnHeader.fidVar} = (typeof __t === "function" && __t.__enter) ? __t.__enter(${JSON.stringify(fnHeader.name)}, ${JSON.stringify(fnHeader.params)}, [${fnHeader.params.join(', ')}], ${fnHeader.line}, ${snapFnExpr(names)}) : 0; try {`
+        : ` var ${fnHeader.fidVar} = (typeof __t === "function" && __t.__enter) ? __t.__enter(${JSON.stringify(fnHeader.name)}, ${JSON.stringify(fnHeader.params)}, [${fnHeader.params.join(', ')}], ${fnHeader.line}, ${snapFnExpr(names)}) : 0; try {`;
+      transformedRaw = headPrefix + enterHook + raw.slice(openFnBraceIdx + 1);
     } else if (closeFnSplices.length > 0) {
       let rebuilt = transformedRaw;
       for (let sIdx = closeFnSplices.length - 1; sIdx >= 0; sIdx--) {
         const sp = closeFnSplices[sIdx];
         if (sp.fnInfo === fnHeader) continue;
-        const leaveHook = `} finally { if (typeof __t === "function" && __t.__leave) __t.__leave(${sp.fnInfo.fidVar}); } `;
+        const leaveHook = sp.fnInfo.isAsync
+          ? `} finally { if (typeof __t === "function" && __t.__leave) __t.__leave(${sp.fnInfo.fidVar}); } }, this, ${JSON.stringify(sp.fnInfo.name)}, ${sp.fnInfo.line}) : undefined); `
+          : `} finally { if (typeof __t === "function" && __t.__leave) __t.__leave(${sp.fnInfo.fidVar}); } `;
         rebuilt = rebuilt.slice(0, sp.idx) + leaveHook + rebuilt.slice(sp.idx);
       }
       transformedRaw = rebuilt;
+    } else {
+      // Single-line async function or async arrow: `async function f() { return 1; }`
+      const singleAsyncFnM = transformedRaw.match(/^(\s*(?:export\s+)?(?:default\s+)?)async\s+function\s+([A-Za-z_$][\w$]*)\s*\(([^)]*)\)\s*\{([\s\S]*)\}\s*;?\s*$/);
+      if (singleAsyncFnM) {
+        const bodyRewritten = rewriteAwaitExpressions(singleAsyncFnM[4], '0', i + 1);
+        transformedRaw = `${singleAsyncFnM[1]}function ${singleAsyncFnM[2]}(${singleAsyncFnM[3]}) { return (__t && __t.__async ? __t.__async(function* () { ${bodyRewritten} }, this, ${JSON.stringify(singleAsyncFnM[2])}, ${i + 1}) : undefined); }`;
+      }
+    }
+
+    if (activeAsyncFn && /\bawait\b/.test(transformedRaw)) {
+      transformedRaw = rewriteAwaitExpressions(transformedRaw, activeAsyncFn.fidVar, i + 1);
     }
 
     const injectedLine = canInjectHeader ? tryInjectLoopOrElseIf(transformedRaw, callExpr) : null;
@@ -485,6 +585,11 @@ function instrument(js, originalLines, names) {
   }
   const ckptPreamble =
     'var checkpoint = function(){ try { if (typeof __t === "function" && __t.__ckpt) __t.__ckpt(Array.prototype.slice.call(arguments)); } catch (_){} }, 断点 = checkpoint; ' +
+    'var Promise = (__t && __t.__env && __t.__env.Promise) || globalThis.Promise, ' +
+    'setTimeout = (__t && __t.__env && __t.__env.setTimeout) || globalThis.setTimeout, ' +
+    'clearTimeout = (__t && __t.__env && __t.__env.clearTimeout) || globalThis.clearTimeout, ' +
+    'queueMicrotask = (__t && __t.__env && __t.__env.queueMicrotask) || globalThis.queueMicrotask, ' +
+    'sleep = (__t && __t.__env && __t.__env.sleep) || function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }; ' +
     'try { if (typeof __t === "function" && __t.__initGlobal) __t.__initGlobal(' + snapFnExpr(names) + '); } catch (_){} ';
   if (out.length > 0) out[0] = ckptPreamble + out[0];
   else out.push(ckptPreamble);

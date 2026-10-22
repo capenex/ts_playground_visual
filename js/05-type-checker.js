@@ -216,11 +216,20 @@ function isTsAssignable(actual, expected) {
     if (matchTemplateLiteralType(a, e) !== null) return true;
   }
   if (/^[A-Z]\d*$/.test(a) || /^[A-Z]\d*$/.test(e)) return true;
+  const eParts = splitTopLevelUnion(e);
+  if (eParts.length > 1) {
+    const aPartsForUnion = splitTopLevelUnion(a);
+    if (aPartsForUnion.length > 1) {
+      return aPartsForUnion.every(ap => eParts.some(ep => isTsAssignable(ap, ep)));
+    }
+    return eParts.some(part => isTsAssignable(a, part));
+  }
+  const aParts = splitTopLevelUnion(a);
+  if (aParts.length > 1) {
+    return aParts.every(part => isTsAssignable(part, e));
+  }
   if (a === 'any[]' && e.endsWith('[]')) return true;
   if (a === 'any[][]' && e.endsWith('[][]')) return true;
-  if (a.endsWith('[]') && e.endsWith('[]')) {
-    return isTsAssignable(a.slice(0, -2), e.slice(0, -2));
-  }
   const aParenArr = a.match(/^\((.+)\)\[\]$/);
   const eParenArr = e.match(/^\((.+)\)\[\]$/);
   if ((aParenArr || a.endsWith('[]')) && (eParenArr || e.endsWith('[]'))) {
@@ -229,19 +238,19 @@ function isTsAssignable(actual, expected) {
     return isTsAssignable(elemA, elemE);
   }
   if (a.startsWith('[') && a.endsWith(']') && e.startsWith('[') && e.endsWith(']')) {
-    const aParts = a.slice(1, -1).split(',').map(s => s.trim()).filter(Boolean);
-    const eParts = e.slice(1, -1).split(',').map(s => s.trim()).filter(Boolean);
-    if (aParts.length === eParts.length && aParts.every((ap, idx) => isTsAssignable(ap, eParts[idx]))) {
+    const aPartsTup = a.slice(1, -1).split(',').map(s => s.trim()).filter(Boolean);
+    const ePartsTup = e.slice(1, -1).split(',').map(s => s.trim()).filter(Boolean);
+    if (aPartsTup.length === ePartsTup.length && aPartsTup.every((ap, idx) => isTsAssignable(ap, ePartsTup[idx]))) {
       return true;
     }
   }
   if (a.startsWith('[') && a.endsWith(']') && e.endsWith('[]')) {
-    const elemE = e.slice(0, -2);
-    const aParts = a.slice(1, -1).split(',').map(s => s.trim()).filter(Boolean);
-    if (aParts.every(ap => isTsAssignable(ap, elemE))) return true;
+    const elemE = eParenArr ? eParenArr[1] : e.slice(0, -2);
+    const aPartsTup = a.slice(1, -1).split(',').map(s => s.trim()).filter(Boolean);
+    if (aPartsTup.every(ap => isTsAssignable(ap, elemE))) return true;
   }
   if (a.endsWith('[]') && e.startsWith('[') && e.endsWith(']')) {
-    const elemA = a.slice(0, -2);
+    const elemA = aParenArr ? aParenArr[1] : a.slice(0, -2);
     const tupleParts = e.slice(1, -1).split(',').map(s => s.trim()).filter(Boolean);
     if (tupleParts.length > 0 && tupleParts.every(tp => isTsAssignable(elemA, tp))) {
       return true;
@@ -256,18 +265,6 @@ function isTsAssignable(actual, expected) {
       return isTsAssignable(actualRet, expectedRet);
     }
     if (a === 'function' || isTsAssignable(a, expectedRet)) return true;
-  }
-  const eParts = splitTopLevelUnion(e);
-  if (eParts.length > 1) {
-    const aPartsForUnion = splitTopLevelUnion(a);
-    if (aPartsForUnion.length > 1) {
-      return aPartsForUnion.every(ap => eParts.some(ep => isTsAssignable(ap, ep)));
-    }
-    return eParts.some(part => isTsAssignable(a, part));
-  }
-  const aParts = splitTopLevelUnion(a);
-  if (aParts.length > 1) {
-    return aParts.every(part => isTsAssignable(part, e));
   }
   const aGenM = a.match(/^([A-Za-z_$][\w$]*)<(.+)>$/);
   const eGenM = e.match(/^([A-Za-z_$][\w$]*)<(.+)>$/);
@@ -309,7 +306,7 @@ function typecheckTS(src, strict = STRICT_TS) {
     'parseInt', 'parseFloat', 'isNaN', 'isFinite', 'encodeURI', 'decodeURI',
     'encodeURIComponent', 'decodeURIComponent', 'structuredClone', 'atob', 'btoa',
     'console', 'window', 'globalThis', 'self', 'document', 'navigator', 'location', 'performance',
-    'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'requestAnimationFrame', 'cancelAnimationFrame', 'queueMicrotask',
+    'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'requestAnimationFrame', 'cancelAnimationFrame', 'queueMicrotask', 'sleep',
     'Infinity', 'NaN', 'undefined', 'null', 'true', 'false', 'this', 'super', 'arguments',
     'checkpoint', '断点',
   ]);
@@ -518,7 +515,7 @@ function typecheckTS(src, strict = STRICT_TS) {
     const arrInferM = eSubst.match(/^(?:\(\s*infer\s+([A-Za-z_$][\w$]*)\s*\)\[\]|infer\s+([A-Za-z_$][\w$]*)\[\]|(?:Readonly)?Array<\s*infer\s+([A-Za-z_$][\w$]*)\s*>)$/);
     if (arrInferM) {
       const varName = arrInferM[1] || arrInferM[2] || arrInferM[3];
-      if (cNorm.endsWith('[]')) {
+      if (cNorm.endsWith('[]') && splitTopLevelUnion(cNorm).length === 1) {
         let elem = cNorm.slice(0, -2);
         if (elem.startsWith('(') && elem.endsWith(')') && findBalancedParen(elem, 0) === elem.length - 1) {
           elem = elem.slice(1, -1);
@@ -1427,6 +1424,17 @@ function typecheckTS(src, strict = STRICT_TS) {
       return 'string';
     }
 
+    if (/^await\b/.test(s) && (s[5] === ' ' || s[5] === '\t' || s[5] === '(')) {
+      const awaitedT = inferType(s.slice(5).trim(), lineNum);
+      return evaluateType(`Awaited<${awaitedT}>`, activeTypeParams);
+    }
+
+    const promiseCtor = s.match(/^new\s+Promise\s*(?:<\s*([\s\S]+?)\s*>)?\s*\(/);
+    if (promiseCtor) {
+      const pt = promiseCtor[1] ? resolveAlias(promiseCtor[1]) : 'any';
+      return `Promise<${pt}>`;
+    }
+
     const mapCtor = s.match(/^new\s+Map\s*(?:<\s*([^,>]+)\s*,\s*([^>]+)\s*>)?\s*\(/);
     if (mapCtor) {
       const kt = mapCtor[1] ? resolveAlias(mapCtor[1]) : 'any';
@@ -1450,7 +1458,7 @@ function typecheckTS(src, strict = STRICT_TS) {
       return explicitT + '[]';
     }
     const newClassM = s.match(/^new\s+([A-Za-z_$][\w$]*)\s*(?:<([\s\S]*)>)?\s*\(([\s\S]*)\)$/);
-    if (newClassM && !/^(Map|Set|Array)$/.test(newClassM[1]) && findBalancedParen(s, s.lastIndexOf('(')) === s.length - 1) {
+    if (newClassM && !/^(Map|Set|Array|Promise)$/.test(newClassM[1]) && findBalancedParen(s, s.lastIndexOf('(')) === s.length - 1) {
       // Properly extract class name, optional <...>, and (...)
       const afterNew = s.replace(/^new\s+/, '');
       const idInfo = readIdent(afterNew, 0);
@@ -1536,7 +1544,7 @@ function typecheckTS(src, strict = STRICT_TS) {
         });
       });
       if (unique.length === 1) return unique[0] + '[]';
-      return unique.join('|') + '[]';
+      return '(' + unique.join('|') + ')[]';
     }
 
     if (s.startsWith('{') && s.endsWith('}') && findBalancedParen(s, 0) === s.length - 1) {
@@ -1817,6 +1825,25 @@ function typecheckTS(src, strict = STRICT_TS) {
         if (callee === 'Promise.resolve') {
           const t0 = explicitTypeArgs[0] ? evaluateType(explicitTypeArgs[0]) : (argTypes[0] || 'void');
           return `Promise<${t0}>`;
+        }
+        if (callee === 'Promise.reject') {
+          return 'Promise<never>';
+        }
+        if (callee === 'Promise.all') {
+          return 'Promise<any[]>';
+        }
+        if (callee === 'Promise.race') {
+          return 'Promise<any>';
+        }
+        if (callee === 'sleep') {
+          const sleepT = explicitTypeArgs[0] ? evaluateType(explicitTypeArgs[0]) : (argTypes[1] || 'void');
+          return `Promise<${sleepT}>`;
+        }
+        if (callee === 'setTimeout') {
+          return 'number';
+        }
+        if (callee === 'clearTimeout' || callee === 'queueMicrotask') {
+          return 'void';
         }
 
         const dotIdx = callee.lastIndexOf('.');
@@ -2153,7 +2180,7 @@ function typecheckTS(src, strict = STRICT_TS) {
       propMap.set(getterM[1], { type: gType, rawType: rawGT, optional: false });
       return;
     }
-    const methodHdrM = s.match(/^(?:(?:public|private|protected|static|async|readonly)\s+)*([A-Za-z_$][\w$]*)\s*(<[\s\S]*>)?\s*\(/);
+      const methodHdrM = s.match(/^(?:(?:public|private|protected|static|async|readonly|abstract)\s+)*([A-Za-z_$][\w$]*)\s*(<[\s\S]*>)?\s*\(/);
     if (methodHdrM && !RESERVED_WORDS.has(methodHdrM[1])) {
       const mName = methodHdrM[1];
       let openP = -1, ad = 0;
@@ -2168,11 +2195,21 @@ function typecheckTS(src, strict = STRICT_TS) {
       if (closeP > openP) {
         const paramStr = s.slice(openP + 1, closeP).trim();
         const afterClose = s.slice(closeP + 1).trim();
-        const retM = afterClose.match(/^:\s*([^{]+?)(?:\s*\{[\s\S]*)?$/);
+        const retM = afterClose.match(/^:\s*([^{;]+?)(?:\s*(?:\{[\s\S]*|;))?$/);
         const rawRetType = mName === 'constructor' ? 'void' : (retM ? retM[1].trim() : 'any');
         const retType = mName === 'constructor' ? 'void' : resolveAlias(rawRetType);
         const { params, minArgs } = parseParamList(paramStr, lineNum, true);
-        const hasValRet = /\breturn\s+[^;}\s]/.test(s);
+        if (mName === 'constructor') {
+          splitTopLevelDecl(paramStr).forEach((rawP, idx) => {
+            const pTrim = rawP.trim();
+            if (/^(?:(?:public|private|protected|readonly)\s+)+/.test(pTrim) && params[idx]) {
+              const pInfo = params[idx];
+              propMap.set(pInfo.name, { type: pInfo.type, rawType: pInfo.rawType || pInfo.type, optional: Boolean(pInfo.optional) });
+            }
+          });
+        }
+        const isAbstractOrOverload = /^\s*(?:(?:public|private|protected|static|async|readonly)\s+)*abstract\b/.test(s) || /;\s*$/.test(afterClose);
+        const hasValRet = isAbstractOrOverload || /\breturn\s+[^;}\s]/.test(s);
         fns.set(clsName + '.' + mName, {
           name: clsName + '.' + mName,
           params,
@@ -2187,7 +2224,7 @@ function typecheckTS(src, strict = STRICT_TS) {
       }
     }
     if (s.includes('(') && !s.includes('=>') && (!s.includes('=') || s.indexOf('(') < s.indexOf('='))) return;
-    const cleaned = s.replace(/^(?:(?:readonly|public|private|protected|static)\s+)+/, '');
+    const cleaned = s.replace(/^(?:(?:readonly|public|private|protected|static|abstract)\s+)+/, '');
     const pm = cleaned.match(/^([A-Za-z_$][\w$]*)(\?)?\s*:\s*((?:[^=]|=>)+?)(?:\s*=\s*(?!=|>)[\s\S]+)?$/);
     if (pm) {
       const rawFT = pm[3].trim();
@@ -2209,7 +2246,7 @@ function typecheckTS(src, strict = STRICT_TS) {
   for (let i = 0; i < lines.length; i++) {
     const lineNum = i + 1;
     const raw = stripInlineCommentSafe(lines[i]).trim();
-    if (!raw) continue;
+    if (!raw || raw.startsWith('@')) continue;
 
     if (activeInterface) {
       const depthBefore = activeInterfaceDepth;
@@ -2222,7 +2259,7 @@ function typecheckTS(src, strict = STRICT_TS) {
       if (depthBefore === 1) {
         const memberPart = activeInterfaceDepth <= 0 && raw.includes('}') ? raw.slice(0, raw.lastIndexOf('}')).trim() : raw;
         if (memberPart) {
-          if (activeInterfaceIsClass && /^(?:(?:public|private|protected|static|async|readonly|get|set)\s+)*[A-Za-z_$][\w$]*\s*(?:<[\s\S]*>)?\s*\(/.test(memberPart)) {
+          if (activeInterfaceIsClass && /^(?:(?:public|private|protected|static|async|readonly|abstract|get|set)\s+)*[A-Za-z_$][\w$]*\s*(?:<[\s\S]*>)?\s*\(/.test(memberPart)) {
             parseClassTopMember(memberPart, activeInterface, activeInterfaceName, lineNum);
           } else {
             memberPart.split(/[;,]/).map(s => s.trim()).filter(Boolean).forEach(mem => {
@@ -2250,7 +2287,13 @@ function typecheckTS(src, strict = STRICT_TS) {
       continue;
     }
 
-    const ifaceKwM = raw.match(/^(?:export\s+)?(interface|class)\s+([A-Za-z_$][\w$]*)/);
+    const nsKwM = raw.match(/^(?:export\s+)?(?:declare\s+)?(?:namespace|module)\s+([A-Za-z_$][\w$]*)/);
+    if (nsKwM) {
+      enumsSet.add(nsKwM[1]);
+      continue;
+    }
+
+    const ifaceKwM = raw.match(/^(?:export\s+)?(?:declare\s+)?(?:abstract\s+)?(interface|class)\s+([A-Za-z_$][\w$]*)/);
     if (ifaceKwM) {
       const isClass = ifaceKwM[1] === 'class';
       const ifaceName = ifaceKwM[2];
@@ -2476,7 +2519,31 @@ function typecheckTS(src, strict = STRICT_TS) {
     }
 
     let trimmed = stripInlineCommentSafe(rawLine).trim();
-    if (!trimmed) continue;
+    if (!trimmed || trimmed.startsWith('@')) continue;
+
+    // Handle `declare const/let/var/function/class/namespace`
+    if (/^declare\b/.test(trimmed)) {
+      const declVarM = trimmed.match(/^declare\s+(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::\s*([^=;]+))?/);
+      if (declVarM) {
+        const dType = declVarM[2] ? resolveAlias(declVarM[2].trim()) : 'any';
+        env.set(declVarM[1], { type: dType, isConst: true, line: lineNum, declaredType: dType });
+      }
+      continue;
+    }
+
+    // Handle `namespace Name {`
+    const nsOpenM = trimmed.match(/^(?:export\s+)?(?:namespace|module)\s+([A-Za-z_$][\w$]*)\s*\{/);
+    if (nsOpenM) {
+      env.set(nsOpenM[1], { type: 'any', isConst: true, line: lineNum, declaredType: 'any' });
+      for (let k = 0; k < rawLine.length; k++) {
+        const ch = rawLine[k];
+        if (ch === '"' || ch === "'" || ch === '`') { k = skipString(rawLine, k) - 1; continue; }
+        if (ch === '/' && rawLine[k + 1] === '/') break;
+        if (ch === '{') braceDepth++;
+        else if (ch === '}') braceDepth = Math.max(0, braceDepth - 1);
+      }
+      continue;
+    }
 
     if (inInterfaceBlock) {
       for (let k = 0; k < trimmed.length; k++) {
@@ -2532,7 +2599,7 @@ function typecheckTS(src, strict = STRICT_TS) {
       continue;
     }
 
-    const classOpen = trimmed.match(/^(?:export\s+)?class\s+([A-Za-z_$][\w$]*)(?:\s*<[\s\S]*>)?(?:\s+extends\s+[^{]+)?(?:\s+implements\s+[^{]+)?\s*\{/);
+    const classOpen = trimmed.match(/^(?:export\s+)?(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)(?:\s*<[\s\S]*>)?(?:\s+extends\s+[^{]+)?(?:\s+implements\s+[^{]+)?\s*\{/);
     const classExprOpen = !classOpen ? trimmed.match(/^(?:export\s+)?(const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*class\b(?:\s+[A-Za-z_$][\w$]*)?\s*\{/) : null;
     if (classOpen || classExprOpen) {
       const clsName = classOpen ? classOpen[1] : classExprOpen[2];
@@ -2559,11 +2626,21 @@ function typecheckTS(src, strict = STRICT_TS) {
       continue;
     }
 
-    // Class field declaration inside class body (at top level of class body)
+    // Class field or abstract method declaration inside class body (at top level of class body)
     if (currentClass && braceDepth === classStartBraceDepth + 1) {
+      if (/^(?:(?:public|private|protected|static|async|readonly)\s+)*abstract\s+[A-Za-z_$][\w$]*\s*(?:<[\s\S]*>)?\s*\(/.test(trimmed)) {
+        continue;
+      }
+      if (/^static\s*\{/.test(trimmed)) {
+        for (let k = 0; k < rawLine.length; k++) {
+          if (rawLine[k] === '{') braceDepth++;
+          else if (rawLine[k] === '}') braceDepth = Math.max(0, braceDepth - 1);
+        }
+        continue;
+      }
       const isMethodHdr = /^(?:(?:public|private|protected|static|async|readonly|get|set)\s+)*[A-Za-z_$][\w$]*\s*(?:<[\s\S]*>)?\s*\(/.test(trimmed);
       if (!isMethodHdr && trimmed !== '}' && trimmed !== '};') {
-        const cleanedField = trimmed.replace(/^(?:(?:readonly|public|private|protected|static)\s+)+/, '').replace(/;$/, '').trim();
+        const cleanedField = trimmed.replace(/^(?:(?:readonly|public|private|protected|static|abstract)\s+)+/, '').replace(/;$/, '').trim();
         const fm = cleanedField.match(/^([A-Za-z_$][\w$]*)(\?)?(?:\s*:\s*((?:[^=]|=>)+?))?(?:\s*=\s*(?!=|>)([\s\S]+))?$/);
         if (fm) {
           const fName = fm[1];
@@ -2578,6 +2655,11 @@ function typecheckTS(src, strict = STRICT_TS) {
           continue;
         }
       }
+    }
+
+    // Skip function overload signature without body: `function add(a: number, b: number): number;`
+    if (/^(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+[A-Za-z_$][\w$]*[\s\S]*;\s*$/.test(trimmed) && !trimmed.includes('{')) {
+      continue;
     }
 
     const fnOpen = trimmed.match(/^(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*(?:<[\s\S]*>)?\s*\(/);
@@ -2602,8 +2684,11 @@ function typecheckTS(src, strict = STRICT_TS) {
         }
       }
     }
+    const callbackArrowOpen = (!fnOpen && !arrowFnOpen && !validMethodOpen)
+      ? trimmed.match(/(?:async\s*)?(?:(<[A-Za-z_$][\w$,\s=<>]*>)\s*)?\(([^()]*)\)\s*(?::\s*([^{=]+?))?\s*=>\s*\{$/)
+      : null;
 
-    if (fnOpen || arrowFnOpen || validMethodOpen) {
+    if (fnOpen || arrowFnOpen || validMethodOpen || callbackArrowOpen) {
       if (fnOpen) {
         while (findBalancedParen(trimmed, trimmed.lastIndexOf('(')) < 0 && i + 1 < lines.length) {
           i++;
@@ -2626,6 +2711,13 @@ function typecheckTS(src, strict = STRICT_TS) {
         currentFn = fns.get(fnOpen[1]);
       } else if (validMethodOpen && currentClass && fns.has(currentClass + '.' + validMethodOpen[1])) {
         currentFn = fns.get(currentClass + '.' + validMethodOpen[1]);
+      } else if (callbackArrowOpen) {
+        const cbTParams = callbackArrowOpen[1] ? parseTypeParams(callbackArrowOpen[1]) : [];
+        const cbParamStr = (callbackArrowOpen[2] || '').trim();
+        const cbRawRet = callbackArrowOpen[3] ? callbackArrowOpen[3].trim() : 'any';
+        const cbRet = callbackArrowOpen[3] ? resolveAlias(cbRawRet) : 'any';
+        const { params: cbParams, minArgs: cbMin } = parseParamList(cbParamStr, lineNum, false);
+        currentFn = { name: '<callback>', params: cbParams, minArgs: cbMin, returnType: cbRet, rawReturnType: cbRawRet, typeParams: cbTParams, line: lineNum, hasValueReturn: false };
       } else {
         const fName = fnOpen ? fnOpen[1] : (arrowFnOpen ? arrowFnOpen[2] : (currentClass + '.' + validMethodOpen[1]));
         let paramStr = '';
@@ -2670,8 +2762,10 @@ function typecheckTS(src, strict = STRICT_TS) {
         currentFn.hasValueReturn = true;
         const inlineRetExpr = rm[1].trim();
         const inlineRetT = inferType(inlineRetExpr, lineNum);
-        if (currentFn.returnType && currentFn.returnType !== 'any' && !isExpressionAssignable(inlineRetExpr, inlineRetT, currentFn.returnType, lineNum)) {
-          addDiag(lineNum, 'TS2322', `不能将返回值类型 "${inlineRetT}" 分配给函数 "${currentFn.name}" 声明的返回类型 "${currentFn.returnType}"`);
+        const expRet = currentFn.returnType;
+        const unwrappedExp = (expRet && expRet.startsWith('Promise<') && expRet.endsWith('>')) ? expRet.slice(8, -1) : expRet;
+        if (expRet && expRet !== 'any' && !isExpressionAssignable(inlineRetExpr, inlineRetT, expRet, lineNum) && !isExpressionAssignable(inlineRetExpr, inlineRetT, unwrappedExp, lineNum)) {
+          addDiag(lineNum, 'TS2322', `不能将返回值类型 "${inlineRetT}" 分配给函数 "${currentFn.name}" 声明的返回类型 "${expRet}"`);
         }
       }
       const openBraceIdx = trimmed.indexOf('{');
@@ -2705,7 +2799,7 @@ function typecheckTS(src, strict = STRICT_TS) {
       else if (ch === '}') {
         braceDepth = Math.max(0, braceDepth - 1);
         if (currentFn && braceDepth <= fnStartBraceDepth) {
-          if (currentFn.returnType !== 'any' && currentFn.returnType !== 'void' && currentFn.returnType !== 'unknown' && !currentFn.hasValueReturn) {
+          if (currentFn.returnType !== 'any' && currentFn.returnType !== 'void' && currentFn.returnType !== 'Promise<void>' && currentFn.returnType !== 'unknown' && !currentFn.hasValueReturn) {
             addDiag(currentFn.line, 'TS2355', `函数 "${currentFn.name}" 声明返回类型为 "${currentFn.returnType}"，但缺少 return 返回值语句`);
           }
           if (fnScopeStack.length > 0) {
@@ -2733,7 +2827,7 @@ function typecheckTS(src, strict = STRICT_TS) {
         }
       }
     }
-    if (fnOpen || arrowFnOpen || validMethodOpen) continue;
+    if (fnOpen || arrowFnOpen || validMethodOpen || callbackArrowOpen) continue;
 
     // Catch clause: catch (e) {
     const catchM = trimmed.match(/^(?:}\s*)?catch\s*\(\s*([A-Za-z_$][\w$]*)(?:\s*:\s*[^)]+)?\s*\)/);
@@ -2742,8 +2836,8 @@ function typecheckTS(src, strict = STRICT_TS) {
       continue;
     }
 
-    // Pure structural braces / keywords: }, };, else {, try {, finally {, do {, default:
-    if (/^(?:\}\s*;?|\}\s*else\s*\{?|else\s*\{?|try\s*\{?|\}\s*finally\s*\{?|finally\s*\{?|do\s*\{?|default\s*:)$/.test(trimmed)) {
+    // Pure structural braces / keywords: }, };, });, }, 20);, else {, try {, finally {, do {, default:
+    if (/^(?:\}[\s);,]*|\}\s*,\s*[\s\S]+\)\s*;?|\}\s*else\s*\{?|else\s*\{?|try\s*\{?|\}\s*finally\s*\{?|finally\s*\{?|do\s*\{?|default\s*:)$/.test(trimmed)) {
       continue;
     }
 
@@ -2906,7 +3000,7 @@ function typecheckTS(src, strict = STRICT_TS) {
             if (declT && initExpr) {
               if (initExpr.startsWith('{') && getInterfaceShape(declT)) {
                 checkObjectLiteralAgainstShape(initExpr, declT, lineNum, `变量 "${vName}"`);
-              } else if (declT.endsWith('[]') && initExpr.startsWith('[')) {
+              } else if (declT.endsWith('[]') && splitTopLevelUnion(declT).length <= 1 && initExpr.startsWith('[')) {
                 checkArrayElementsAgainst(initExpr, declT.slice(0, -2), lineNum, `变量 "${vName}" 的数组字面量中`);
               } else if (!isExpressionAssignable(initExpr, initT, declT, lineNum)) {
                 addDiag(lineNum, 'TS2322', `不能将类型 "${initT}" 分配给类型 "${declT}" (变量 "${vName}")`);
@@ -2952,11 +3046,13 @@ function typecheckTS(src, strict = STRICT_TS) {
         if (retExpr) currentFn.hasValueReturn = true;
         const expectedRet = currentFn.returnType;
         if (expectedRet && expectedRet !== 'any') {
-          if (retExpr.startsWith('{') && getInterfaceShape(expectedRet)) {
-            checkObjectLiteralAgainstShape(retExpr, expectedRet, lineNum, `函数 "${currentFn.name}" 返回值`);
-          } else if (expectedRet.endsWith('[]') && retExpr.startsWith('[')) {
-            checkArrayElementsAgainst(retExpr, expectedRet.slice(0, -2), lineNum, `函数 "${currentFn.name}" 返回数组中`);
-          } else if (!isExpressionAssignable(retExpr, retT, expectedRet, lineNum)) {
+          const promiseInnerM = expectedRet.match(/^Promise<([\s\S]+)>$/);
+          const unwrappedExpected = promiseInnerM ? promiseInnerM[1] : expectedRet;
+          if (retExpr.startsWith('{') && getInterfaceShape(unwrappedExpected)) {
+            checkObjectLiteralAgainstShape(retExpr, unwrappedExpected, lineNum, `函数 "${currentFn.name}" 返回值`);
+          } else if (unwrappedExpected.endsWith('[]') && splitTopLevelUnion(unwrappedExpected).length <= 1 && retExpr.startsWith('[')) {
+            checkArrayElementsAgainst(retExpr, unwrappedExpected.slice(0, -2), lineNum, `函数 "${currentFn.name}" 返回数组中`);
+          } else if (!isExpressionAssignable(retExpr, retT, expectedRet, lineNum) && !isExpressionAssignable(retExpr, retT, unwrappedExpected, lineNum)) {
             addDiag(lineNum, 'TS2322', `不能将返回值类型 "${retT}" 分配给函数 "${currentFn.name}" 声明的返回类型 "${expectedRet}"`);
           }
         }
@@ -3219,7 +3315,8 @@ function ensureTsWorker() {
         }
       }
     };
-    w.onerror = () => {
+    w.onerror = (ev) => {
+      if (ev && typeof ev.preventDefault === 'function') ev.preventDefault();
       _TS_WORKER_STATE.failed = true;
       _TS_WORKER_STATE.worker = null;
     };

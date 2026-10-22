@@ -1,4 +1,5 @@
-import * as ts from 'typescript';
+import * as tsMod from 'typescript';
+const ts = tsMod.default || tsMod;
 
 // Minimal ES2022 + Algorithm Playground core ambient declarations for virtual TypeScript CompilerHost
 const LIB_ES_CORE_DTS = `
@@ -591,8 +592,9 @@ if (typeof self !== 'undefined' && typeof self.addEventListener === 'function') 
     const { id, type, src } = data;
     try {
       if (type === 'check') {
-        const diags = checkTypeScriptSource(String(src || ''));
-        self.postMessage({ id, type: 'checkResult', diags });
+        const s = String(src || '');
+        const diags = checkTypeScriptSource(s);
+        self.postMessage({ id, type: 'checkResult', src: s, diagnostics: diags, diags });
       } else if (type === 'transpile') {
         const js = transpileTypeScriptSource(String(src || ''));
         self.postMessage({ id, type: 'transpileResult', js });

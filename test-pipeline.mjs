@@ -884,20 +884,23 @@ check('run watchdog catches an unbraced single-statement loop',
   unbracedMs < 1500 && /第 2 行/.test(unbracedLog) && /死循环|超时/.test(unbracedLog), unbracedMs + 'ms ' + unbracedLog.slice(-120));
 check('run watchdog catches a single-line loop inside a class method',
   spinMs < 1500 && /第 4 行/.test(spinLog) && /死循环|超时/.test(spinLog), spinMs + 'ms ' + spinLog.slice(-120));
-setEditorVal('class C {\n  constructor(private n: number) {}\n}\n// 调用：new C(1).n\n');
+setEditorVal('class C {\n  constructor(private n: number, public label: string = "ok") {}\n  get(): string { return this.label + ":" + this.n; }\n}\n// 调用：new C(7).get()\n');
 let markG = logChildren().length;
-check('constructor parameter properties are rejected with a human message',
-  startDebug(0) === false && /暂不支持 构造器参数属性/.test(readLogSince(markG)), readLogSince(markG).slice(-140));
+runOnce(500);
+check('constructor parameter properties compile, typecheck, and execute',
+  startDebug(0) === true && /→\s+"ok:7"/.test(readLogSince(markG)), readLogSince(markG).slice(-140));
 
-setEditorVal('@sealed\nclass D {}\n// 调用：1\n');
+setEditorVal('function sealed(target: any): any { return target; }\n@sealed\nclass D {\n  v: number = 42;\n}\n// 调用：new D().v\n');
 markG = logChildren().length;
-check('decorators are reported as unsupported',
-  startDebug(0) === false && /暂不支持 装饰器/.test(readLogSince(markG)), readLogSince(markG).slice(-120));
+runOnce(500);
+check('decorators on classes compile and execute',
+  startDebug(0) === true && /→\s+42\b/.test(readLogSince(markG)), readLogSince(markG).slice(-120));
 
-setEditorVal('abstract class A {\n  abstract f(): number;\n}\n// 调用：1\n');
+setEditorVal('abstract class Shape {\n  abstract area(): number;\n}\nclass Square extends Shape {\n  constructor(public side: number) { super(); }\n  area(): number { return this.side * this.side; }\n}\n// 调用：new Square(5).area()\n');
 markG = logChildren().length;
-check('abstract classes are reported as unsupported',
-  startDebug(0) === false && /暂不支持 abstract/.test(readLogSince(markG)), readLogSince(markG).slice(-120));
+runOnce(500);
+check('abstract classes and abstract methods compile, typecheck, and execute',
+  startDebug(0) === true && /→\s+25\b/.test(readLogSince(markG)), readLogSince(markG).slice(-120));
 
 setEditorVal('enum Color { Red, Green, Blue }\n// 调用：Color.Blue + ":" + Color[1]\n');
 markG = logChildren().length;
@@ -1367,6 +1370,76 @@ check('circular structure in return value runs and finishes debug without JSON c
   check('Debug session compiles, strips multi-line conditional/mapped/generic types with 1:1 line mapping, and computes return value 65',
     advDebugOk && advDebugState.DEBUG_SESSION.returnValue === 65,
     JSON.stringify({ ok: advDebugOk, ret: advDebugState.DEBUG_SESSION.returnValue }));
+}
+
+// --- Full TS Syntax (namespaces, function overloads, declare, mixed array union inference) & Virtual Event Loop Async Visualization
+{
+  // 1. Single wavy red underline (no duplicate SVG background wave from @codemirror/lint)
+  const cmSrc = fs.readFileSync(new URL('./editor/cm-entry.js', import.meta.url), 'utf8');
+  const appCss = fs.readFileSync(new URL('./css/app.css', import.meta.url), 'utf8');
+  check('cm-entry.js and css/app.css disable @codemirror/lint default background-image SVG wave so only 1 wavy red line renders',
+    cmSrc.includes("backgroundImage: 'none !important'") && appCss.includes('background-image:none !important'));
+
+  // 2. Mixed array literal inference & union array assignability (Image 1 regression test)
+  const mixedArrBad = typecheckTS('const num: string[] | number[] = [123, 456, "132"];\n', true);
+  check('typecheckTS infers [123, 456, "132"] as (number|string)[] and rejects assigning to string[] | number[] with TS2322',
+    mixedArrBad.some(d => d.code === 'TS2322' && /\(number\|string\)\[\]/.test(d.message)),
+    JSON.stringify(mixedArrBad));
+  check('typecheckTS accepts assigning homogeneous number[] to string[] | number[] and mixed array to (number | string)[]',
+    typecheckTS('const a: string[] | number[] = [123, 456];\nconst b: (number | string)[] = [123, 456, "132"];\n', true).length === 0);
+
+  // 3. Namespace & function overloads & ambient declare
+  setEditorVal([
+    'declare const EXTERNAL_FLAG: boolean;',
+    'namespace MathUtil {',
+    '  export const PI_INT: number = 3;',
+    '  export function double(x: number): number {',
+    '    return x * 2;',
+    '  }',
+    '}',
+    'function formatVal(x: number): string;',
+    'function formatVal(x: string): string;',
+    'function formatVal(x: number | string): string {',
+    '  return "v=" + x;',
+    '}',
+    'formatVal(MathUtil.double(MathUtil.PI_INT));',
+  ].join('\n'));
+  const nsOk = startDebug(0);
+  while (getDebugState().DEBUG_SESSION.active && !getDebugState().DEBUG_SESSION.finished) {
+    stepNext();
+  }
+  check('namespace, function overloads, and declare statements compile, typecheck, and execute',
+    nsOk && getDebugState().DEBUG_SESSION.returnValue === 'v=6',
+    JSON.stringify({ nsOk, ret: getDebugState().DEBUG_SESSION.returnValue }));
+
+  // 4. Virtual Event Loop & Async/Await/Promise/setTimeout/queueMicrotask visualization
+  setEditorVal(SAMPLES.async_loop);
+  const asyncOk = startDebug(0);
+  let sawEventLoopCard = false;
+  let renderedEventLoopHtml = '';
+  while (getDebugState().DEBUG_SESSION.active && !getDebugState().DEBUG_SESSION.finished) {
+    stepNext();
+    const st = getDebugState().TRACE.steps[getDebugState().cur];
+    if (st && st.ds && st.ds.eventLoop && st.ds.eventLoop.kind === 'eventloop') {
+      sawEventLoopCard = true;
+      if (!renderedEventLoopHtml && st.ds.eventLoop.coroutines && st.ds.eventLoop.coroutines.some(c => c.status === 'suspended')) {
+        renderedEventLoopHtml = VIZ.eventloop(st.ds.eventLoop);
+      }
+    }
+  }
+  const asyncFinal = getDebugState();
+  check('SAMPLES.async_loop executes deterministically through Virtual Event Loop in exact microtask -> timer -> await order',
+    asyncOk &&
+    asyncFinal.DEBUG_SESSION.returnValue === '1:sync-start -> 2:before-await -> 3:promise-then-micro -> 4:queueMicrotask -> 5:timeout-10ms -> 6:after-await-35',
+    JSON.stringify({ asyncOk, ret: asyncFinal.DEBUG_SESSION.returnValue }));
+  check('Virtual Event Loop attaches ds.eventLoop and VIZ.eventloop renders coroutines, microtasks, macrotasks, and promises',
+    sawEventLoopCard &&
+    renderedEventLoopHtml.includes('veventloop') &&
+    renderedEventLoopHtml.includes('Async 协程状态') &&
+    renderedEventLoopHtml.includes('Microtask 微任务队列') &&
+    renderedEventLoopHtml.includes('Macrotask 宏任务') &&
+    renderedEventLoopHtml.includes('Promise 状态表'),
+    renderedEventLoopHtml.slice(0, 200));
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nall passed');

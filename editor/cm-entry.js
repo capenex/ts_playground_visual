@@ -159,7 +159,14 @@ function init() {
     '.cm-textfield': { backgroundColor: '#121a26', color: '#e2e8f0', border: '1px solid #2a3342', borderRadius: '4px', padding: '3px 6px' },
     '.cm-button': { backgroundColor: '#1a2230', color: '#cbd5e1', border: '1px solid #2a3342', borderRadius: '4px', padding: '3px 8px' },
     '.cm-tooltip': { backgroundColor: '#0d1219', color: '#cbd5e1', border: '1px solid #263041' },
-    '.cm-lintRange-error': { textDecoration: 'underline wavy #f87171', textUnderlineOffset: '3px' },
+    '.cm-lintRange-error, .cm-lintRange-warning, .cm-lintRange-info, .cm-lintRange-active': {
+      backgroundImage: 'none !important',
+    },
+    '.cm-lintRange-error': {
+      backgroundImage: 'none !important',
+      textDecoration: 'underline wavy #f87171',
+      textUnderlineOffset: '3px',
+    },
     '.cm-step-line': { backgroundColor: 'rgba(96,165,250,.15)', boxShadow: 'inset 3px 0 0 #60a5fa' },
     '.cm-declared': { color: '#9cdcfe' },
     '.cm-ckpt-dot': { width: '6px', height: '6px', borderRadius: '50%', background: '#38bdf8', margin: '9px auto 0' },

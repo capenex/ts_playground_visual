@@ -302,11 +302,92 @@ function vizInterface(d) {
     '</div></div>';
 }
 
+function vizEventLoop(d) {
+  if (!d) return null;
+  const phaseMap = {
+    sync: { label: 'Sync · 同步栈执行', cls: 'sync' },
+    await_suspend: { label: 'Await · 协程挂起', cls: 'suspend' },
+    await_resume: { label: 'Await · 协程恢复', cls: 'resume' },
+    microtask: { label: 'Microtask · 微任务出队', cls: 'micro' },
+    macrotask: { label: 'Macrotask · 宏任务触发', cls: 'macro' },
+  };
+  const ph = phaseMap[d.phase] || { label: d.phase || 'Event Loop', cls: 'sync' };
+  const nowMs = typeof d.now === 'number' ? d.now : 0;
+
+  const coroutines = Array.isArray(d.coroutines) ? d.coroutines : [];
+  const coroHtml = coroutines.length
+    ? coroutines.map(c => {
+        const stCls = c.status === 'running' ? 'running' : (c.status === 'suspended' ? 'suspended' : 'completed');
+        const stLabel = c.status === 'running' ? '● 执行中' : (c.status === 'suspended' ? `⏸ 挂起 @L${c.line}` : '✓ 完成');
+        const detail = c.status === 'suspended' && c.awaitingExpr
+          ? `<span class="vel-coro-expr">await ${esc(c.awaitingExpr)}</span>`
+          : (c.status === 'completed' && c.returnVal !== undefined ? `<span class="vel-coro-expr">⇒ ${esc(c.returnVal)}</span>` : '');
+        return `<div class="vel-chip coro-${stCls}">` +
+          `<span class="vel-chip-title">async ${esc(c.name)}()</span>` +
+          `<span class="vel-chip-status">${esc(stLabel)}</span>` +
+          detail +
+          `</div>`;
+      }).join('')
+    : '<span class="vel-empty">无活跃协程</span>';
+
+  const microtasks = Array.isArray(d.microtasks) ? d.microtasks : [];
+  const microHtml = microtasks.length
+    ? microtasks.map((m, idx) =>
+        `<div class="vel-qitem micro${idx === 0 ? ' head' : ''}">` +
+        `<span class="vel-qidx">#${idx + 1}</span>` +
+        `<span class="vel-qlabel">${esc(m.label)}</span>` +
+        (m.line > 0 ? `<span class="vel-qmeta">@L${m.line}</span>` : '') +
+        `</div>`
+      ).join('')
+    : '<span class="vel-empty">队列为空 (0)</span>';
+
+  const macrotasks = Array.isArray(d.macrotasks) ? d.macrotasks : [];
+  const macroHtml = macrotasks.length
+    ? macrotasks.map((t, idx) =>
+        `<div class="vel-qitem macro${idx === 0 ? ' head' : ''}">` +
+        `<span class="vel-qidx">t=${t.due}ms</span>` +
+        `<span class="vel-qlabel">${esc(t.label)}</span>` +
+        `<span class="vel-qmeta">+${t.delay}ms</span>` +
+        `</div>`
+      ).join('')
+    : '<span class="vel-empty">无待触发定时器 (0)</span>';
+
+  const promises = Array.isArray(d.promises) ? d.promises : [];
+  const promHtml = promises.length
+    ? promises.map(p => {
+        const st = p.state || 'pending';
+        const icon = st === 'fulfilled' ? '✓' : (st === 'rejected' ? '✗' : '⏳');
+        const valPart = st === 'pending'
+          ? (p.reactions > 0 ? `<span class="vel-pval dim">${p.reactions} waiter${p.reactions > 1 ? 's' : ''}</span>` : '<span class="vel-pval dim">pending</span>')
+          : `<span class="vel-pval">${esc(p.value)}</span>`;
+        return `<div class="vel-pcard ${esc(st)}">` +
+          `<span class="vel-phead"><span class="vel-picon">${icon}</span><span class="vel-pname">P#${p.id} · ${esc(p.label)}</span></span>` +
+          valPart +
+          `</div>`;
+      }).join('')
+    : '<span class="vel-empty">暂无 Promise 实例</span>';
+
+  return '<div class="viz"><div class="veventloop">' +
+    '<div class="vel-header">' +
+      `<span class="vel-phase ${ph.cls}">${esc(ph.label)}</span>` +
+      (d.activeTask ? `<span class="vel-active">${esc(d.activeTask)}</span>` : '') +
+      `<span class="vel-clock">⏱ 虚拟时钟 ${nowMs}ms</span>` +
+    '</div>' +
+    '<div class="vel-grid">' +
+      '<div class="vel-lane"><div class="vel-lane-title">Async 协程状态</div><div class="vel-lane-body">' + coroHtml + '</div></div>' +
+      '<div class="vel-lane"><div class="vel-lane-title">Microtask 微任务队列 (FIFO)</div><div class="vel-lane-body">' + microHtml + '</div></div>' +
+      '<div class="vel-lane"><div class="vel-lane-title">Macrotask 宏任务 / 定时器</div><div class="vel-lane-body">' + macroHtml + '</div></div>' +
+      '<div class="vel-lane"><div class="vel-lane-title">Promise 状态表</div><div class="vel-lane-body vel-pgrid">' + promHtml + '</div></div>' +
+    '</div>' +
+    '</div></div>';
+}
+
 const VIZ = {
   array: vizArray, map: vizMap, set: vizSet, stack: vizStack,
   string: vizString, grid: vizGrid, list: vizList,
   heap: vizHeap, queue: vizQueue, tree: vizTree, graph: vizGraph, uf: vizUF,
   interface: vizInterface, object: vizInterface,
+  eventloop: vizEventLoop,
 };
 
 function pressure(d) {
@@ -319,6 +400,7 @@ function pressure(d) {
   else if (d.nodes) n = d.nodes.length;
   else if (d.cells) n = (d.totalRows || d.cells.length) * (d.totalCols || (d.cells[0] ? d.cells[0].length : 1));
   switch (d.kind) {
+    case 'eventloop': return 1;
     case 'grid': return Math.min(1, Math.max(0.5, n / 12));
     case 'array':
     case 'queue':
@@ -411,7 +493,8 @@ function renderPicker() {
 function renderSlots() {
   const st = TRACE.steps[cur] || {};
   const activeFrame = TRACE.steps[cur] ? getActiveFrame(st) : null;
-  const ds = (activeFrame && activeFrame.ds) || st.ds || {};
+  const ds = Object.assign({}, (activeFrame && activeFrame.ds) || st.ds || {});
+  if (st.ds && st.ds.eventLoop && !ds.eventLoop) ds.eventLoop = st.ds.eventLoop;
   const vars = discoverVars().filter(s => watched.has(s.id) && ds[s.id] !== undefined);
   if (slotsEl && slotsEl.classList && slotsEl.classList.toggle) {
     slotsEl.classList.toggle('single-col', slotsEl.clientWidth > 0 && slotsEl.clientWidth < 420);
