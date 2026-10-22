@@ -310,7 +310,7 @@ interface Promise<T> {
   finally(onfinally?: (() => void) | undefined | null): Promise<T>;
 }
 interface PromiseConstructor {
-  new <T>(executor: (resolve: (value: T | PromiseLike<T>) => void, reject: (reason?: any) => void) => void): Promise<T>;
+  new <T = any>(executor: (resolve: (value?: T | PromiseLike<T>) => void, reject: (reason?: any) => void) => void): Promise<T>;
   all<T extends readonly unknown[] | []>(values: T): Promise<{ -readonly [P in keyof T]: Awaited<T[P]> }>;
   race<T extends readonly unknown[] | []>(values: T): Promise<Awaited<T[number]>>;
   resolve(): Promise<void>;
@@ -465,6 +465,14 @@ declare function parseFloat(string: string): number;
 declare function isNaN(number: number): boolean;
 declare function isFinite(number: number): boolean;
 declare function BigInt(value: number | string | bigint | boolean): bigint;
+declare function setTimeout(handler: (...args: any[]) => void, timeout?: number, ...args: any[]): number;
+declare function clearTimeout(id?: number): void;
+declare function setInterval(handler: (...args: any[]) => void, timeout?: number, ...args: any[]): number;
+declare function clearInterval(id?: number): void;
+declare function queueMicrotask(callback: () => void): void;
+declare function sleep<T = void>(ms?: number, value?: T): Promise<T>;
+declare function checkpoint(...args: any[]): void;
+declare function 断点(...args: any[]): void;
 
 // Algorithm Playground Predeclared Helpers (conditional if user hasn't declared them)
 `;

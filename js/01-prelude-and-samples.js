@@ -225,7 +225,15 @@ function runCounter(start: number, times: number): number {
 
 runCounter(1, 3)
 `,
-  async_loop: `async function fetchScore(userId: number, delayMs: number): Promise<number> {
+  async_loop: `function sleep<T>(ms: number, value: T): Promise<T> {
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      resolve(value);
+    }, ms);
+  });
+}
+
+async function fetchScore(userId: number, delayMs: number): Promise<number> {
   const base: number = await sleep(delayMs, userId * 10);
   return base + 5;
 }

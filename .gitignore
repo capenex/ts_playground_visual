@@ -5,3 +5,5 @@ dist-portable/
 __pycache__/
 *.zip
 *.tar.gz
+.aistudio
+public/

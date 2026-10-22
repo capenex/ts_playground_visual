@@ -588,8 +588,8 @@ function instrument(js, originalLines, names) {
     'var Promise = (__t && __t.__env && __t.__env.Promise) || globalThis.Promise, ' +
     'setTimeout = (__t && __t.__env && __t.__env.setTimeout) || globalThis.setTimeout, ' +
     'clearTimeout = (__t && __t.__env && __t.__env.clearTimeout) || globalThis.clearTimeout, ' +
-    'queueMicrotask = (__t && __t.__env && __t.__env.queueMicrotask) || globalThis.queueMicrotask, ' +
-    'sleep = (__t && __t.__env && __t.__env.sleep) || function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }; ' +
+    'queueMicrotask = (__t && __t.__env && __t.__env.queueMicrotask) || globalThis.queueMicrotask; ' +
+    'if (typeof sleep === "undefined") { var sleep = (__t && __t.__env && __t.__env.sleep) || function(ms, val){ return new Promise(function(r){ setTimeout(function(){ r(val); }, ms); }); }; } ' +
     'try { if (typeof __t === "function" && __t.__initGlobal) __t.__initGlobal(' + snapFnExpr(names) + '); } catch (_){} ';
   if (out.length > 0) out[0] = ckptPreamble + out[0];
   else out.push(ckptPreamble);

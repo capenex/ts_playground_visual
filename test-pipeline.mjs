@@ -1440,6 +1440,33 @@ check('circular structure in return value runs and finishes debug without JSON c
     renderedEventLoopHtml.includes('Macrotask 宏任务') &&
     renderedEventLoopHtml.includes('Promise 状态表'),
     renderedEventLoopHtml.slice(0, 200));
+
+  // 5. Anonymous `function(resolve)` inside `new Promise` + `setTimeout` (Screenshot 1 regression test)
+  const delayAnonFnSrc = [
+    'function delay(ms: number): Promise<string> {',
+    '  return new Promise(function(resolve) {',
+    '    setTimeout(function() {',
+    '      resolve("完成!");',
+    '    }, ms);',
+    '  });',
+    '}',
+    'async function testDelay(): Promise<string> {',
+    '  const res: string = await delay(10);',
+    '  return res;',
+    '}',
+    'testDelay();',
+  ].join('\n');
+  const delayDiags = typecheckTS(delayAnonFnSrc, true);
+  check('typecheckTS accepts new Promise(function(resolve) { setTimeout(function() { resolve("完成!"); }, ms); }) with 0 errors',
+    delayDiags.length === 0, JSON.stringify(delayDiags));
+  setEditorVal(delayAnonFnSrc);
+  const delayRunOk = startDebug(0);
+  while (getDebugState().DEBUG_SESSION.active && !getDebugState().DEBUG_SESSION.finished) {
+    stepNext();
+  }
+  check('new Promise(function(resolve) { ... }) executes through Virtual Event Loop and resolves to "完成!"',
+    delayRunOk && getDebugState().DEBUG_SESSION.returnValue === '完成!',
+    JSON.stringify({ delayRunOk, ret: getDebugState().DEBUG_SESSION.returnValue }));
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nall passed');

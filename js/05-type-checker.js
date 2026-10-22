@@ -2685,7 +2685,8 @@ function typecheckTS(src, strict = STRICT_TS) {
       }
     }
     const callbackArrowOpen = (!fnOpen && !arrowFnOpen && !validMethodOpen)
-      ? trimmed.match(/(?:async\s*)?(?:(<[A-Za-z_$][\w$,\s=<>]*>)\s*)?\(([^()]*)\)\s*(?::\s*([^{=]+?))?\s*=>\s*\{$/)
+      ? (trimmed.match(/(?:async\s*)?(?:(<[A-Za-z_$][\w$,\s=<>]*>)\s*)?\(([^()]*)\)\s*(?::\s*([^{=]+?))?\s*=>\s*\{$/) ||
+         trimmed.match(/(?:async\s*)?function(?:\s+[A-Za-z_$][\w$]*)?\s*(?:(<[A-Za-z_$][\w$,\s=<>]*>)\s*)?\(([^()]*)\)\s*(?::\s*([^{=]+?))?\s*\{$/))
       : null;
 
     if (fnOpen || arrowFnOpen || validMethodOpen || callbackArrowOpen) {
@@ -2700,6 +2701,11 @@ function typecheckTS(src, strict = STRICT_TS) {
         const fnVarName = arrowFnOpen[2];
         const isConstFn = arrowFnOpen[1] === 'const';
         env.set(fnVarName, { type: 'function', isConst: isConstFn, line: lineNum, declaredType: 'function' });
+      }
+      // If a callback-opening line starts with `return ...` (e.g. `return new Promise(function(resolve) {`),
+      // mark the enclosing function as having a value return before pushing the callback scope.
+      if (callbackArrowOpen && currentFn && /^return\b/.test(trimmed)) {
+        currentFn.hasValueReturn = true;
       }
       fnScopeStack.push({
         fn: currentFn,
@@ -2757,7 +2763,10 @@ function typecheckTS(src, strict = STRICT_TS) {
         env.set(p.name, { type: p.type, isConst: false, line: currentFn.line, declaredType: p.type });
       });
       fnStartBraceDepth = braceDepth;
-      const rm = stripInlineCommentSafe(rawLine).match(/\breturn\b([^;}\n]*)/);
+      const openBraceIdx = trimmed.indexOf('{');
+      const closeBraceIdx = trimmed.lastIndexOf('}');
+      const bodyAfterOpenBrace = openBraceIdx >= 0 ? trimmed.slice(openBraceIdx + 1) : '';
+      const rm = bodyAfterOpenBrace.match(/\breturn\b([^;}\n]*)/);
       if (rm && rm[1].trim()) {
         currentFn.hasValueReturn = true;
         const inlineRetExpr = rm[1].trim();
@@ -2768,8 +2777,6 @@ function typecheckTS(src, strict = STRICT_TS) {
           addDiag(lineNum, 'TS2322', `不能将返回值类型 "${inlineRetT}" 分配给函数 "${currentFn.name}" 声明的返回类型 "${expRet}"`);
         }
       }
-      const openBraceIdx = trimmed.indexOf('{');
-      const closeBraceIdx = trimmed.lastIndexOf('}');
       if (openBraceIdx >= 0 && closeBraceIdx > openBraceIdx) {
         const inlineBody = trimmed.slice(openBraceIdx + 1, closeBraceIdx).trim();
         inlineBody.split(';').map(s => s.trim()).filter(Boolean).forEach(stmt => {
