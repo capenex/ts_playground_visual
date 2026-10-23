@@ -61,7 +61,7 @@ sandbox.window = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(
   script +
-    '\n;globalThis.__exports = { stripTypes, typecheckTS, extractTsInterfaceMetadata, cloneDeepBounded, collectNames, instrument, resolveEntry, blankJsLine, classifyValue, enrichFromNote, deriveAnimAndNote, hl, hlActiveLine, buildStepVizRow, vizGrid, vizTree, vizGraph, vizUF, vizHeap, vizQueue, VIZ, SAMPLES, collectDeclaredNames, hoverInfoFor, hoverTipHtml, hoverWordAt, liveTypeDiags, revealErrorLine, formatHoverVal, startDebug, stepNext, stepPrev, runToNextCheckpoint, addCheckpointFunction, resetTraceState, runOnce, selectStackFrame, getActiveFrame, formatCallFrameLabel, setVideoExportSpeed, exportVideo, fixWebmDuration, VIDEO_WIDTH, VIDEO_HEIGHT, VIDEO_FPS, VIDEO_SPEED_OPTIONS, RUN_TIMEOUT_MS, setFileName, exportFileName, sanitizeFileName, loadImportedSource, getFileName: () => FILE_NAME, getDebugState: () => ({ TRACE, cur, SELECTED_FRAME_IDX, DEBUG_SESSION, VIDEO_EXPORT_SPEED, cnt: document.getElementById("cnt").textContent, callStackHtml: document.getElementById("callStackBar").innerHTML, varsHtml: document.getElementById("vars").innerHTML, highlightHtml: document.getElementById("highlight").innerHTML, gutterHtml: document.getElementById("gutter").innerHTML, stepVizHtml: document.getElementById("stepViz").innerHTML, stepVizTop: document.getElementById("stepViz").style.top, stepVizLeft: document.getElementById("stepViz").style.left, stepVizDisplay: document.getElementById("stepViz").style.display, editorVal: document.getElementById("editor").value }), setEditorVal: (v) => { document.getElementById("editor").value = v; } };',
+    '\n;globalThis.__exports = { stripTypes, typecheckTS, extractTsInterfaceMetadata, cloneDeepBounded, collectNames, instrument, resolveEntry, blankJsLine, classifyValue, enrichFromNote, deriveAnimAndNote, hl, hlActiveLine, buildStepVizRow, vizGrid, vizTree, vizGraph, vizUF, vizHeap, vizQueue, VIZ, SAMPLES, collectDeclaredNames, hoverInfoFor, hoverTipHtml, hoverWordAt, liveTypeDiags, revealErrorLine, formatHoverVal, startDebug, stepNext, stepPrev, runToNextCheckpoint, addCheckpointFunction, resetTraceState, runOnce, selectStackFrame, getActiveFrame, formatCallFrameLabel, setVideoExportSpeed, exportVideo, fixWebmDuration, VIDEO_WIDTH, VIDEO_HEIGHT, VIDEO_FPS, VIDEO_SPEED_OPTIONS, RUN_TIMEOUT_MS, setFileName, exportFileName, sanitizeFileName, loadImportedSource, setViewMode, getActiveNotebook, runNotebookCell, debugNotebookCell, typecheckNotebookCellTS, getFileName: () => FILE_NAME, getDebugState: () => ({ TRACE, cur, SELECTED_FRAME_IDX, DEBUG_SESSION, VIDEO_EXPORT_SPEED, cnt: document.getElementById("cnt").textContent, callStackHtml: document.getElementById("callStackBar").innerHTML, varsHtml: document.getElementById("vars").innerHTML, highlightHtml: document.getElementById("highlight").innerHTML, gutterHtml: document.getElementById("gutter").innerHTML, stepVizHtml: document.getElementById("stepViz").innerHTML, stepVizTop: document.getElementById("stepViz").style.top, stepVizLeft: document.getElementById("stepViz").style.left, stepVizDisplay: document.getElementById("stepViz").style.display, editorVal: document.getElementById("editor").value }), setEditorVal: (v) => { document.getElementById("editor").value = v; } };',
   sandbox
 );
 const {
@@ -73,6 +73,7 @@ const {
   setVideoExportSpeed, exportVideo, fixWebmDuration, VIDEO_WIDTH, VIDEO_HEIGHT, VIDEO_FPS, VIDEO_SPEED_OPTIONS,
   RUN_TIMEOUT_MS,
   setFileName, exportFileName, sanitizeFileName, loadImportedSource, getFileName,
+  setViewMode, getActiveNotebook, runNotebookCell, debugNotebookCell, typecheckNotebookCellTS,
   getDebugState, setEditorVal,
 } = sandbox.__exports;
 
@@ -1467,10 +1468,47 @@ check('circular structure in return value runs and finishes debug without JSON c
   check('new Promise(function(resolve) { ... }) executes through Virtual Event Loop and resolves to "完成!"',
     delayRunOk && getDebugState().DEBUG_SESSION.returnValue === '完成!',
     JSON.stringify({ delayRunOk, ret: getDebugState().DEBUG_SESSION.returnValue }));
+
+  // 6. Jupyter Notebook mode: cross-cell state sharing, strict TS typechecking, syntax highlight CSS, and UI status
+  check('Notebook mode functions exported', typeof setViewMode === 'function' && typeof getActiveNotebook === 'function' && typeof runNotebookCell === 'function');
+  check('Notebook toolbar removed #nbBtnDebug', !html.includes('id="nbBtnDebug"'));
+  check('Notebook syntax highlight CSS rules defined for .nb-cell-hl', css.includes('.nb-cell-hl .kw') && css.includes('.nb-cell-hl .prop') && css.includes('.nb-cell-hl .ln-err-badge'));
+  setViewMode('notebook');
+  const nbDoc = getActiveNotebook();
+  check('Default Intro.ipynb in TS mode uses pure TypeScript without print()',
+    nbDoc && nbDoc.title === 'Intro.ipynb' && nbDoc.cells[1].source === 'let a: number = 1;' && nbDoc.cells[2].source === 'console.log(a);');
+  check('nbKernelStatus shows concise "就绪" when idle',
+    sandbox.document.getElementById('nbKernelStatus').innerHTML.includes('<span>就绪</span>') &&
+    !sandbox.document.getElementById('nbKernelStatus').innerHTML.includes('TypeScript Kernel'));
+  // Run Cell 4 (uses `a` from earlier cells and defines `nums`)
+  await runNotebookCell(nbDoc.cells[3].id, false);
+  check('Cross-cell execution shares variable `a` and updates `nums` in global context',
+    Array.isArray(nbDoc.lastGlobalVars.nums) && nbDoc.lastGlobalVars.nums.length === 7 && nbDoc.cells[3].output.logs[0].includes('25'),
+    JSON.stringify(nbDoc.cells[3].output));
+  // Debug Cell 5 (binary search using `nums` from Cell 4)
+  await debugNotebookCell(nbDoc.cells[4].id);
+  const nbDbgState = getDebugState();
+  check('Single-cell step debugger attaches to cell and inherits cross-cell `nums`',
+    nbDbgState.DEBUG_SESSION.active && nbDbgState.TRACE.steps.length > 0 && Boolean(nbDbgState.TRACE.steps[0].ds.nums),
+    JSON.stringify({ active: nbDbgState.DEBUG_SESSION.active, steps: nbDbgState.TRACE.steps.length }));
+  check('nbKernelStatus shows concise "调试中" when debugging',
+    sandbox.document.getElementById('nbKernelStatus').innerHTML.includes('<span>调试中</span>'));
+  // Verify TS cell rejects Python print() and undeclared variables with TS2304
+  const origCell2Src = nbDoc.cells[2].source;
+  nbDoc.cells[2].source = 'print(a)';
+  const pyInTsDiags = typecheckNotebookCellTS(nbDoc, nbDoc.cells[2]);
+  const badRunOk = await runNotebookCell(nbDoc.cells[2].id, false);
+  check('TypeScript Notebook cell rejects print(a) with TS2304 and blocks execution',
+    !badRunOk && pyInTsDiags.some(d => d.code === 'TS2304') && nbDoc.cells[2].status === 'error',
+    JSON.stringify({ badRunOk, pyInTsDiags, out: nbDoc.cells[2].output }));
+  nbDoc.cells[2].source = origCell2Src;
+  await runNotebookCell(nbDoc.cells[2].id, false);
+  setViewMode('script');
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nall passed');
 process.exit(failed ? 1 : 0);
+
 
 
 

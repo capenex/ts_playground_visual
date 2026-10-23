@@ -1579,10 +1579,14 @@ export function renderStatic(i, withAnim = false) {
 
   updateControlButtons();
   updateEditorChrome();
-  scrollCodeTo(activeFrame ? activeFrame.line : st.line);
+  if (typeof VIEW_MODE !== 'undefined' && VIEW_MODE === 'notebook' && typeof (globalThis as any).renderNotebookUI === 'function') {
+    (globalThis as any).renderNotebookUI(false);
+  } else {
+    scrollCodeTo(activeFrame ? activeFrame.line : st.line);
+  }
   renderSlots();
 
-  if (withAnim) {
+  if (withAnim && (typeof VIEW_MODE === 'undefined' || VIEW_MODE !== 'notebook')) {
     playStepAnimation(st);
   }
 }

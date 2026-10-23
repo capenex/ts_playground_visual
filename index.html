@@ -22,12 +22,16 @@
     </span>
     <span class="brand-visual">VISUAL</span>
   </h1>
+  <div class="mode-switch" id="modeSwitch" role="tablist" aria-label="视图模式切换">
+    <button type="button" class="mode-tab active" data-mode="script" title="单文件源码与全篇追踪模式">📄 单文件</button>
+    <button type="button" class="mode-tab" data-mode="notebook" title="Jupyter 交互式单元格笔记本模式（支持跨单元格共享变量与单 Cell 调试）">📓 Notebook</button>
+  </div>
   <div class="spacer"></div>
   <select id="langSel" title="切换语言模式（TypeScript / Python）">
     <option value="ts">TS</option>
     <option value="python">PY</option>
   </select>
-  <select id="sampleSel" title="内置样例（切换后自动开启 Debug 模式）">
+  <select id="sampleSel" title="内置样例（切换后自动开启 Debug 模式）" hidden>
     <option value="showcase">showcase · 综合美学演示 (含检查点)</option>
     <option value="mergesort">mergesort · 归并排序 (递归调用栈演示)</option>
     <option value="debug_crash">debug · 检查点与报错即停演示</option>
@@ -39,8 +43,27 @@
     <option value="classes">classes · 类 / 字段 / 方法</option>
     <option value="async_loop">async_loop · 异步 Event Loop (async/await/Promise/Timer)</option>
   </select>
-  <button id="btnImport" title="导入本地 TypeScript 文件（.ts / .tsx / .txt）到编辑器">📂 导入</button>
-  <input id="fileInput" type="file" accept=".ts,.tsx,.js,.jsx,.txt,text/plain" hidden>
+  <div class="top-menu-wrap" id="importMenuWrap">
+    <button id="btnImport" class="top-menu-btn" title="导入内置示例（examples/）或上传本地代码文件（.ts / .py / .ipynb）">
+      <span>📂 导入</span>
+      <span class="top-menu-caret">▾</span>
+    </button>
+    <div class="top-menu-pop import-menu-pop" id="importMenuPop">
+      <button type="button" id="btnUploadLocalFile" class="menu-item" title="从本地设备选择文件上传（支持 .ts / .py / .ipynb / .txt / .json）">
+        <span>📤 上传本地文件…</span>
+        <span class="sub-tag">.ts / .py / .ipynb</span>
+      </button>
+      <div class="menu-divider"></div>
+      <div class="menu-sec">
+        <div class="menu-sec-head">
+          <span>📚 导入示例 (examples/)</span>
+          <span class="spec" id="importSampleLangTag">TypeScript</span>
+        </div>
+        <div class="import-sample-list" id="importSampleList" role="menu"></div>
+      </div>
+    </div>
+  </div>
+  <input id="fileInput" type="file" accept=".ts,.tsx,.js,.jsx,.py,.ipynb,.txt,.json,.csv,text/plain,application/json" hidden>
   <button id="btnRun" class="primary" title="Ctrl/Cmd+Enter">▶ 运行</button>
   <button id="btnTrace" class="trace-btn" title="编译通过后开启 Debug 模式，每走一步当场计算 (Ctrl/Cmd+Shift+Enter)">🐞 Debug 调试</button>
   <div class="top-menu-wrap" id="exportMenuWrap">
@@ -82,26 +105,67 @@
 
 <div id="main">
   <div id="codeCol">
-    <div class="pane-title">
-      <span>SOURCE</span>
-      <span class="file-tab" title="文件名：点输入框可改名，导出 TypeScript 时使用这个名字">
+    <div class="pane-title script-tabs-pane" id="sourcePaneTitle">
+      <div class="nb-tabs-bar script-tabs-bar" id="scriptTabsList" role="tablist" aria-label="单文件标签页"></div>
+      <span class="file-tab" hidden>
         <span class="file-tab-dot">TS</span>
         <input id="fileName" class="file-name" type="text" value="playground.ts" spellcheck="false" autocomplete="off" aria-label="文件名">
         <span class="file-edit" aria-hidden="true">✎</span>
       </span>
-      <span id="checkerBadge" class="checker-badge" role="button" tabindex="0" title="内置类型检查器只覆盖常用 TypeScript 语法，不是完整 tsc；点击查看已知限制">TS 子集检查</span>
-      <span class="sub-hint">点击行号插入 checkpoint() · 调试时悬停变量可查看当前值</span>
-    </div>
-    <div id="editorWrap">
-      <div id="gutter" title="点击行号可在该行快速插入/移除 checkpoint() 检查点函数"></div>
-      <div id="codeScroll">
-        <pre id="highlight" aria-hidden="true"></pre>
-        <div id="cmEditor" aria-label="代码编辑器"></div>
-        <div id="stepViz" aria-hidden="true"></div>
-        <textarea id="editor" spellcheck="false" autocomplete="off" placeholder="// 写 TypeScript，可在任意位置调用 checkpoint() 设置检查点，最后一行直接写入口调用，例如 main()"></textarea>
+      <div class="script-header-actions">
+        <span id="checkerBadge" class="checker-badge" role="button" tabindex="0" title="内置类型检查器只覆盖常用 TypeScript 语法，不是完整 tsc；点击查看已知限制">TS 子集检查</span>
+        <button type="button" id="btnToggleVfs" class="vfs-toggle-btn active" title="展开/收起右侧虚拟文件目录系统 (VFS)">📁 文件目录</button>
       </div>
     </div>
-    <div id="log"><div class="dim">Ctrl/Cmd+Enter 运行 · Ctrl/Cmd+Shift+Enter 开启 Debug 调试 · Ctrl+F 查找 · Ctrl+D 多光标 · 顶部「📂 导入」读文件 · 标题栏文件名可点击改名</div></div>
+    <div class="code-workspace-row" id="codeWorkspaceRow">
+      <div class="code-workspace-main">
+        <div id="editorWrap">
+          <div id="gutter" title="点击行号可在该行快速插入/移除 checkpoint() 检查点函数"></div>
+          <div id="codeScroll">
+            <pre id="highlight" aria-hidden="true"></pre>
+            <div id="cmEditor" aria-label="代码编辑器"></div>
+            <div id="stepViz" aria-hidden="true"></div>
+            <textarea id="editor" spellcheck="false" autocomplete="off" placeholder="// 写 TypeScript，可在任意位置调用 checkpoint() 设置检查点，最后一行直接写入口调用，例如 main()"></textarea>
+          </div>
+        </div>
+        <div id="notebookWrap" hidden>
+          <div class="nb-tabs-bar" id="nbTabsList" role="tablist" aria-label="Notebook 文件标签页"></div>
+          <div class="nb-toolbar" role="toolbar" aria-label="Notebook 操作工具栏">
+            <button type="button" id="nbBtnAdd" class="nb-tool-btn" title="在当前单元格下方插入新单元格">＋</button>
+            <button type="button" id="nbBtnCut" class="nb-tool-btn" title="剪切选中单元格">✂</button>
+            <button type="button" id="nbBtnCopy" class="nb-tool-btn" title="复制选中单元格">📋</button>
+            <button type="button" id="nbBtnPaste" class="nb-tool-btn" title="在下方粘贴单元格">📄</button>
+            <span class="nb-tool-sep" aria-hidden="true"></span>
+            <button type="button" id="nbBtnRun" class="nb-tool-btn primary-run" title="运行当前单元格并跳至下一格 (Shift+Enter)">▶</button>
+            <button type="button" id="nbBtnStop" class="nb-tool-btn" title="停止并退出单步调试">■</button>
+            <button type="button" id="nbBtnRestart" class="nb-tool-btn" title="重启内核并清空跨单元格变量与计数">↻</button>
+            <button type="button" id="nbBtnRunAll" class="nb-tool-btn" title="重启内核并顺序运行全部单元格">⏩</button>
+            <select id="nbCellType" class="nb-type-sel" aria-label="单元格类型" title="切换单元格类型 (Code / Markdown)">
+              <option value="code">Code</option>
+              <option value="markdown">Markdown</option>
+            </select>
+            <div class="nb-toolbar-spacer"></div>
+            <span class="nb-brand-tag">Notebook</span>
+            <div class="nb-kernel-status" id="nbKernelStatus"></div>
+            <button type="button" id="nbBtnToggleVfs" class="vfs-toggle-btn active" title="展开/收起右侧虚拟文件目录系统 (VFS)">📁 文件目录</button>
+          </div>
+          <div class="nb-cells-scroll" id="nbCellsList"></div>
+        </div>
+      </div>
+      <aside class="vfs-sidebar" id="vfsSidebar" aria-label="虚拟文件目录系统">
+        <div class="vfs-head">
+          <span class="vfs-head-title">📁 文件目录 (VFS)</span>
+          <div class="vfs-head-actions">
+            <button type="button" id="vfsBtnNewFile" class="vfs-icon-btn" title="在虚拟文件系统中新建文件">＋📄</button>
+            <button type="button" id="vfsBtnNewFolder" class="vfs-icon-btn" title="在虚拟文件系统中新建文件夹">＋📁</button>
+            <button type="button" id="vfsBtnUpload" class="vfs-icon-btn" title="上传本地文件到当前虚拟目录">📤</button>
+          </div>
+        </div>
+        <div class="vfs-tree" id="vfsTreeList" role="tree" aria-label="虚拟文件树"></div>
+        <div class="vfs-foot" id="vfsFootStatus">客户端 VFS (IndexedDB) · 0 KB</div>
+      </aside>
+    </div>
+    <div id="log"><div class="dim">Ctrl/Cmd+Enter 运行 · Ctrl/Cmd+Shift+Enter 开启 Debug 调试 · 双击顶部文件标签或右侧文件目录可重命名文件 · 顶部「📂 导入」可加载示例或上传文件</div></div>
   </div>
 
   <div id="resizer" title="左右拖动调整宽度（双击恢复默认比例）"></div>

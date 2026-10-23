@@ -15,6 +15,7 @@ import * as highlightMod from './viz/highlight';
 import * as memoryGraphMod from './viz/memory-graph';
 import * as controlsMod from './ui/controls';
 import * as shareMod from './ui/share';
+import * as notebookMod from './ui/notebook';
 
 stateMod.bindStateGlobals(globalThis);
 
@@ -32,6 +33,7 @@ const allExports = {
   ...memoryGraphMod,
   ...controlsMod,
   ...shareMod,
+  ...notebookMod,
 };
 
 Object.assign(globalThis, allExports);
@@ -48,4 +50,6 @@ if (!g.breakpoints) {
   g.breakpoints = new Set<number>();
 }
 
+notebookMod.initNotebookUI();
 shareMod.boot();
+

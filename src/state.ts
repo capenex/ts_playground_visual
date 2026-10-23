@@ -47,6 +47,8 @@ export function esc(t: any): string {
 }
 
 export const appState = {
+  VIEW_MODE: 'script' as 'script' | 'notebook',
+  ACTIVE_NB_CELL_ID: null as string | null,
   FILE_NAME: 'playground.ts',
   LANG: 'ts' as 'ts' | 'python',
   LANG_BUFFERS: { ts: null, python: null } as Record<string, LangBuffer | null>,

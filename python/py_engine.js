@@ -1048,6 +1048,12 @@ run_counter(1, 3)
       }
       return;
     }
+    if (typeof window !== 'undefined' && typeof window.onNotebookLangChanged === 'function') {
+      try { window.onNotebookLangChanged(next); } catch (_) {}
+    }
+    if (typeof VIEW_MODE !== 'undefined' && VIEW_MODE === 'notebook') {
+      return;
+    }
     if (typeof LANG_BUFFERS !== 'undefined' && LANG_BUFFERS[next]) {
       editor.value = LANG_BUFFERS[next].src;
       setFileName(LANG_BUFFERS[next].name);
@@ -1086,6 +1092,9 @@ run_counter(1, 3)
     check,
     run,
     hydrate,
+    hydrateVars,
+    cloneVars,
+    fmtReturn,
     buildSteps,
     applyMeta,
     deriveAnim,
@@ -1100,3 +1109,4 @@ run_counter(1, 3)
 })();
 
 if (typeof window !== 'undefined') window.PY_ENGINE = PY_ENGINE;
+

@@ -160,3 +160,41 @@ export interface LangBuffer {
   fileName: string;
   sampleKey?: string;
 }
+
+export interface NotebookCellOutput {
+  logs: string[];
+  returnValue?: string | null;
+  error?: string | null;
+  errorLine?: number | null;
+  elapsedMs?: number;
+}
+
+export interface NotebookCell {
+  id: string;
+  type: 'code' | 'markdown';
+  source: string;
+  executionCount: number | null;
+  status: 'idle' | 'running' | 'success' | 'error' | 'debugging';
+  output: NotebookCellOutput | null;
+  markdownRendered?: boolean;
+}
+
+export interface NotebookExecutedEntry {
+  cellId: string;
+  execCount: number;
+  source: string;
+}
+
+export interface NotebookDocument {
+  id: string;
+  title: string;
+  lang: 'ts' | 'python';
+  execCounter: number;
+  activeCellId: string;
+  debuggingCellId: string | null;
+  cells: NotebookCell[];
+  executedHistory: NotebookExecutedEntry[];
+  lastGlobalVars: Record<string, any>;
+  lastGlobalDs: Record<string, any>;
+}
+

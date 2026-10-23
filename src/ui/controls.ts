@@ -364,10 +364,21 @@ $('auto').onclick = async () => {
   }, AUTO_PLAY_MS);
 };
 
-$('btnRun').onclick = () => { stopAuto(); runOnce(); };
+$('btnRun').onclick = () => {
+  stopAuto();
+  if (typeof VIEW_MODE !== 'undefined' && VIEW_MODE === 'notebook' && typeof (globalThis as any).runNotebookCell === 'function') {
+    (globalThis as any).runNotebookCell(undefined, true);
+    return;
+  }
+  runOnce();
+};
 $('btnTrace').onclick = () => {
   stopAuto();
   if (document.body && document.body.classList) document.body.classList.remove('editing-code');
+  if (typeof VIEW_MODE !== 'undefined' && VIEW_MODE === 'notebook' && typeof (globalThis as any).debugNotebookCell === 'function') {
+    (globalThis as any).debugNotebookCell(undefined);
+    return;
+  }
   startDebug(0);
 };
 
@@ -440,12 +451,24 @@ export function setFileName(name) {
   if (fileNameEl && fileNameEl.value !== FILE_NAME) fileNameEl.value = FILE_NAME;
   const tag = $('fileExportTag');
   if (tag) tag.textContent = exportFileName();
+  if (typeof (globalThis as any).syncActiveScriptTabFromFileName === 'function') {
+    try { (globalThis as any).syncActiveScriptTabFromFileName(FILE_NAME); } catch (_) {}
+  }
 }
 
 export function loadImportedSource(text, name) {
   const src = String(text == null ? '' : text).replace(/\r\n?/g, '\n');
+  if (name && /\.ipynb$/i.test(name) && typeof (globalThis as any).importNotebookFromJson === 'function') {
+    if ((globalThis as any).importNotebookFromJson(src, name)) return;
+  }
+  if (typeof VIEW_MODE !== 'undefined' && VIEW_MODE === 'notebook' && typeof (globalThis as any).setViewMode === 'function') {
+    (globalThis as any).setViewMode('script');
+  }
   editor.value = src;
   setFileName(name || (LANG === 'python' ? 'imported.py' : 'imported.ts'));
+  if (typeof (globalThis as any).syncActiveScriptTabSource === 'function') {
+    try { (globalThis as any).syncActiveScriptTabSource(src); } catch (_) {}
+  }
   lastEditorCursorLine = -1;
   resetTraceState();
   updateEditorChrome();
@@ -453,7 +476,9 @@ export function loadImportedSource(text, name) {
 }
 
 if (btnImportEl && fileInputEl) {
-  btnImportEl.onclick = () => fileInputEl.click();
+  if (!$('importMenuWrap')) {
+    btnImportEl.onclick = () => fileInputEl.click();
+  }
   fileInputEl.addEventListener('change', () => {
     const file = fileInputEl.files && fileInputEl.files[0];
     fileInputEl.value = '';                      // allow re-importing the same file

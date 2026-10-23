@@ -731,8 +731,19 @@ def extract_meta_json(src):
     }, ensure_ascii=False)
 
 
+_NB_GLOBALS = {}
+
+
+def reset_notebook_kernel_json():
+    _NB_GLOBALS.clear()
+    return json.dumps({"ok": True}, ensure_ascii=False)
+
+
 def run_trace_json(src, options_json="{}"):
     options = json.loads(options_json or "{}")
+    if options.get("resetKernel"):
+        _NB_GLOBALS.clear()
+    use_nb_kernel = bool(options.get("useNotebookKernel", False))
     max_steps = int(options.get("maxSteps", MAX_STEPS))
     time_limit = float(options.get("timeLimit", DEFAULT_TIME_LIMIT))
     enable_trace = bool(options.get("trace", True))
@@ -755,10 +766,15 @@ def run_trace_json(src, options_json="{}"):
     module_globals = {
         "__name__": "__main__",
         "__builtins__": __builtins__,
-        "checkpoint": recorder.checkpoint if enable_trace else (lambda *a, **kw: None),
-        "断点": recorder.checkpoint if enable_trace else (lambda *a, **kw: None),
-        "print": recorder.print_fn,
     }
+    if use_nb_kernel and _NB_GLOBALS:
+        for k, v in _NB_GLOBALS.items():
+            if not k.startswith("__") and k not in ("checkpoint", "断点", "print"):
+                module_globals[k] = v
+    module_globals["checkpoint"] = recorder.checkpoint if enable_trace else (lambda *a, **kw: None)
+    module_globals["断点"] = recorder.checkpoint if enable_trace else (lambda *a, **kw: None)
+    module_globals["print"] = recorder.print_fn
+
     fast_state = [0, 1]
 
     def _fast_guard(frame, event, arg):
@@ -798,6 +814,22 @@ def run_trace_json(src, options_json="{}"):
     finally:
         sys.settrace(None)
 
+    if use_nb_kernel:
+        for k, v in module_globals.items():
+            if not k.startswith("__") and k not in ("checkpoint", "断点", "print"):
+                _NB_GLOBALS[k] = v
+        for k in list(_NB_GLOBALS.keys()):
+            if k not in module_globals:
+                del _NB_GLOBALS[k]
+
+    final_locals = _capture_locals({
+        key: value for key, value in module_globals.items() if not key.startswith("__")
+    })
+    final_tagged = {}
+    final_budget = [NODE_BUDGET]
+    for key, value in final_locals.items():
+        final_tagged[key] = _tag_value(value, 0, {}, final_budget, final_locals)
+
     if enable_trace and recorder.error:
         if recorder.steps and recorder.steps[-1]["line"] == recorder.error_line:
             recorder.steps[-1]["error"] = recorder.error
@@ -805,26 +837,19 @@ def run_trace_json(src, options_json="{}"):
             recorder.steps.append({
                 "line": recorder.error_line or 1,
                 "note": recorder._note(recorder.error_line or 1),
-                "vars": {},
+                "vars": final_tagged,
                 "stack": [],
                 "isCheckpoint": False,
                 "checkpointVals": None,
                 "error": recorder.error,
             })
     elif enable_trace and recorder.steps:
-        final_locals = _capture_locals({
-            key: value for key, value in module_globals.items() if not key.startswith("__")
-        })
-        tagged = {}
-        budget = [NODE_BUDGET]
-        for key, value in final_locals.items():
-            tagged[key] = _tag_value(value, 0, {}, budget, final_locals)
         final_line = call_line or recorder.steps[-1]["line"]
         recorder.steps.append({
             "line": final_line,
             "note": recorder._note(final_line),
-            "vars": tagged,
-            "stack": [{"id": 0, "fn": "<module>", "label": "global", "line": final_line, "vars": tagged}],
+            "vars": final_tagged,
+            "stack": [{"id": 0, "fn": "<module>", "label": "global", "line": final_line, "vars": final_tagged}],
             "isCheckpoint": False,
             "checkpointVals": None,
             "error": None,
@@ -834,6 +859,7 @@ def run_trace_json(src, options_json="{}"):
     return json.dumps({
         "ok": True,
         "steps": recorder.steps,
+        "finalVars": final_tagged,
         "stdout": "".join(recorder.stdout),
         "error": recorder.error,
         "errorLine": recorder.error_line,
@@ -843,3 +869,4 @@ def run_trace_json(src, options_json="{}"):
         "meta": json.loads(extract_meta_json(src)),
         "finished": True,
     }, ensure_ascii=False)
+

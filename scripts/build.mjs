@@ -16,7 +16,7 @@ const FILES = [
   'SYNTAX_REFERENCE.md',
   'DEPLOY.md',
 ];
-const DIRS = ['python', 'js', 'css'];
+const DIRS = ['python', 'js', 'css', 'examples'];
 
 const REQUIRED = [
   'index.html',
