@@ -112,7 +112,7 @@ export function runToNextCheckpoint() {
   }
 }
 
-export function rebuildDebugAtPosition(newTargetLine, targetVisits, fallbackStepIdx) {
+export function rebuildDebugAtPosition(newTargetLine: number, targetVisits: number, fallbackStepIdx: number) {
   const src = editor.value.replace(/\r/g, '');
   const unsupported = detectUnsupportedSyntax(src);
   if (unsupported.length) {
@@ -195,7 +195,7 @@ export function rebuildDebugAtPosition(newTargetLine, targetVisits, fallbackStep
   cur = Math.max(0, TRACE.steps.length - 1);
   if (prevWatched.size > 0) {
     watched = prevWatched;
-    discoverVars().forEach(s => watched.add(s.id));
+    discoverVars().forEach((s: { id: string }) => watched.add(s.id));
   } else {
     initWatchedVars();
   }
@@ -321,7 +321,7 @@ export function addCheckpointFunction(preferredLine?: any) {
   say('✓ 已在第 ' + insertedLineNum + ' 行添加检查点函数 checkpoint()（保持当前调试位置，点击左下「⏭ 运行到下一个检查点」即可运行至检查点）', 'ok');
 }
 
-export function go(i) {
+export function go(i: number) {
   if (i > cur) stepNext();
   else if (i < cur) stepPrev();
 }
@@ -391,13 +391,13 @@ export const btnExportVideo = $('btnExportVideo');
 export const btnExportVideoLabel = $('btnExportVideoLabel');
 export const videoExportStatus = $('videoExportStatus');
 
-export function setVideoExportSpeed(mult) {
+export function setVideoExportSpeed(mult: number | string) {
   const num = Number(mult);
   if (!VIDEO_SPEED_OPTIONS.includes(num)) return VIDEO_EXPORT_SPEED;
   VIDEO_EXPORT_SPEED = num;
   if (videoSpeedGroup && videoSpeedGroup.querySelectorAll) {
     const btns = videoSpeedGroup.querySelectorAll('.speed-opt');
-    btns.forEach(b => {
+    btns.forEach((b: HTMLElement) => {
       if (b.classList) b.classList.toggle('active', Number(b.dataset.speed) === num);
     });
   }
@@ -408,7 +408,7 @@ export function setVideoExportSpeed(mult) {
 }
 
 if (btnExportMenu && exportMenuWrap) {
-  btnExportMenu.onclick = (e) => {
+  btnExportMenu.onclick = (e: MouseEvent) => {
     e.stopPropagation();
     if (exportMenuWrap.classList) exportMenuWrap.classList.toggle('open');
   };
@@ -429,7 +429,7 @@ if (videoSpeedGroup) {
 }
 
 /* ── file identity: the editable chip in the SOURCE header drives import/export names ── */
-export function sanitizeFileName(name) {
+export function sanitizeFileName(name: string | null | undefined) {
   const cleaned = String(name == null ? '' : name)
     .replace(/[\\/:*?"<>|\u0000-\u001f]/g, '')
     .replace(/\s+/g, ' ')
@@ -446,7 +446,7 @@ export function exportFileName() {
   return /\.[A-Za-z0-9]{1,12}$/.test(name) ? name : name + ext;
 }
 
-export function setFileName(name) {
+export function setFileName(name: string | null | undefined) {
   FILE_NAME = sanitizeFileName(name);
   if (fileNameEl && fileNameEl.value !== FILE_NAME) fileNameEl.value = FILE_NAME;
   const tag = $('fileExportTag');
@@ -456,7 +456,7 @@ export function setFileName(name) {
   }
 }
 
-export function loadImportedSource(text, name) {
+export function loadImportedSource(text: string | null | undefined, name?: string) {
   const src = String(text == null ? '' : text).replace(/\r\n?/g, '\n');
   if (name && /\.ipynb$/i.test(name) && typeof (globalThis as any).importNotebookFromJson === 'function') {
     if ((globalThis as any).importNotebookFromJson(src, name)) return;
@@ -549,7 +549,7 @@ if (callStackBarEl) {
   if (!resizerEl || !mainEl || !sidePanelEl) return;
   let dragging = false;
 
-  function applySideWidth(clientX) {
+  function applySideWidth(clientX: number) {
     const rect = mainEl.getBoundingClientRect();
     if (!rect.width) return;
     const minCodeW = 340;
@@ -565,7 +565,7 @@ if (callStackBarEl) {
     clearFlyLayer();
   }
 
-  resizerEl.addEventListener('pointerdown', e => {
+  resizerEl.addEventListener('pointerdown', (e: PointerEvent) => {
     dragging = true;
     resizerEl.classList.add('dragging');
     document.body.classList.add('resizing');
@@ -658,7 +658,7 @@ editor.addEventListener('keydown', (e: any) => {
   }
 });
 
-export let staleTimer = null;
+export let staleTimer: ReturnType<typeof setTimeout> | null = null;
 export function onSourceChanged() {
   recordEditorCursorLine();
   TYPE_ERROR_LINES.clear();
@@ -679,7 +679,7 @@ editor.addEventListener('scroll', () => { clearFlyLayer(); hideHoverTip(); syncS
 
 /* ── hover inspector wiring: editor tokens + LOCALS/WATCH cards ── */
 if (editor && editor.addEventListener) {
-  editor.addEventListener('mousemove', e => {
+  editor.addEventListener('mousemove', (e: MouseEvent) => {
     if (!TRACE.steps.length || (e && e.buttons)) { hideHoverTip(); return; }
     const hit = hoverHitFromEvent(e);
     const word = hit ? hoverWordAt(hit.text, hit.col) : null;
@@ -690,7 +690,7 @@ if (editor && editor.addEventListener) {
   editor.addEventListener('mousedown', hideHoverTip);
 }
 if (sidePanelEl && sidePanelEl.addEventListener) {
-  sidePanelEl.addEventListener('mousemove', e => {
+  sidePanelEl.addEventListener('mousemove', (e: MouseEvent) => {
     const card = e && e.target && (e.target as any).closest ? (e.target as any).closest('[data-var]') : null;
     if (!card || !card.getAttribute) { hideHoverTip(); return; }
     hoverTipForName(card.getAttribute('data-var'), e.clientX, e.clientY);
@@ -724,7 +724,7 @@ addEventListener('keydown', e => {
   const open = () => { modal.hidden = false; };
   const hide = () => { modal.hidden = true; };
   badge.onclick = open;
-  badge.onkeydown = e => {
+  badge.onkeydown = (e: KeyboardEvent) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
       open();
@@ -732,7 +732,7 @@ addEventListener('keydown', e => {
   };
   if (close) close.onclick = hide;
   if (modal.addEventListener) {
-    modal.addEventListener('click', e => {
+    modal.addEventListener('click', (e: MouseEvent) => {
       if (e.target === modal) hide();
     });
   }

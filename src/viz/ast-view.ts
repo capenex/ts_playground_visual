@@ -2,6 +2,7 @@
    AST View & Inter-line Step Capsule / Flying Value Animation (src/viz/ast-view.ts)
    ================================================================ */
 import { splitStatements, stripInlineCommentSafe } from "../compiler/comments";
+import { StepAnim, StepSnapshot } from "../types";
 import { hoverMetrics } from "./highlight";
 
 export interface AstNode {
@@ -41,7 +42,7 @@ export function renderAST(ast: AstNode): string {
     .join("");
 }
 
-export function buildStepVizRow(rawLine, anim, stError, isBelow = false) {
+export function buildStepVizRow(_rawLine: string, anim: StepAnim | null | undefined, stError: string | null | undefined, isBelow = false) {
   const guideChar = isBelow ? '╰─' : '╭─';
   if (stError) {
     return `<div class="step-viz-row">` +
@@ -69,7 +70,7 @@ export function buildStepVizRow(rawLine, anim, stError, isBelow = false) {
     const args = anim.args || [];
     const argVals = anim.argVals || [];
     const chips = args.length
-      ? args.map((a, idx) => {
+      ? args.map((a: string, idx: number) => {
           const av = argVals[idx];
           const showEq = av !== undefined && av !== a;
           return `<span class="sv-arg">${esc(a)}${showEq ? ` <span class="sv-eval">= ${esc(av)}</span>` : ''}</span>`;
@@ -119,7 +120,7 @@ export function buildStepVizRow(rawLine, anim, stError, isBelow = false) {
   if (anim.type === 'call') {
     const args = anim.args || [];
     const argVals = anim.argVals || [];
-    const argChips = args.map((a, idx) => {
+    const argChips = args.map((a: string, idx: number) => {
       const av = argVals[idx];
       const showEq = av !== undefined && av !== a;
       return `<span class="sv-arg">${esc(a)}${showEq ? ` <span class="sv-eval">= ${esc(av)}</span>` : ''}</span>`;
@@ -142,7 +143,7 @@ export function buildStepVizRow(rawLine, anim, stError, isBelow = false) {
 
 let STEP_VIZ_LINE = -1;
 
-export function updateStepViz(st, line, show, rawLine) {
+export function updateStepViz(st: StepSnapshot | null | undefined, line: number, show: boolean, rawLine: string) {
   if (!stepVizEl) return;
   const html = (show && st) ? buildStepVizRow(rawLine, st.anim, st.error, line === 1) : '';
   if (!html) {
@@ -230,7 +231,7 @@ export function clearFlyLayer() {
   if (flyLayerEl) flyLayerEl.innerHTML = '';
 }
 
-export function playStepAnimation(st) {
+export function playStepAnimation(st: StepSnapshot | null | undefined) {
   clearFlyLayer();
   if (IS_STILL || !st || !st.anim || !flyLayerEl) return;
   const anim = st.anim;

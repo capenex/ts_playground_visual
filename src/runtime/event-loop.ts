@@ -24,10 +24,10 @@ export function say(msg: any, cls?: any, line?: any) {
 
 /* clicking a diagnostic in the log jumps to (and highlights) its line */
 if (logEl && logEl.addEventListener) {
-  logEl.addEventListener('click', e => {
+  logEl.addEventListener('click', (e: { target?: { closest?: (sel: string) => { getAttribute?: (attr: string) => string | null } | null } | null }) => {
     const target = e && e.target && e.target.closest ? e.target.closest('.diag') : null;
     if (!target || !target.getAttribute) return;
-    revealErrorLine(parseInt(target.getAttribute('data-line'), 10), true);
+    revealErrorLine(parseInt(target.getAttribute('data-line') || '0', 10), true);
   });
 }
 
@@ -39,13 +39,13 @@ export function clearLog(msg?: any) {
 /* V8 wraps a Function body in extra lines; measure it instead of hard-coding.
    Stack frames look like `at boom (eval at f (file:12:3), <anonymous>:6:9)` — the
    `<anonymous>` location after the comma is the one inside the compiled body. */
-export function anonStackLine(stack) {
+export function anonStackLine(stack: unknown) {
   const re = /,\s*<anonymous>:(\d+):\d+/g;
   const m = re.exec(String(stack || ''));
   return m ? parseInt(m[1], 10) : 0;
 }
 
-let FN_BODY_LINE_OFFSET = null;
+let FN_BODY_LINE_OFFSET: number | null = null;
 export function fnBodyLineOffset() {
   if (FN_BODY_LINE_OFFSET !== null) return FN_BODY_LINE_OFFSET;
   let off = 2;
@@ -73,11 +73,11 @@ export function sourceLineFromStack(stack: any, lineCount?: any) {
 /* Compile & evaluate one call. `opts.budgetMs` arms the loop watchdog: the instrumented
    `__t(line)` hooks count executions and throw once the wall-clock budget is spent, so a
    runaway loop is aborted on the spot and we still know which source line kept spinning. */
-export function safeJSONStringify(val) {
+export function safeJSONStringify(val: unknown) {
   if (val === undefined) return '(undefined)';
   try {
     const seen = new WeakSet();
-    return JSON.stringify(val, (k, v) => {
+    return JSON.stringify(val, (_k, v) => {
       if (v !== null && typeof v === 'object') {
         if (seen.has(v)) return '[Circular]';
         seen.add(v);
@@ -101,7 +101,7 @@ export function safeJSONStringify(val) {
    Executes microtasks and timer macrotasks deterministically so step-by-step replay
    and PAUSE_SIGNAL unwinding work across async boundaries.
    ================================================================ */
-export function hasAsyncConstructs(src) {
+export function hasAsyncConstructs(src: unknown) {
   if (!src || typeof src !== 'string') return false;
   const clean = blankStrings(src);
   return /\b(?:async|await|Promise|setTimeout|queueMicrotask|sleep)\b/.test(clean);
@@ -125,13 +125,22 @@ export function createVirtualEventLoop(__t: any, getCurLine?: any, onSuspendFram
     globalSnapFn: null,
   };
 
-  function rethrowIfControlSignal(err) {
-    if (err && (err === PAUSE_SIGNAL || err.__debugPause || err.__timeout)) {
+  function rethrowIfControlSignal(err: unknown) {
+    const ctrl = (err && typeof err === 'object')
+      ? (err as { __debugPause?: boolean; __timeout?: boolean })
+      : null;
+    if (err === PAUSE_SIGNAL || (ctrl && (ctrl.__debugPause || ctrl.__timeout))) {
       throw err;
     }
   }
 
-  function enqueueMicrotask(item) {
+  function enqueueMicrotask(item: {
+    label?: string;
+    line?: number;
+    isInternalAwait?: boolean;
+    run: () => void;
+    rawCb?: unknown;
+  }) {
     loop.used = true;
     const task = {
       id: ++microSeq,
@@ -146,9 +155,21 @@ export function createVirtualEventLoop(__t: any, getCurLine?: any, onSuspendFram
     return task;
   }
 
+  interface PromiseHandler {
+    onFulfilled?: ((v: unknown) => unknown) | null;
+    onRejected?: ((r: unknown) => unknown) | null;
+    child: VirtualPromise;
+    line?: number;
+    label?: string;
+    isInternalAwait?: boolean;
+  }
+
   class VirtualPromise {
     [key: string]: any;
-    constructor(executor, label) {
+    constructor(
+      executor?: ((resolve: (val?: unknown) => void, reject: (reason?: unknown) => void) => void) | null,
+      label?: string
+    ) {
       loop.used = true;
       this.__isVirtualPromise = true;
       this.id = ++promiseSeq;
@@ -160,8 +181,8 @@ export function createVirtualEventLoop(__t: any, getCurLine?: any, onSuspendFram
       this._handlers = [];
       loop.promises.push(this);
 
-      const resolve = (val) => this._resolve(val);
-      const reject = (reason) => this._reject(reason);
+      const resolve = (val?: unknown) => this._resolve(val);
+      const reject = (reason?: unknown) => this._reject(reason);
       if (typeof executor === 'function') {
         try {
           executor(resolve, reject);
@@ -172,11 +193,14 @@ export function createVirtualEventLoop(__t: any, getCurLine?: any, onSuspendFram
       }
     }
 
-    _resolve(val) {
+    _resolve(val?: unknown) {
       if (this.state !== 'pending') return;
-      if (val && (val.__isVirtualPromise || typeof val.then === 'function')) {
+      const thenable = (val && (typeof val === 'object' || typeof val === 'function'))
+        ? (val as { __isVirtualPromise?: boolean; then?: (onF: (v: unknown) => void, onR: (r: unknown) => void) => void })
+        : null;
+      if (thenable && (thenable.__isVirtualPromise || typeof thenable.then === 'function') && typeof thenable.then === 'function') {
         try {
-          val.then((v) => this._resolve(v), (r) => this._reject(r));
+          thenable.then((v: unknown) => this._resolve(v), (r: unknown) => this._reject(r));
         } catch (err) {
           rethrowIfControlSignal(err);
           this._reject(err);
@@ -188,7 +212,7 @@ export function createVirtualEventLoop(__t: any, getCurLine?: any, onSuspendFram
       this._flush();
     }
 
-    _reject(reason) {
+    _reject(reason?: unknown) {
       if (this.state !== 'pending') return;
       this.state = 'rejected';
       this.reason = reason;
@@ -203,7 +227,7 @@ export function createVirtualEventLoop(__t: any, getCurLine?: any, onSuspendFram
       }
     }
 
-    _scheduleHandler(h) {
+    _scheduleHandler(h: PromiseHandler) {
       const isFulfilled = this.state === 'fulfilled';
       const cb = isFulfilled ? h.onFulfilled : h.onRejected;
       const arg = isFulfilled ? this.value : this.reason;
@@ -239,7 +263,7 @@ export function createVirtualEventLoop(__t: any, getCurLine?: any, onSuspendFram
       const child = new VirtualPromise(null, metaLabel || (this.label + '.then'));
       // Hide internal child promises created purely for chaining from cluttering the promise list if needed
       if (isInternalAwait) child._internal = true;
-      const handler = {
+      const handler: PromiseHandler = {
         onFulfilled,
         onRejected,
         child,
@@ -255,17 +279,17 @@ export function createVirtualEventLoop(__t: any, getCurLine?: any, onSuspendFram
       return child;
     }
 
-    catch(onRejected) {
+    catch(onRejected?: ((reason: unknown) => unknown) | null) {
       return this.then(null, onRejected, this.label + '.catch');
     }
 
-    finally(onFinally) {
+    finally(onFinally?: (() => unknown) | null) {
       return this.then(
-        (v) => {
+        (v: unknown) => {
           if (typeof onFinally === 'function') onFinally();
           return v;
         },
-        (err) => {
+        (err: unknown) => {
           if (typeof onFinally === 'function') onFinally();
           throw err;
         },
@@ -273,26 +297,28 @@ export function createVirtualEventLoop(__t: any, getCurLine?: any, onSuspendFram
       );
     }
 
-    static resolve(val) {
+    static resolve(val?: unknown): VirtualPromise {
       loop.used = true;
-      if (val && val.__isVirtualPromise) return val;
-      return new VirtualPromise((res) => res(val), 'Promise.resolve(' + formatShortVal(val) + ')');
+      if (val instanceof VirtualPromise || (val && typeof val === 'object' && '__isVirtualPromise' in val)) {
+        return val as VirtualPromise;
+      }
+      return new VirtualPromise((res: (v?: unknown) => void) => res(val), 'Promise.resolve(' + formatShortVal(val) + ')');
     }
 
-    static reject(reason) {
+    static reject(reason?: unknown): VirtualPromise {
       loop.used = true;
-      return new VirtualPromise((_, rej) => rej(reason), 'Promise.reject(' + formatShortVal(reason) + ')');
+      return new VirtualPromise((_res: (v?: unknown) => void, rej: (r?: unknown) => void) => rej(reason), 'Promise.reject(' + formatShortVal(reason) + ')');
     }
 
-    static all(items) {
+    static all(items: Iterable<unknown> | null | undefined): VirtualPromise {
       loop.used = true;
       const arr = Array.from(items || []);
-      return new VirtualPromise((resolve, reject) => {
+      return new VirtualPromise((resolve: (v?: unknown) => void, reject: (r?: unknown) => void) => {
         if (arr.length === 0) { resolve([]); return; }
         const out = new Array(arr.length);
         let left = arr.length;
         arr.forEach((item, idx) => {
-          VirtualPromise.resolve(item).then((val) => {
+          VirtualPromise.resolve(item).then((val: unknown) => {
             out[idx] = val;
             if (--left === 0) resolve(out);
           }, reject);
@@ -300,10 +326,10 @@ export function createVirtualEventLoop(__t: any, getCurLine?: any, onSuspendFram
       }, 'Promise.all');
     }
 
-    static race(items) {
+    static race(items: Iterable<unknown> | null | undefined): VirtualPromise {
       loop.used = true;
       const arr = Array.from(items || []);
-      return new VirtualPromise((resolve, reject) => {
+      return new VirtualPromise((resolve: (v?: unknown) => void, reject: (r?: unknown) => void) => {
         arr.forEach((item) => {
           VirtualPromise.resolve(item).then(resolve, reject);
         });
@@ -313,7 +339,7 @@ export function createVirtualEventLoop(__t: any, getCurLine?: any, onSuspendFram
 
   const env = {
     Promise: VirtualPromise,
-    queueMicrotask(cb) {
+    queueMicrotask(cb: (() => unknown) | null | undefined) {
       loop.used = true;
       const line = getCurLine() || 1;
       enqueueMicrotask({
@@ -330,7 +356,7 @@ export function createVirtualEventLoop(__t: any, getCurLine?: any, onSuspendFram
         },
       });
     },
-    setTimeout(cb, delay = 0, ...args) {
+    setTimeout(cb: ((...a: unknown[]) => unknown) | null | undefined, delay: number | string = 0, ...args: unknown[]) {
       loop.used = true;
       const d = Math.max(0, Number(delay) || 0);
       const line = getCurLine() || 1;
@@ -347,32 +373,37 @@ export function createVirtualEventLoop(__t: any, getCurLine?: any, onSuspendFram
       });
       return id;
     },
-    clearTimeout(id) {
-      const t = loop.macrotasks.find(m => m.id === id && m.status === 'waiting');
+    clearTimeout(id: number) {
+      const t = loop.macrotasks.find((m: { id: number; status: string }) => m.id === id && m.status === 'waiting');
       if (t) t.status = 'cancelled';
     },
-    sleep(ms = 0, val = undefined) {
+    sleep(ms: number | string = 0, val: unknown = undefined) {
       loop.used = true;
       const d = Math.max(0, Number(ms) || 0);
-      return new VirtualPromise((resolve) => {
+      return new VirtualPromise((resolve: (v?: unknown) => void) => {
         env.setTimeout(() => resolve(val), d);
       }, `sleep(${d}ms)`);
     },
   };
 
-  function runAsyncCoroutine(genFn, self, fnName, defLine) {
+  function runAsyncCoroutine(
+    genFn: (this: unknown) => Generator<unknown, unknown, unknown>,
+    self: unknown,
+    fnName?: string,
+    defLine?: number
+  ) {
     loop.used = true;
     const coro = {
       id: ++coroSeq,
       name: fnName || 'async',
       line: defLine || getCurLine() || 1,
       status: 'running',
-      awaitExpr: null,
+      awaitExpr: null as string | null,
       fid: 0,
     };
     loop.coroutines.push(coro);
     const outPromise = new VirtualPromise(null, `${coro.name}()`);
-    let gen;
+    let gen: Generator<unknown, unknown, unknown>;
     try {
       gen = genFn.call(self);
     } catch (err) {
@@ -382,7 +413,7 @@ export function createVirtualEventLoop(__t: any, getCurLine?: any, onSuspendFram
       return outPromise;
     }
 
-    function drive(method, arg) {
+    function drive(method: 'next' | 'throw', arg: unknown) {
       coro.status = 'running';
       coro.awaitExpr = null;
       let stepRes;
@@ -400,11 +431,14 @@ export function createVirtualEventLoop(__t: any, getCurLine?: any, onSuspendFram
         return;
       }
       const yielded = stepRes.value;
-      const isAwaitDesc = yielded && typeof yielded === 'object' && yielded.__isAwait;
-      const awaitedVal = isAwaitDesc ? yielded.value : yielded;
-      const fid = isAwaitDesc ? yielded.fid : 0;
-      const awaitLine = (isAwaitDesc && yielded.line) ? yielded.line : getCurLine() || coro.line;
-      const awaitExpr = (isAwaitDesc && yielded.expr) ? yielded.expr : 'await';
+      const awaitDesc = (yielded && typeof yielded === 'object' && '__isAwait' in yielded)
+        ? (yielded as { __isAwait?: boolean; value?: unknown; fid?: number; line?: number; expr?: string })
+        : null;
+      const isAwaitDesc = Boolean(awaitDesc && awaitDesc.__isAwait);
+      const awaitedVal = isAwaitDesc && awaitDesc ? awaitDesc.value : yielded;
+      const fid = (isAwaitDesc && awaitDesc && awaitDesc.fid) ? awaitDesc.fid : 0;
+      const awaitLine = (isAwaitDesc && awaitDesc && awaitDesc.line) ? awaitDesc.line : getCurLine() || coro.line;
+      const awaitExpr = (isAwaitDesc && awaitDesc && awaitDesc.expr) ? awaitDesc.expr : 'await';
 
       coro.status = 'suspended';
       coro.line = awaitLine;
@@ -416,13 +450,13 @@ export function createVirtualEventLoop(__t: any, getCurLine?: any, onSuspendFram
 
       const awaitedPromise = VirtualPromise.resolve(awaitedVal);
       awaitedPromise.then(
-        (resolvedVal) => {
+        (resolvedVal: unknown) => {
           if (fid && typeof onResumeFrame === 'function') {
             onResumeFrame(fid);
           }
           drive('next', resolvedVal);
         },
-        (rejectedReason) => {
+        (rejectedReason: unknown) => {
           if (fid && typeof onResumeFrame === 'function') {
             onResumeFrame(fid);
           }
@@ -437,14 +471,14 @@ export function createVirtualEventLoop(__t: any, getCurLine?: any, onSuspendFram
     return outPromise;
   }
 
-  function drainEventLoop(entryVal, fallbackSnapFn) {
+  function drainEventLoop(entryVal: unknown, fallbackSnapFn?: unknown) {
     if (fallbackSnapFn && !loop.globalSnapFn) loop.globalSnapFn = fallbackSnapFn;
     if (!loop.used) return entryVal;
 
     let safety = 0;
     while (safety++ < 2000) {
       // 1. Drain all queued microtasks (FIFO)
-      const nextMicro = loop.microtasks.find(m => m.status === 'queued');
+      const nextMicro = loop.microtasks.find((m: { status: string }) => m.status === 'queued');
       if (nextMicro) {
         nextMicro.status = 'running';
         loop.phase = 'microtask';
@@ -458,7 +492,16 @@ export function createVirtualEventLoop(__t: any, getCurLine?: any, onSuspendFram
       }
 
       // 2. Pick the earliest waiting macrotask timer
-      let bestMacro = null;
+      let bestMacro: {
+        id: number;
+        label: string;
+        delay: number;
+        fireAt: number;
+        line: number;
+        status: string;
+        cb: (...args: unknown[]) => unknown;
+        args: unknown[];
+      } | null = null;
       for (const m of loop.macrotasks) {
         if (m.status !== 'waiting') continue;
         if (!bestMacro || m.fireAt < bestMacro.fireAt || (m.fireAt === bestMacro.fireAt && m.id < bestMacro.id)) {
@@ -493,12 +536,15 @@ export function createVirtualEventLoop(__t: any, getCurLine?: any, onSuspendFram
     loop.phase = 'idle';
     loop.activeTaskLabel = '事件循环已清空 (Idle)';
 
-    if (entryVal && entryVal.__isVirtualPromise) {
-      if (entryVal.state === 'rejected') {
-        throw entryVal.reason instanceof Error ? entryVal.reason : new Error(String(entryVal.reason));
+    const vp = (entryVal && typeof entryVal === 'object' && '__isVirtualPromise' in entryVal)
+      ? (entryVal as { __isVirtualPromise?: boolean; state?: string; reason?: unknown; value?: unknown })
+      : null;
+    if (vp && vp.__isVirtualPromise) {
+      if (vp.state === 'rejected') {
+        throw vp.reason instanceof Error ? vp.reason : new Error(String(vp.reason));
       }
-      if (entryVal.state === 'fulfilled') {
-        return entryVal.value;
+      if (vp.state === 'fulfilled') {
+        return vp.value;
       }
     }
     return entryVal;
@@ -512,7 +558,7 @@ export function createVirtualEventLoop(__t: any, getCurLine?: any, onSuspendFram
       phase: loop.phase,
       activeTask: loop.activeTaskLabel,
       activeTaskLabel: loop.activeTaskLabel,
-      coroutines: loop.coroutines.slice(-8).map(c => ({
+      coroutines: loop.coroutines.slice(-8).map((c: { id: number; name: string; line: number; status: string; awaitExpr: string | null }) => ({
         id: c.id,
         name: c.name,
         line: c.line,
@@ -520,17 +566,17 @@ export function createVirtualEventLoop(__t: any, getCurLine?: any, onSuspendFram
         awaitExpr: c.awaitExpr,
         awaitingExpr: c.awaitExpr,
       })),
-      microtasks: loop.microtasks.filter(m => m.status !== 'done').concat(
-        loop.microtasks.filter(m => m.status === 'done').slice(-3)
-      ).slice(0, 8).map(m => ({
+      microtasks: loop.microtasks.filter((m: { status: string }) => m.status !== 'done').concat(
+        loop.microtasks.filter((m: { status: string }) => m.status === 'done').slice(-3)
+      ).slice(0, 8).map((m: { id: number; label: string; line: number; status: string }) => ({
         id: m.id,
         label: m.label,
         line: m.line,
         status: m.status,
       })),
-      macrotasks: loop.macrotasks.filter(m => m.status !== 'done' && m.status !== 'cancelled').concat(
-        loop.macrotasks.filter(m => m.status === 'done').slice(-3)
-      ).slice(0, 8).map(m => ({
+      macrotasks: loop.macrotasks.filter((m: { status: string }) => m.status !== 'done' && m.status !== 'cancelled').concat(
+        loop.macrotasks.filter((m: { status: string }) => m.status === 'done').slice(-3)
+      ).slice(0, 8).map((m: { id: number; label: string; delay: number; fireAt: number; line: number; status: string }) => ({
         id: m.id,
         label: m.label,
         delay: m.delay,
@@ -539,7 +585,7 @@ export function createVirtualEventLoop(__t: any, getCurLine?: any, onSuspendFram
         line: m.line,
         status: m.status,
       })),
-      promises: loop.promises.filter(p => !p._internal).slice(-8).map(p => ({
+      promises: loop.promises.filter((p: { _internal?: boolean }) => !p._internal).slice(-8).map((p: { id: number; label: string; state: string; value: unknown; reason: unknown; reactions?: unknown[]; line: number }) => ({
         id: p.id,
         label: p.label,
         state: p.state,
@@ -560,7 +606,7 @@ export function createVirtualEventLoop(__t: any, getCurLine?: any, onSuspendFram
   };
 }
 
-export function formatCallArgItem(val) {
+export function formatCallArgItem(val: unknown): string {
   if (val === undefined) return 'undefined';
   if (val === null) return 'null';
   if (typeof val === 'number' || typeof val === 'boolean') return String(val);
@@ -570,30 +616,30 @@ export function formatCallArgItem(val) {
   if (Array.isArray(val)) {
     if (val.length === 0) return '[]';
     if (Array.isArray(val[0])) return `[${val.length}×${val[0].length}]`;
-    if (val.length <= 4) return '[' + val.map(x => formatCallArgItem(x)).join(', ') + ']';
-    return '[' + val.slice(0, 3).map(x => formatCallArgItem(x)).join(', ') + ', …]';
+    if (val.length <= 4) return '[' + val.map((x: unknown): string => formatCallArgItem(x)).join(', ') + ']';
+    return '[' + val.slice(0, 3).map((x: unknown): string => formatCallArgItem(x)).join(', ') + ', …]';
   }
-  if (isMapLike(val)) return `Map(${val.size})`;
-  if (isSetLike(val)) return `Set(${val.size})`;
+  if (isMapLike(val)) return `Map(${(val as Map<unknown, unknown>).size})`;
+  if (isSetLike(val)) return `Set(${(val as Set<unknown>).size})`;
   if (typeof val === 'object') {
-    if ('val' in val && ('left' in val || 'right' in val)) return `Tree(${val.val})`;
-    if ('val' in val && 'next' in val) return `List(${val.val})`;
+    if ('val' in val && ('left' in val || 'right' in val)) return `Tree(${(val as { val: unknown }).val})`;
+    if ('val' in val && 'next' in val) return `List(${(val as { val: unknown }).val})`;
     return '{…}';
   }
   return String(val);
 }
 
-export function formatCallFrameLabel(fnName, paramNames, paramVals) {
+export function formatCallFrameLabel(fnName: string, _paramNames: unknown, paramVals: unknown) {
   const vals = Array.isArray(paramVals) ? paramVals : [];
   if (!vals.length) return `${fnName}()`;
-  const isPrimitive = (v) => v === null || v === undefined || typeof v === 'number' || typeof v === 'string' || typeof v === 'boolean';
+  const isPrimitive = (v: unknown) => v === null || v === undefined || typeof v === 'number' || typeof v === 'string' || typeof v === 'boolean';
   const primVals = vals.filter(isPrimitive);
-  const hasComplex = vals.some(v => !isPrimitive(v));
+  const hasComplex = vals.some((v: unknown) => !isPrimitive(v));
   // If a function takes a container alongside >=2 numeric range indices (e.g. mergeSort(arr, 0, 7)), display the numeric indices cleanly as mergeSort(0, 7)
-  if (hasComplex && primVals.length >= 2 && primVals.every(v => typeof v === 'number')) {
-    return `${fnName}(${primVals.map(v => formatCallArgItem(v)).join(', ')})`;
+  if (hasComplex && primVals.length >= 2 && primVals.every((v: unknown) => typeof v === 'number')) {
+    return `${fnName}(${primVals.map((v: unknown) => formatCallArgItem(v)).join(', ')})`;
   }
-  return `${fnName}(${vals.map(v => formatCallArgItem(v)).join(', ')})`;
+  return `${fnName}(${vals.map((v: unknown) => formatCallArgItem(v)).join(', ')})`;
 }
 
 export function resetTraceState() {

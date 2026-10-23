@@ -1,7 +1,7 @@
 /* ================================================================
    Centralized runtime & UI state management (src/state.ts)
    ================================================================ */
-import type { DebugSession, Diag, LangBuffer, TraceData, TsMeta } from './types';
+import type { DebugSession, Diag, LangBuffer, TraceData } from './types';
 
 export const $ = (id: string): any =>
   typeof document !== 'undefined' ? document.getElementById(id) : null;

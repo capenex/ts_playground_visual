@@ -5,6 +5,7 @@ import { blankStrings, isIdentPart, RESERVED_WORDS } from "../compiler/comments"
 import { stripTypes } from "../compiler/transpile";
 import { collectNames } from "../compiler/instrumenter";
 import { typecheckTS, inferRuntimeTsType } from "../compiler/type-checker";
+import { Diag } from "../types";
 import { updateStepViz, positionStepViz } from "./ast-view";
 import { getActiveFrame, isMapLike, isSetLike, formatShortVal, VIZ } from "./memory-graph";
 
@@ -19,12 +20,12 @@ let DECLARED_NAMES_CACHE: any = { src: null, names: new Set() };
 
 /* All names the current buffer actually declares: const/let/var (incl. destructuring),
    function & arrow params, loop/catch bindings, function/class/interface/type names. */
-export function collectDeclaredNames(src) {
+export function collectDeclaredNames(src: string | null | undefined): Set<string> {
   if (LANG === 'python') return PY_ENGINE.collectDeclared(src);
   const text = String(src == null ? '' : src);
   if (DECLARED_NAMES_CACHE.src === text) return DECLARED_NAMES_CACHE.names;
 
-  const names = new Set();
+  const names = new Set<string>();
   let js = text;
   try { js = stripTypes(text); } catch (_) { js = text; }
   try {
@@ -41,12 +42,12 @@ export function collectDeclaredNames(src) {
   return names;
 }
 
-export function collectHighlightBuiltins(declared) {
-  const source = LANG === 'python'
+export function collectHighlightBuiltins(declared: Set<string>): Set<string> {
+  const source: Iterable<string> = LANG === 'python'
     ? ((typeof PY_ENGINE !== 'undefined' && PY_ENGINE.builtins) || [])
     : HIGHLIGHT_BUILTINS;
-  const out = new Set();
-  source.forEach(name => {
+  const out = new Set<string>();
+  Array.from(source).forEach((name: string) => {
     if (!declared.has(name)) out.add(name);
   });
   return out;
@@ -87,7 +88,7 @@ export function hl(t: any, declared?: any) {
   return out;
 }
 
-export function findExprSpan(line, target, fromIndex = 0) {
+export function findExprSpan(line: string, target: string, fromIndex = 0) {
   if (!target) return -1;
   const startBoundary = isIdentPart(target[0]);
   const endBoundary = isIdentPart(target[target.length - 1]);
@@ -108,7 +109,7 @@ export function findExprSpan(line, target, fromIndex = 0) {
 export function hlActiveLine(rawLine: any, anim?: any, declared?: any) {
   if (LANG === 'python') return PY_ENGINE.hlActiveLine(rawLine, anim, declared);
   if (!anim) return hl(rawLine, declared);
-  const h = (s) => hl(s, declared);
+  const h = (s: string) => hl(s, declared);
 
   const declPrefix = rawLine.match(/^\s*(?:(?:export\s+)?(?:const|let|var)\b\s*)/);
   const lhsSearchStart = declPrefix ? declPrefix[0].length : 0;
@@ -209,14 +210,14 @@ export function updateEditorChrome() {
   const declared = collectDeclaredNames(text);
   const builtins = collectHighlightBuiltins(declared);
   const liveErrors = liveTypeDiags(text);
-  const liveByLine = new Map();
-  liveErrors.forEach(d => { if (d && d.line >= 1 && !liveByLine.has(d.line)) liveByLine.set(d.line, d); });
+  const liveByLine = new Map<number, Diag>();
+  liveErrors.forEach((d: Diag) => { if (d && d.line >= 1 && !liveByLine.has(d.line)) liveByLine.set(d.line, d); });
   const st = TRACE.steps.length ? TRACE.steps[cur] : null;
   const activeFrame = st ? getActiveFrame(st) : null;
   const curLine = activeFrame ? activeFrame.line : (st ? st.line : -1);
   const showVizOnLine = Boolean(st && (!activeFrame || activeFrame.isTop) && (st.anim || st.error) && curLine >= 1 && curLine <= lines.length);
 
-  const errorBadge = (lineNum) => {
+  const errorBadge = (lineNum: number) => {
     const d = liveByLine.get(lineNum);
     if (!d) return '';
     const tip = (d.code ? d.code + ': ' : '') + (d.message || '');
@@ -238,7 +239,7 @@ export function updateEditorChrome() {
       errorLines,
     });
   } else {
-    highlightEl.innerHTML = lines.map((t, k) => {
+    highlightEl.innerHTML = lines.map((t: string, k: number) => {
       const lineNum = k + 1;
       const isCur = lineNum === curLine;
       const isLiveErr = liveByLine.has(lineNum);
@@ -248,7 +249,7 @@ export function updateEditorChrome() {
       return '<span class="ln' + (isCur ? ' cur' : '') + (isErr ? ' err' : '') + '">' + content + '</span>';
     }).join('');
 
-    gutterEl.innerHTML = lines.map((t, k) => {
+    gutterEl.innerHTML = lines.map((t: string, k: number) => {
       const lineNum = k + 1;
       const isCur = lineNum === curLine;
       const isErr = liveByLine.has(lineNum) || TYPE_ERROR_LINES.has(lineNum) || RUNTIME_ERROR_LINES.has(lineNum) || Boolean(isCur && st && st.error);
@@ -262,11 +263,11 @@ export function updateEditorChrome() {
 }
 
 let LIVE_TYPE_CACHE: any = { src: null, diags: [] };
-export function liveTypeDiags(src) {
+export function liveTypeDiags(src: string | null | undefined): Diag[] {
   if (LANG === 'python') return PY_DIAGS;
   const text = String(src == null ? '' : src);
   if (LIVE_TYPE_CACHE.src === text) return LIVE_TYPE_CACHE.diags;
-  let diags = [];
+  let diags: Diag[] = [];
   try { diags = typecheckTS(text, STRICT_TS) || []; } catch (_) { diags = []; }
   LIVE_TYPE_CACHE = { src: text, diags };
   return diags;
@@ -318,7 +319,7 @@ export function hoverMetrics() {
   return { lh, padLeft, padTop, charW: HOVER_GEOM.charW || 8.5 };
 }
 
-export function hoverColumnAt(lineText, x, charW) {
+export function hoverColumnAt(lineText: string, x: number, charW: number) {
   let acc = 0;
   for (let i = 0; i < lineText.length; i++) {
     const w = lineText[i] === '\t' ? charW * 2 : charW;
@@ -328,7 +329,7 @@ export function hoverColumnAt(lineText, x, charW) {
   return -1;   // past the end of the line: nothing to inspect
 }
 
-export function hoverHitFromEvent(e) {
+export function hoverHitFromEvent(e: { clientX: number; clientY: number }) {
   if (!editor || !editor.getBoundingClientRect) return null;
   const rect = editor.getBoundingClientRect();
   if (!rect || (!rect.width && !rect.height)) return null;
@@ -347,7 +348,7 @@ export function hoverHitFromEvent(e) {
 }
 
 const HOVER_WORD_RE = /[A-Za-z0-9_$]/;
-export function hoverWordAt(lineText, col) {
+export function hoverWordAt(lineText: string, col: number) {
   if (!lineText) return null;
   let i = Math.min(Math.max(0, col), lineText.length - 1);
   if (!HOVER_WORD_RE.test(lineText[i] || '')) {
@@ -364,7 +365,7 @@ export function hoverWordAt(lineText, col) {
 
 /* Value + structure snapshot for a name in the frame currently shown in LOCALS
    (falling back to the global frame so outer variables stay inspectable inside functions). */
-export function hoverInfoFor(name) {
+export function hoverInfoFor(name: string | null | undefined) {
   if (!name || !TRACE.steps.length) return null;
   if (typeof RESERVED_WORDS !== 'undefined' && RESERVED_WORDS.has(name) && name !== 'this') return null;
   const st = TRACE.steps[cur];
@@ -373,7 +374,7 @@ export function hoverInfoFor(name) {
   let v = (frame && frame.v) || st.v || {};
   let ds = (frame && frame.ds) || st.ds || {};
   let frameLabel = frame ? frame.label : 'global';
-  const found = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
+  const found = (obj: object, key: string) => Object.prototype.hasOwnProperty.call(obj, key);
   let lookupKey = name;
   if (name === 'self' && !found(v, 'self') && !ds.self && (found(v, 'this') || ds.this)) {
     lookupKey = 'this';
@@ -405,21 +406,24 @@ export function hoverInfoFor(name) {
   };
 }
 
-export function formatHoverVal(val) {
+export type HoverInfo = NonNullable<ReturnType<typeof hoverInfoFor>>;
+
+export function formatHoverVal(val: unknown): string {
   if (val === undefined) return 'undefined';
   if (val === null) return 'null';
   if (typeof val === 'function') return 'ƒ ' + (val.name || 'function');
   if (typeof val === 'string') return JSON.stringify(val.length > 140 ? val.slice(0, 138) + '…' : val);
   if (typeof val === 'number' || typeof val === 'boolean') return String(val);
   if (Array.isArray(val)) {
-    const head = val.slice(0, 12).map(formatHoverVal).join(', ');
+    const head: string = val.slice(0, 12).map(formatHoverVal).join(', ');
     return '[' + head + (val.length > 12 ? ', … (' + val.length + ' 项)' : '') + ']';
   }
-  if (isMapLike(val)) return 'Map(' + val.size + ')';
-  if (isSetLike(val)) return 'Set(' + val.size + ')';
+  if (isMapLike(val)) return 'Map(' + (val as Map<unknown, unknown>).size + ')';
+  if (isSetLike(val)) return 'Set(' + (val as Set<unknown>).size + ')';
   if (typeof val === 'object') {
-    const keys = Object.keys(val);
-    const body = keys.slice(0, 8).map(k => k + ': ' + formatHoverVal(val[k])).join(', ');
+    const record = val as Record<string, unknown>;
+    const keys = Object.keys(record);
+    const body: string = keys.slice(0, 8).map((k: string): string => k + ': ' + formatHoverVal(record[k])).join(', ');
     return '{ ' + body + (keys.length > 8 ? ', …' : '') + ' }';
   }
   return String(val);
@@ -427,7 +431,7 @@ export function formatHoverVal(val) {
 
 /* Prefer the structure snapshot for the value line: deep clones stop at a depth limit
    and would otherwise print "[object Object]" for nested tree/graph nodes. */
-export function hoverValueSummary(info) {
+export function hoverValueSummary(info: HoverInfo) {
   const d = info.d;
   if (!d) return formatHoverVal(info.val);
   const short = formatShortVal;
@@ -444,7 +448,7 @@ export function hoverValueSummary(info) {
   if (d.kind === 'map') {
     const entries = d.entries || [];
     const total = typeof d.total === 'number' ? d.total : entries.length;
-    const head = entries.slice(0, 6).map(e => short(e.k) + ' → ' + short(e.v)).join(', ');
+    const head = entries.slice(0, 6).map((e: { k: unknown; v: unknown }) => short(e.k) + ' → ' + short(e.v)).join(', ');
     return 'Map(' + total + ' 项) { ' + head + (total > 6 ? ', …' : '') + ' }';
   }
   if (d.kind === 'grid') {
@@ -464,24 +468,25 @@ export function hoverValueSummary(info) {
     return 'Graph(' + nCnt + ' 节点 / ' + eCnt + ' 条边)';
   }
   if (d.fields) {
-    const head = d.fields.slice(0, 6).map(f => f.k + ': ' + short(f.v)).join(', ');
+    const head = d.fields.slice(0, 6).map((f: { k: string; v: unknown }) => f.k + ': ' + short(f.v)).join(', ');
     return '{ ' + head + (d.fields.length > 6 ? ', …' : '') + ' }';
   }
   return formatHoverVal(info.val);
 }
 
-export function hoverTipHtml(info) {
+export function hoverTipHtml(info: HoverInfo | null | undefined) {
   if (!info) return '';
-  const parts = [];
+  const parts: string[] = [];
   const kindLabel = esc(String(info.kind || '').replace(/^./, c => c.toUpperCase()));
   parts.push('<div class="ht-head"><span class="ht-name">' + esc(info.name) + '</span>' +
     (kindLabel ? '<span class="ht-kind">' + kindLabel + '</span>' : '') + '</div>');
   parts.push('<div class="ht-val">' + esc(hoverValueSummary(info)) + '</div>');
-  const note = [];
+  const note: string[] = [];
   if (info.declaredType) note.push('声明类型 ' + info.declaredType);
   if (info.frame) note.push('栈帧 ' + info.frame);
   if (note.length) parts.push('<div class="ht-note">' + esc(note.join(' · ')) + '</div>');
-  const vizFn = info.d ? VIZ[info.d.kind] : null;
+  const vizMap = VIZ as Record<string, ((d: unknown) => string | null) | undefined>;
+  const vizFn = info.d && typeof info.d.kind === 'string' ? vizMap[info.d.kind] : null;
   if (typeof vizFn === 'function') {
     let viz = '';
     try { viz = vizFn(info.d) || ''; } catch (_) { viz = ''; }
@@ -490,7 +495,7 @@ export function hoverTipHtml(info) {
   return parts.join('');
 }
 
-export function positionHoverTip(clientX, clientY) {
+export function positionHoverTip(clientX: number, clientY: number) {
   if (!hoverTipEl) return;
   const rect = hoverTipEl.getBoundingClientRect ? hoverTipEl.getBoundingClientRect() : { width: 320, height: 120 };
   const vw = (typeof window !== 'undefined' && window.innerWidth) || 1280;
@@ -512,7 +517,7 @@ export function hideHoverTip() {
   if (hoverTipEl.setAttribute) hoverTipEl.setAttribute('aria-hidden', 'true');
 }
 
-export function showHoverTip(info, clientX, clientY) {
+export function showHoverTip(info: HoverInfo | null | undefined, clientX: number, clientY: number) {
   if (!hoverTipEl || !info) { hideHoverTip(); return; }
   hoverTipEl.innerHTML = hoverTipHtml(info);
   if (hoverTipEl.classList) hoverTipEl.classList.add('on');
@@ -520,7 +525,7 @@ export function showHoverTip(info, clientX, clientY) {
   positionHoverTip(clientX, clientY);
 }
 
-export function hoverTipForName(name, clientX, clientY) {
+export function hoverTipForName(name: string | null | undefined, clientX: number, clientY: number) {
   if (!TRACE.steps.length) { hideHoverTip(); return false; }
   const info = hoverInfoFor(name);
   if (!info) { hideHoverTip(); return false; }
@@ -542,7 +547,7 @@ export function syncScroll() {
   positionStepViz();
 }
 
-export function scrollCodeTo(line) {
+export function scrollCodeTo(line: number) {
   if (window.PlaygroundCM) { window.PlaygroundCM.scrollToLine(line); return; }
   const lh = 24;
   const idx = Math.max(0, line - 1);

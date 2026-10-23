@@ -7,7 +7,7 @@ import type { NotebookCell, NotebookDocument } from "../types";
 import { stripTypes, transpileEnums } from "../compiler/transpile";
 import { collectNames, instrument, resolveEntry, blankJsLine, snapFnExpr } from "../compiler/instrumenter";
 import { typecheckTS, extractTsInterfaceMetadata } from "../compiler/type-checker";
-import { say, clearLog, safeJSONStringify, resetTraceState, hasAsyncConstructs } from "../runtime/event-loop";
+import { say, safeJSONStringify, resetTraceState, hasAsyncConstructs } from "../runtime/event-loop";
 import { computeAndAppendNextStep, initWatchedVars } from "../runtime/runner";
 import {
   cloneDeepBounded,

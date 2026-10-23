@@ -4,6 +4,7 @@
 import { stripTypes, transpileEnums } from "../compiler/transpile";
 import { collectNames, instrument, resolveEntry, blankJsLine, snapFnExpr } from "../compiler/instrumenter";
 import { typecheckTS, reportTypeErrors, extractTsInterfaceMetadata } from "../compiler/type-checker";
+import { Frame, InterfaceFieldMeta } from "../types";
 import {
   say,
   sourceLineFromStack,
@@ -57,16 +58,16 @@ export function evalCall(js: any, call?: any, opts?: any) {
   const evLoop = createVirtualEventLoop(__t, () => lastLine);
   __t.__env = evLoop.env;
   __t.__async = evLoop.runAsyncCoroutine;
-  __t.__await = (val, fid, line, exprText) => ({ __isAwait: true, value: val, fid, line, expr: exprText });
+  __t.__await = (val: unknown, fid: number, line: number, exprText: string) => ({ __isAwait: true, value: val, fid, line, expr: exprText });
   __t.__drain = evLoop.drainEventLoop;
-  __t.__initGlobal = function (snapFn) { evLoop.loop.globalSnapFn = snapFn; };
+  __t.__initGlobal = function (snapFn: (() => Record<string, unknown>) | null) { evLoop.loop.globalSnapFn = snapFn; };
   __t.__ckpt = function () {};
   const body = stub + js + '\n;return (function(){ try { var __v = (' + expr + '); if (__t && __t.__drain) __v = __t.__drain(__v); return { ok:true, value:__v }; } catch (e) { return { ok:false, error: e && e.message ? e.message : String(e), stack: e && e.stack ? String(e.stack) : "", line: (e && e.__line) || 0, timeout: Boolean(e && e.__timeout) }; } })();';
-  const logs = [];
+  const logs: string[] = [];
   const f = new Function('__t', 'console', body);
   let r;
   try {
-    r = f(__t, { log: (...a) => logs.push(a.map(x => {
+    r = f(__t, { log: (...a: unknown[]) => logs.push(a.map(x => {
       try { return typeof x === 'object' ? JSON.stringify(x) : String(x); } catch (_) { return String(x); }
     }).join(' ')) });
   } catch (e) {
@@ -133,7 +134,7 @@ export function runOnce(budgetMs?: any) {
 
   try {
     const r = evalCall(code, call, { budgetMs: budget, instrumented, entryLine: entry.line });
-    r.logs.forEach(l => say('  log: ' + l, 'dim'));
+    r.logs.forEach((l: string) => say('  log: ' + l, 'dim'));
 
     if (!r.ok && r.timeout) {
       const line = r.line || 0;
@@ -171,21 +172,21 @@ export function runOnce(budgetMs?: any) {
   }
 }
 
-export function buildFrameSnapshotFromClosure(frame, fallbackLine, noteForEnrich) {
+export function buildFrameSnapshotFromClosure(frame: Frame, fallbackLine: number, noteForEnrich: string) {
   const raw = (typeof frame.snapFn === 'function' ? frame.snapFn() : {}) || {};
   if (frame.self && typeof frame.self === 'object') {
     try {
-      const selfCopy = {};
+      const selfCopy: Record<string, unknown> = {};
       for (const k in frame.self) { try { selfCopy[k] = frame.self[k]; } catch (e) {} }
       raw['this'] = selfCopy;
     } catch (e) {}
   }
-  const v = {};
+  const v: Record<string, unknown> = {};
   Object.keys(raw).forEach(k => {
     const val = raw[k];
     v[k] = (val !== null && typeof val === 'object') ? cloneDeepBounded(val, 2) : val;
   });
-  const ds = {};
+  const ds: Record<string, unknown> = {};
   Object.keys(raw).forEach(name => {
     const d = classifyValue(name, raw[name]);
     if (d) ds[name] = d;
@@ -233,7 +234,7 @@ export function computeAndAppendNextStep(opts: any = {}) {
   let pendingStepSnapFn: any = null;
   let pendingEventLoopPhase: any = null;
   let nextVRaw: any = null;
-  const stepLogs = [];
+  const stepLogs: string[] = [];
   const t0 = Date.now();
 
   const liveCallStack: any[] = [
@@ -249,9 +250,9 @@ export function computeAndAppendNextStep(opts: any = {}) {
   const suspendedFrames = new Map();
 
   const evLoop = createVirtualEventLoop(
-    (line, note, snap, self) => __t(line, note, snap, self),
+    (line: number, note: string, snap: unknown, self?: unknown) => __t(line, note, snap, self),
     () => curLineTracker,
-    (fid) => {
+    (fid: number) => {
       if (unwindingPause) return;
       for (let k = liveCallStack.length - 1; k >= 1; k--) {
         if (liveCallStack[k].id === fid) {
@@ -261,7 +262,7 @@ export function computeAndAppendNextStep(opts: any = {}) {
         }
       }
     },
-    (fid) => {
+    (fid: number) => {
       if (unwindingPause) return;
       if (suspendedFrames.has(fid)) {
         const frame = suspendedFrames.get(fid);
@@ -294,17 +295,17 @@ export function computeAndAppendNextStep(opts: any = {}) {
       const vRaw = (typeof effectiveSnap === 'function' ? effectiveSnap() : effectiveSnap) || {};
       if (self && typeof self === 'object') {
         try {
-          const selfCopy = {};
+          const selfCopy: Record<string, unknown> = {};
           for (const k in self) { try { selfCopy[k] = self[k]; } catch (e) {} }
           vRaw['this'] = selfCopy;
         } catch (e) {}
       }
-      const v = {};
+      const v: Record<string, unknown> = {};
       Object.keys(vRaw).forEach(k => {
         const val = vRaw[k];
         v[k] = (val !== null && typeof val === 'object') ? cloneDeepBounded(val, 2) : val;
       });
-      const ds = {};
+      const ds: Record<string, unknown> = {};
       Object.keys(vRaw).forEach(name => {
         const d = classifyValue(name, vRaw[name]);
         if (d) ds[name] = d;
@@ -348,17 +349,17 @@ export function computeAndAppendNextStep(opts: any = {}) {
 
   __t.__env = evLoop.env;
   __t.__async = evLoop.runAsyncCoroutine;
-  __t.__await = (val, fid, line, exprText) => ({ __isAwait: true, value: val, fid, line, expr: exprText });
+  __t.__await = (val: unknown, fid: number, line: number, exprText: string) => ({ __isAwait: true, value: val, fid, line, expr: exprText });
   __t.__drain = evLoop.drainEventLoop;
 
-  __t.__initGlobal = (globalSnapFn) => {
+  __t.__initGlobal = (globalSnapFn: (() => Record<string, unknown>) | null) => {
     evLoop.loop.globalSnapFn = globalSnapFn;
     if (liveCallStack[0]) {
       liveCallStack[0].snapFn = globalSnapFn;
     }
   };
 
-  __t.__enter = (fnName, paramNames, paramVals, defLine, snapFn) => {
+  __t.__enter = (fnName: string, paramNames: string[], paramVals: unknown[], defLine: number, snapFn: (() => Record<string, unknown>) | null) => {
     if (unwindingPause) return 0;
     const fid = ++frameSeq;
     const label = formatCallFrameLabel(fnName, paramNames, paramVals);
@@ -373,7 +374,7 @@ export function computeAndAppendNextStep(opts: any = {}) {
     return fid;
   };
 
-  __t.__leave = (fid) => {
+  __t.__leave = (fid: number) => {
     if (unwindingPause) return;
     suspendedFrames.delete(fid);
     for (let k = liveCallStack.length - 1; k >= 1; k--) {
@@ -384,14 +385,14 @@ export function computeAndAppendNextStep(opts: any = {}) {
     }
   };
 
-  __t.__ckpt = (args) => {
+  __t.__ckpt = (args: unknown[]) => {
     if (activeRecording && pendingStep) {
       pendingStep.isCheckpoint = true;
-      pendingStep.checkpointVals = (args || []).map(a => formatShortVal(a));
+      pendingStep.checkpointVals = (args || []).map((a: unknown) => formatShortVal(a));
     }
   };
 
-  __t.__fin = (snap) => {
+  __t.__fin = (snap: unknown) => {
     if (activeRecording) {
       activeRecording = false;
       const sameScopeRaw = (typeof pendingStepSnapFn === 'function' ? pendingStepSnapFn() : null);
@@ -400,7 +401,7 @@ export function computeAndAppendNextStep(opts: any = {}) {
   };
 
   const customConsole = {
-    log: (...a) => {
+    log: (...a: unknown[]) => {
       if (!activeRecording) return;
       stepLogs.push(a.map(x => {
         try { return typeof x === 'object' ? JSON.stringify(x) : String(x); } catch (_) { return String(x); }
@@ -409,11 +410,13 @@ export function computeAndAppendNextStep(opts: any = {}) {
   };
 
   let paused = false;
-  let runtimeErr = null;
+  let runtimeErr: { message?: string } | null = null;
   let retVal = undefined;
 
   try {
-    retVal = DEBUG_SESSION.compiledFn(__t, customConsole);
+    if (DEBUG_SESSION.compiledFn) {
+      retVal = DEBUG_SESSION.compiledFn(__t, customConsole);
+    }
   } catch (e) {
     if (e === PAUSE_SIGNAL) {
       paused = true;
@@ -426,7 +429,7 @@ export function computeAndAppendNextStep(opts: any = {}) {
 
   if (!pendingStep) {
     if (runtimeErr) {
-      const errMsg = runtimeErr && runtimeErr.message ? runtimeErr.message : String(runtimeErr);
+      const errMsg = runtimeErr.message ? runtimeErr.message : String(runtimeErr);
       const callLine = globalCallLine;
       const errStep = {
         line: callLine,
@@ -455,7 +458,7 @@ export function computeAndAppendNextStep(opts: any = {}) {
       populateInterfaceSchemas(schemaDs);
       const schemaStep = {
         line: firstIface.line || 1,
-        note: `interface ${firstIface.name} { ${firstIface.fields.map(f => f.k + (f.optional ? '?' : '') + ': ' + f.declaredType).join('; ')} }`,
+        note: `interface ${firstIface.name} { ${firstIface.fields.map((f: InterfaceFieldMeta) => f.k + (f.optional ? '?' : '') + ': ' + f.declaredType).join('; ')} }`,
         v: {},
         ds: schemaDs,
         callStack: [{ id: 0, fn: 'global', label: 'global', line: firstIface.line || 1, v: {}, ds: schemaDs }],
@@ -523,7 +526,7 @@ export function computeAndAppendNextStep(opts: any = {}) {
   }
 
   if (runtimeErr) {
-    const errMsg = runtimeErr && runtimeErr.message ? runtimeErr.message : String(runtimeErr);
+    const errMsg = runtimeErr.message ? runtimeErr.message : String(runtimeErr);
     pendingStep.error = errMsg;
     pendingStep.note = `${rawLine.trim()}  →  ✗ 运行时错误: ${errMsg}`;
     RUNTIME_ERROR_LINES.add(pendingStep.line);
@@ -540,7 +543,7 @@ export function computeAndAppendNextStep(opts: any = {}) {
 
   TRACE.steps.push(pendingStep);
 
-  discoverVars().forEach(s => {
+  discoverVars().forEach((s: { id: string }) => {
     if (!SEEN_VARS_EVER.has(s.id)) {
       SEEN_VARS_EVER.add(s.id);
       if (!URL_WATCH || !URL_WATCH.length || URL_WATCH.includes(s.id)) {
@@ -560,7 +563,7 @@ export function computeAndAppendNextStep(opts: any = {}) {
 
 /* Full TypeScript syntax (decorators, abstract classes, constructor parameter properties,
    namespaces, declare, static blocks) is now supported directly by stripTypes & typecheckTS. */
-function detectUnsupportedSyntax(_src) {
+function detectUnsupportedSyntax(_src: string): Array<{ line: number; feature: string; hint: string }> {
   return [];
 }
 
@@ -663,10 +666,11 @@ export function startDebug(initialStep = 0) {
 export const generateTrace = startDebug;
 
 export function initWatchedVars() {
-  const all = discoverVars().map(s => s.id);
-  all.forEach(id => SEEN_VARS_EVER.add(id));
-  if (URL_WATCH && URL_WATCH.length) {
-    const filtered = all.filter(id => URL_WATCH.includes(id));
+  const all = discoverVars().map((s: { id: string }) => s.id);
+  all.forEach((id: string) => SEEN_VARS_EVER.add(id));
+  const urlWatch = URL_WATCH;
+  if (urlWatch && urlWatch.length) {
+    const filtered = all.filter((id: string) => urlWatch.includes(id));
     watched = new Set(filtered.length ? filtered : all);
   } else {
     watched = new Set(all);

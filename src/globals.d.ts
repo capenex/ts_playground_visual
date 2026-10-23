@@ -38,6 +38,8 @@ declare global {
   var PAUSE_SIGNAL: { __debugPause: boolean };
   var esc: (t: any) => string;
 
+  var VIEW_MODE: 'script' | 'notebook';
+  var ACTIVE_NB_CELL_ID: string | null;
   var FILE_NAME: string;
   var LANG: 'ts' | 'python';
   var LANG_BUFFERS: Record<string, LangBuffer | null>;

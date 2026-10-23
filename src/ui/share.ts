@@ -2,6 +2,7 @@
    Video Exporter, Sample Loader & URL Share / Boot Logic (src/ui/share.ts)
    ================================================================ */
 import { SAMPLES, SAMPLE_DEFAULT_STEP } from "../samples/ts-samples";
+import { Frame } from "../types";
 import { say, clearLog, resetTraceState } from "../runtime/event-loop";
 import { startDebug, generateTrace, computeAndAppendNextStep, initWatchedVars } from "../runtime/runner";
 import { discoverVars, allocateSlotSpans, renderPicker, renderStatic } from "../viz/memory-graph";
@@ -17,7 +18,7 @@ const btnExportVideoLabel = $('btnExportVideoLabel');
 const videoExportStatus = $('videoExportStatus');
 
 /* ── 1920×1080 60fps Canvas Video Renderer & MediaRecorder Exporter ── */
-export function roundRectPath(ctx, x, y, w, h, r) {
+export function roundRectPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
   const rad = Math.max(0, Math.min(r, w / 2, h / 2));
   ctx.beginPath();
   ctx.moveTo(x + rad, y);
@@ -32,9 +33,9 @@ export function roundRectPath(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-export function tokenizeCodeForCanvas(line) {
+export function tokenizeCodeForCanvas(line: string) {
   const re = /(\/\/.*$)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)|\b(function|const|let|var|new|class|extends|typeof|instanceof|import|export|from|async|await|interface|type|as|satisfies)\b|\b(for|if|else|return|while|do|switch|case|break|continue|try|catch|finally|throw|yield)\b|\b(number|string|boolean|void|any|unknown|never|Math|Map|Set|Array|Object|JSON|Number|String|Boolean|Promise|Record|Error)\b|\b(true|false|null|undefined|\d+(?:\.\d+)?)\b|(\b[A-Za-z_$][\w$]*)(?=\s*\()|(?<=\.)([A-Za-z_$][\w$]*)\b|(\b[A-Za-z_$][\w$]*)\b|(===|!==|>=|<=|=>|&&|\|\||\+\+|--)/g;
-  const tokens = [];
+  const tokens: Array<{ text: string; color: string }> = [];
   let last = 0, m;
   while ((m = re.exec(line))) {
     if (m.index > last) tokens.push({ text: line.slice(last, m.index), color: '#d8e2ef' });
@@ -55,7 +56,16 @@ export function tokenizeCodeForCanvas(line) {
   return tokens;
 }
 
-export function drawVizCardOnCanvas(ctx, x, y, w, h, s, d, kind) {
+export function drawVizCardOnCanvas(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  s: { name?: string },
+  d: Frame | null | undefined,
+  kind: string
+) {
   roundRectPath(ctx, x, y, w, h, 10);
   ctx.fillStyle = '#070a0f';
   ctx.fill();
@@ -129,7 +139,7 @@ export function drawVizCardOnCanvas(ctx, x, y, w, h, s, d, kind) {
     const shown = items.slice(-5);
     const cw = Math.min(110, bw - 8);
     const ch = 22;
-    shown.forEach((val, idx) => {
+    shown.forEach((val: unknown, idx: number) => {
       const abs = items.length - shown.length + idx;
       const isTop = abs === items.length - 1;
       const isCellHot = d.hot === abs;
@@ -155,7 +165,7 @@ export function drawVizCardOnCanvas(ctx, x, y, w, h, s, d, kind) {
   if (kind === 'map') {
     const entries = d.entries || [];
     let curX = bx, curY = by + 4;
-    entries.slice(0, 8).forEach(e => {
+    entries.slice(0, 8).forEach((e: { k: unknown; v: unknown }) => {
       const pairTxt = `${e.k} → ${e.v}`;
       ctx.font = '600 12px "Cascadia Code", Consolas, monospace';
       const pw = ctx.measureText(pairTxt).width + 18;
@@ -180,8 +190,8 @@ export function drawVizCardOnCanvas(ctx, x, y, w, h, s, d, kind) {
   if (kind === 'tree' && d.nodes && d.nodes.length) {
     const nodes = d.nodes;
     const root = d.root ?? 0;
-    const coords = new Map();
-    function layout(idx, depth, xMin, xMax) {
+    const coords = new Map<number, { x: number; y: number; val: unknown; left?: number | null; right?: number | null }>();
+    function layout(idx: number | null | undefined, depth: number, xMin: number, xMax: number) {
       if (idx == null || !nodes[idx] || coords.has(idx) || depth > 4) return;
       const nx = (xMin + xMax) / 2;
       const ny = by + 16 + depth * 32;
@@ -196,10 +206,12 @@ export function drawVizCardOnCanvas(ctx, x, y, w, h, s, d, kind) {
       [info.left, info.right].forEach(ch => {
         if (ch != null && coords.has(ch)) {
           const c = coords.get(ch);
-          ctx.beginPath();
-          ctx.moveTo(info.x, info.y);
-          ctx.lineTo(c.x, c.y);
-          ctx.stroke();
+          if (c) {
+            ctx.beginPath();
+            ctx.moveTo(info.x, info.y);
+            ctx.lineTo(c.x, c.y);
+            ctx.stroke();
+          }
         }
       });
     });
@@ -221,10 +233,10 @@ export function drawVizCardOnCanvas(ctx, x, y, w, h, s, d, kind) {
   }
 
   if (kind === 'graph' && d.nodes && d.nodes.length) {
-    const byId = new Map();
+    const byId = new Map<number | string, { id: number | string; label: number | string; x: number; y: number }>();
     const scaleX = bw / 180;
     const scaleY = Math.min(1.15, bh / 136);
-    d.nodes.forEach((n, idx) => {
+    d.nodes.forEach((n: { id?: number | string; label?: number | string; x: number; y: number }, idx: number) => {
       byId.set(n.id ?? idx, {
         id: n.id ?? idx,
         label: n.label ?? (n.id ?? idx),
@@ -234,7 +246,7 @@ export function drawVizCardOnCanvas(ctx, x, y, w, h, s, d, kind) {
     });
     ctx.strokeStyle = '#334155';
     ctx.lineWidth = 1.5;
-    (d.edges || []).forEach(e => {
+    (d.edges || []).forEach((e: [number | string, number | string]) => {
       const a = byId.get(e[0]), b = byId.get(e[1]);
       if (a && b) {
         ctx.beginPath();
@@ -284,9 +296,9 @@ export function drawVizCardOnCanvas(ctx, x, y, w, h, s, d, kind) {
   }
 
   if (kind === 'interface' || kind === 'object') {
-    const fields = d.fields || (d.entries ? d.entries.map(e => ({ k: e.k, v: e.v, declaredType: typeof e.v })) : []);
+    const fields = d.fields || (d.entries ? d.entries.map((e: { k: string; v: unknown }) => ({ k: e.k, v: e.v, declaredType: typeof e.v })) : []);
     const rowH = 22;
-    fields.slice(0, 5).forEach((f, idx) => {
+    fields.slice(0, 5).forEach((f: { k: string; v?: unknown; optional?: boolean; declaredType?: string }, idx: number) => {
       const ry = by + idx * (rowH + 4);
       if (ry + rowH > y + h - 4) return;
       const isRowHot = d.hot === f.k;
@@ -321,7 +333,7 @@ export function drawVizCardOnCanvas(ctx, x, y, w, h, s, d, kind) {
 
   if (kind === 'string' && d.items) {
     const chars = d.items.slice(0, 24);
-    chars.forEach((ch, idx) => {
+    chars.forEach((ch: string, idx: number) => {
       const cx = bx + idx * 24;
       if (cx + 22 > bx + bw) return;
       const isHotCh = d.hot === idx;
@@ -337,7 +349,7 @@ export function drawVizCardOnCanvas(ctx, x, y, w, h, s, d, kind) {
   }
 }
 
-export function renderVideoFrameToCanvas(ctx, stepIdx, subProgress, speedMult) {
+export function renderVideoFrameToCanvas(ctx: CanvasRenderingContext2D, stepIdx: number, subProgress: number, speedMult: number) {
   const W = VIDEO_WIDTH, H = VIDEO_HEIGHT;
   const st = TRACE.steps[stepIdx] || TRACE.steps[0];
   const prevSt = stepIdx > 0 ? TRACE.steps[stepIdx - 1] : null;
@@ -516,20 +528,26 @@ export function renderVideoFrameToCanvas(ctx, stepIdx, subProgress, speedMult) {
   ctx.fillText('WATCH · 数据结构可视化', sideX + 20, watchHeaderY);
 
   const ds = (st && st.ds) || {};
-  const vars = discoverVars().filter(s => watched.has(s.id) && ds[s.id] !== undefined);
+  const vars = discoverVars().filter((s: { id: string; name?: string }) => watched.has(s.id) && ds[s.id] !== undefined);
   const allocated = allocateSlotSpans(vars, ds);
   const gridLeft = sideX + 20;
   const gridW = sideW - 40;
   const colGap = 12;
   const colW = Math.floor((gridW - colGap) / 2);
   let curRowY = watchHeaderY + 14;
-  let pendingSingle = null;
+  interface AllocatedSlotItem {
+    s: { id: string; name?: string };
+    d: Frame | null | undefined;
+    kind: string;
+    span: number;
+  }
+  let pendingSingle: AllocatedSlotItem | null = null;
 
   const consoleTop = mainBottom - 84;
 
-  function drawRowItems(items) {
+  function drawRowItems(items: AllocatedSlotItem[]) {
     if (!items.length || curRowY + 95 > consoleTop) return;
-    const isTall = items.some(it => it.kind === 'tree' || it.kind === 'graph' || it.kind === 'grid' || it.kind === 'stack' || it.kind === 'interface');
+    const isTall = items.some((it: AllocatedSlotItem) => it.kind === 'tree' || it.kind === 'graph' || it.kind === 'grid' || it.kind === 'stack' || it.kind === 'interface');
     const cardH = Math.min(isTall ? 158 : 108, consoleTop - curRowY - 8);
     if (cardH < 64) return;
     if (items.length === 1) {
@@ -541,7 +559,7 @@ export function renderVideoFrameToCanvas(ctx, stepIdx, subProgress, speedMult) {
     curRowY += cardH + 10;
   }
 
-  allocated.forEach(item => {
+  allocated.forEach((item: AllocatedSlotItem) => {
     if (item.span === 2) {
       if (pendingSingle) {
         drawRowItems([pendingSingle]);
@@ -604,10 +622,10 @@ export function renderVideoFrameToCanvas(ctx, stepIdx, subProgress, speedMult) {
 }
 
 
-export function ebmlUintBytes(num) {
+export function ebmlUintBytes(num: number | string) {
   let v = Math.max(0, Math.floor(Number(num) || 0));
   if (v === 0) return new Uint8Array([0]);
-  const bytes = [];
+  const bytes: number[] = [];
   while (v > 0) {
     bytes.unshift(v & 0xFF);
     v = Math.floor(v / 256);
@@ -615,20 +633,20 @@ export function ebmlUintBytes(num) {
   return new Uint8Array(bytes);
 }
 
-export function ebmlFloat64Bytes(val) {
+export function ebmlFloat64Bytes(val: number | string) {
   const buf = new ArrayBuffer(8);
   new DataView(buf).setFloat64(0, Number(val) || 0, false);
   return new Uint8Array(buf);
 }
 
-export function ebmlAsciiBytes(str) {
+export function ebmlAsciiBytes(str: string | null | undefined) {
   const s = String(str || '');
   const out = new Uint8Array(s.length);
   for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i) & 0x7F;
   return out;
 }
 
-export function ebmlVintSize(len) {
+export function ebmlVintSize(len: number) {
   const n = Math.max(0, Math.floor(len));
   if (n < 0x7F) return new Uint8Array([0x80 | n]);
   if (n < 0x3FFF) return new Uint8Array([0x40 | (n >> 8), n & 0xFF]);
@@ -655,7 +673,7 @@ export function ebmlVintSize(len) {
   ]);
 }
 
-export function concatUint8Arrays(arrays) {
+export function concatUint8Arrays(arrays: Uint8Array[]) {
   let total = 0;
   for (let i = 0; i < arrays.length; i++) total += arrays[i].length;
   const out = new Uint8Array(total);
@@ -667,15 +685,24 @@ export function concatUint8Arrays(arrays) {
   return out;
 }
 
-export function ebmlElement(idBytes, payload) {
+export function ebmlElement(idBytes: Uint8Array | number[], payload: Uint8Array | Uint8Array[] | number[]) {
   const idArr = idBytes instanceof Uint8Array ? idBytes : new Uint8Array(idBytes);
-  const body = Array.isArray(payload) ? concatUint8Arrays(payload) : (payload instanceof Uint8Array ? payload : new Uint8Array(payload));
+  const body = Array.isArray(payload)
+    ? (payload[0] instanceof Uint8Array ? concatUint8Arrays(payload as Uint8Array[]) : new Uint8Array(payload as number[]))
+    : (payload instanceof Uint8Array ? payload : new Uint8Array(payload));
   const sizeArr = ebmlVintSize(body.length);
   return concatUint8Arrays([idArr, sizeArr, body]);
 }
 
 /* Build a 100% standards-compliant WebM file with known Segment/Info sizes, 0-based Cluster timestamps, and Cues index */
-export function muxWebmChunks(frames, durationMs, width = VIDEO_WIDTH, height = VIDEO_HEIGHT, fps = VIDEO_FPS, codecId = 'V_VP8') {
+export function muxWebmChunks(
+  frames: Array<{ data: Uint8Array; timestampMs: number; isKey: boolean }>,
+  durationMs: number,
+  width = VIDEO_WIDTH,
+  height = VIDEO_HEIGHT,
+  fps = VIDEO_FPS,
+  codecId = 'V_VP8'
+) {
   const ebmlHeader = ebmlElement([0x1A, 0x45, 0xDF, 0xA3], [
     ebmlElement([0x42, 0x86], ebmlUintBytes(1)),
     ebmlElement([0x42, 0xF7], ebmlUintBytes(1)),
@@ -711,8 +738,8 @@ export function muxWebmChunks(frames, durationMs, width = VIDEO_WIDTH, height = 
   ]);
 
   // Group frames into Clusters (new cluster on every keyframe or every 2000ms)
-  const clusters = [];
-  let curCluster = null;
+  const clusters: Array<{ timecodeMs: number; blocks: Uint8Array[] }> = [];
+  let curCluster: { timecodeMs: number; blocks: Uint8Array[] } | null = null;
   for (let i = 0; i < frames.length; i++) {
     const f = frames[i];
     const tMs = Math.max(0, Math.round(f.timestampMs));
@@ -732,8 +759,8 @@ export function muxWebmChunks(frames, durationMs, width = VIDEO_WIDTH, height = 
   }
 
   let segOffset = infoElem.length + tracksElem.length;
-  const clusterElems = [];
-  const cuePoints = [];
+  const clusterElems: Uint8Array[] = [];
+  const cuePoints: Uint8Array[] = [];
 
   for (let c = 0; c < clusters.length; c++) {
     const cl = clusters[c];
@@ -766,7 +793,7 @@ export function muxWebmChunks(frames, durationMs, width = VIDEO_WIDTH, height = 
 }
 
 /* Patch WebM EBML Segment & Info with exact Duration (float64), known sizes, and 0-based Cluster Timecodes */
-export async function fixWebmDuration(blob, durationMs) {
+export async function fixWebmDuration(blob: Blob, durationMs: number) {
   if (!blob || !(durationMs > 0)) return blob;
   try {
     const buf = await blob.arrayBuffer();
@@ -863,7 +890,7 @@ export async function fixWebmDuration(blob, durationMs) {
     }
 
     // 3. Rebase Cluster [0x1F, 0x43, 0xB6, 0x75] Timecode [0xE7] elements so first Cluster is at 0ms (eliminates OS uptime 26113:02)
-    let firstClusterTc = null;
+    let firstClusterTc: number | null = null;
     for (let i = tailStartInOut; i < outBytes.length - 16; i++) {
       if (outBytes[i] === 0x1F && outBytes[i + 1] === 0x43 && outBytes[i + 2] === 0xB6 && outBytes[i + 3] === 0x75) {
         // Skip Cluster size VINT
@@ -901,14 +928,20 @@ export async function fixWebmDuration(blob, durationMs) {
 }
 
 /* Fast offline 1920x1080 60fps encoding via WebCodecs VideoEncoder + deterministic WebM muxer */
-export async function encodeVideoFastWebCodecs(canvas, ctx, totalSteps, stepDurationMs, mult) {
+export async function encodeVideoFastWebCodecs(
+  canvas: HTMLCanvasElement,
+  ctx: CanvasRenderingContext2D,
+  totalSteps: number,
+  stepDurationMs: number,
+  mult: number
+) {
   if (typeof VideoEncoder !== 'function' || typeof VideoFrame !== 'function') return null;
 
   const codecCandidates = [
     { codec: 'vp8', webmId: 'V_VP8' },
     { codec: 'vp09.00.10.08', webmId: 'V_VP9' },
   ];
-  let chosen = null;
+  let chosen: { codec: string; webmId: string } | null = null;
   for (const c of codecCandidates) {
     try {
       const sup = await VideoEncoder.isConfigSupported({
@@ -927,8 +960,8 @@ export async function encodeVideoFastWebCodecs(canvas, ctx, totalSteps, stepDura
   }
   if (!chosen) return null;
 
-  const encodedFrames = [];
-  let encoderError = null;
+  const encodedFrames: Array<{ data: Uint8Array; timestampMs: number; isKey: boolean }> = [];
+  let encoderError: DOMException | Error | null = null;
   const encoder = new VideoEncoder({
     output: (chunk) => {
       const data = new Uint8Array(chunk.byteLength);
@@ -1102,7 +1135,7 @@ export async function exportVideo(speedMult = VIDEO_EXPORT_SPEED) {
     const recorderOpts: any = { videoBitsPerSecond: 8_000_000 };
     if (mimeType) recorderOpts.mimeType = mimeType;
     const recorder = new MediaRecorder(stream, recorderOpts);
-    const chunks = [];
+    const chunks: Blob[] = [];
     recorder.ondataavailable = (ev) => {
       if (ev.data && ev.data.size > 0) chunks.push(ev.data);
     };
@@ -1138,7 +1171,7 @@ export async function exportVideo(speedMult = VIDEO_EXPORT_SPEED) {
     const actualDurationMs = Math.max(200, Math.round(performance.now() - recStartWall));
     recorder.stop();
     await stoppedPromise;
-    stream.getTracks().forEach(t => t.stop());
+    stream.getTracks().forEach((t: { stop: () => void }) => t.stop());
 
     cur = Math.min(savedCur, Math.max(0, TRACE.steps.length - 1));
     renderPicker();
@@ -1174,13 +1207,13 @@ export async function exportVideo(speedMult = VIDEO_EXPORT_SPEED) {
 }
 
 if (btnExportVideo) {
-  btnExportVideo.onclick = (e) => {
+  btnExportVideo.onclick = (e: MouseEvent) => {
     e.stopPropagation();
     exportVideo(VIDEO_EXPORT_SPEED);
   };
 }
 
-export function loadSample(key) {
+export function loadSample(key: string) {
   if (LANG === 'python') { PY_ENGINE.loadSample(key); return; }
   const targetKey = SAMPLES[key] ? key : 'showcase';
   if ($('sampleSel')) $('sampleSel').value = targetKey;
@@ -1215,12 +1248,12 @@ export function boot() {
     }
   } catch (_) { /* ignore */ }
   let sampleKey = 'showcase';
-  let customStep = null;
+  let customStep: number | null = null;
   try {
     const qs = typeof location !== 'undefined' && location.search ? new URLSearchParams(location.search) : null;
     if (qs) {
       const tr = qs.get('trace') || qs.get('sample');
-      const aliasMap = { demo: 'showcase', tour: 'structures', stress: 'lcs' };
+      const aliasMap: Record<string, string> = { demo: 'showcase', tour: 'structures', stress: 'lcs' };
       if (tr) {
         const mapped = aliasMap[tr] || tr;
         if (SAMPLES[mapped]) sampleKey = mapped;

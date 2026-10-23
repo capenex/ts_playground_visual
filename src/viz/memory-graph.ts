@@ -4,18 +4,19 @@
 import { RESERVED_WORDS, skipString, splitTopLevel, splitTopLevelSemicolons } from "../compiler/comments";
 import { stripTypes } from "../compiler/transpile";
 import { inferRuntimeTsType, matchInterfaceForObject } from "../compiler/type-checker";
+import { Frame, InterfaceFieldMeta, StepAnim, StepSnapshot } from "../types";
 import { safeJSONStringify } from "../runtime/event-loop";
 import { hideHoverTip, updateEditorChrome, scrollCodeTo } from "./highlight";
 import { playStepAnimation } from "./ast-view";
 
-export function isMapLike(v) {
+export function isMapLike(v: unknown) {
   return Object.prototype.toString.call(v) === '[object Map]';
 }
-export function isSetLike(v) {
+export function isSetLike(v: unknown) {
   return Object.prototype.toString.call(v) === '[object Set]';
 }
 
-export function defineHidden(obj, key, val) {
+export function defineHidden(obj: unknown, key: string, val: unknown) {
   if (!obj || typeof obj !== 'object') return;
   try {
     Object.defineProperty(obj, key, {
@@ -24,48 +25,49 @@ export function defineHidden(obj, key, val) {
   } catch (_) {}
 }
 
-export function cloneDeepBounded(val, depth = 0) {
+export function cloneDeepBounded(val: unknown, depth = 0): unknown {
   if (val === null || typeof val !== 'object') return val;
-  if (val.__isVirtualPromise) {
-    if (val.state === 'pending') return 'Promise <pending>';
-    if (val.state === 'fulfilled') return 'Promise <fulfilled: ' + formatShortVal(val.value) + '>';
-    return 'Promise <rejected: ' + formatShortVal(val.reason) + '>';
+  const obj = val as Frame;
+  if (obj.__isVirtualPromise) {
+    if (obj.state === 'pending') return 'Promise <pending>';
+    if (obj.state === 'fulfilled') return 'Promise <fulfilled: ' + formatShortVal(obj.value) + '>';
+    return 'Promise <rejected: ' + formatShortVal(obj.reason) + '>';
   }
   if (depth >= 4) return String(val);
-  if (Array.isArray(val)) return val.slice(0, 40).map(x => cloneDeepBounded(x, depth + 1));
+  if (Array.isArray(val)) return val.slice(0, 40).map((x: unknown): unknown => cloneDeepBounded(x, depth + 1));
   if (isMapLike(val)) {
-    const entries = [];
-    for (const [k, v] of val) {
+    const entries: Array<{ k: unknown; v: unknown }> = [];
+    for (const [k, v] of val as Map<unknown, unknown>) {
       if (entries.length >= 40) break;
       entries.push({ k: cloneDeepBounded(k, depth + 1), v: cloneDeepBounded(v, depth + 1) });
     }
     return entries;
   }
   if (isSetLike(val)) {
-    const items = [];
-    for (const v of val) {
+    const items: unknown[] = [];
+    for (const v of val as Set<unknown>) {
       if (items.length >= 40) break;
       items.push(cloneDeepBounded(v, depth + 1));
     }
     return items;
   }
-  const out = {};
-  const clsName = val.__py_cls__ || (val.constructor && val.constructor !== Object && val.constructor.name ? val.constructor.name : '');
+  const out: Record<string, unknown> = {};
+  const clsName = obj.__py_cls__ || (val.constructor && val.constructor !== Object && val.constructor.name ? val.constructor.name : '');
   if (clsName) {
     defineHidden(out, '__py_cls__', clsName);
   }
-  Object.keys(val).slice(0, 20).forEach(k => {
-    out[k] = cloneDeepBounded(val[k], depth + 1);
+  Object.keys(obj).slice(0, 20).forEach(k => {
+    out[k] = cloneDeepBounded(obj[k], depth + 1);
   });
   return out;
 }
 
-export function normalizeTree(value) {
+export function normalizeTree(value: Frame | null | undefined) {
   if (value && Array.isArray(value.nodes)) {
     return {
       kind: 'tree',
       total: value.total || value.nodes.length,
-      nodes: value.nodes.slice(0, 31).map(n => ({
+      nodes: value.nodes.slice(0, 31).map((n: Frame) => ({
         val: n.val !== undefined ? n.val : n.id,
         left: n.left ?? null,
         right: n.right ?? null,
@@ -73,10 +75,10 @@ export function normalizeTree(value) {
       root: value.root ?? 0,
     };
   }
-  const nodes = [];
+  const nodes: Array<{ val: unknown; left: number | null; right: number | null }> = [];
   const seen = new Set();
   const nodeMap = new Map();
-  function walk(node) {
+  function walk(node: Frame | null | undefined): number | null {
     if (!node || typeof node !== 'object' || seen.has(node)) return null;
     seen.add(node);
     if (nodes.length >= 31) {
@@ -88,7 +90,11 @@ export function normalizeTree(value) {
     }
     const idx = nodes.length;
     nodeMap.set(node, idx);
-    const item = { val: node.val !== undefined ? node.val : node.value, left: null, right: null };
+    const item: { val: unknown; left: number | null; right: number | null } = {
+      val: node.val !== undefined ? node.val : node.value,
+      left: null,
+      right: null,
+    };
     nodes.push(item);
     item.left = walk(node.left);
     item.right = walk(node.right);
@@ -100,22 +106,22 @@ export function normalizeTree(value) {
   return out;
 }
 
-export function normalizeList(value) {
-  const pyMeta = (value && typeof value === 'object' && value.__py_meta__) ? value.__py_meta__ : null;
+export function normalizeList(value: Frame | unknown[] | null | undefined) {
+  const pyMeta = (value && typeof value === 'object' && '__py_meta__' in value) ? (value as Frame).__py_meta__ : null;
   if (Array.isArray(value)) {
     const total = (pyMeta && typeof pyMeta.total === 'number') ? pyMeta.total : value.length;
-    const out = { kind: 'list', items: value.slice(0, 30).map(x => cloneDeepBounded(x, 1)), total };
+    const out = { kind: 'list', items: value.slice(0, 30).map((x: unknown) => cloneDeepBounded(x, 1)), total };
     if (total > 20) {
       defineHidden(out, '__raw', value);
       if (pyMeta) defineHidden(out, '__pyMeta', pyMeta);
     }
     return out;
   }
-  const items = [];
-  const rawNodes = [];
-  const rawVals = [];
+  const items: unknown[] = [];
+  const rawNodes: object[] = [];
+  const rawVals: unknown[] = [];
   const seen = new Set();
-  let curNode = value;
+  let curNode: Frame | null | undefined = value;
   while (curNode && typeof curNode === 'object' && !seen.has(curNode) && rawNodes.length < 5000) {
     seen.add(curNode);
     const v = curNode.val !== undefined ? curNode.val : curNode.value;
@@ -132,11 +138,11 @@ export function normalizeList(value) {
   return out;
 }
 
-export function normalizeGraph(value) {
+export function normalizeGraph(value: Frame | null | undefined) {
   if (value && Array.isArray(value.nodes) && Array.isArray(value.edges)) {
     const rawNodes = value.nodes.slice(0, 16);
     const count = rawNodes.length || 1;
-    const nodes = rawNodes.map((n, idx) => {
+    const nodes = rawNodes.map((n: Frame, idx: number) => {
       const angle = (2 * Math.PI * idx) / count - Math.PI / 2;
       const id = n && typeof n === 'object' ? (n.id ?? idx) : n;
       const label = n && typeof n === 'object' ? (n.label ?? n.val ?? id) : String(n);
@@ -144,7 +150,7 @@ export function normalizeGraph(value) {
       const y = n && typeof n.y === 'number' ? n.y : Math.round(68 + 48 * Math.sin(angle));
       return { id, label: String(label), x, y };
     });
-    const edges = value.edges.slice(0, 32).map(e => Array.isArray(e) ? [e[0], e[1]] : [e.from, e.to]);
+    const edges = value.edges.slice(0, 32).map((e: Frame) => Array.isArray(e) ? [e[0], e[1]] : [e.from, e.to]);
     return { kind: 'graph', nodes, edges, totalNodes: value.nodes.length, totalEdges: value.edges.length };
   }
   return { kind: 'graph', nodes: [], edges: [] };
@@ -158,7 +164,7 @@ export function snapshot(kind: any, value: any, extra?: any): any {
     let items;
     let baseIdx = 0;
     if (pyMeta && Array.isArray(pyMeta.tail) && total > arr.length) {
-      items = pyMeta.tail.map(x => cloneDeepBounded(x, 1));
+      items = pyMeta.tail.map((x: unknown) => cloneDeepBounded(x, 1));
       baseIdx = Math.max(0, total - items.length);
     } else if (arr.length > 40) {
       baseIdx = arr.length - 40;
@@ -199,7 +205,7 @@ export function snapshot(kind: any, value: any, extra?: any): any {
     return out;
   }
   if (kind === 'map') {
-    const entries = [];
+    const entries: Array<{ k: unknown; v: unknown }> = [];
     let total = 0;
     if (isMapLike(value)) {
       total = (pyMeta && typeof pyMeta.total === 'number') ? pyMeta.total : value.size;
@@ -208,7 +214,7 @@ export function snapshot(kind: any, value: any, extra?: any): any {
         entries.push({ k: cloneDeepBounded(k, 1), v: cloneDeepBounded(v, 1) });
       }
     } else if (value && typeof value.forEach === 'function') {
-      value.forEach((v, k) => {
+      value.forEach((v: unknown, k: unknown) => {
         total++;
         if (entries.length < 40) entries.push({ k: cloneDeepBounded(k, 1), v: cloneDeepBounded(v, 1) });
       });
@@ -222,7 +228,7 @@ export function snapshot(kind: any, value: any, extra?: any): any {
     return out;
   }
   if (kind === 'set') {
-    const items = [];
+    const items: unknown[] = [];
     let total = 0;
     if (isSetLike(value)) {
       total = (pyMeta && typeof pyMeta.total === 'number') ? pyMeta.total : value.size;
@@ -231,7 +237,7 @@ export function snapshot(kind: any, value: any, extra?: any): any {
         items.push(cloneDeepBounded(v, 1));
       }
     } else if (value && typeof value.forEach === 'function') {
-      value.forEach(v => {
+      value.forEach((v: unknown) => {
         total++;
         if (items.length < 40) items.push(cloneDeepBounded(v, 1));
       });
@@ -259,7 +265,7 @@ export function snapshot(kind: any, value: any, extra?: any): any {
   return { kind: 'array', items: [] };
 }
 
-export function classifyValue(name, value) {
+export function classifyValue(name: string, value: unknown) {
   if (value == null) return null;
   const n = String(name);
   if (Array.isArray(value)) {
@@ -278,43 +284,45 @@ export function classifyValue(name, value) {
     return null;
   }
   if (typeof value === 'object') {
-    if (value.__isVirtualPromise) return null;
-    if (Array.isArray(value.nodes) && Array.isArray(value.edges)) return snapshot('graph', value);
-    if (Array.isArray(value.nodes) && 'root' in value) return snapshot('tree', value);
+    const obj = value as Frame;
+    if (obj.__isVirtualPromise) return null;
+    if (Array.isArray(obj.nodes) && Array.isArray(obj.edges)) return snapshot('graph', obj);
+    if (Array.isArray(obj.nodes) && 'root' in obj) return snapshot('tree', obj);
     if (n !== 'this') {
-      if (('val' in value || 'value' in value) && ('left' in value || 'right' in value)) return snapshot('tree', value);
-      if (('val' in value || 'value' in value) && 'next' in value) return snapshot('list', value);
+      if (('val' in obj || 'value' in obj) && ('left' in obj || 'right' in obj)) return snapshot('tree', obj);
+      if (('val' in obj || 'value' in obj) && 'next' in obj) return snapshot('list', obj);
     }
 
     // Plain object, class instance, or TypeScript interface instance
-    const ifaceDef = matchInterfaceForObject(n, value);
+    const ifaceDef = matchInterfaceForObject(n, obj);
     const annotType = CURRENT_TS_META.varTypes.get(n);
-    const ifaceName = ifaceDef ? ifaceDef.name : (annotType || value.__py_cls__ || 'object');
-    const isClass = Boolean((ifaceDef && ifaceDef.isClass) || value.__py_cls__);
-    const fieldMap = new Map();
+    const ifaceName = ifaceDef ? ifaceDef.name : (annotType || obj.__py_cls__ || 'object');
+    const isClass = Boolean((ifaceDef && ifaceDef.isClass) || obj.__py_cls__);
+    const fieldMap = new Map<string, { k: string; v: unknown; declaredType: string | undefined; optional: boolean }>();
     if (ifaceDef) {
-      ifaceDef.fields.forEach(f => {
-        fieldMap.set(f.k, {
-          k: f.k,
-          v: (f.k in value) ? cloneDeepBounded(value[f.k], 1) : undefined,
+      ifaceDef.fields.forEach((f: InterfaceFieldMeta) => {
+        const fk = f.k || f.name || '';
+        fieldMap.set(fk, {
+          k: fk,
+          v: (fk in obj) ? cloneDeepBounded(obj[fk], 1) : undefined,
           declaredType: f.declaredType,
           optional: Boolean(f.optional),
         });
       });
     }
-    Object.keys(value).slice(0, 20).forEach(k => {
+    Object.keys(obj).slice(0, 20).forEach(k => {
       if (!fieldMap.has(k)) {
         fieldMap.set(k, {
           k,
-          v: cloneDeepBounded(value[k], 1),
-          declaredType: inferRuntimeTsType(value[k]),
+          v: cloneDeepBounded(obj[k], 1),
+          declaredType: inferRuntimeTsType(obj[k]),
           optional: false,
         });
       }
     });
     const fields = [...fieldMap.values()];
     if (fields.length > 0 || isClass) {
-      return snapshot('interface', value, {
+      return snapshot('interface', obj, {
         interfaceName: ifaceName,
         isClass,
         isSchema: false,
@@ -326,15 +334,15 @@ export function classifyValue(name, value) {
   return null;
 }
 
-export function populateInterfaceSchemas(ds) {
+export function populateInterfaceSchemas(ds: StepAnim) {
   const { interfaces, varTypes } = CURRENT_TS_META;
   if (!interfaces || !interfaces.size) return;
   interfaces.forEach(iface => {
     if (iface.isClass && (!iface.fields || !iface.fields.length)) return;
     const prefix = iface.isClass ? 'class ' : 'interface ';
     const slotKey = (iface.name in ds) ? (prefix + iface.name) : iface.name;
-    let boundInstance = null;
-    let boundVarName = null;
+    let boundInstance: { fields?: Array<{ k: string; v: unknown }> } | null = null;
+    let boundVarName: string | null = null;
     Object.keys(ds).forEach(k => {
       const item = ds[k];
       if (!boundInstance && item && item.kind === 'interface' && !item.isSchema && item.interfaceName === iface.name) {
@@ -349,7 +357,7 @@ export function populateInterfaceSchemas(ds) {
         }
       });
     }
-    const fields = iface.fields.map(f => {
+    const fields = iface.fields.map((f: InterfaceFieldMeta) => {
       const instField = boundInstance && boundInstance.fields ? boundInstance.fields.find(x => x.k === f.k) : null;
       return {
         k: f.k,
@@ -365,12 +373,12 @@ export function populateInterfaceSchemas(ds) {
       isSchema: true,
       instanceName: boundVarName,
       fields,
-      entries: fields.map(f => ({ k: f.k, v: f.v !== undefined ? f.v : f.declaredType })),
+      entries: fields.map((f: { k?: string; v?: unknown; declaredType?: string }) => ({ k: f.k, v: f.v !== undefined ? f.v : f.declaredType })),
     };
   });
 }
 
-export function detectWindowRange(v) {
+export function detectWindowRange(v: StepAnim | null | undefined) {
   if (!v) return null;
   const pairs = [['l', 'r'], ['left', 'right'], ['lo', 'hi'], ['start', 'end']];
   for (const [lk, rk] of pairs) {
@@ -386,11 +394,11 @@ export const POINTER_VAR_NAMES = [
   'l', 'r', 'left', 'right', 'lo', 'hi', 'low', 'high', 'start', 'end',
 ];
 
-export function build1DFocalSlice(total, getAt, focalCenters) {
+export function build1DFocalSlice(total: number, getAt: (idx: number) => unknown, focalCenters?: number[] | null) {
   if (total <= 20) return null;
-  const centers = [];
+  const centers: number[] = [];
   const seenC = new Set();
-  (focalCenters || []).forEach(c => {
+  (focalCenters || []).forEach((c: number) => {
     if (typeof c === 'number' && Number.isInteger(c) && c >= 0 && c < total && !seenC.has(c)) {
       seenC.add(c);
       centers.push(c);
@@ -406,7 +414,7 @@ export function build1DFocalSlice(total, getAt, focalCenters) {
     intervals.push([Math.max(0, c - radius), Math.min(total - 1, c + radius)]);
   });
   intervals.sort((a, b) => a[0] - b[0]);
-  const merged = [];
+  const merged: Array<[number, number]> = [];
   for (const iv of intervals) {
     if (!merged.length) {
       merged.push([iv[0], iv[1]]);
@@ -419,7 +427,10 @@ export function build1DFocalSlice(total, getAt, focalCenters) {
       }
     }
   }
-  const out = [];
+  const out: Array<
+    | { gap: true; count: number; from: number; to: number }
+    | { gap?: false; idx: number; val: unknown }
+  > = [];
   for (let s = 0; s < merged.length; s++) {
     const [start, end] = merged[s];
     if (s > 0) {
@@ -436,7 +447,7 @@ export function build1DFocalSlice(total, getAt, focalCenters) {
   return out;
 }
 
-export function selectGridAxisIndices(total, focusIdx, maxCount = 8) {
+export function selectGridAxisIndices(total: number, focusIdx?: number, maxCount = 8) {
   if (total <= maxCount) {
     return Array.from({ length: total }, (_, i) => i);
   }
@@ -452,12 +463,12 @@ export function selectGridAxisIndices(total, focusIdx, maxCount = 8) {
   return [...set].sort((a, b) => a - b);
 }
 
-export function enrichFromNote(ds, v, note) {
+export function enrichFromNote(ds: StepAnim | null | undefined, v: StepAnim | null | undefined, note?: string | null) {
   if (!ds || typeof ds !== 'object') return;
-  const safeV = v || {};
+  const safeV: StepAnim = v || {};
   const text = String(note || '');
 
-  const evalIdx = (expr) => {
+  const evalIdx = (expr: string | undefined) => {
     const t = String(expr || '').trim();
     if (!t) return undefined;
     if (/^\d+$/.test(t)) return +t;
@@ -485,7 +496,7 @@ export function enrichFromNote(ds, v, note) {
     let pm;
     while ((pm = propRe.exec(text))) {
       const rawObj = pm[1], propName = pm[2];
-      const objName = (rawObj === 'self' && !ds.self && ds.this) ? 'this' : rawObj;
+      const objName: string = (rawObj === 'self' && !ds.self && ds.this) ? 'this' : rawObj;
       if (ds[objName] && (ds[objName].kind === 'interface' || ds[objName].kind === 'object')) {
         ds[objName].hot = propName;
         const ifaceName = ds[objName].interfaceName;
@@ -503,7 +514,7 @@ export function enrichFromNote(ds, v, note) {
       if (typeof row === 'number' && typeof col === 'number') {
         ds[g[1]].mark = [row, col];
       }
-      const deps = [];
+      const deps: Array<[number, number]> = [];
       const re = /\b[A-Za-z_$][\w$]*\s*\[\s*([^[\]]+?)\s*\]\s*\[\s*([^[\]]+?)\s*\]/g;
       let m;
       while ((m = re.exec(text))) {
@@ -584,8 +595,8 @@ export function enrichFromNote(ds, v, note) {
 
     // 2) Linked list node reference & focal windowing
     if (d.kind === 'list' && d.__rawNodes) {
-      const nodePtrs = {};
-      const focal = [];
+      const nodePtrs: Record<number, string[]> = {};
+      const focal: number[] = [];
       for (const pName of POINTER_VAR_NAMES) {
         const ref = safeV[pName];
         if (ref && typeof ref === 'object') {
@@ -602,7 +613,7 @@ export function enrichFromNote(ds, v, note) {
       const total = d.total || d.__rawVals.length;
       if (total > 20) {
         if (typeof d.hot === 'number') focal.unshift(d.hot);
-        d.windowed = build1DFocalSlice(total, idx => cloneDeepBounded(d.__rawVals[idx], 1), focal);
+        d.windowed = build1DFocalSlice(total, (idx: number) => cloneDeepBounded(d.__rawVals[idx], 1), focal);
       }
     }
 
@@ -614,10 +625,10 @@ export function enrichFromNote(ds, v, note) {
       const total = typeof d.total === 'number' ? d.total : (d.items ? d.items.length : 0);
       if (total > 0) {
         const ptrs = d.pointers || {};
-        const focal = [];
+        const focal: number[] = [];
         if (typeof d.hot === 'number' && d.hot >= 0 && d.hot < total) focal.push(d.hot);
         if (Array.isArray(d.__extraFocal)) {
-          d.__extraFocal.forEach(idx => {
+          d.__extraFocal.forEach((idx: number) => {
             if (typeof idx === 'number' && idx >= 0 && idx < total) focal.push(idx);
           });
         }
@@ -645,7 +656,7 @@ export function enrichFromNote(ds, v, note) {
         if (total > 20) {
           const raw = d.__raw;
           const pyMeta = d.__pyMeta;
-          const getAt = (idx) => {
+          const getAt = (idx: number) => {
             if (pyMeta && pyMeta.sparse && pyMeta.sparse.has(idx)) {
               return cloneDeepBounded(pyMeta.sparse.get(idx), 1);
             }
@@ -661,13 +672,13 @@ export function enrichFromNote(ds, v, note) {
 
     // 4) Large Map / Set: ensure accessed hot key/value beyond index 40 is included in entries/items
     if (d.kind === 'map' && d.hot !== undefined && d.__raw && isMapLike(d.__raw)) {
-      const exists = (d.entries || []).some(e => e.k === d.hot);
+      const exists = (d.entries || []).some((e: { k: unknown }) => e.k === d.hot);
       if (!exists && d.__raw.has(d.hot)) {
         d.entries.push({ k: cloneDeepBounded(d.hot, 1), v: cloneDeepBounded(d.__raw.get(d.hot), 1) });
       }
     }
     if (d.kind === 'set' && d.hot !== undefined && d.__raw && isSetLike(d.__raw)) {
-      const exists = (d.items || []).some(x => x === d.hot);
+      const exists = (d.items || []).some((x: unknown) => x === d.hot);
       if (!exists && d.__raw.has(d.hot)) {
         d.items.push(cloneDeepBounded(d.hot, 1));
       }
@@ -719,24 +730,25 @@ export function enrichFromNote(ds, v, note) {
   });
 }
 
-export function formatShortVal(val) {
+export function formatShortVal(val: unknown): string {
   if (val === undefined) return 'undefined';
   if (val === null) return 'null';
   if (typeof val === 'string') return JSON.stringify(val.length > 16 ? val.slice(0, 14) + '…' : val);
   if (typeof val === 'number' || typeof val === 'boolean') return String(val);
   if (Array.isArray(val)) return '[' + val.slice(0, 4).map(formatShortVal).join(', ') + (val.length > 4 ? ', …' : '') + ']';
-  if (isMapLike(val)) return 'Map(' + val.size + ')';
-  if (isSetLike(val)) return 'Set(' + val.size + ')';
+  if (isMapLike(val)) return 'Map(' + (val as Map<unknown, unknown>).size + ')';
+  if (isSetLike(val)) return 'Set(' + (val as Set<unknown>).size + ')';
   if (typeof val === 'object') {
-    const keys = Object.keys(val);
-    if (keys.length > 0 && keys.length <= 4 && keys.every(k => val[k] === null || typeof val[k] !== 'object')) {
-      return '{ ' + keys.map(k => k + ': ' + formatShortVal(val[k])).join(', ') + ' }';
+    const rec = val as Record<string, unknown>;
+    const keys = Object.keys(rec);
+    if (keys.length > 0 && keys.length <= 4 && keys.every(k => rec[k] === null || typeof rec[k] !== 'object')) {
+      return '{ ' + keys.map((k: string): string => k + ': ' + formatShortVal(rec[k])).join(', ') + ' }';
     }
   }
   return '{…}';
 }
 
-export function safeEvalExpr(expr, v) {
+export function safeEvalExpr(expr: string | null | undefined, v: StepAnim | null | undefined) {
   if (!expr || !v) return undefined;
   const clean = stripTypes(expr).trim();
   if (!clean) return undefined;
@@ -755,8 +767,8 @@ export function safeEvalExpr(expr, v) {
   }
 }
 
-export function splitLogicalClauses(condExpr) {
-  const clauses = [];
+export function splitLogicalClauses(condExpr: string) {
+  const clauses: Array<{ expr: string; opAfter: string | null }> = [];
   let depth = 0, start = 0;
   for (let i = 0; i < condExpr.length; i++) {
     const ch = condExpr[i];
@@ -777,7 +789,7 @@ export function deriveAnimAndNote(rawLine: any, v?: any, nextV?: any): any {
   const clean = stripTypes(rawLine || '').trim().replace(/;$/, '');
   if (!clean) return { anim: null, note: rawLine };
 
-  let condExpr = null;
+  let condExpr: string | null = null;
   const condMatch = clean.match(/^(?:}\s*)?(?:if|while|else\s+if)\s*\(([\s\S]+)\)\s*\{?$/);
   if (condMatch) {
     condExpr = condMatch[1].trim();
@@ -915,7 +927,7 @@ export function deriveAnimAndNote(rawLine: any, v?: any, nextV?: any): any {
   return { anim: null, note: rawLine.trim() };
 }
 
-export function getActiveFrame(st) {
+export function getActiveFrame(st: StepSnapshot | Frame | null | undefined) {
   if (!st) return null;
   const stack = Array.isArray(st.callStack) && st.callStack.length ? st.callStack : null;
   if (!stack) {
@@ -947,7 +959,7 @@ export function getActiveFrame(st) {
   };
 }
 
-export function selectStackFrame(frameIdx) {
+export function selectStackFrame(frameIdx: number | string) {
   const st = TRACE.steps[cur];
   if (!st || !Array.isArray(st.callStack) || !st.callStack.length) return;
   const topIdx = st.callStack.length - 1;
@@ -956,34 +968,37 @@ export function selectStackFrame(frameIdx) {
   renderStatic(cur, false);
 }
 
-export function renderCallStack(st) {
+export function renderCallStack(st: StepSnapshot | Frame | null | undefined) {
   if (!callStackBarEl) return;
   if (!st) {
     callStackBarEl.innerHTML = '<span class="cs-empty">未在调试</span>';
     if (callStackHintEl) callStackHintEl.textContent = '点击栈帧可切换作用域';
     return;
   }
-  const stack = (Array.isArray(st.callStack) && st.callStack.length)
+  const stack: Frame[] = (Array.isArray(st.callStack) && st.callStack.length)
     ? st.callStack
     : [{ fn: 'global', label: 'global', line: st.line, v: st.v || {}, ds: st.ds || {} }];
   const active = getActiveFrame(st);
-  callStackBarEl.innerHTML = stack.map((f, fIdx) => {
-    const isSel = fIdx === active.idx;
+  const activeIdx = active ? active.idx : 0;
+  const activeIsTop = active ? active.isTop : true;
+  const activeLabel = active ? active.label : 'global';
+  callStackBarEl.innerHTML = stack.map((f: Frame, fIdx: number) => {
+    const isSel = fIdx === activeIdx;
     const isTop = fIdx === stack.length - 1;
     const cls = 'cs-crumb' + (isSel ? ' active' : '') + (isTop ? ' is-top' : '') + (!isTop && isSel ? ' inspecting' : '');
     const sep = fIdx > 0 ? '<span class="cs-sep">▸</span>' : '';
     return sep + `<button type="button" class="${cls}" data-frame-idx="${fIdx}" title="切换到栈帧 ${esc(f.label)} (第 ${f.line || st.line} 行)">${esc(f.label)}</button>`;
   }).join('');
   if (callStackHintEl) {
-    callStackHintEl.textContent = active.isTop
+    callStackHintEl.textContent = activeIsTop
       ? `栈深 ${stack.length} · 点击栈帧可切换`
-      : `正在查看栈帧 ${active.idx + 1}/${stack.length}: ${active.label}`;
+      : `正在查看栈帧 ${activeIdx + 1}/${stack.length}: ${activeLabel}`;
   }
 }
 
 export function truncMap(arr: any, render: any, d?: any) {
   if (d && Array.isArray(d.windowed) && d.windowed.length) {
-    return d.windowed.map(entry => {
+    return d.windowed.map((entry: { gap?: boolean; from?: number; to?: number; count?: number; val?: unknown; idx?: number }) => {
       if (entry && entry.gap) {
         const tip = entry.from != null && entry.to != null
           ? ` title="省略下标 ${entry.from}..${entry.to}（共 ${entry.count} 项）"`
@@ -994,20 +1009,20 @@ export function truncMap(arr: any, render: any, d?: any) {
     }).join('');
   }
   const MAX = 20, HEAD = 10, TAIL = 5;
-  if (!arr || arr.length <= MAX) return (arr || []).map((x, i) => render(x, i)).join('');
+  if (!arr || arr.length <= MAX) return (arr || []).map((x: unknown, i: number) => render(x, i)).join('');
   const total = (d && typeof d.total === 'number' && d.total >= arr.length) ? d.total : arr.length;
   const hidden = Math.max(1, total - HEAD - TAIL);
-  const head = arr.slice(0, HEAD).map((x, i) => render(x, i)).join('');
+  const head = arr.slice(0, HEAD).map((x: unknown, i: number) => render(x, i)).join('');
   const tailStart = total - TAIL;
-  const tail = arr.slice(arr.length - TAIL).map((x, i) => render(x, tailStart + i)).join('');
+  const tail = arr.slice(arr.length - TAIL).map((x: unknown, i: number) => render(x, tailStart + i)).join('');
   return head + '<div class="vmore" title="省略 ' + hidden + ' 项">…<span class="vmore-cnt">+' + hidden + '</span></div>' + tail;
 }
 
-export function vizArray(d) {
+export function vizArray(d: Frame | null | undefined) {
   if (!d || !d.items || !d.items.length) return null;
   const win = d.win;
   const ptrs = d.pointers;
-  const cells = truncMap(d.items, (n, k) => {
+  const cells = truncMap(d.items, (n: unknown, k: number) => {
     let cls = 'vcell vcell-idx';
     if (win && k >= win[0] && k <= win[1]) cls += ' win';
     if (d.hot === k) cls += ' hot';
@@ -1020,10 +1035,10 @@ export function vizArray(d) {
   return '<div class="viz"><div class="viz-row varray-row">' + cells + '</div></div>';
 }
 
-export function vizQueue(d) {
+export function vizQueue(d: Frame | null | undefined) {
   if (!d || !d.items || !d.items.length) return null;
   const len = (typeof d.total === 'number' && d.total > 0) ? d.total : d.items.length;
-  const cells = truncMap(d.items, (n, k) => {
+  const cells = truncMap(d.items, (n: unknown, k: number) => {
     let cls = 'vcell vcell-idx';
     if (d.hot === k) cls += ' hot';
     else if (k === 0) cls += ' mark';
@@ -1033,9 +1048,9 @@ export function vizQueue(d) {
   return '<div class="viz"><div class="viz-row varray-row">' + cells + '</div></div>';
 }
 
-export function vizHeap(d) {
+export function vizHeap(d: Frame | null | undefined) {
   if (!d || !d.items || !d.items.length) return null;
-  const cells = truncMap(d.items, (n, k) => {
+  const cells = truncMap(d.items, (n: unknown, k: number) => {
     let cls = 'vcell vcell-idx';
     if (d.hot === k) cls += ' hot';
     else if (k === 0) cls += ' mark';
@@ -1046,9 +1061,9 @@ export function vizHeap(d) {
     '<div class="vmeta-hint">parent = (i - 1) &gt;&gt; 1 · left = 2i + 1</div></div>';
 }
 
-export function vizUF(d) {
+export function vizUF(d: Frame | null | undefined) {
   if (!d || !d.items || !d.items.length) return null;
-  const cells = truncMap(d.items, (p, k) => {
+  const cells = truncMap(d.items, (p: unknown, k: number) => {
     let cls = 'vcell vcell-idx';
     if (d.hot === k) cls += ' hot';
     else if (p === k) cls += ' mark';
@@ -1058,9 +1073,9 @@ export function vizUF(d) {
   return '<div class="viz"><div class="viz-row varray-row">' + cells + '</div></div>';
 }
 
-export function vizMap(d) {
+export function vizMap(d: Frame | null | undefined) {
   if (!d || !d.entries || !d.entries.length) return null;
-  return '<div class="viz"><div class="viz-row vmap-row">' + truncMap(d.entries, (e) =>
+  return '<div class="viz"><div class="viz-row vmap-row">' + truncMap(d.entries, (e: { k: unknown; v: unknown }) =>
     '<div class="vpair' + (d.hot === e.k ? ' hot' : '') + '">' +
       '<span class="vcell vk">' + esc(e.k) + '</span><span class="varr">→</span>' +
       '<span class="vcell vv">' + esc(e.v) + '</span></div>',
@@ -1068,15 +1083,15 @@ export function vizMap(d) {
   ) + '</div></div>';
 }
 
-export function vizSet(d) {
+export function vizSet(d: Frame | null | undefined) {
   if (!d || !d.items || !d.items.length) return null;
-  return '<div class="viz"><div class="viz-row">' + truncMap(d.items, (x) =>
+  return '<div class="viz"><div class="viz-row">' + truncMap(d.items, (x: unknown) =>
     '<div class="vcell' + (d.hot === x ? ' hot' : '') + '">' + esc(x) + '</div>',
     d
   ) + '</div></div>';
 }
 
-export function vizStack(d) {
+export function vizStack(d: Frame | null | undefined) {
   if (!d || !d.items || !d.items.length) return null;
   const all = d.items, MAX = 6;
   const total = (typeof d.total === 'number' && d.total >= all.length) ? d.total : all.length;
@@ -1084,7 +1099,7 @@ export function vizStack(d) {
   const sliceStart = Math.max(0, all.length - MAX);
   const shown = all.slice(sliceStart);
   const hiddenCount = Math.max(0, total - shown.length);
-  const rows = shown.map((x, k) => {
+  const rows = shown.map((x: unknown, k: number) => {
     const abs = baseIdx + sliceStart + k;
     const isTop = abs === total - 1;
     return '<div class="vcell' + (d.hot === abs ? ' hot' : (isTop ? ' mark' : '')) + '">' +
@@ -1094,11 +1109,11 @@ export function vizStack(d) {
     (hiddenCount ? '<div class="vmore">…+' + hiddenCount + '</div>' : '') + '</div>';
 }
 
-export function vizString(d) {
+export function vizString(d: Frame | null | undefined) {
   if (!d || !d.items || !d.items.length) return null;
   const win = d.win;
   if (Array.isArray(d.windowed) && d.windowed.length) {
-    const cells = truncMap(d.items, (ch, k) => {
+    const cells = truncMap(d.items, (ch: string, k: number) => {
       let cls = 'ch';
       if (win && k >= win[0] && k <= win[1]) cls += ' win';
       if (d.hot === k) cls += ' hot';
@@ -1107,7 +1122,7 @@ export function vizString(d) {
     }, d);
     return '<div class="viz"><div class="vstr">' + cells + '</div></div>';
   }
-  return '<div class="viz"><div class="vstr">' + d.items.map((ch, k) => {
+  return '<div class="viz"><div class="vstr">' + d.items.map((ch: string, k: number) => {
     let cls = 'ch';
     if (win && k >= win[0] && k <= win[1]) cls += ' win';
     if (d.hot === k) cls += ' hot';
@@ -1116,15 +1131,15 @@ export function vizString(d) {
   }).join('') + '</div></div>';
 }
 
-export function vizGrid(d) {
+export function vizGrid(d: Frame | null | undefined) {
   if (!d || !d.cells || !d.cells.length) return null;
-  const depSet = new Set((d.deps || []).map(p => p[0] + ',' + p[1]));
+  const depSet = new Set((d.deps || []).map((p: [number, number]) => p[0] + ',' + p[1]));
 
   // Sliding viewport mode for large 2D grids (> 10 rows or > 10 cols)
   if (Array.isArray(d.rowIndices) && Array.isArray(d.colIndices) && Array.isArray(d.viewCells)) {
     const rIdxs = d.rowIndices;
     const cIdxs = d.colIndices;
-    const colTracks = [];
+    const colTracks: Array<{ gap: true } | { gap: false; c: number; ci: number }> = [];
     for (let ci = 0; ci < cIdxs.length; ci++) {
       if (ci > 0 && cIdxs[ci] > cIdxs[ci - 1] + 1) colTracks.push({ gap: true });
       colTracks.push({ gap: false, c: cIdxs[ci], ci });
@@ -1180,11 +1195,11 @@ export function vizGrid(d) {
   return '<div class="viz"><div class="vgrid" style="grid-template-columns:repeat(' + cols + ',auto)">' + html + '</div></div>';
 }
 
-export function vizList(d) {
+export function vizList(d: Frame | null | undefined) {
   if (!d || !d.items || !d.items.length) return null;
   const total = (typeof d.total === 'number' && d.total > 0) ? d.total : d.items.length;
   const ptrs = d.pointers;
-  return '<div class="viz"><div class="viz-row">' + truncMap(d.items, (val, k) => {
+  return '<div class="viz"><div class="viz-row">' + truncMap(d.items, (val: unknown, k: number) => {
     const pTag = (ptrs && ptrs[k] && ptrs[k].length)
       ? '<span class="sub-tag ptr-tag">' + esc(ptrs[k].slice(0, 2).join(',')) + '</span>'
       : '';
@@ -1194,13 +1209,13 @@ export function vizList(d) {
   }, d) + '</div></div>';
 }
 
-export function vizTree(d) {
+export function vizTree(d: Frame | null | undefined) {
   if (!d || !d.nodes || !d.nodes.length) return null;
   const nodes = d.nodes;
   const root = d.root ?? 0;
-  const coords = new Map();
+  const coords = new Map<number, { x: number; y: number; val: unknown; left?: number | null; right?: number | null }>();
   let maxDepth = 0;
-  function layout(idx, depth, xMin, xMax) {
+  function layout(idx: number | null | undefined, depth: number, xMin: number, xMax: number) {
     if (idx == null || !nodes[idx] || coords.has(idx) || depth > 5) return;
     maxDepth = Math.max(maxDepth, depth);
     const x = (xMin + xMax) / 2;
@@ -1216,7 +1231,7 @@ export function vizTree(d) {
     [info.left, info.right].forEach(ch => {
       if (ch != null && coords.has(ch)) {
         const c = coords.get(ch);
-        edgesSvg += `<line class="vsvg-edge" x1="${info.x}" y1="${info.y}" x2="${c.x}" y2="${c.y}"/>`;
+        if (c) edgesSvg += `<line class="vsvg-edge" x1="${info.x}" y1="${info.y}" x2="${c.x}" y2="${c.y}"/>`;
       }
     });
     const cls = d.hot === idx ? 'vsvg-node hot' : (idx === root ? 'vsvg-node mark' : 'vsvg-node');
@@ -1225,18 +1240,18 @@ export function vizTree(d) {
   return `<div class="viz"><div class="vsvg-wrap"><svg viewBox="0 0 240 ${h}" width="240" height="${h}">${edgesSvg}${nodesSvg}</svg></div></div>`;
 }
 
-export function vizGraph(d) {
+export function vizGraph(d: Frame | null | undefined) {
   if (!d || !d.nodes || !d.nodes.length) return null;
-  const byId = new Map();
-  d.nodes.forEach((n, idx) => byId.set(n.id ?? idx, n));
+  const byId = new Map<number | string, Frame>();
+  d.nodes.forEach((n: Frame, idx: number) => byId.set(n.id ?? idx, n));
   let edgesSvg = '', nodesSvg = '';
-  (d.edges || []).forEach(e => {
+  (d.edges || []).forEach((e: [number | string, number | string]) => {
     const a = byId.get(e[0]), b = byId.get(e[1]);
     if (a && b) {
       edgesSvg += `<line class="vsvg-edge" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"/>`;
     }
   });
-  d.nodes.forEach((n, idx) => {
+  d.nodes.forEach((n: Frame, idx: number) => {
     const id = n.id ?? idx;
     const cls = d.hot === id ? 'vsvg-node hot' : 'vsvg-node';
     nodesSvg += `<g><circle class="${cls}" cx="${n.x}" cy="${n.y}" r="13"/><text class="vsvg-txt" x="${n.x}" y="${n.y}">${esc(n.label ?? id)}</text></g>`;
@@ -1244,9 +1259,9 @@ export function vizGraph(d) {
   return `<div class="viz"><div class="vsvg-wrap"><svg viewBox="0 0 180 136" width="180" height="136">${edgesSvg}${nodesSvg}</svg></div></div>`;
 }
 
-export function vizInterface(d) {
+export function vizInterface(d: Frame | null | undefined) {
   if (!d) return null;
-  const fields = d.fields || (d.entries ? d.entries.map(e => ({ k: e.k, v: e.v, declaredType: typeof e.v })) : []);
+  const fields = d.fields || (d.entries ? d.entries.map((e: { k: string; v: unknown }) => ({ k: e.k, v: e.v, declaredType: typeof e.v })) : []);
   if (!fields.length && !d.isClass) return null;
   const ifaceTitle = d.interfaceName && d.interfaceName !== 'object' ? d.interfaceName : 'Object';
   const kwTxt = d.isClass ? 'class' : 'interface';
@@ -1254,7 +1269,7 @@ export function vizInterface(d) {
     ? (d.instanceName ? `schema · 绑定 ${d.instanceName}` : 'schema')
     : 'instance';
   const rows = fields.length
-    ? fields.slice(0, 12).map(f => {
+    ? fields.slice(0, 12).map((f: { k: string; v?: unknown; optional?: boolean; declaredType?: string }) => {
         const isHot = d.hot === f.k;
         const hasVal = f.v !== undefined;
         const isStr = typeof f.v === 'string';
@@ -1276,9 +1291,9 @@ export function vizInterface(d) {
     '</div></div>';
 }
 
-export function vizEventLoop(d) {
+export function vizEventLoop(d: Frame | null | undefined) {
   if (!d) return null;
-  const phaseMap = {
+  const phaseMap: Record<string, { label: string; cls: string }> = {
     sync: { label: 'Sync · 同步栈执行', cls: 'sync' },
     await_suspend: { label: 'Await · 协程挂起', cls: 'suspend' },
     await_resume: { label: 'Await · 协程恢复', cls: 'resume' },
@@ -1290,7 +1305,7 @@ export function vizEventLoop(d) {
 
   const coroutines = Array.isArray(d.coroutines) ? d.coroutines : [];
   const coroHtml = coroutines.length
-    ? coroutines.map(c => {
+    ? coroutines.map((c: Frame) => {
         const stCls = c.status === 'running' ? 'running' : (c.status === 'suspended' ? 'suspended' : 'completed');
         const stLabel = c.status === 'running' ? '● 执行中' : (c.status === 'suspended' ? `⏸ 挂起 @L${c.line}` : '✓ 完成');
         const detail = c.status === 'suspended' && c.awaitingExpr
@@ -1306,7 +1321,7 @@ export function vizEventLoop(d) {
 
   const microtasks = Array.isArray(d.microtasks) ? d.microtasks : [];
   const microHtml = microtasks.length
-    ? microtasks.map((m, idx) =>
+    ? microtasks.map((m: Frame, idx: number) =>
         `<div class="vel-qitem micro${idx === 0 ? ' head' : ''}">` +
         `<span class="vel-qidx">#${idx + 1}</span>` +
         `<span class="vel-qlabel">${esc(m.label)}</span>` +
@@ -1317,7 +1332,7 @@ export function vizEventLoop(d) {
 
   const macrotasks = Array.isArray(d.macrotasks) ? d.macrotasks : [];
   const macroHtml = macrotasks.length
-    ? macrotasks.map((t, idx) =>
+    ? macrotasks.map((t: Frame, idx: number) =>
         `<div class="vel-qitem macro${idx === 0 ? ' head' : ''}">` +
         `<span class="vel-qidx">t=${t.due}ms</span>` +
         `<span class="vel-qlabel">${esc(t.label)}</span>` +
@@ -1328,7 +1343,7 @@ export function vizEventLoop(d) {
 
   const promises = Array.isArray(d.promises) ? d.promises : [];
   const promHtml = promises.length
-    ? promises.map(p => {
+    ? promises.map((p: Frame) => {
         const st = p.state || 'pending';
         const icon = st === 'fulfilled' ? '✓' : (st === 'rejected' ? '✗' : '⏳');
         const valPart = st === 'pending'
@@ -1356,7 +1371,7 @@ export function vizEventLoop(d) {
     '</div></div>';
 }
 
-export const VIZ = {
+export const VIZ: Record<string, (d: Frame | null | undefined) => string | null> = {
   array: vizArray, map: vizMap, set: vizSet, stack: vizStack,
   string: vizString, grid: vizGrid, list: vizList,
   heap: vizHeap, queue: vizQueue, tree: vizTree, graph: vizGraph, uf: vizUF,
@@ -1364,7 +1379,7 @@ export const VIZ = {
   eventloop: vizEventLoop,
 };
 
-export function pressure(d) {
+export function pressure(d: Frame | null | undefined) {
   if (!d) return 0;
   let n = 0;
   if (typeof d.total === 'number') n = d.total;
@@ -1393,17 +1408,23 @@ export function pressure(d) {
   }
 }
 const SPAN_UP = 0.45, SPAN_DOWN = 0.28;
-export function decideSpan(id, p) {
+export function decideSpan(id: string, p: number) {
   const curSpan = layoutSpan[id] || 1;
   if (curSpan < 2 && p >= SPAN_UP) layoutSpan[id] = 2;
   else if (curSpan > 1 && p <= SPAN_DOWN) layoutSpan[id] = 1;
   return layoutSpan[id];
 }
 
-export function allocateSlotSpans(vars, ds) {
-  const meta = vars.map((s, idx) => {
-    const d = ds[s.id];
-    const kind = (d && d.kind) || s.kind;
+export interface DiscoveredVar {
+  id: string;
+  name: string;
+  kind?: string;
+}
+
+export function allocateSlotSpans(vars: DiscoveredVar[], ds: StepAnim) {
+  const meta = vars.map((s: DiscoveredVar, idx: number) => {
+    const d: Frame | undefined = ds[s.id];
+    const kind: string = (d && d.kind) || s.kind || 'array';
     const p = pressure(d);
     const span = decideSpan(s.id, p);
     return { s, d, kind, p, span, idx };
@@ -1426,7 +1447,7 @@ export function allocateSlotSpans(vars, ds) {
 
 let _DISCOVER_CACHE: any = { traceRef: null, scannedSteps: 0, map: new Map(), list: [] };
 
-export function discoverVars() {
+export function discoverVars(): DiscoveredVar[] {
   const steps = (TRACE && TRACE.steps) || [];
   if (_DISCOVER_CACHE.traceRef !== TRACE || steps.length < _DISCOVER_CACHE.scannedSteps) {
     _DISCOVER_CACHE = { traceRef: TRACE, scannedSteps: 0, map: new Map(), list: [] };
@@ -1458,7 +1479,7 @@ export function renderPicker() {
     renderSlots();
     return;
   }
-  pickEl.innerHTML = vars.map(s =>
+  pickEl.innerHTML = vars.map((s: DiscoveredVar) =>
     '<div class="chip-pick' + (watched.has(s.id) ? ' on' : '') + '" data-id="' + esc(s.id) + '">' + esc(s.name) + '</div>'
   ).join('');
   renderSlots();
@@ -1469,7 +1490,7 @@ export function renderSlots() {
   const activeFrame = TRACE.steps[cur] ? getActiveFrame(st) : null;
   const ds = Object.assign({}, (activeFrame && activeFrame.ds) || st.ds || {});
   if (st.ds && st.ds.eventLoop && !ds.eventLoop) ds.eventLoop = st.ds.eventLoop;
-  const vars = discoverVars().filter(s => watched.has(s.id) && ds[s.id] !== undefined);
+  const vars = discoverVars().filter((s: DiscoveredVar) => watched.has(s.id) && ds[s.id] !== undefined);
   if (slotsEl && slotsEl.classList && slotsEl.classList.toggle) {
     slotsEl.classList.toggle('single-col', slotsEl.clientWidth > 0 && slotsEl.clientWidth < 420);
   }
@@ -1515,7 +1536,7 @@ export function updateControlButtons() {
   if (autoBtn) autoBtn.disabled = atEnd;
 }
 
-export function renderStatic(i, withAnim = false) {
+export function renderStatic(i: number, withAnim = false) {
   hideHoverTip();
   const st = TRACE.steps[i];
   const prevSt = i > 0 ? TRACE.steps[i - 1] : null;
@@ -1538,7 +1559,7 @@ export function renderStatic(i, withAnim = false) {
   const primEntries = Object.keys(v).map(k => {
     const val = v[k];
     if (val !== null && typeof val === 'object') return '';
-    const changed = activeFrame.isTop && prevSt && prevV[k] !== val;
+    const changed = Boolean(activeFrame && activeFrame.isTop && prevSt && prevV[k] !== val);
     return '<div class="pair' + (changed ? ' changed' : '') + '" data-var="' + esc(k) + '"><span class="k">' + esc(k) + '</span><span class="v">' + esc(val) + '</span></div>';
   }).join('');
   if (primEntries) {

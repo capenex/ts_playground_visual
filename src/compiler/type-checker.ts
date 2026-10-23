@@ -3,25 +3,22 @@
    ================================================================ */
 import {
   findBalancedParen,
-  isIdentPart,
   isIdentStart,
   isWS,
   readIdent,
   skipString,
   skipTemplateExpr,
   splitTopLevel,
-  splitTopLevelSemicolons,
-  stripCommentsOnly,
   stripInlineCommentSafe,
   RESERVED_WORDS,
 } from "./comments";
-import { transpileEnums, stripTypes, tryParseType } from "./transpile";
 import { extractBindingNames } from "./instrumenter";
 import { isMapLike, isSetLike } from "../viz/memory-graph";
 import { say } from "../runtime/event-loop";
 import { updateEditorChrome, revealErrorLine } from "../viz/highlight";
+import { Diag, StepAnim } from "../types";
 
-export function inferRuntimeTsType(val) {
+export function inferRuntimeTsType(val: unknown): string {
   if (val === null) return 'null';
   if (Array.isArray(val)) {
     if (!val.length) return 'any[]';
@@ -32,7 +29,7 @@ export function inferRuntimeTsType(val) {
   return typeof val;
 }
 
-export function extractTsInterfaceMetadata(src) {
+export function extractTsInterfaceMetadata(src: string | null | undefined) {
   const interfaces = new Map<any, any>();
   const varTypes = new Map<any, any>();
   if (!src || typeof src !== 'string') {
@@ -41,15 +38,15 @@ export function extractTsInterfaceMetadata(src) {
   }
 
   const lines = src.replace(/\r\n?/g, '\n').split('\n');
-  let activeIface = null;
+  let activeIface: string | null = null;
   let activeIfaceLine = 1;
   let activeIsClass = false;
   let activeBody = '';
   let depth = 0;
 
-  function parseFieldsFromBody(bodyStr, isClass = false) {
+  function parseFieldsFromBody(bodyStr: string, isClass = false) {
     const inner = bodyStr.trim().replace(/^\{/, '').replace(/\}$/, '').trim();
-    const fields = [];
+    const fields: Array<{ k: string; declaredType: string; optional: boolean }> = [];
     const seen = new Set();
     if (!inner) return fields;
     // Strip nested method bodies `{ ... }` when parsing top-level class/interface fields
@@ -223,10 +220,11 @@ export function extractTsInterfaceMetadata(src) {
   return CURRENT_TS_META;
 }
 
-export function matchInterfaceForObject(name, value) {
+export function matchInterfaceForObject(name: string | null | undefined, value: StepAnim | null | undefined) {
   const { interfaces, varTypes } = CURRENT_TS_META;
-  if (name && varTypes.has(name)) {
-    const cleanT = varTypes.get(name).replace(/\[\]$/, '').trim();
+  const declaredVarT = name ? varTypes.get(name) : undefined;
+  if (declaredVarT) {
+    const cleanT = declaredVarT.replace(/\[\]$/, '').trim();
     if (interfaces.has(cleanT)) return interfaces.get(cleanT);
   }
   if (value && typeof value === 'object' && value.__py_cls__ && interfaces.has(value.__py_cls__)) {
@@ -235,13 +233,18 @@ export function matchInterfaceForObject(name, value) {
   if (!value || typeof value !== 'object') return null;
   const valKeys = Object.keys(value);
   if (!valKeys.length) return null;
-  let best = null;
+  let best: {
+    name: string;
+    line: number;
+    isClass: boolean;
+    fields: Array<{ k: string; declaredType: string; optional: boolean }>;
+  } | null = null;
   let bestScore = 0;
   interfaces.forEach(iface => {
     if (!iface.fields.length) return;
-    const overlap = iface.fields.filter(f => f.k in value).length;
+    const overlap = iface.fields.filter((f: { k?: string }) => (f.k || '') in value).length;
     if (overlap > 0 && overlap >= bestScore) {
-      const allKnown = valKeys.every(k => iface.fields.some(f => f.k === k));
+      const allKnown = valKeys.every(k => iface.fields.some((f: { k?: string }) => f.k === k));
       const score = overlap * 2 + (allKnown ? 1 : 0);
       if (score > bestScore) {
         bestScore = score;
@@ -252,7 +255,7 @@ export function matchInterfaceForObject(name, value) {
   return best;
 }
 
-export function normalizeTsType(rawType) {
+export function normalizeTsType(rawType: string | null | undefined): string {
   if (!rawType) return 'any';
   let src = rawType.trim();
   let t = '';
@@ -303,8 +306,8 @@ export function normalizeTsType(rawType) {
   return t;
 }
 
-export function splitTopLevelUnion(typeStr) {
-  const parts = [];
+export function splitTopLevelUnion(typeStr: string): string[] {
+  const parts: string[] = [];
   let depth = 0, cur = '';
   for (let i = 0; i < typeStr.length; i++) {
     const ch = typeStr[i];
@@ -327,8 +330,8 @@ export function splitTopLevelUnion(typeStr) {
   return parts;
 }
 
-export function splitTopLevelIntersection(typeStr) {
-  const parts = [];
+export function splitTopLevelIntersection(typeStr: string): string[] {
+  const parts: string[] = [];
   let depth = 0, cur = '';
   for (let i = 0; i < typeStr.length; i++) {
     const ch = typeStr[i];
@@ -351,27 +354,27 @@ export function splitTopLevelIntersection(typeStr) {
   return parts;
 }
 
-export function stripNullableFromType(typeStr, target) {
+export function stripNullableFromType(typeStr: string | null | undefined, target: string): string {
   if (!typeStr) return 'any';
   const norm = normalizeTsType(typeStr);
   const parts = splitTopLevelUnion(norm).filter(p => p !== target);
   return parts.length ? parts.join('|') : norm;
 }
 
-export function isLiteralOfPrimitive(lit, prim) {
+export function isLiteralOfPrimitive(lit: string, prim: string): boolean {
   if (prim === 'string') return (lit.startsWith('"') && lit.endsWith('"')) || (lit.startsWith('`') && lit.endsWith('`'));
   if (prim === 'number') return /^[+-]?\d+(?:\.\d+)?$/.test(lit);
   if (prim === 'boolean') return lit === 'true' || lit === 'false';
   return false;
 }
 
-export function matchTemplateLiteralType(actualStr, patternTpl) {
+export function matchTemplateLiteralType(actualStr: string, patternTpl: string): Map<string, string> | null {
   if (!actualStr.startsWith('"') || !actualStr.endsWith('"')) return null;
   if (!patternTpl.startsWith('`') || !patternTpl.endsWith('`')) return null;
   const val = actualStr.slice(1, -1);
   const body = patternTpl.slice(1, -1);
   let regexStr = '^';
-  const inferNames = [];
+  const inferNames: Array<{ name: string; constraint: string | null }> = [];
   let i = 0;
   while (i < body.length) {
     if (body[i] === '$' && body[i + 1] === '{') {
@@ -423,7 +426,7 @@ export function matchTemplateLiteralType(actualStr, patternTpl) {
   }
 }
 
-export function isTsAssignable(actual, expected) {
+export function isTsAssignable(actual: string | null | undefined, expected: string | null | undefined): boolean {
   if (!actual || !expected) return true;
   const a = normalizeTsType(actual);
   const e = normalizeTsType(expected);
@@ -494,13 +497,24 @@ export function isTsAssignable(actual, expected) {
 
 let _TYPECHECK_CACHE: any = { src: null, strict: null, diags: [] };
 
-export function typecheckTS(src, strict = STRICT_TS) {
+export function typecheckTS(src: string, strict = STRICT_TS) {
   extractTsInterfaceMetadata(src);
   if (!strict) return [];
   if (typeof src === 'string' && _TYPECHECK_CACHE.src === src && _TYPECHECK_CACHE.strict === strict) {
-    return _TYPECHECK_CACHE.diags.map(d => ({ ...d }));
+    return _TYPECHECK_CACHE.diags.map((d: Diag) => ({ ...d }));
   }
-  const diagnostics = [];
+  const diagnostics: Array<{ line: number; code: string; message?: string }> = [];
+
+  interface FnSigInfo {
+    name: string;
+    params: Array<{ name: string; type: string; rawType: string; optional: boolean }>;
+    minArgs: number;
+    returnType: string;
+    rawReturnType: string;
+    typeParams: Array<{ name: string; constraint: string | null; defaultType: string | null }>;
+    line: number;
+    hasValueReturn: boolean;
+  }
 
   const lines = src.replace(/\r\n?/g, '\n').split('\n');
   const fns = new Map<any, any>();
@@ -529,7 +543,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
     'checkpoint', '断点',
   ]);
 
-  function isKnownIdentifier(name) {
+  function isKnownIdentifier(name: string) {
     if (!name || !/^[A-Za-z_$][\w$]*$/.test(name)) return true;
     return (
       env.has(name) ||
@@ -550,8 +564,8 @@ export function typecheckTS(src, strict = STRICT_TS) {
     }
   }
 
-  function splitTopLevelDecl(s) {
-    const parts = [];
+  function splitTopLevelDecl(s: string): string[] {
+    const parts: string[] = [];
     let depth = 0, angleDepth = 0, cur = '';
     for (let i = 0; i < s.length; i++) {
       const ch = s[i];
@@ -576,17 +590,17 @@ export function typecheckTS(src, strict = STRICT_TS) {
     return parts;
   }
 
-  function parseTypeParams(typeParamStr) {
+  function parseTypeParams(typeParamStr: string): Array<{ name: string; constraint: string | null; defaultType: string | null }> {
     if (!typeParamStr) return [];
     let inner = typeParamStr.trim();
     if (inner.startsWith('<') && inner.endsWith('>')) inner = inner.slice(1, -1).trim();
     if (!inner) return [];
     const rawItems = splitTopLevelDecl(inner);
-    const out = [];
+    const out: Array<{ name: string; constraint: string | null; defaultType: string | null }> = [];
     rawItems.forEach(item => {
       let s = item.trim().replace(/^(?:const|in|out)\s+/, '');
       if (!s) return;
-      let defaultType = null;
+      let defaultType: string | null = null;
       let d = 0, ad = 0, eqIdx = -1;
       for (let i = 0; i < s.length; i++) {
         const ch = s[i];
@@ -613,7 +627,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
     return out;
   }
 
-  function substituteTypeParamsInStr(typeStr, typeEnv) {
+  function substituteTypeParamsInStr(typeStr: string, typeEnv: Map<string, string> | null | undefined): string {
     if (!typeStr || !typeEnv || typeEnv.size === 0) return typeStr;
     let out = '';
     let i = 0;
@@ -646,6 +660,11 @@ export function typecheckTS(src, strict = STRICT_TS) {
       }
       if (isIdentStart(ch)) {
         const id = readIdent(typeStr, i);
+        if (!id) {
+          out += ch;
+          i++;
+          continue;
+        }
         const word = id.name;
         const prevCh = i > 0 ? typeStr[i - 1] : '';
         let afterIdx = id.end;
@@ -667,7 +686,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
     return out;
   }
 
-  function parseTopLevelConditional(typeStr) {
+  function parseTopLevelConditional(typeStr: string) {
     let d = 0, ad = 0;
     let extPos = -1, extLen = 7, qPos = -1, cPos = -1;
     let qDepth = 0;
@@ -712,7 +731,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
     return null;
   }
 
-  function matchConditionalExtends(checkT, extT, typeEnv, depth) {
+  function matchConditionalExtends(checkT: string, extT: string, typeEnv: Map<string, string>, depth: number): { matched: boolean; inferred: Map<string, string> } {
     const inferred = new Map<any, any>();
     const cNorm = evaluateType(checkT, typeEnv, depth + 1);
     const eSubst = substituteTypeParamsInStr(normalizeTsType(extT), typeEnv);
@@ -857,7 +876,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
       if (!cShape || !eShape) return { matched: false, inferred };
       for (const [k, eProp] of eShape.entries()) {
         if (!cShape.has(k)) return { matched: false, inferred };
-        const subM = matchConditionalExtends(cShape.get(k).type, eProp.rawType || eProp.type, typeEnv, depth + 1);
+        const subM = matchConditionalExtends((cShape.get(k) || { type: 'any' }).type, eProp.rawType || eProp.type, typeEnv, depth + 1);
         if (!subM.matched) return { matched: false, inferred };
         subM.inferred.forEach((v, ik) => inferred.set(ik, v));
       }
@@ -879,12 +898,12 @@ export function typecheckTS(src, strict = STRICT_TS) {
     return { matched: isTypeCompatible(cNorm, eEval), inferred };
   }
 
-  function resolveIndexedAccess(objT, keyT, typeEnv, depth) {
+  function resolveIndexedAccess(objT: string, keyT: string, typeEnv: Map<string, string>, depth: number): string {
     if (objT === 'any' || keyT === 'any') return 'any';
     if (keyT === 'never') return 'never';
     const keyParts = splitTopLevelUnion(keyT);
     if (keyParts.length > 1) {
-      const out = [];
+      const out: string[] = [];
       keyParts.forEach(kp => {
         const r = resolveIndexedAccess(objT, kp, typeEnv, depth + 1);
         splitTopLevelUnion(r).forEach(u => { if (u !== 'never' && !out.includes(u)) out.push(u); });
@@ -908,11 +927,11 @@ export function typecheckTS(src, strict = STRICT_TS) {
     if (shape) {
       const cleanKey = keyT.replace(/^["']|["']$/g, '');
       if (shape.has(cleanKey)) {
-        return shape.get(cleanKey).type;
+        return (shape.get(cleanKey) || { type: 'any' }).type;
       }
       if (keyT === 'keyof ' + objT) {
-        const vals = [];
-        shape.forEach(v => { if (!vals.includes(v.type)) vals.push(v.type); });
+        const vals: string[] = [];
+        shape.forEach((v: { type: string }) => { if (!vals.includes(v.type)) vals.push(v.type); });
         return vals.join('|') || 'any';
       }
     }
@@ -922,7 +941,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
     return 'any';
   }
 
-  function evaluateType(rawType, typeEnv = new Map<any, any>(), depth = 0) {
+  function evaluateType(rawType: string | null | undefined, typeEnv: Map<string, string> = new Map<string, string>(), depth = 0): string {
     if (!rawType || depth > 24) return 'any';
     let t = normalizeTsType(rawType);
     if (!t || t === 'any' || t === 'unknown' || t === 'never' || t === 'void' ||
@@ -933,7 +952,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
 
     // 1. Direct type parameter lookup
     if (typeEnv && typeEnv.has(t)) {
-      return typeEnv.get(t);
+      return typeEnv.get(t) || 'any';
     }
 
     // 2. Top-level conditional type: `Check extends Ext ? TrueBranch : FalseBranch`
@@ -947,7 +966,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
       }
       const checkUnionParts = isNakedTypeParam ? splitTopLevelUnion(resolvedCheck) : [resolvedCheck];
       if (checkUnionParts.length > 1) {
-        const results = [];
+        const results: string[] = [];
         for (const member of checkUnionParts) {
           const memberEnv = new Map(typeEnv);
           memberEnv.set(rawCheck, member);
@@ -980,7 +999,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
     // 3. Top-level union `A | B`
     const unionParts = splitTopLevelUnion(t);
     if (unionParts.length > 1) {
-      const evaled = [];
+      const evaled: string[] = [];
       unionParts.forEach(part => {
         const r = evaluateType(part, typeEnv, depth + 1);
         splitTopLevelUnion(r).forEach(u => {
@@ -1006,7 +1025,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
         sh.forEach((v, k) => mergedProps.set(k, v));
       }
       if (allShapes && mergedProps.size > 0) {
-        const propStrs = [];
+        const propStrs: string[] = [];
         mergedProps.forEach((v, k) => propStrs.push(`${k}${v.optional ? '?' : ''}:${v.type}`));
         return `{${propStrs.join(';')}}`;
       }
@@ -1035,7 +1054,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
       if (env.has(exprName)) return env.get(exprName).type;
       if (fns.has(exprName)) {
         const sig = fns.get(exprName);
-        const pStr = sig.params.map(p => `${p.name}${p.optional ? '?' : ''}:${p.type}`).join(',');
+        const pStr = sig.params.map((p: { name: string; optional?: boolean; type: string }) => `${p.name}${p.optional ? '?' : ''}:${p.type}`).join(',');
         return `(${pStr})=>${sig.returnType}`;
       }
       return 'any';
@@ -1049,7 +1068,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
       if (mappedM) {
         const kVar = mappedM[1];
         let inClause = mappedM[2].trim();
-        let optMod = null;
+        let optMod: 'add' | 'remove' | null = null;
         let valTemplate = '';
         if (mappedM.length === 5) {
           optMod = mappedM[3] === '-' ? 'remove' : 'add';
@@ -1057,7 +1076,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
         } else {
           valTemplate = mappedM[3].trim();
         }
-        let asClause = null;
+        let asClause: string | null = null;
         let d = 0, ad = 0;
         for (let i = 0; i < inClause.length; i++) {
           const ch = inClause[i];
@@ -1072,7 +1091,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
             break;
           }
         }
-        let sourceObjShape = null;
+        let sourceObjShape: Map<string, { type: string; rawType: string; optional: boolean }> | null = null;
         const keyofM = inClause.match(/^keyof\s+([\s\S]+)$/);
         if (keyofM) {
           const srcT = evaluateType(keyofM[1].trim(), typeEnv, depth + 1);
@@ -1080,7 +1099,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
         }
         const keysUnion = evaluateType(inClause, typeEnv, depth + 1);
         const keyItems = splitTopLevelUnion(keysUnion).filter(k => k !== 'never');
-        const outProps = [];
+        const outProps: string[] = [];
         for (const rawKey of keyItems) {
           if (rawKey === 'string' || rawKey === 'number' || rawKey === 'symbol') continue;
           const mapEnv = new Map(typeEnv);
@@ -1094,8 +1113,9 @@ export function typecheckTS(src, strict = STRICT_TS) {
           }
           const propValType = evaluateType(valTemplate, mapEnv, depth + 1);
           let isOpt = false;
-          if (sourceObjShape && sourceObjShape.has(litKey.slice(1, -1))) {
-            isOpt = Boolean(sourceObjShape.get(litKey.slice(1, -1)).optional);
+          const srcProp = sourceObjShape ? sourceObjShape.get(litKey.slice(1, -1)) : undefined;
+          if (srcProp) {
+            isOpt = Boolean(srcProp.optional);
           }
           if (optMod === 'add') isOpt = true;
           else if (optMod === 'remove') isOpt = false;
@@ -1185,7 +1205,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
       if (baseName === 'Partial' && rawArgs.length === 1) {
         const shape = getInterfaceShape(rawArgs[0]);
         if (shape) {
-          const props = [];
+          const props: string[] = [];
           shape.forEach((v, k) => props.push(`${k}?:${v.type}`));
           return `{${props.join(';')}}`;
         }
@@ -1193,7 +1213,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
       if (baseName === 'Required' && rawArgs.length === 1) {
         const shape = getInterfaceShape(rawArgs[0]);
         if (shape) {
-          const props = [];
+          const props: string[] = [];
           shape.forEach((v, k) => props.push(`${k}:${v.type}`));
           return `{${props.join(';')}}`;
         }
@@ -1202,7 +1222,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
         if (rawArgs[0].endsWith('[]')) return rawArgs[0];
         const shape = getInterfaceShape(rawArgs[0]);
         if (shape) {
-          const props = [];
+          const props: string[] = [];
           shape.forEach((v, k) => props.push(`${k}${v.optional ? '?' : ''}:${v.type}`));
           return `{${props.join(';')}}`;
         }
@@ -1212,7 +1232,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
         const shape = getInterfaceShape(rawArgs[0]);
         if (shape) {
           const keys = new Set(splitTopLevelUnion(rawArgs[1]).map(k => k.replace(/^["']|["']$/g, '')));
-          const props = [];
+          const props: string[] = [];
           shape.forEach((v, k) => {
             if (keys.has(k)) props.push(`${k}${v.optional ? '?' : ''}:${v.type}`);
           });
@@ -1223,7 +1243,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
         const shape = getInterfaceShape(rawArgs[0]);
         if (shape) {
           const omitKeys = new Set(splitTopLevelUnion(rawArgs[1]).map(k => k.replace(/^["']|["']$/g, '')));
-          const props = [];
+          const props: string[] = [];
           shape.forEach((v, k) => {
             if (!omitKeys.has(k)) props.push(`${k}${v.optional ? '?' : ''}:${v.type}`);
           });
@@ -1302,7 +1322,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
       if (genericTypeAliases.has(baseName)) {
         const info = genericTypeAliases.get(baseName);
         const subEnv = new Map(typeEnv);
-        info.typeParams.forEach((tp, idx) => {
+        info.typeParams.forEach((tp: { name: string; defaultType?: string | null }, idx: number) => {
           const argVal = idx < rawArgs.length ? rawArgs[idx] : (tp.defaultType ? evaluateType(tp.defaultType, subEnv, depth + 1) : 'any');
           subEnv.set(tp.name, argVal);
         });
@@ -1325,15 +1345,15 @@ export function typecheckTS(src, strict = STRICT_TS) {
     return t;
   }
 
-  function resolveAlias(t, typeEnv = activeTypeParams) {
+  function resolveAlias(t: string | null | undefined, typeEnv: Map<string, string> = activeTypeParams): string {
     return evaluateType(t, typeEnv, 0);
   }
 
-  function parseObjectShapeLiteral(typeBody, typeEnv = activeTypeParams) {
+  function parseObjectShapeLiteral(typeBody: string, typeEnv: Map<string, string> = activeTypeParams): Map<string, { type: string; rawType: string; optional: boolean }> {
     const inner = typeBody.trim().replace(/^\{/, '').replace(/\}$/, '').trim();
     const propMap = new Map<any, any>();
     if (!inner) return propMap;
-    const members = [];
+    const members: string[] = [];
     let d = 0, ad = 0, cur = '';
     for (let i = 0; i < inner.length; i++) {
       const ch = inner[i];
@@ -1366,7 +1386,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
     return propMap;
   }
 
-  function getInterfaceShape(typeName) {
+  function getInterfaceShape(typeName: string | null | undefined): Map<string, { type: string; rawType: string; optional: boolean }> | null {
     if (!typeName) return null;
     const resolved = evaluateType(typeName, activeTypeParams);
     if (resolved.startsWith('{') && resolved.endsWith('}')) {
@@ -1384,15 +1404,15 @@ export function typecheckTS(src, strict = STRICT_TS) {
         while (p && !visited.has(p)) {
           visited.add(p);
           const pShape = interfaces.get(p);
-          if (pShape) pShape.forEach((v, k) => { if (!merged.has(k)) merged.set(k, { ...v }); });
+          if (pShape) pShape.forEach((v: { type: string; rawType: string; optional: boolean }, k: string) => { if (!merged.has(k)) merged.set(k, { ...v }); });
           p = classParents.get(p);
         }
       }
-      direct.forEach((v, k) => merged.set(k, { ...v }));
+      direct.forEach((v: { type: string; rawType: string; optional: boolean }, k: string) => merged.set(k, { ...v }));
       const tParams = interfaceTypeParams.get(baseName);
       if (tParams && tParams.length > 0 && typeArgs.length > 0) {
         const subEnv = new Map(activeTypeParams);
-        tParams.forEach((tp, idx) => {
+        tParams.forEach((tp: { name: string; defaultType?: string | null }, idx: number) => {
           subEnv.set(tp.name, idx < typeArgs.length ? typeArgs[idx] : (tp.defaultType ? evaluateType(tp.defaultType, subEnv) : 'any'));
         });
         const instantiated = new Map<any, any>();
@@ -1409,7 +1429,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
     return null;
   }
 
-  function getClassMethodSig(className, methodName) {
+  function getClassMethodSig(className: string, methodName: string): FnSigInfo | null {
     const resolved = evaluateType(className, activeTypeParams);
     const genM = resolved.match(/^([A-Za-z_$][\w$]*)<([\s\S]+)>$/);
     let cur = genM ? genM[1] : resolved;
@@ -1417,7 +1437,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
     const tParams = interfaceTypeParams.get(cur);
     const classEnv = new Map(activeTypeParams);
     if (tParams && tParams.length > 0 && typeArgs.length > 0) {
-      tParams.forEach((tp, idx) => {
+      tParams.forEach((tp: { name: string; defaultType?: string | null }, idx: number) => {
         classEnv.set(tp.name, idx < typeArgs.length ? typeArgs[idx] : (tp.defaultType ? evaluateType(tp.defaultType, classEnv) : 'any'));
       });
     }
@@ -1430,7 +1450,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
         if (classEnv.size === 0) return rawSig;
         return {
           ...rawSig,
-          params: rawSig.params.map(p => ({
+          params: rawSig.params.map((p: { name: string; type: string; rawType: string; optional: boolean }) => ({
             ...p,
             type: evaluateType(p.rawType || p.type, classEnv),
             rawType: substituteTypeParamsInStr(p.rawType || p.type, classEnv),
@@ -1444,7 +1464,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
     return null;
   }
 
-  function inferLiteralType(expr) {
+  function inferLiteralType(expr: string | null | undefined): string | null {
     if (!expr) return null;
     const s = expr.trim();
     if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
@@ -1455,7 +1475,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
     return null;
   }
 
-  function isTypeCompatible(actualType, expectedType) {
+  function isTypeCompatible(actualType: string | null | undefined, expectedType: string | null | undefined): boolean {
     if (!actualType || !expectedType) return true;
     const a = evaluateType(actualType, activeTypeParams);
     const e = evaluateType(expectedType, activeTypeParams);
@@ -1475,10 +1495,10 @@ export function typecheckTS(src, strict = STRICT_TS) {
     if (eShape) {
       if (e === 'object' || e === '{}') return !['number', 'string', 'boolean', 'null', 'undefined', 'void'].includes(a);
       if (a === 'string' || a.startsWith('"')) {
-        if (eShape.size === 1 && eShape.has('length') && eShape.get('length').type === 'number') return true;
+        if (eShape.size === 1 && eShape.has('length') && (eShape.get('length') || { type: '' }).type === 'number') return true;
       }
       if (a.endsWith('[]') || (a.startsWith('[') && a.endsWith(']'))) {
-        if (eShape.size === 1 && eShape.has('length') && eShape.get('length').type === 'number') return true;
+        if (eShape.size === 1 && eShape.has('length') && (eShape.get('length') || { type: '' }).type === 'number') return true;
       }
       const aShape = getInterfaceShape(a);
       if (aShape) {
@@ -1486,7 +1506,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
           if (!aShape.has(propName)) {
             if (!propInfo.optional) return false;
           } else {
-            const actualPropT = aShape.get(propName).type;
+            const actualPropT = (aShape.get(propName) || { type: 'any' }).type;
             if (!isTypeCompatible(actualPropT, propInfo.type)) return false;
           }
         }
@@ -1496,7 +1516,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
     return false;
   }
 
-  function isExpressionAssignable(expr, actualType, expectedType, lineNum) {
+  function isExpressionAssignable(expr: string | null | undefined, actualType: string, expectedType: string, lineNum: number): boolean {
     const e = evaluateType(expectedType, activeTypeParams);
     const a = evaluateType(actualType, activeTypeParams);
     if (isTypeCompatible(a, e)) return true;
@@ -1519,7 +1539,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
     return false;
   }
 
-  function parseObjectLiteralEntries(expr) {
+  function parseObjectLiteralEntries(expr: string): Map<string, string> | null {
     const s = expr.trim();
     if (!s.startsWith('{') || !s.endsWith('}') || findBalancedParen(s, 0) !== s.length - 1) return null;
     const inner = s.slice(1, -1).trim();
@@ -1548,7 +1568,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
     return entries;
   }
 
-  function checkObjectLiteralAgainstShape(objExpr, expectedType, lineNum, contextDesc) {
+  function checkObjectLiteralAgainstShape(objExpr: string, expectedType: string, lineNum: number, contextDesc: string): boolean {
     const shape = getInterfaceShape(expectedType);
     const entries = parseObjectLiteralEntries(objExpr);
     if (!shape || !entries) return false;
@@ -1566,7 +1586,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
       if (!shape.has(propName)) {
         addDiag(lineNum, 'TS2353', `对象字面量只能指定已知属性，并且 "${propName}" 不存在于类型 "${expectedType}" 中 (${contextDesc})`);
       } else {
-        const expectedPropT = shape.get(propName).type;
+        const expectedPropT = (shape.get(propName) || { type: 'any' }).type;
         if (valExpr.trim().startsWith('{') && getInterfaceShape(expectedPropT)) {
           checkObjectLiteralAgainstShape(valExpr, expectedPropT, lineNum, `属性 "${propName}"`);
         } else if (valT !== 'any' && !isExpressionAssignable(valExpr, valT, expectedPropT, lineNum)) {
@@ -1577,7 +1597,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
     return true;
   }
 
-  function checkTemplateInterpolations(tpl, lineNum) {
+  function checkTemplateInterpolations(tpl: string, lineNum: number): void {
     let i = 1;
     while (i < tpl.length - 1) {
       if (tpl[i] === '\\') { i += 2; continue; }
@@ -1592,7 +1612,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
     }
   }
 
-  function inferType(expr, lineNum) {
+  function inferType(expr: string | null | undefined, lineNum: number): string {
     if (!expr) return 'any';
     let s = stripInlineCommentSafe(expr).trim().replace(/;$/, '').trim();
     if (!s) return 'any';
@@ -1612,7 +1632,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
 
     // Top-level `as` or `satisfies` cast (only when outside parens/brackets/braces)
     {
-      let d = 0, castType = null;
+      let d = 0, castType: string | null = null;
       for (let i = 0; i < s.length; i++) {
         const ch = s[i];
         if (ch === '"' || ch === "'" || ch === '`') { i = skipString(s, i) - 1; continue; }
@@ -1684,7 +1704,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
         const clsName = idInfo.name;
         let pIdx = idInfo.end;
         while (pIdx < afterNew.length && isWS(afterNew[pIdx])) pIdx++;
-        let explicitTypeArgs = [];
+        let explicitTypeArgs: string[] = [];
         if (afterNew[pIdx] === '<') {
           let ad = 1, k = pIdx + 1;
           while (k < afterNew.length && ad > 0) {
@@ -1714,11 +1734,11 @@ export function typecheckTS(src, strict = STRICT_TS) {
             };
             instantiateAndCheckCall(effectiveSig, explicitTypeArgs, args, argTypes, `构造函数 "new ${clsName}"`, lineNum, callEnv);
           } else if (clsTParams.length > 0 && explicitTypeArgs.length > 0) {
-            clsTParams.forEach((tp, idx) => {
+            clsTParams.forEach((tp: { name: string; constraint?: string | null; defaultType?: string | null }, idx: number) => {
               const argVal = idx < explicitTypeArgs.length ? evaluateType(explicitTypeArgs[idx]) : (tp.defaultType ? evaluateType(tp.defaultType, callEnv) : 'any');
               callEnv.set(tp.name, argVal);
             });
-            clsTParams.forEach(tp => {
+            clsTParams.forEach((tp: { name: string; constraint?: string | null; defaultType?: string | null }) => {
               if (tp.constraint) {
                 const cEval = evaluateType(tp.constraint, callEnv);
                 const bVal = callEnv.get(tp.name);
@@ -1729,7 +1749,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
             });
           }
           if (clsTParams.length > 0) {
-            const instArgs = clsTParams.map((tp, idx) => {
+            const instArgs = clsTParams.map((tp: { name: string; constraint?: string | null; defaultType?: string | null }, idx: number) => {
               if (callEnv.has(tp.name)) return callEnv.get(tp.name);
               if (idx < explicitTypeArgs.length) return evaluateType(explicitTypeArgs[idx]);
               return tp.defaultType ? evaluateType(tp.defaultType) : 'any';
@@ -1755,7 +1775,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
       const elems = splitTopLevel(inner).map(e => inferType(e, lineNum));
       const concrete = elems.filter(t => t !== 'any');
       if (!concrete.length) return 'any[]';
-      const unique = [];
+      const unique: string[] = [];
       concrete.forEach(t => {
         splitTopLevelUnion(normalizeTsType(t)).forEach(u => {
           if (!unique.includes(u)) unique.push(u);
@@ -1768,7 +1788,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
     if (s.startsWith('{') && s.endsWith('}') && findBalancedParen(s, 0) === s.length - 1) {
       const entries = parseObjectLiteralEntries(s);
       if (entries) {
-        const shapeParts = [];
+        const shapeParts: string[] = [];
         entries.forEach((vExpr, kName) => {
           const vt = inferType(vExpr, lineNum);
           shapeParts.push(`${kName}:${vt}`);
@@ -1835,8 +1855,11 @@ export function typecheckTS(src, strict = STRICT_TS) {
         const condExpr = s.slice(0, qIdx).trim();
         inferType(condExpr, lineNum);
         const eqNullM = condExpr.match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*(===|!==)\s*(null|undefined)$/);
-        let savedNarrow = null;
-        const applyNarrow = (targetExpr, nullKind) => {
+        let savedNarrow: {
+          key: string;
+          prev: { type: string; isConst: boolean; line: number; declaredType?: string; literalType?: string | null } | undefined;
+        } | null = null;
+        const applyNarrow = (targetExpr: string, nullKind: string) => {
           const baseT = inferType(targetExpr, lineNum);
           const narrowedT = stripNullableFromType(baseT, nullKind);
           savedNarrow = { key: targetExpr, prev: env.get(targetExpr) };
@@ -2005,7 +2028,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
       const callee = callPrefixM[1];
       let scanPos = callee.length;
       while (scanPos < s.length && isWS(s[scanPos])) scanPos++;
-      let explicitTypeArgs = [];
+      let explicitTypeArgs: string[] = [];
       if (s[scanPos] === '<') {
         let ad = 1, k = scanPos + 1;
         while (k < s.length && ad > 0) {
@@ -2129,7 +2152,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
           }
           const objShape = getInterfaceShape(objType);
           if (objShape && objShape.has(method)) {
-            const propType = objShape.get(method).type || '';
+            const propType = (objShape.get(method) || { type: '' }).type || '';
             const arrowPos = propType.lastIndexOf('=>');
             if (arrowPos > 0) {
               return resolveAlias(propType.slice(arrowPos + 2).trim());
@@ -2215,7 +2238,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
             addDiag(lineNum, 'TS2339', `类型 "${lookupType}" 上不存在属性 "${prop}"`);
             return 'any';
           }
-          curType = shape.get(prop).type;
+          curType = (shape.get(prop) || { type: 'any' }).type;
         } else {
           if (prop === 'length' || prop === 'size' || prop === 'val') curType = 'number';
           else curType = 'any';
@@ -2246,7 +2269,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
     return 'any';
   }
 
-  function instantiateAndCheckCall(sig, explicitTypeArgs, args, argTypes, calleeLabel, lineNum, outEnv = null) {
+  function instantiateAndCheckCall(sig: FnSigInfo, explicitTypeArgs: string[], args: string[], argTypes: string[], calleeLabel: string, lineNum: number, outEnv: Map<string, string> | null = null): string {
     if (args.length < sig.minArgs || args.length > sig.params.length) {
       addDiag(lineNum, 'TS2554', `${calleeLabel} 应有 ${sig.minArgs === sig.params.length ? sig.params.length : sig.minArgs + '-' + sig.params.length} 个参数，但获得 ${args.length} 个`);
       return sig.returnType || 'any';
@@ -2343,7 +2366,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
     return sig.returnType ? evaluateType(sig.returnType) : 'any';
   }
 
-  function checkArrayElementsAgainst(arrExpr, expectedElemType, lineNum, contextLabel) {
+  function checkArrayElementsAgainst(arrExpr: string, expectedElemType: string, lineNum: number, contextLabel: string) {
     const s = arrExpr.trim();
     if (!s.startsWith('[') || !s.endsWith(']')) return;
     const inner = s.slice(1, -1).trim();
@@ -2359,9 +2382,9 @@ export function typecheckTS(src, strict = STRICT_TS) {
     });
   }
 
-  function parseParamList(paramStr, lineNum, checkImplicitAny = true) {
+  function parseParamList(paramStr: string, lineNum: number, checkImplicitAny = true) {
     const rawParams = paramStr ? splitTopLevelDecl(paramStr) : [];
-    const params = [];
+    const params: Array<{ name: string; type: string; rawType: string; optional: boolean }> = [];
     let minArgs = 0;
     rawParams.forEach(pRaw => {
       const p = pRaw.trim().replace(/^(?:public|private|protected|readonly)\s+/, '');
@@ -2388,7 +2411,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
     return { params, minArgs };
   }
 
-  function parseClassTopMember(mem, propMap, clsName, lineNum) {
+  function parseClassTopMember(mem: string, propMap: Map<string, { type: string; rawType: string; optional: boolean }>, clsName: string, lineNum: number) {
     const s = mem.trim();
     if (!s) return;
     const getterM = s.match(/^(?:(?:public|private|protected|static|readonly)\s+)*get\s+([A-Za-z_$][\w$]*)\s*\(\s*\)\s*(?::\s*([^{]+))?/);
@@ -2457,7 +2480,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
   }
 
   // Pass 1: Collect interfaces, classes, type aliases & function signatures
-  let activeInterface = null;
+  let activeInterface: Map<string, { type: string; rawType: string; optional: boolean }> | null = null;
   let activeInterfaceName = '';
   let activeInterfaceIsClass = false;
   let activeInterfaceDepth = 0;
@@ -2480,8 +2503,9 @@ export function typecheckTS(src, strict = STRICT_TS) {
           if (activeInterfaceIsClass && /^(?:(?:public|private|protected|static|async|readonly|abstract|get|set)\s+)*[A-Za-z_$][\w$]*\s*(?:<[\s\S]*>)?\s*\(/.test(memberPart)) {
             parseClassTopMember(memberPart, activeInterface, activeInterfaceName, lineNum);
           } else {
+            const activeIfaceMap = activeInterface;
             memberPart.split(/[;,]/).map(s => s.trim()).filter(Boolean).forEach(mem => {
-              parseClassTopMember(mem, activeInterface, activeInterfaceName, lineNum);
+              parseClassTopMember(mem, activeIfaceMap, activeInterfaceName, lineNum);
             });
           }
         }
@@ -2580,7 +2604,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
       const aliasName = typeHdrM[1];
       let fullTypeDecl = raw;
       let scanIdx = i;
-      const countTypeDepth = (str) => {
+      const countTypeDepth = (str: string) => {
         let d = 0, ad = 0, seenEq = false;
         let p = typeHdrM[0].length;
         while (p < str.length && isWS(str[p])) p++;
@@ -2658,7 +2682,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
       let headerStr = raw;
       let scanLine = i;
       let openP = -1;
-      const findFnOpenParen = (str) => {
+      const findFnOpenParen = (str: string) => {
         let pos = fnMatch[0].length;
         while (pos < str.length && isWS(str[pos])) pos++;
         if (str[pos] === '<') {
@@ -2715,9 +2739,24 @@ export function typecheckTS(src, strict = STRICT_TS) {
   });
 
   // Pass 2: Check statements, declarations, reassignments, returns, and calls line-by-line
-  let currentFn = null;
-  const fnScopeStack = [];
-  let currentClass = null;
+  interface FnSigInfo {
+    name: string;
+    params: Array<{ name: string; type: string; rawType: string; optional: boolean }>;
+    minArgs: number;
+    returnType: string;
+    rawReturnType: string;
+    typeParams: Array<{ name: string; constraint: string | null; defaultType: string | null }>;
+    line: number;
+    hasValueReturn: boolean;
+  }
+  let currentFn: FnSigInfo | null = null;
+  const fnScopeStack: Array<{
+    fn: FnSigInfo | null;
+    startDepth: number;
+    prevEnv: Map<string, { type: string; isConst: boolean; line: number; declaredType?: string; literalType?: string | null }>;
+    prevTypeParams: Map<string, string>;
+  }> = [];
+  let currentClass: string | null = null;
   let classStartBraceDepth = 0;
   let braceDepth = 0;
   let fnStartBraceDepth = 0;
@@ -2820,13 +2859,13 @@ export function typecheckTS(src, strict = STRICT_TS) {
     const classOpen = trimmed.match(/^(?:export\s+)?(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)(?:\s*<[\s\S]*>)?(?:\s+extends\s+[^{]+)?(?:\s+implements\s+[^{]+)?\s*\{/);
     const classExprOpen = !classOpen ? trimmed.match(/^(?:export\s+)?(const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*class\b(?:\s+[A-Za-z_$][\w$]*)?\s*\{/) : null;
     if (classOpen || classExprOpen) {
-      const clsName = classOpen ? classOpen[1] : classExprOpen[2];
+      const clsName = classOpen ? classOpen[1] : (classExprOpen ? classExprOpen[2] : '');
       if (classExprOpen) {
         env.set(clsName, { type: clsName, isConst: classExprOpen[1] === 'const', line: lineNum, declaredType: clsName });
         if (!interfaces.has(clsName)) interfaces.set(clsName, new Map<any, any>());
       }
       const clsTParams = interfaceTypeParams.get(clsName) || [];
-      clsTParams.forEach(tp => activeTypeParams.set(tp.name, tp.name));
+      clsTParams.forEach((tp: { name: string }) => activeTypeParams.set(tp.name, tp.name));
       let d = 0;
       for (let k = 0; k < rawLine.length; k++) {
         const ch = rawLine[k];
@@ -2882,7 +2921,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
 
     const fnOpen = trimmed.match(/^(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*(?:<[\s\S]*>)?\s*\(/);
     const arrowFnOpen = !fnOpen ? trimmed.match(/^(?:export\s+)?(const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:function(?:\s+[A-Za-z_$][\w$]*)?\s*)?(?:(<[\s\S]*>)\s*)?\(([^)]*)\)\s*(?::\s*([^=]+?))?\s*(?:=>\s*)?\{/) : null;
-    let validMethodOpen = null;
+    let validMethodOpen: string[] | null = null;
     if (!fnOpen && !arrowFnOpen && currentClass && braceDepth === classStartBraceDepth + 1) {
       const mHdr = trimmed.match(/^(?:(?:public|private|protected|static|async|readonly|get|set)\s+)*([A-Za-z_$][\w$]*)\s*(?:<[\s\S]*>)?\s*\(/);
       if (mHdr && !RESERVED_WORDS.has(mHdr[1])) {
@@ -2931,23 +2970,24 @@ export function typecheckTS(src, strict = STRICT_TS) {
         prevEnv: new Map(env),
         prevTypeParams: new Map(activeTypeParams),
       });
-      if (fnOpen && fns.has(fnOpen[1])) {
-        currentFn = fns.get(fnOpen[1]);
-      } else if (validMethodOpen && currentClass && fns.has(currentClass + '.' + validMethodOpen[1])) {
-        currentFn = fns.get(currentClass + '.' + validMethodOpen[1]);
+      const existingFn: FnSigInfo | undefined = (fnOpen && fns.get(fnOpen[1])) ||
+        (validMethodOpen && currentClass ? fns.get(currentClass + '.' + validMethodOpen[1]) : undefined);
+      let activeFn: FnSigInfo;
+      if (existingFn) {
+        activeFn = existingFn;
       } else if (callbackArrowOpen) {
         const cbTParams = callbackArrowOpen[1] ? parseTypeParams(callbackArrowOpen[1]) : [];
         const cbParamStr = (callbackArrowOpen[2] || '').trim();
         const cbRawRet = callbackArrowOpen[3] ? callbackArrowOpen[3].trim() : 'any';
         const cbRet = callbackArrowOpen[3] ? resolveAlias(cbRawRet) : 'any';
         const { params: cbParams, minArgs: cbMin } = parseParamList(cbParamStr, lineNum, false);
-        currentFn = { name: '<callback>', params: cbParams, minArgs: cbMin, returnType: cbRet, rawReturnType: cbRawRet, typeParams: cbTParams, line: lineNum, hasValueReturn: false };
+        activeFn = { name: '<callback>', params: cbParams, minArgs: cbMin, returnType: cbRet, rawReturnType: cbRawRet, typeParams: cbTParams, line: lineNum, hasValueReturn: false };
       } else {
-        const fName = fnOpen ? fnOpen[1] : (arrowFnOpen ? arrowFnOpen[2] : (currentClass + '.' + validMethodOpen[1]));
+        const fName = fnOpen ? fnOpen[1] : (arrowFnOpen ? arrowFnOpen[2] : (currentClass + '.' + (validMethodOpen ? validMethodOpen[1] : '')));
         let paramStr = '';
         let retType = 'any';
         let rawRetType = 'any';
-        let fnTParams = [];
+        let fnTParams: Array<{ name: string; constraint: string | null; defaultType: string | null }> = [];
         if (fnOpen) {
           const openP = trimmed.indexOf('(');
           const closeP = findBalancedParen(trimmed, openP);
@@ -2971,14 +3011,15 @@ export function typecheckTS(src, strict = STRICT_TS) {
           retType = validMethodOpen[1] === 'constructor' ? 'void' : resolveAlias(rawRetType);
         }
         const { params, minArgs } = parseParamList(paramStr, lineNum, Boolean(fnOpen || validMethodOpen));
-        currentFn = { name: fName, params, minArgs, returnType: retType, rawReturnType: rawRetType, typeParams: fnTParams, line: lineNum, hasValueReturn: false };
-        fns.set(fName, currentFn);
+        activeFn = { name: fName, params, minArgs, returnType: retType, rawReturnType: rawRetType, typeParams: fnTParams, line: lineNum, hasValueReturn: false };
+        fns.set(fName, activeFn);
       }
-      if (currentFn.typeParams) {
-        currentFn.typeParams.forEach(tp => activeTypeParams.set(tp.name, tp.name));
+      currentFn = activeFn;
+      if (activeFn.typeParams) {
+        activeFn.typeParams.forEach(tp => activeTypeParams.set(tp.name, tp.name));
       }
-      currentFn.params.forEach(p => {
-        env.set(p.name, { type: p.type, isConst: false, line: currentFn.line, declaredType: p.type });
+      activeFn.params.forEach(p => {
+        env.set(p.name, { type: p.type, isConst: false, line: activeFn.line, declaredType: p.type });
       });
       fnStartBraceDepth = braceDepth;
       const openBraceIdx = trimmed.indexOf('{');
@@ -2986,13 +3027,13 @@ export function typecheckTS(src, strict = STRICT_TS) {
       const bodyAfterOpenBrace = openBraceIdx >= 0 ? trimmed.slice(openBraceIdx + 1) : '';
       const rm = bodyAfterOpenBrace.match(/\breturn\b([^;}\n]*)/);
       if (rm && rm[1].trim()) {
-        currentFn.hasValueReturn = true;
+        activeFn.hasValueReturn = true;
         const inlineRetExpr = rm[1].trim();
         const inlineRetT = inferType(inlineRetExpr, lineNum);
-        const expRet = currentFn.returnType;
+        const expRet = activeFn.returnType;
         const unwrappedExp = (expRet && expRet.startsWith('Promise<') && expRet.endsWith('>')) ? expRet.slice(8, -1) : expRet;
         if (expRet && expRet !== 'any' && !isExpressionAssignable(inlineRetExpr, inlineRetT, expRet, lineNum) && !isExpressionAssignable(inlineRetExpr, inlineRetT, unwrappedExp, lineNum)) {
-          addDiag(lineNum, 'TS2322', `不能将返回值类型 "${inlineRetT}" 分配给函数 "${currentFn.name}" 声明的返回类型 "${expRet}"`);
+          addDiag(lineNum, 'TS2322', `不能将返回值类型 "${inlineRetT}" 分配给函数 "${activeFn.name}" 声明的返回类型 "${expRet}"`);
         }
       }
       if (openBraceIdx >= 0 && closeBraceIdx > openBraceIdx) {
@@ -3027,8 +3068,8 @@ export function typecheckTS(src, strict = STRICT_TS) {
           if (currentFn.returnType !== 'any' && currentFn.returnType !== 'void' && currentFn.returnType !== 'Promise<void>' && currentFn.returnType !== 'unknown' && !currentFn.hasValueReturn) {
             addDiag(currentFn.line, 'TS2355', `函数 "${currentFn.name}" 声明返回类型为 "${currentFn.returnType}"，但缺少 return 返回值语句`);
           }
-          if (fnScopeStack.length > 0) {
-            const prev = fnScopeStack.pop();
+          const prev = fnScopeStack.pop();
+          if (prev) {
             currentFn = prev.fn;
             fnStartBraceDepth = prev.startDepth;
             if (prev.prevEnv) {
@@ -3046,7 +3087,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
         }
         if (currentClass && braceDepth <= classStartBraceDepth) {
           const clsTParams = interfaceTypeParams.get(currentClass) || [];
-          clsTParams.forEach(tp => activeTypeParams.delete(tp.name));
+          clsTParams.forEach((tp: { name: string }) => activeTypeParams.delete(tp.name));
           currentClass = null;
           env.delete('this');
         }
@@ -3158,7 +3199,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
     if (varM) {
       const isConst = varM[1] === 'const';
       let rest = varM[2];
-      const countOpenBrackets = (str) => {
+      const countOpenBrackets = (str: string) => {
         let b = 0;
         for (let cIdx = 0; cIdx < str.length; cIdx++) {
           const ch = str[cIdx];
@@ -3436,7 +3477,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
       const lhsPart = trimmed.slice(0, eqIdx).trim();
       const rhsPart = trimmed.slice(eqIdx + 1).replace(/;\s*$/, '').trim();
       inferType(rhsPart, lineNum);
-      const bound = new Set();
+      const bound = new Set<string>();
       extractBindingNames(lhsPart, bound);
       bound.forEach(vName => {
         if (!isKnownIdentifier(vName)) {
@@ -3490,7 +3531,7 @@ export function typecheckTS(src, strict = STRICT_TS) {
 
   // Merge cached diagnostics from the official TypeScript Web Worker if available for this exact source
   if (_TS_WORKER_STATE.lastSrc === src && Array.isArray(_TS_WORKER_STATE.lastDiags)) {
-    _TS_WORKER_STATE.lastDiags.forEach(wd => {
+    _TS_WORKER_STATE.lastDiags.forEach((wd: { line: number; code: string; message?: string }) => {
       if (!diagnostics.some(d => d.line === wd.line && d.code === wd.code)) {
         diagnostics.push({ line: wd.line, code: wd.code, message: wd.message });
       }
@@ -3553,7 +3594,7 @@ export function ensureTsWorker() {
   }
 }
 
-export function requestTsWorkerCheck(src, strict) {
+export function requestTsWorkerCheck(src: string, strict: boolean) {
   if (!strict || typeof src !== 'string' || typeof Worker === 'undefined') return;
   const w = ensureTsWorker();
   if (!w) return;
@@ -3567,7 +3608,7 @@ export function requestTsWorkerCheck(src, strict) {
   }, 60);
 }
 
-export function reportTypeErrors(diags) {
+export function reportTypeErrors(diags: Array<{ line: number; code?: string | number; message?: string }>) {
   TYPE_ERROR_LINES = new Set(diags.map(d => d.line));
   updateEditorChrome();
   say(`✗ TypeScript 严格类型检查未通过 (共 ${diags.length} 处错误)：`, 'err');
