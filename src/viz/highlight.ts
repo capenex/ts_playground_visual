@@ -1,33 +1,25 @@
 /* ================================================================
-   TypeScript Playground — syntax highlight + active line tokens
-   Part 7/10 · loaded in order from index.html (classic script;
-   shares the global lexical scope with the other parts).
+   Syntax Highlight, Active-Line Tokens & Hover Inspector (src/viz/highlight.ts)
    ================================================================ */
+import { blankStrings, isIdentPart, RESERVED_WORDS } from "../compiler/comments";
+import { stripTypes } from "../compiler/transpile";
+import { collectNames } from "../compiler/instrumenter";
+import { typecheckTS, inferRuntimeTsType } from "../compiler/type-checker";
+import { updateStepViz, positionStepViz } from "./ast-view";
+import { getActiveFrame, isMapLike, isSetLike, formatShortVal, VIZ } from "./memory-graph";
 
-/* ================================================================
-   5) Syntax highlight + active-line expression tokens + inter-line viz
-   ================================================================ */
-function esc(t) {
-  return String(t)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-/* Names that are always available even though the user never declares them.
-   Everything else that is used without a declaration is rendered plain (white). */
-const HIGHLIGHT_BUILTINS = new Set([
+export const HIGHLIGHT_BUILTINS = new Set([
   'checkpoint', '断点', 'this', 'console', 'window', 'document', 'globalThis',
   'undefined', 'NaN', 'Infinity', 'Math', 'JSON', 'Object', 'Array', 'Number',
   'String', 'Boolean', 'Map', 'Set', 'Promise', 'Error', 'RegExp', 'Date',
   'parseInt', 'parseFloat', 'isNaN', 'setTimeout', 'clearTimeout',
 ]);
 
-let DECLARED_NAMES_CACHE = { src: null, names: new Set() };
+let DECLARED_NAMES_CACHE: any = { src: null, names: new Set() };
 
 /* All names the current buffer actually declares: const/let/var (incl. destructuring),
    function & arrow params, loop/catch bindings, function/class/interface/type names. */
-function collectDeclaredNames(src) {
+export function collectDeclaredNames(src) {
   if (LANG === 'python') return PY_ENGINE.collectDeclared(src);
   const text = String(src == null ? '' : src);
   if (DECLARED_NAMES_CACHE.src === text) return DECLARED_NAMES_CACHE.names;
@@ -49,7 +41,7 @@ function collectDeclaredNames(src) {
   return names;
 }
 
-function collectHighlightBuiltins(declared) {
+export function collectHighlightBuiltins(declared) {
   const source = LANG === 'python'
     ? ((typeof PY_ENGINE !== 'undefined' && PY_ENGINE.builtins) || [])
     : HIGHLIGHT_BUILTINS;
@@ -60,7 +52,7 @@ function collectHighlightBuiltins(declared) {
   return out;
 }
 
-function hl(t, declared) {
+export function hl(t: any, declared?: any) {
   if (LANG === 'python') return PY_ENGINE.hl(t, declared);
   const re = /(\/\/.*$)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)|\b(function|const|let|var|new|class|extends|typeof|instanceof|import|export|from|async|await|interface|type|as|satisfies)\b|\b(for|if|else|return|while|do|switch|case|break|continue|try|catch|finally|throw|yield)\b|\b(number|string|boolean|void|any|unknown|never|Math|Map|Set|Array|Object|JSON|Number|String|Boolean|Promise|Record|Error)\b|\b(true|false|null|undefined|\d+(?:\.\d+)?)\b|(\b[A-Za-z_$][\w$]*)(?=\s*\()|(?<=\.)([A-Za-z_$][\w$]*)\b|([{,][ \t]*)([A-Za-z_$][\w$]*)(?=[ \t]*:)|(^[ \t]*)([A-Za-z_$][\w$]*)(?=[ \t]*:)|\b([A-Za-z_$][\w$]*)\b|(===|!==|>=|<=|=>|&&|\|\||\+\+|--)/g;
   let out = '', last = 0, m;
@@ -95,7 +87,7 @@ function hl(t, declared) {
   return out;
 }
 
-function findExprSpan(line, target, fromIndex = 0) {
+export function findExprSpan(line, target, fromIndex = 0) {
   if (!target) return -1;
   const startBoundary = isIdentPart(target[0]);
   const endBoundary = isIdentPart(target[target.length - 1]);
@@ -113,7 +105,7 @@ function findExprSpan(line, target, fromIndex = 0) {
   return -1;
 }
 
-function hlActiveLine(rawLine, anim, declared) {
+export function hlActiveLine(rawLine: any, anim?: any, declared?: any) {
   if (LANG === 'python') return PY_ENGINE.hlActiveLine(rawLine, anim, declared);
   if (!anim) return hl(rawLine, declared);
   const h = (s) => hl(s, declared);
@@ -211,172 +203,7 @@ function hlActiveLine(rawLine, anim, declared) {
   return h(rawLine);
 }
 
-function getActiveFrame(st) {
-  if (!st) return null;
-  const stack = Array.isArray(st.callStack) && st.callStack.length ? st.callStack : null;
-  if (!stack) {
-    return {
-      idx: 0,
-      total: 1,
-      isTop: true,
-      fn: 'global',
-      label: 'global',
-      line: st.line,
-      v: st.v || {},
-      ds: st.ds || {},
-    };
-  }
-  const topIdx = stack.length - 1;
-  const idx = (SELECTED_FRAME_IDX !== null && SELECTED_FRAME_IDX >= 0 && SELECTED_FRAME_IDX < stack.length)
-    ? SELECTED_FRAME_IDX
-    : topIdx;
-  const frame = stack[idx] || stack[topIdx];
-  return {
-    idx,
-    total: stack.length,
-    isTop: idx === topIdx,
-    fn: frame.fn || 'global',
-    label: frame.label || 'global',
-    line: frame.line || st.line,
-    v: frame.v || (idx === topIdx ? st.v : {}) || {},
-    ds: (frame.ds && Object.keys(frame.ds).length ? frame.ds : st.ds) || {},
-  };
-}
-
-function selectStackFrame(frameIdx) {
-  const st = TRACE.steps[cur];
-  if (!st || !Array.isArray(st.callStack) || !st.callStack.length) return;
-  const topIdx = st.callStack.length - 1;
-  const clamped = Math.max(0, Math.min(topIdx, Number(frameIdx) || 0));
-  SELECTED_FRAME_IDX = clamped === topIdx ? null : clamped;
-  renderStatic(cur, false);
-}
-
-function renderCallStack(st) {
-  if (!callStackBarEl) return;
-  if (!st) {
-    callStackBarEl.innerHTML = '<span class="cs-empty">未在调试</span>';
-    if (callStackHintEl) callStackHintEl.textContent = '点击栈帧可切换作用域';
-    return;
-  }
-  const stack = (Array.isArray(st.callStack) && st.callStack.length)
-    ? st.callStack
-    : [{ fn: 'global', label: 'global', line: st.line, v: st.v || {}, ds: st.ds || {} }];
-  const active = getActiveFrame(st);
-  callStackBarEl.innerHTML = stack.map((f, fIdx) => {
-    const isSel = fIdx === active.idx;
-    const isTop = fIdx === stack.length - 1;
-    const cls = 'cs-crumb' + (isSel ? ' active' : '') + (isTop ? ' is-top' : '') + (!isTop && isSel ? ' inspecting' : '');
-    const sep = fIdx > 0 ? '<span class="cs-sep">▸</span>' : '';
-    return sep + `<button type="button" class="${cls}" data-frame-idx="${fIdx}" title="切换到栈帧 ${esc(f.label)} (第 ${f.line || st.line} 行)">${esc(f.label)}</button>`;
-  }).join('');
-  if (callStackHintEl) {
-    callStackHintEl.textContent = active.isTop
-      ? `栈深 ${stack.length} · 点击栈帧可切换`
-      : `正在查看栈帧 ${active.idx + 1}/${stack.length}: ${active.label}`;
-  }
-}
-
-function buildStepVizRow(rawLine, anim, stError, isBelow = false) {
-  const guideChar = isBelow ? '╰─' : '╭─';
-  if (stError) {
-    return `<div class="step-viz-row">` +
-      `<span class="sv-guide err">${guideChar}</span>` +
-      `<div class="sv-box sv-err-box">` +
-        `<span class="sv-err-tag">✗ RUNTIME ERROR</span>` +
-        `<span class="sv-err-msg">${esc(stError)}</span>` +
-      `</div>` +
-    `</div>`;
-  }
-
-  if (!anim) return '';
-
-  if (anim.type === 'error' && anim.message) {
-    return `<div class="step-viz-row">` +
-      `<span class="sv-guide err">${guideChar}</span>` +
-      `<div class="sv-box sv-err-box">` +
-        `<span class="sv-err-tag">✗ RUNTIME ERROR</span>` +
-        `<span class="sv-err-msg">${esc(anim.message)}</span>` +
-      `</div>` +
-    `</div>`;
-  }
-
-  if (anim.type === 'checkpoint') {
-    const args = anim.args || [];
-    const argVals = anim.argVals || [];
-    const chips = args.length
-      ? args.map((a, idx) => {
-          const av = argVals[idx];
-          const showEq = av !== undefined && av !== a;
-          return `<span class="sv-arg">${esc(a)}${showEq ? ` <span class="sv-eval">= ${esc(av)}</span>` : ''}</span>`;
-        }).join('<span class="sv-dim">,</span>')
-      : `<span class="sv-dim">已暂停于检查点函数 ${esc(anim.fn || 'checkpoint')}()</span>`;
-    return `<div class="step-viz-row">` +
-      `<span class="sv-guide ckpt">${guideChar}</span>` +
-      `<div class="sv-box sv-ckpt-box">` +
-        `<span class="sv-ckpt-tag">◉ CHECKPOINT</span>` +
-        chips +
-      `</div>` +
-    `</div>`;
-  }
-
-  if (anim.type === 'assign') {
-    const valTxt = anim.val != null ? anim.val : '…';
-    const showFrom = anim.from && anim.from !== valTxt;
-    return `<div class="step-viz-row">` +
-      `<span class="sv-guide">${guideChar}</span>` +
-      `<div class="sv-box">` +
-        `<span class="sv-dst">${esc(anim.to)}</span>` +
-        `<span class="sv-arrow">⟵</span>` +
-        `<span class="sv-val">${esc(valTxt)}</span>` +
-        (showFrom ? `<span class="sv-dim">from</span><span class="sv-src">${esc(anim.from)}</span>` : '') +
-      `</div>` +
-    `</div>`;
-  }
-
-  if (anim.type === 'compare') {
-    const vCls = anim.result ? 'ok' : 'no';
-    const lhsShowVal = anim.lhsVal !== undefined && anim.lhsVal !== anim.lhs;
-    const rhsShowVal = anim.rhs && anim.rhsVal !== undefined && anim.rhsVal !== anim.rhs;
-    const lhsHtml = `<span class="sv-cmp"><span>${esc(anim.lhs)}</span>${lhsShowVal ? `<span class="sv-eval">= ${esc(anim.lhsVal)}</span>` : ''}</span>`;
-    const rhsHtml = anim.rhs
-      ? `<span class="sv-op">${esc(anim.op)}</span><span class="sv-cmp"><span>${esc(anim.rhs)}</span>${rhsShowVal ? `<span class="sv-eval">= ${esc(anim.rhsVal)}</span>` : ''}</span>`
-      : '';
-    return `<div class="step-viz-row">` +
-      `<span class="sv-guide">${guideChar}</span>` +
-      `<div class="sv-box">` +
-        lhsHtml +
-        rhsHtml +
-        `<span class="sv-verdict ${vCls}">⇒ ${anim.result ? 'true' : 'false'}</span>` +
-      `</div>` +
-    `</div>`;
-  }
-
-  if (anim.type === 'call') {
-    const args = anim.args || [];
-    const argVals = anim.argVals || [];
-    const argChips = args.map((a, idx) => {
-      const av = argVals[idx];
-      const showEq = av !== undefined && av !== a;
-      return `<span class="sv-arg">${esc(a)}${showEq ? ` <span class="sv-eval">= ${esc(av)}</span>` : ''}</span>`;
-    }).join('<span class="sv-dim">,</span>');
-    const prefix = anim.to && anim.result != null
-      ? `<span class="sv-dst">${esc(anim.to)}</span><span class="sv-arrow">⟵</span><span class="sv-val">${esc(anim.result)}</span><span class="sv-dim">from</span>`
-      : (anim.result != null ? `<span class="sv-val">${esc(anim.result)}</span><span class="sv-arrow">⟵</span>` : '');
-    return `<div class="step-viz-row">` +
-      `<span class="sv-guide">${guideChar}</span>` +
-      `<div class="sv-box">` +
-        prefix +
-        `<span class="sv-fn">${esc(anim.fn)}</span>` +
-        `<span class="sv-dim">(</span>${argChips}<span class="sv-dim">)</span>` +
-      `</div>` +
-    `</div>`;
-  }
-
-  return '';
-}
-
-function updateEditorChrome() {
+export function updateEditorChrome() {
   const text = editor.value.replace(/\r\n?/g, '\n');
   const lines = text.split('\n');
   const declared = collectDeclaredNames(text);
@@ -434,100 +261,8 @@ function updateEditorChrome() {
   syncScroll();
 }
 
-/* ── floating step capsule: rendered above the active line, over the code layer ── */
-let STEP_VIZ_LINE = -1;
-
-function updateStepViz(st, line, show, rawLine) {
-  if (!stepVizEl) return;
-  const html = (show && st) ? buildStepVizRow(rawLine, st.anim, st.error, line === 1) : '';
-  if (!html) {
-    STEP_VIZ_LINE = -1;
-    if (stepVizEl.__vizHtml !== '') {
-      stepVizEl.innerHTML = '';
-      stepVizEl.__vizHtml = '';
-    }
-    if (stepVizEl.style) stepVizEl.style.display = 'none';
-    return;
-  }
-  STEP_VIZ_LINE = line;
-  if (stepVizEl.__vizHtml !== html) {   // avoid restarting the entry animation on unrelated redraws
-    stepVizEl.innerHTML = html;
-    stepVizEl.__vizHtml = html;
-  }
-  if (stepVizEl.style) {
-    stepVizEl.style.left = '16px';
-    stepVizEl.style.display = 'block';
-  }
-  positionStepViz();
-}
-
-/* Keep the capsule glued to its line while the editor scrolls or the pane resizes. */
-function positionStepViz() {
-  if (!stepVizEl || !stepVizEl.style) return;
-  if (STEP_VIZ_LINE < 1 || !TRACE.steps.length) {
-    stepVizEl.style.display = 'none';
-    return;
-  }
-  let placedBelow = false;
-  if (window.PlaygroundCM) {
-    const cm = window.PlaygroundCM;
-    const lineTop = cm.lineTop(STEP_VIZ_LINE);
-    const h = stepVizEl.offsetHeight || 22;
-    let top = lineTop - h - 3;
-    if (top < 2) {
-      top = lineTop + 24 + 3;
-      placedBelow = true;
-    }
-    const boxH = cm.viewportHeight() || 0;
-    if (boxH && top + h > boxH - 2) {
-      top = lineTop - h - 3;
-      placedBelow = false;
-      if (top < 2) top = Math.max(2, boxH - h - 4);
-    }
-    stepVizEl.style.left = cm.contentLeft() + 'px';
-    stepVizEl.style.top = Math.round(top) + 'px';
-    stepVizEl.style.display = 'block';
-  } else {
-    const m = hoverMetrics();
-    const lineTop = m.padTop + (STEP_VIZ_LINE - 1) * m.lh - (editor.scrollTop || 0);
-    const h = stepVizEl.offsetHeight || 22;
-    let top = lineTop - h - 3;                     // preferred: float directly above the line
-    if (top < 2) {
-      top = lineTop + m.lh + 3;                    // no room above → drop below the line
-      placedBelow = true;
-    }
-    const boxH = editor.clientHeight || 0;
-    if (boxH && top + h > boxH - 2) {              // keep it inside the code box at the bottom edge
-      top = lineTop - h - 3;
-      placedBelow = false;
-      if (top < 2) top = Math.max(2, boxH - h - 4);
-    }
-    stepVizEl.style.top = Math.round(top) + 'px';
-    stepVizEl.style.display = 'block';
-  }
-  if (stepVizEl.classList) {
-    stepVizEl.classList.toggle('below-line', placedBelow);
-  }
-  if (typeof stepVizEl.innerHTML === 'string' && stepVizEl.innerHTML) {
-    const targetGuide = placedBelow ? '╰─' : '╭─';
-    const nextHtml = stepVizEl.innerHTML.replace(
-      /(<span class="sv-guide(?:\s+[^"]*)?">)(?:╭─|╰─)(<\/span>)/,
-      `$1${targetGuide}$2`
-    );
-    if (nextHtml !== stepVizEl.innerHTML) {
-      stepVizEl.innerHTML = nextHtml;
-      stepVizEl.__vizHtml = nextHtml;
-    }
-  }
-}
-
-function clearFlyLayer() {
-  if (flyLayerEl) flyLayerEl.innerHTML = '';
-}
-
-/* ── live static diagnostics: cached per source text, drives the red line markers ── */
-let LIVE_TYPE_CACHE = { src: null, diags: [] };
-function liveTypeDiags(src) {
+let LIVE_TYPE_CACHE: any = { src: null, diags: [] };
+export function liveTypeDiags(src) {
   if (LANG === 'python') return PY_DIAGS;
   const text = String(src == null ? '' : src);
   if (LIVE_TYPE_CACHE.src === text) return LIVE_TYPE_CACHE.diags;
@@ -538,7 +273,7 @@ function liveTypeDiags(src) {
 }
 
 /* Scroll (and optionally place the caret) on the given line — used by error badges & log entries. */
-function revealErrorLine(line, focus) {
+export function revealErrorLine(line: any, focus?: any) {
   const ln = Math.round(Number(line) || 0);
   if (ln < 1) return;
   if (window.PlaygroundCM) { window.PlaygroundCM.revealLine(ln, focus); return; }
@@ -558,7 +293,7 @@ function revealErrorLine(line, focus) {
 const HOVER_GEOM = { charW: 0, lh: 24, padLeft: 16, padTop: 12 };
 let hoverTipKey = '';
 
-function hoverMetrics() {
+export function hoverMetrics() {
   let lh = 24, padLeft = 16, padTop = 12;
   try {
     const cs = typeof getComputedStyle === 'function' ? getComputedStyle(editor) : null;
@@ -583,7 +318,7 @@ function hoverMetrics() {
   return { lh, padLeft, padTop, charW: HOVER_GEOM.charW || 8.5 };
 }
 
-function hoverColumnAt(lineText, x, charW) {
+export function hoverColumnAt(lineText, x, charW) {
   let acc = 0;
   for (let i = 0; i < lineText.length; i++) {
     const w = lineText[i] === '\t' ? charW * 2 : charW;
@@ -593,7 +328,7 @@ function hoverColumnAt(lineText, x, charW) {
   return -1;   // past the end of the line: nothing to inspect
 }
 
-function hoverHitFromEvent(e) {
+export function hoverHitFromEvent(e) {
   if (!editor || !editor.getBoundingClientRect) return null;
   const rect = editor.getBoundingClientRect();
   if (!rect || (!rect.width && !rect.height)) return null;
@@ -612,7 +347,7 @@ function hoverHitFromEvent(e) {
 }
 
 const HOVER_WORD_RE = /[A-Za-z0-9_$]/;
-function hoverWordAt(lineText, col) {
+export function hoverWordAt(lineText, col) {
   if (!lineText) return null;
   let i = Math.min(Math.max(0, col), lineText.length - 1);
   if (!HOVER_WORD_RE.test(lineText[i] || '')) {
@@ -629,7 +364,7 @@ function hoverWordAt(lineText, col) {
 
 /* Value + structure snapshot for a name in the frame currently shown in LOCALS
    (falling back to the global frame so outer variables stay inspectable inside functions). */
-function hoverInfoFor(name) {
+export function hoverInfoFor(name) {
   if (!name || !TRACE.steps.length) return null;
   if (typeof RESERVED_WORDS !== 'undefined' && RESERVED_WORDS.has(name) && name !== 'this') return null;
   const st = TRACE.steps[cur];
@@ -670,7 +405,7 @@ function hoverInfoFor(name) {
   };
 }
 
-function formatHoverVal(val) {
+export function formatHoverVal(val) {
   if (val === undefined) return 'undefined';
   if (val === null) return 'null';
   if (typeof val === 'function') return 'ƒ ' + (val.name || 'function');
@@ -692,7 +427,7 @@ function formatHoverVal(val) {
 
 /* Prefer the structure snapshot for the value line: deep clones stop at a depth limit
    and would otherwise print "[object Object]" for nested tree/graph nodes. */
-function hoverValueSummary(info) {
+export function hoverValueSummary(info) {
   const d = info.d;
   if (!d) return formatHoverVal(info.val);
   const short = formatShortVal;
@@ -735,7 +470,7 @@ function hoverValueSummary(info) {
   return formatHoverVal(info.val);
 }
 
-function hoverTipHtml(info) {
+export function hoverTipHtml(info) {
   if (!info) return '';
   const parts = [];
   const kindLabel = esc(String(info.kind || '').replace(/^./, c => c.toUpperCase()));
@@ -755,7 +490,7 @@ function hoverTipHtml(info) {
   return parts.join('');
 }
 
-function positionHoverTip(clientX, clientY) {
+export function positionHoverTip(clientX, clientY) {
   if (!hoverTipEl) return;
   const rect = hoverTipEl.getBoundingClientRect ? hoverTipEl.getBoundingClientRect() : { width: 320, height: 120 };
   const vw = (typeof window !== 'undefined' && window.innerWidth) || 1280;
@@ -770,14 +505,14 @@ function positionHoverTip(clientX, clientY) {
   }
 }
 
-function hideHoverTip() {
+export function hideHoverTip() {
   hoverTipKey = '';
   if (!hoverTipEl) return;
   if (hoverTipEl.classList) hoverTipEl.classList.remove('on');
   if (hoverTipEl.setAttribute) hoverTipEl.setAttribute('aria-hidden', 'true');
 }
 
-function showHoverTip(info, clientX, clientY) {
+export function showHoverTip(info, clientX, clientY) {
   if (!hoverTipEl || !info) { hideHoverTip(); return; }
   hoverTipEl.innerHTML = hoverTipHtml(info);
   if (hoverTipEl.classList) hoverTipEl.classList.add('on');
@@ -785,7 +520,7 @@ function showHoverTip(info, clientX, clientY) {
   positionHoverTip(clientX, clientY);
 }
 
-function hoverTipForName(name, clientX, clientY) {
+export function hoverTipForName(name, clientX, clientY) {
   if (!TRACE.steps.length) { hideHoverTip(); return false; }
   const info = hoverInfoFor(name);
   if (!info) { hideHoverTip(); return false; }
@@ -799,48 +534,7 @@ function hoverTipForName(name, clientX, clientY) {
   return true;
 }
 
-function playStepAnimation(st) {
-  clearFlyLayer();
-  if (IS_STILL || !st || !st.anim || !flyLayerEl) return;
-  const anim = st.anim;
-  if (anim.type !== 'assign' && !(anim.type === 'call' && anim.to && anim.result != null)) return;
-
-  const srcEl = highlightEl.querySelector('.ln.cur .tok-src') || highlightEl.querySelector('.ln.cur .tok-fn');
-  const dstEl = highlightEl.querySelector('.ln.cur .tok-dst') || highlightEl.querySelector('.ln.cur');
-  if (!srcEl || !dstEl) return;
-
-  const sRect = srcEl.getBoundingClientRect();
-  const dRect = dstEl.getBoundingClientRect();
-  if (sRect.width === 0 && sRect.height === 0) return;
-
-  const chip = document.createElement('div');
-  chip.className = 'fly-chip';
-  chip.textContent = anim.val != null ? anim.val : anim.result;
-  const sx = Math.round(sRect.left + sRect.width / 2 - 14);
-  const sy = Math.round(sRect.top - 6);
-  const dx = Math.round(dRect.left + dRect.width / 2 - 14);
-  const dy = Math.round(dRect.top - 6);
-
-  chip.style.transform = `translate3d(${sx}px, ${sy}px, 0) scale(0.92)`;
-  chip.style.opacity = '0.96';
-  flyLayerEl.appendChild(chip);
-
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      chip.classList.add('landed');
-      chip.style.transform = `translate3d(${dx}px, ${dy}px, 0) scale(1)`;
-    });
-  });
-
-  setTimeout(() => {
-    chip.style.opacity = '0';
-  }, 340);
-  setTimeout(() => {
-    if (chip.parentNode) chip.parentNode.removeChild(chip);
-  }, 620);
-}
-
-function syncScroll() {
+export function syncScroll() {
   if (window.PlaygroundCM) { positionStepViz(); return; }
   highlightEl.scrollTop = editor.scrollTop;
   highlightEl.scrollLeft = editor.scrollLeft;
@@ -848,7 +542,7 @@ function syncScroll() {
   positionStepViz();
 }
 
-function scrollCodeTo(line) {
+export function scrollCodeTo(line) {
   if (window.PlaygroundCM) { window.PlaygroundCM.scrollToLine(line); return; }
   const lh = 24;
   const idx = Math.max(0, line - 1);
@@ -858,3 +552,5 @@ function scrollCodeTo(line) {
   else if (idx >= first + visible - 1) editor.scrollTop = (idx - visible + 2) * lh;
   syncScroll();
 }
+
+export const highlightTS = hl;

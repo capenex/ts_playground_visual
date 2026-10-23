@@ -30,8 +30,7 @@ const REQUIRED = [
   'python/py_bridge.py',
   'python/serve.mjs',
   'css/app.css',
-  'js/01-prelude-and-samples.js',
-  'js/10-video-export-and-boot.js',
+  'js/app.bundle.js',
 ];
 
 function copyFile(rel) {

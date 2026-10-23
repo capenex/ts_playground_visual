@@ -1,20 +1,21 @@
 /* ================================================================
-   TypeScript Playground — snapshot / classify
-   Part 4/10 · loaded in order from index.html (classic script;
-   shares the global lexical scope with the other parts).
+   Memory Snapshot Classifier, Call Stack & Data Structure Renderers (src/viz/memory-graph.ts)
    ================================================================ */
+import { RESERVED_WORDS, skipString, splitTopLevel, splitTopLevelSemicolons } from "../compiler/comments";
+import { stripTypes } from "../compiler/transpile";
+import { inferRuntimeTsType, matchInterfaceForObject } from "../compiler/type-checker";
+import { safeJSONStringify } from "../runtime/event-loop";
+import { hideHoverTip, updateEditorChrome, scrollCodeTo } from "./highlight";
+import { playStepAnimation } from "./ast-view";
 
-/* ================================================================
-   3) Snapshot / classify — all 12 kinds + window [l, r] + anim/note
-   ================================================================ */
-function isMapLike(v) {
+export function isMapLike(v) {
   return Object.prototype.toString.call(v) === '[object Map]';
 }
-function isSetLike(v) {
+export function isSetLike(v) {
   return Object.prototype.toString.call(v) === '[object Set]';
 }
 
-function defineHidden(obj, key, val) {
+export function defineHidden(obj, key, val) {
   if (!obj || typeof obj !== 'object') return;
   try {
     Object.defineProperty(obj, key, {
@@ -23,7 +24,7 @@ function defineHidden(obj, key, val) {
   } catch (_) {}
 }
 
-function cloneDeepBounded(val, depth = 0) {
+export function cloneDeepBounded(val, depth = 0) {
   if (val === null || typeof val !== 'object') return val;
   if (val.__isVirtualPromise) {
     if (val.state === 'pending') return 'Promise <pending>';
@@ -59,7 +60,7 @@ function cloneDeepBounded(val, depth = 0) {
   return out;
 }
 
-function normalizeTree(value) {
+export function normalizeTree(value) {
   if (value && Array.isArray(value.nodes)) {
     return {
       kind: 'tree',
@@ -99,7 +100,7 @@ function normalizeTree(value) {
   return out;
 }
 
-function normalizeList(value) {
+export function normalizeList(value) {
   const pyMeta = (value && typeof value === 'object' && value.__py_meta__) ? value.__py_meta__ : null;
   if (Array.isArray(value)) {
     const total = (pyMeta && typeof pyMeta.total === 'number') ? pyMeta.total : value.length;
@@ -131,7 +132,7 @@ function normalizeList(value) {
   return out;
 }
 
-function normalizeGraph(value) {
+export function normalizeGraph(value) {
   if (value && Array.isArray(value.nodes) && Array.isArray(value.edges)) {
     const rawNodes = value.nodes.slice(0, 16);
     const count = rawNodes.length || 1;
@@ -149,7 +150,7 @@ function normalizeGraph(value) {
   return { kind: 'graph', nodes: [], edges: [] };
 }
 
-function snapshot(kind, value, extra) {
+export function snapshot(kind: any, value: any, extra?: any): any {
   const pyMeta = (value && typeof value === 'object' && value.__py_meta__) ? value.__py_meta__ : null;
   if (kind === 'stack') {
     const arr = Array.isArray(value) ? value : [];
@@ -258,244 +259,7 @@ function snapshot(kind, value, extra) {
   return { kind: 'array', items: [] };
 }
 
-/* Metadata extracted from TypeScript source for interface & variable type visualization */
-let CURRENT_TS_META = {
-  interfaces: new Map(), // ifaceName -> { name, line, isClass, fields: [{ k, declaredType, optional }] }
-  varTypes: new Map(),   // varName -> declaredType
-};
-
-function inferRuntimeTsType(val) {
-  if (val === null) return 'null';
-  if (Array.isArray(val)) {
-    if (!val.length) return 'any[]';
-    return inferRuntimeTsType(val[0]) + '[]';
-  }
-  if (isMapLike(val)) return 'Map';
-  if (isSetLike(val)) return 'Set';
-  return typeof val;
-}
-
-function extractTsInterfaceMetadata(src) {
-  const interfaces = new Map();
-  const varTypes = new Map();
-  if (!src || typeof src !== 'string') {
-    CURRENT_TS_META = { interfaces, varTypes };
-    return CURRENT_TS_META;
-  }
-
-  const lines = src.replace(/\r\n?/g, '\n').split('\n');
-  let activeIface = null;
-  let activeIfaceLine = 1;
-  let activeIsClass = false;
-  let activeBody = '';
-  let depth = 0;
-
-  function parseFieldsFromBody(bodyStr, isClass = false) {
-    const inner = bodyStr.trim().replace(/^\{/, '').replace(/\}$/, '').trim();
-    const fields = [];
-    const seen = new Set();
-    if (!inner) return fields;
-    // Strip nested method bodies `{ ... }` when parsing top-level class/interface fields
-    let topLevelOnly = '';
-    let bDepth = 0;
-    for (let i = 0; i < inner.length; i++) {
-      const ch = inner[i];
-      if (ch === '"' || ch === "'" || ch === '`') {
-        const end = skipString(inner, i);
-        if (bDepth === 0) topLevelOnly += inner.slice(i, end);
-        i = end - 1;
-        continue;
-      }
-      if (ch === '{') { bDepth++; continue; }
-      if (ch === '}') { bDepth = Math.max(0, bDepth - 1); continue; }
-      if (bDepth === 0) topLevelOnly += ch;
-    }
-    const members = topLevelOnly.split(/[;,\n]/).map(s => stripInlineCommentSafe(s).trim()).filter(Boolean);
-    members.forEach(mem => {
-      const cleaned = mem.replace(/^(?:(?:readonly|public|private|protected|static)\s+)+/, '');
-      if (/^(?:constructor|get\s+|set\s+|async\s+|[A-Za-z_$][\w$]*\s*\()/.test(cleaned)) return;
-      const m = cleaned.match(/^([A-Za-z_$][\w$]*)(\?)?\s*:\s*([^=]+?)(?:\s*=[\s\S]+)?$/);
-      if (m && !seen.has(m[1])) {
-        seen.add(m[1]);
-        fields.push({
-          k: m[1],
-          declaredType: m[3].trim(),
-          optional: Boolean(m[2]),
-        });
-        return;
-      }
-      if (isClass) {
-        const initOnly = cleaned.match(/^([A-Za-z_$][\w$]*)\s*=\s*(.+)$/);
-        if (initOnly && !seen.has(initOnly[1])) {
-          const rhs = initOnly[2].trim();
-          let inferred = 'any';
-          if (/^[+-]?\d+(?:\.\d+)?$/.test(rhs)) inferred = 'number';
-          else if (/^(true|false)$/.test(rhs)) inferred = 'boolean';
-          else if (/^["'`]/.test(rhs)) inferred = 'string';
-          else if (rhs.startsWith('[')) inferred = 'any[]';
-          seen.add(initOnly[1]);
-          fields.push({
-            k: initOnly[1],
-            declaredType: inferred,
-            optional: false,
-          });
-        }
-      }
-    });
-    if (isClass) {
-      const ctorM = inner.match(/\bconstructor\s*\(([^)]*)\)/);
-      if (ctorM && ctorM[1].trim()) {
-        splitTopLevel(ctorM[1]).forEach(rawP => {
-          const p = rawP.trim();
-          const pm = p.match(/^(?:(?:public|private|protected|readonly)\s+)+([A-Za-z_$][\w$]*)(\?)?(?:\s*:\s*([^=]+?))?(?:\s*=\s*([\s\S]+))?$/);
-          if (pm && !seen.has(pm[1])) {
-            seen.add(pm[1]);
-            let pType = pm[3] ? pm[3].trim() : 'any';
-            if (pType === 'any' && pm[4]) {
-              const rhs = pm[4].trim();
-              if (/^[+-]?\d+(?:\.\d+)?$/.test(rhs)) pType = 'number';
-              else if (/^(true|false)$/.test(rhs)) pType = 'boolean';
-              else if (/^["'`]/.test(rhs)) pType = 'string';
-            }
-            fields.push({ k: pm[1], declaredType: pType, optional: Boolean(pm[2]) });
-          }
-        });
-      }
-      const thisAssignRe = /\bthis\.([A-Za-z_$][\w$]*)\s*=/g;
-      let tm;
-      while ((tm = thisAssignRe.exec(inner))) {
-        if (!seen.has(tm[1])) {
-          seen.add(tm[1]);
-          fields.push({ k: tm[1], declaredType: 'any', optional: false });
-        }
-      }
-    }
-    return fields;
-  }
-
-  for (let i = 0; i < lines.length; i++) {
-    const raw = stripInlineCommentSafe(lines[i]);
-    const trimmed = raw.trim();
-    if (!trimmed) continue;
-
-    if (activeIface) {
-      activeBody += '\n' + raw;
-      for (const ch of raw) {
-        if (ch === '{') depth++;
-        else if (ch === '}') depth--;
-      }
-      if (depth <= 0) {
-        const parsedFields = parseFieldsFromBody(activeBody, activeIsClass);
-        if (!activeIsClass || parsedFields.length > 0) {
-          interfaces.set(activeIface, {
-            name: activeIface,
-            line: activeIfaceLine,
-            isClass: activeIsClass,
-            fields: parsedFields,
-          });
-        }
-        activeIface = null;
-        activeIsClass = false;
-        activeBody = '';
-      }
-      continue;
-    }
-
-    const ifaceM = trimmed.match(/^(?:export\s+)?(?:abstract\s+)?(interface|class)\s+([A-Za-z_$][\w$]*)(?:\s*<[^>]*>)?(?:\s+extends\s+[^{]+)?(?:\s+implements\s+[^{]+)?\s*\{(.*)$/);
-    if (ifaceM) {
-      const isClass = ifaceM[1] === 'class';
-      const name = ifaceM[2];
-      const rest = '{' + ifaceM[3];
-      let d = 0;
-      for (const ch of rest) {
-        if (ch === '{') d++;
-        else if (ch === '}') d--;
-      }
-      if (d <= 0 && rest.includes('}')) {
-        const bodyPart = rest.slice(0, rest.lastIndexOf('}') + 1);
-        const parsedFields = parseFieldsFromBody(bodyPart, isClass);
-        if (!isClass || parsedFields.length > 0) {
-          interfaces.set(name, {
-            name,
-            line: i + 1,
-            isClass,
-            fields: parsedFields,
-          });
-        }
-      } else {
-        activeIface = name;
-        activeIfaceLine = i + 1;
-        activeIsClass = isClass;
-        activeBody = rest;
-        depth = d;
-      }
-      continue;
-    }
-
-    const typeObjM = trimmed.match(/^(?:export\s+)?type\s+([A-Za-z_$][\w$]*)\s*=\s*(\{[\s\S]*\});?$/);
-    if (typeObjM) {
-      interfaces.set(typeObjM[1], {
-        name: typeObjM[1],
-        line: i + 1,
-        isClass: false,
-        fields: parseFieldsFromBody(typeObjM[2], false),
-      });
-      continue;
-    }
-
-    const fnM = trimmed.match(/^(?:export\s+)?(?:default\s+)?function\s+[A-Za-z_$][\w$]*\s*\(([^)]*)\)/);
-    if (fnM && fnM[1].trim()) {
-      splitTopLevel(fnM[1]).forEach(p => {
-        const pm = p.trim().match(/^([A-Za-z_$][\w$]*)\??\s*:\s*(.+)$/);
-        if (pm) varTypes.set(pm[1], pm[2].trim());
-      });
-    }
-
-    const varM = trimmed.match(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*:\s*([^=]+?)(?:\s*=|$)/);
-    if (varM) {
-      varTypes.set(varM[1], varM[2].trim());
-    } else {
-      const varNewM = trimmed.match(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*new\s+([A-Za-z_$][\w$]*)\s*(?:<[^>]*>)?\s*\(/);
-      if (varNewM && !/^(Map|Set|Array)$/.test(varNewM[2])) {
-        varTypes.set(varNewM[1], varNewM[2]);
-      }
-    }
-  }
-
-  CURRENT_TS_META = { interfaces, varTypes };
-  return CURRENT_TS_META;
-}
-
-function matchInterfaceForObject(name, value) {
-  const { interfaces, varTypes } = CURRENT_TS_META;
-  if (name && varTypes.has(name)) {
-    const cleanT = varTypes.get(name).replace(/\[\]$/, '').trim();
-    if (interfaces.has(cleanT)) return interfaces.get(cleanT);
-  }
-  if (value && typeof value === 'object' && value.__py_cls__ && interfaces.has(value.__py_cls__)) {
-    return interfaces.get(value.__py_cls__);
-  }
-  if (!value || typeof value !== 'object') return null;
-  const valKeys = Object.keys(value);
-  if (!valKeys.length) return null;
-  let best = null;
-  let bestScore = 0;
-  interfaces.forEach(iface => {
-    if (!iface.fields.length) return;
-    const overlap = iface.fields.filter(f => f.k in value).length;
-    if (overlap > 0 && overlap >= bestScore) {
-      const allKnown = valKeys.every(k => iface.fields.some(f => f.k === k));
-      const score = overlap * 2 + (allKnown ? 1 : 0);
-      if (score > bestScore) {
-        bestScore = score;
-        best = iface;
-      }
-    }
-  });
-  return best;
-}
-
-function classifyValue(name, value) {
+export function classifyValue(name, value) {
   if (value == null) return null;
   const n = String(name);
   if (Array.isArray(value)) {
@@ -562,7 +326,7 @@ function classifyValue(name, value) {
   return null;
 }
 
-function populateInterfaceSchemas(ds) {
+export function populateInterfaceSchemas(ds) {
   const { interfaces, varTypes } = CURRENT_TS_META;
   if (!interfaces || !interfaces.size) return;
   interfaces.forEach(iface => {
@@ -606,7 +370,7 @@ function populateInterfaceSchemas(ds) {
   });
 }
 
-function detectWindowRange(v) {
+export function detectWindowRange(v) {
   if (!v) return null;
   const pairs = [['l', 'r'], ['left', 'right'], ['lo', 'hi'], ['start', 'end']];
   for (const [lk, rk] of pairs) {
@@ -617,12 +381,12 @@ function detectWindowRange(v) {
   return null;
 }
 
-const POINTER_VAR_NAMES = [
+export const POINTER_VAR_NAMES = [
   'mid', 'm', 'i', 'j', 'k', 'idx', 'p', 'q', 'cur', 'curr', 'slow', 'fast', 'pivot',
   'l', 'r', 'left', 'right', 'lo', 'hi', 'low', 'high', 'start', 'end',
 ];
 
-function build1DFocalSlice(total, getAt, focalCenters) {
+export function build1DFocalSlice(total, getAt, focalCenters) {
   if (total <= 20) return null;
   const centers = [];
   const seenC = new Set();
@@ -672,7 +436,7 @@ function build1DFocalSlice(total, getAt, focalCenters) {
   return out;
 }
 
-function selectGridAxisIndices(total, focusIdx, maxCount = 8) {
+export function selectGridAxisIndices(total, focusIdx, maxCount = 8) {
   if (total <= maxCount) {
     return Array.from({ length: total }, (_, i) => i);
   }
@@ -688,7 +452,7 @@ function selectGridAxisIndices(total, focusIdx, maxCount = 8) {
   return [...set].sort((a, b) => a - b);
 }
 
-function enrichFromNote(ds, v, note) {
+export function enrichFromNote(ds, v, note) {
   if (!ds || typeof ds !== 'object') return;
   const safeV = v || {};
   const text = String(note || '');
@@ -955,7 +719,7 @@ function enrichFromNote(ds, v, note) {
   });
 }
 
-function formatShortVal(val) {
+export function formatShortVal(val) {
   if (val === undefined) return 'undefined';
   if (val === null) return 'null';
   if (typeof val === 'string') return JSON.stringify(val.length > 16 ? val.slice(0, 14) + '…' : val);
@@ -972,7 +736,7 @@ function formatShortVal(val) {
   return '{…}';
 }
 
-function safeEvalExpr(expr, v) {
+export function safeEvalExpr(expr, v) {
   if (!expr || !v) return undefined;
   const clean = stripTypes(expr).trim();
   if (!clean) return undefined;
@@ -991,7 +755,7 @@ function safeEvalExpr(expr, v) {
   }
 }
 
-function splitLogicalClauses(condExpr) {
+export function splitLogicalClauses(condExpr) {
   const clauses = [];
   let depth = 0, start = 0;
   for (let i = 0; i < condExpr.length; i++) {
@@ -1009,7 +773,7 @@ function splitLogicalClauses(condExpr) {
   return clauses.filter(c => c.expr);
 }
 
-function deriveAnimAndNote(rawLine, v, nextV) {
+export function deriveAnimAndNote(rawLine: any, v?: any, nextV?: any): any {
   const clean = stripTypes(rawLine || '').trim().replace(/;$/, '');
   if (!clean) return { anim: null, note: rawLine };
 
@@ -1150,3 +914,681 @@ function deriveAnimAndNote(rawLine, v, nextV) {
 
   return { anim: null, note: rawLine.trim() };
 }
+
+export function getActiveFrame(st) {
+  if (!st) return null;
+  const stack = Array.isArray(st.callStack) && st.callStack.length ? st.callStack : null;
+  if (!stack) {
+    return {
+      idx: 0,
+      total: 1,
+      isTop: true,
+      fn: 'global',
+      label: 'global',
+      line: st.line,
+      v: st.v || {},
+      ds: st.ds || {},
+    };
+  }
+  const topIdx = stack.length - 1;
+  const idx = (SELECTED_FRAME_IDX !== null && SELECTED_FRAME_IDX >= 0 && SELECTED_FRAME_IDX < stack.length)
+    ? SELECTED_FRAME_IDX
+    : topIdx;
+  const frame = stack[idx] || stack[topIdx];
+  return {
+    idx,
+    total: stack.length,
+    isTop: idx === topIdx,
+    fn: frame.fn || 'global',
+    label: frame.label || 'global',
+    line: frame.line || st.line,
+    v: frame.v || (idx === topIdx ? st.v : {}) || {},
+    ds: (frame.ds && Object.keys(frame.ds).length ? frame.ds : st.ds) || {},
+  };
+}
+
+export function selectStackFrame(frameIdx) {
+  const st = TRACE.steps[cur];
+  if (!st || !Array.isArray(st.callStack) || !st.callStack.length) return;
+  const topIdx = st.callStack.length - 1;
+  const clamped = Math.max(0, Math.min(topIdx, Number(frameIdx) || 0));
+  SELECTED_FRAME_IDX = clamped === topIdx ? null : clamped;
+  renderStatic(cur, false);
+}
+
+export function renderCallStack(st) {
+  if (!callStackBarEl) return;
+  if (!st) {
+    callStackBarEl.innerHTML = '<span class="cs-empty">未在调试</span>';
+    if (callStackHintEl) callStackHintEl.textContent = '点击栈帧可切换作用域';
+    return;
+  }
+  const stack = (Array.isArray(st.callStack) && st.callStack.length)
+    ? st.callStack
+    : [{ fn: 'global', label: 'global', line: st.line, v: st.v || {}, ds: st.ds || {} }];
+  const active = getActiveFrame(st);
+  callStackBarEl.innerHTML = stack.map((f, fIdx) => {
+    const isSel = fIdx === active.idx;
+    const isTop = fIdx === stack.length - 1;
+    const cls = 'cs-crumb' + (isSel ? ' active' : '') + (isTop ? ' is-top' : '') + (!isTop && isSel ? ' inspecting' : '');
+    const sep = fIdx > 0 ? '<span class="cs-sep">▸</span>' : '';
+    return sep + `<button type="button" class="${cls}" data-frame-idx="${fIdx}" title="切换到栈帧 ${esc(f.label)} (第 ${f.line || st.line} 行)">${esc(f.label)}</button>`;
+  }).join('');
+  if (callStackHintEl) {
+    callStackHintEl.textContent = active.isTop
+      ? `栈深 ${stack.length} · 点击栈帧可切换`
+      : `正在查看栈帧 ${active.idx + 1}/${stack.length}: ${active.label}`;
+  }
+}
+
+export function truncMap(arr: any, render: any, d?: any) {
+  if (d && Array.isArray(d.windowed) && d.windowed.length) {
+    return d.windowed.map(entry => {
+      if (entry && entry.gap) {
+        const tip = entry.from != null && entry.to != null
+          ? ` title="省略下标 ${entry.from}..${entry.to}（共 ${entry.count} 项）"`
+          : '';
+        return '<div class="vmore"' + tip + '>…<span class="vmore-cnt">+' + entry.count + '</span></div>';
+      }
+      return render(entry.val, entry.idx);
+    }).join('');
+  }
+  const MAX = 20, HEAD = 10, TAIL = 5;
+  if (!arr || arr.length <= MAX) return (arr || []).map((x, i) => render(x, i)).join('');
+  const total = (d && typeof d.total === 'number' && d.total >= arr.length) ? d.total : arr.length;
+  const hidden = Math.max(1, total - HEAD - TAIL);
+  const head = arr.slice(0, HEAD).map((x, i) => render(x, i)).join('');
+  const tailStart = total - TAIL;
+  const tail = arr.slice(arr.length - TAIL).map((x, i) => render(x, tailStart + i)).join('');
+  return head + '<div class="vmore" title="省略 ' + hidden + ' 项">…<span class="vmore-cnt">+' + hidden + '</span></div>' + tail;
+}
+
+export function vizArray(d) {
+  if (!d || !d.items || !d.items.length) return null;
+  const win = d.win;
+  const ptrs = d.pointers;
+  const cells = truncMap(d.items, (n, k) => {
+    let cls = 'vcell vcell-idx';
+    if (win && k >= win[0] && k <= win[1]) cls += ' win';
+    if (d.hot === k) cls += ' hot';
+    else if (d.mark === k) cls += ' mark';
+    const pTag = (ptrs && ptrs[k] && ptrs[k].length)
+      ? '<span class="sub-tag ptr-tag">' + esc(ptrs[k].slice(0, 2).join(',')) + '</span>'
+      : '';
+    return '<div class="' + cls + '">' + pTag + '<span class="val">' + esc(n) + '</span><span class="idx">' + k + '</span></div>';
+  }, d);
+  return '<div class="viz"><div class="viz-row varray-row">' + cells + '</div></div>';
+}
+
+export function vizQueue(d) {
+  if (!d || !d.items || !d.items.length) return null;
+  const len = (typeof d.total === 'number' && d.total > 0) ? d.total : d.items.length;
+  const cells = truncMap(d.items, (n, k) => {
+    let cls = 'vcell vcell-idx';
+    if (d.hot === k) cls += ' hot';
+    else if (k === 0) cls += ' mark';
+    const tag = k === 0 ? '<span class="sub-tag">front</span>' : (k === len - 1 ? '<span class="sub-tag">back</span>' : '');
+    return '<div class="' + cls + '">' + tag + '<span class="val">' + esc(n) + '</span><span class="idx">' + k + '</span></div>';
+  }, d);
+  return '<div class="viz"><div class="viz-row varray-row">' + cells + '</div></div>';
+}
+
+export function vizHeap(d) {
+  if (!d || !d.items || !d.items.length) return null;
+  const cells = truncMap(d.items, (n, k) => {
+    let cls = 'vcell vcell-idx';
+    if (d.hot === k) cls += ' hot';
+    else if (k === 0) cls += ' mark';
+    const tag = k === 0 ? '<span class="sub-tag">top</span>' : '';
+    return '<div class="' + cls + '">' + tag + '<span class="val">' + esc(n) + '</span><span class="idx">' + k + '</span></div>';
+  }, d);
+  return '<div class="viz"><div class="viz-row varray-row">' + cells + '</div>' +
+    '<div class="vmeta-hint">parent = (i - 1) &gt;&gt; 1 · left = 2i + 1</div></div>';
+}
+
+export function vizUF(d) {
+  if (!d || !d.items || !d.items.length) return null;
+  const cells = truncMap(d.items, (p, k) => {
+    let cls = 'vcell vcell-idx';
+    if (d.hot === k) cls += ' hot';
+    else if (p === k) cls += ' mark';
+    const tag = p === k ? '<span class="sub-tag">root</span>' : '<span class="sub-tag">p:' + esc(p) + '</span>';
+    return '<div class="' + cls + '">' + tag + '<span class="val">' + esc(p) + '</span><span class="idx">' + k + '</span></div>';
+  }, d);
+  return '<div class="viz"><div class="viz-row varray-row">' + cells + '</div></div>';
+}
+
+export function vizMap(d) {
+  if (!d || !d.entries || !d.entries.length) return null;
+  return '<div class="viz"><div class="viz-row vmap-row">' + truncMap(d.entries, (e) =>
+    '<div class="vpair' + (d.hot === e.k ? ' hot' : '') + '">' +
+      '<span class="vcell vk">' + esc(e.k) + '</span><span class="varr">→</span>' +
+      '<span class="vcell vv">' + esc(e.v) + '</span></div>',
+    d
+  ) + '</div></div>';
+}
+
+export function vizSet(d) {
+  if (!d || !d.items || !d.items.length) return null;
+  return '<div class="viz"><div class="viz-row">' + truncMap(d.items, (x) =>
+    '<div class="vcell' + (d.hot === x ? ' hot' : '') + '">' + esc(x) + '</div>',
+    d
+  ) + '</div></div>';
+}
+
+export function vizStack(d) {
+  if (!d || !d.items || !d.items.length) return null;
+  const all = d.items, MAX = 6;
+  const total = (typeof d.total === 'number' && d.total >= all.length) ? d.total : all.length;
+  const baseIdx = typeof d.baseIdx === 'number' ? d.baseIdx : Math.max(0, total - all.length);
+  const sliceStart = Math.max(0, all.length - MAX);
+  const shown = all.slice(sliceStart);
+  const hiddenCount = Math.max(0, total - shown.length);
+  const rows = shown.map((x, k) => {
+    const abs = baseIdx + sliceStart + k;
+    const isTop = abs === total - 1;
+    return '<div class="vcell' + (d.hot === abs ? ' hot' : (isTop ? ' mark' : '')) + '">' +
+      '<span>' + esc(x) + '</span>' + (isTop ? '<span class="vtop">top</span>' : '') + '</div>';
+  }).join('');
+  return '<div class="viz"><div class="vcol">' + rows + '</div>' +
+    (hiddenCount ? '<div class="vmore">…+' + hiddenCount + '</div>' : '') + '</div>';
+}
+
+export function vizString(d) {
+  if (!d || !d.items || !d.items.length) return null;
+  const win = d.win;
+  if (Array.isArray(d.windowed) && d.windowed.length) {
+    const cells = truncMap(d.items, (ch, k) => {
+      let cls = 'ch';
+      if (win && k >= win[0] && k <= win[1]) cls += ' win';
+      if (d.hot === k) cls += ' hot';
+      else if (d.mark === k) cls += ' mark';
+      return '<span class="' + cls + '" title="[' + k + ']">' + esc(ch) + '</span>';
+    }, d);
+    return '<div class="viz"><div class="vstr">' + cells + '</div></div>';
+  }
+  return '<div class="viz"><div class="vstr">' + d.items.map((ch, k) => {
+    let cls = 'ch';
+    if (win && k >= win[0] && k <= win[1]) cls += ' win';
+    if (d.hot === k) cls += ' hot';
+    else if (d.mark === k) cls += ' mark';
+    return '<span class="' + cls + '">' + esc(ch) + '</span>';
+  }).join('') + '</div></div>';
+}
+
+export function vizGrid(d) {
+  if (!d || !d.cells || !d.cells.length) return null;
+  const depSet = new Set((d.deps || []).map(p => p[0] + ',' + p[1]));
+
+  // Sliding viewport mode for large 2D grids (> 10 rows or > 10 cols)
+  if (Array.isArray(d.rowIndices) && Array.isArray(d.colIndices) && Array.isArray(d.viewCells)) {
+    const rIdxs = d.rowIndices;
+    const cIdxs = d.colIndices;
+    const colTracks = [];
+    for (let ci = 0; ci < cIdxs.length; ci++) {
+      if (ci > 0 && cIdxs[ci] > cIdxs[ci - 1] + 1) colTracks.push({ gap: true });
+      colTracks.push({ gap: false, c: cIdxs[ci], ci });
+    }
+    const gridCols = colTracks.length + 1; // +1 for row header column
+    let html = '<div class="ghead">r\\c</div>';
+    for (const ct of colTracks) {
+      if (ct.gap) {
+        html += '<div class="ggap">⋯</div>';
+      } else {
+        const isFocusCol = d.mark && d.mark[1] === ct.c;
+        html += '<div class="ghead' + (isFocusCol ? ' focus' : '') + '">' + ct.c + '</div>';
+      }
+    }
+    for (let ri = 0; ri < rIdxs.length; ri++) {
+      const realR = rIdxs[ri];
+      if (ri > 0 && realR > rIdxs[ri - 1] + 1) {
+        html += '<div class="ggap">⋮</div>';
+        for (let gi = 0; gi < colTracks.length; gi++) {
+          html += '<div class="ggap">' + (colTracks[gi].gap ? '⋱' : '⋮') + '</div>';
+        }
+      }
+      const isFocusRow = d.mark && d.mark[0] === realR;
+      html += '<div class="ghead' + (isFocusRow ? ' focus' : '') + '">' + realR + '</div>';
+      const rowVals = d.viewCells[ri] || [];
+      for (const ct of colTracks) {
+        if (ct.gap) {
+          html += '<div class="ggap">⋯</div>';
+        } else {
+          const realC = ct.c;
+          let cls = 'gcell';
+          if (d.mark && d.mark[0] === realR && d.mark[1] === realC) cls += ' hot';
+          else if (depSet.has(realR + ',' + realC)) cls += ' dep';
+          const val = rowVals[ct.ci];
+          html += '<div class="' + cls + '" title="[' + realR + '][' + realC + ']">' + (val === undefined || val === null ? '·' : esc(val)) + '</div>';
+        }
+      }
+    }
+    return '<div class="viz"><div class="vgrid-wrap"><div class="vgrid" style="grid-template-columns:repeat(' + gridCols + ',auto)">' + html + '</div></div></div>';
+  }
+
+  const cols = d.cells[0].length;
+  let html = '';
+  for (let r = 0; r < d.cells.length; r++) {
+    for (let c = 0; c < cols; c++) {
+      let cls = 'gcell';
+      if (d.mark && d.mark[0] === r && d.mark[1] === c) cls += ' hot';
+      else if (depSet.has(r + ',' + c)) cls += ' dep';
+      const val = d.cells[r][c];
+      html += '<div class="' + cls + '">' + (val === undefined || val === null ? '·' : esc(val)) + '</div>';
+    }
+  }
+  return '<div class="viz"><div class="vgrid" style="grid-template-columns:repeat(' + cols + ',auto)">' + html + '</div></div>';
+}
+
+export function vizList(d) {
+  if (!d || !d.items || !d.items.length) return null;
+  const total = (typeof d.total === 'number' && d.total > 0) ? d.total : d.items.length;
+  const ptrs = d.pointers;
+  return '<div class="viz"><div class="viz-row">' + truncMap(d.items, (val, k) => {
+    const pTag = (ptrs && ptrs[k] && ptrs[k].length)
+      ? '<span class="sub-tag ptr-tag">' + esc(ptrs[k].slice(0, 2).join(',')) + '</span>'
+      : '';
+    return '<div class="vpair"><span class="vcell' + (d.hot === k ? ' hot' : '') + '">' + pTag + esc(val) + '</span>' +
+      (k < total - 1 ? '<span class="varr">→</span>' : '<span class="varr">→</span><span class="vempty">null</span>') +
+      '</div>';
+  }, d) + '</div></div>';
+}
+
+export function vizTree(d) {
+  if (!d || !d.nodes || !d.nodes.length) return null;
+  const nodes = d.nodes;
+  const root = d.root ?? 0;
+  const coords = new Map();
+  let maxDepth = 0;
+  function layout(idx, depth, xMin, xMax) {
+    if (idx == null || !nodes[idx] || coords.has(idx) || depth > 5) return;
+    maxDepth = Math.max(maxDepth, depth);
+    const x = (xMin + xMax) / 2;
+    const y = 20 + depth * 36;
+    coords.set(idx, { x, y, val: nodes[idx].val, left: nodes[idx].left, right: nodes[idx].right });
+    layout(nodes[idx].left, depth + 1, xMin, x);
+    layout(nodes[idx].right, depth + 1, x, xMax);
+  }
+  layout(root, 0, 14, 226);
+  const h = Math.max(60, (maxDepth + 1) * 36 + 10);
+  let edgesSvg = '', nodesSvg = '';
+  coords.forEach((info, idx) => {
+    [info.left, info.right].forEach(ch => {
+      if (ch != null && coords.has(ch)) {
+        const c = coords.get(ch);
+        edgesSvg += `<line class="vsvg-edge" x1="${info.x}" y1="${info.y}" x2="${c.x}" y2="${c.y}"/>`;
+      }
+    });
+    const cls = d.hot === idx ? 'vsvg-node hot' : (idx === root ? 'vsvg-node mark' : 'vsvg-node');
+    nodesSvg += `<g><circle class="${cls}" cx="${info.x}" cy="${info.y}" r="12"/><text class="vsvg-txt" x="${info.x}" y="${info.y}">${esc(info.val)}</text></g>`;
+  });
+  return `<div class="viz"><div class="vsvg-wrap"><svg viewBox="0 0 240 ${h}" width="240" height="${h}">${edgesSvg}${nodesSvg}</svg></div></div>`;
+}
+
+export function vizGraph(d) {
+  if (!d || !d.nodes || !d.nodes.length) return null;
+  const byId = new Map();
+  d.nodes.forEach((n, idx) => byId.set(n.id ?? idx, n));
+  let edgesSvg = '', nodesSvg = '';
+  (d.edges || []).forEach(e => {
+    const a = byId.get(e[0]), b = byId.get(e[1]);
+    if (a && b) {
+      edgesSvg += `<line class="vsvg-edge" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"/>`;
+    }
+  });
+  d.nodes.forEach((n, idx) => {
+    const id = n.id ?? idx;
+    const cls = d.hot === id ? 'vsvg-node hot' : 'vsvg-node';
+    nodesSvg += `<g><circle class="${cls}" cx="${n.x}" cy="${n.y}" r="13"/><text class="vsvg-txt" x="${n.x}" y="${n.y}">${esc(n.label ?? id)}</text></g>`;
+  });
+  return `<div class="viz"><div class="vsvg-wrap"><svg viewBox="0 0 180 136" width="180" height="136">${edgesSvg}${nodesSvg}</svg></div></div>`;
+}
+
+export function vizInterface(d) {
+  if (!d) return null;
+  const fields = d.fields || (d.entries ? d.entries.map(e => ({ k: e.k, v: e.v, declaredType: typeof e.v })) : []);
+  if (!fields.length && !d.isClass) return null;
+  const ifaceTitle = d.interfaceName && d.interfaceName !== 'object' ? d.interfaceName : 'Object';
+  const kwTxt = d.isClass ? 'class' : 'interface';
+  const badgeTxt = d.isSchema
+    ? (d.instanceName ? `schema · 绑定 ${d.instanceName}` : 'schema')
+    : 'instance';
+  const rows = fields.length
+    ? fields.slice(0, 12).map(f => {
+        const isHot = d.hot === f.k;
+        const hasVal = f.v !== undefined;
+        const isStr = typeof f.v === 'string';
+        const valDisplay = hasVal
+          ? (isStr ? JSON.stringify(f.v) : (f.v !== null && typeof f.v === 'object' ? safeJSONStringify(f.v) : String(f.v)))
+          : '未实例化';
+        return '<div class="viface-row' + (isHot ? ' hot' : '') + '">' +
+          '<span class="viface-k">' + esc(f.k) + (f.optional ? '<span class="viface-opt">?</span>' : '') + '</span>' +
+          (f.declaredType ? '<span class="viface-t">: ' + esc(f.declaredType) + '</span>' : '') +
+          (hasVal
+            ? '<span class="viface-eq">=</span><span class="viface-v' + (isStr ? ' str' : '') + '">' + esc(valDisplay) + '</span>'
+            : '<span class="viface-v schema-only">' + esc(valDisplay) + '</span>') +
+          '</div>';
+      }).join('')
+    : '<div class="viface-row"><span class="viface-v schema-only">（无实例属性）</span></div>';
+  return '<div class="viz"><div class="viface">' +
+    '<div class="viface-head"><span class="viface-kw">' + kwTxt + '</span><span class="viface-title">' + esc(ifaceTitle) + '</span><span class="viface-badge">' + esc(badgeTxt) + '</span></div>' +
+    '<div class="viface-body">' + rows + '</div>' +
+    '</div></div>';
+}
+
+export function vizEventLoop(d) {
+  if (!d) return null;
+  const phaseMap = {
+    sync: { label: 'Sync · 同步栈执行', cls: 'sync' },
+    await_suspend: { label: 'Await · 协程挂起', cls: 'suspend' },
+    await_resume: { label: 'Await · 协程恢复', cls: 'resume' },
+    microtask: { label: 'Microtask · 微任务出队', cls: 'micro' },
+    macrotask: { label: 'Macrotask · 宏任务触发', cls: 'macro' },
+  };
+  const ph = phaseMap[d.phase] || { label: d.phase || 'Event Loop', cls: 'sync' };
+  const nowMs = typeof d.now === 'number' ? d.now : 0;
+
+  const coroutines = Array.isArray(d.coroutines) ? d.coroutines : [];
+  const coroHtml = coroutines.length
+    ? coroutines.map(c => {
+        const stCls = c.status === 'running' ? 'running' : (c.status === 'suspended' ? 'suspended' : 'completed');
+        const stLabel = c.status === 'running' ? '● 执行中' : (c.status === 'suspended' ? `⏸ 挂起 @L${c.line}` : '✓ 完成');
+        const detail = c.status === 'suspended' && c.awaitingExpr
+          ? `<span class="vel-coro-expr">await ${esc(c.awaitingExpr)}</span>`
+          : (c.status === 'completed' && c.returnVal !== undefined ? `<span class="vel-coro-expr">⇒ ${esc(c.returnVal)}</span>` : '');
+        return `<div class="vel-chip coro-${stCls}">` +
+          `<span class="vel-chip-title">async ${esc(c.name)}()</span>` +
+          `<span class="vel-chip-status">${esc(stLabel)}</span>` +
+          detail +
+          `</div>`;
+      }).join('')
+    : '<span class="vel-empty">无活跃协程</span>';
+
+  const microtasks = Array.isArray(d.microtasks) ? d.microtasks : [];
+  const microHtml = microtasks.length
+    ? microtasks.map((m, idx) =>
+        `<div class="vel-qitem micro${idx === 0 ? ' head' : ''}">` +
+        `<span class="vel-qidx">#${idx + 1}</span>` +
+        `<span class="vel-qlabel">${esc(m.label)}</span>` +
+        (m.line > 0 ? `<span class="vel-qmeta">@L${m.line}</span>` : '') +
+        `</div>`
+      ).join('')
+    : '<span class="vel-empty">队列为空 (0)</span>';
+
+  const macrotasks = Array.isArray(d.macrotasks) ? d.macrotasks : [];
+  const macroHtml = macrotasks.length
+    ? macrotasks.map((t, idx) =>
+        `<div class="vel-qitem macro${idx === 0 ? ' head' : ''}">` +
+        `<span class="vel-qidx">t=${t.due}ms</span>` +
+        `<span class="vel-qlabel">${esc(t.label)}</span>` +
+        `<span class="vel-qmeta">+${t.delay}ms</span>` +
+        `</div>`
+      ).join('')
+    : '<span class="vel-empty">无待触发定时器 (0)</span>';
+
+  const promises = Array.isArray(d.promises) ? d.promises : [];
+  const promHtml = promises.length
+    ? promises.map(p => {
+        const st = p.state || 'pending';
+        const icon = st === 'fulfilled' ? '✓' : (st === 'rejected' ? '✗' : '⏳');
+        const valPart = st === 'pending'
+          ? (p.reactions > 0 ? `<span class="vel-pval dim">${p.reactions} waiter${p.reactions > 1 ? 's' : ''}</span>` : '<span class="vel-pval dim">pending</span>')
+          : `<span class="vel-pval">${esc(p.value)}</span>`;
+        return `<div class="vel-pcard ${esc(st)}">` +
+          `<span class="vel-phead"><span class="vel-picon">${icon}</span><span class="vel-pname">P#${p.id} · ${esc(p.label)}</span></span>` +
+          valPart +
+          `</div>`;
+      }).join('')
+    : '<span class="vel-empty">暂无 Promise 实例</span>';
+
+  return '<div class="viz"><div class="veventloop">' +
+    '<div class="vel-header">' +
+      `<span class="vel-phase ${ph.cls}">${esc(ph.label)}</span>` +
+      (d.activeTask ? `<span class="vel-active">${esc(d.activeTask)}</span>` : '') +
+      `<span class="vel-clock">⏱ 虚拟时钟 ${nowMs}ms</span>` +
+    '</div>' +
+    '<div class="vel-grid">' +
+      '<div class="vel-lane"><div class="vel-lane-title">Async 协程状态</div><div class="vel-lane-body">' + coroHtml + '</div></div>' +
+      '<div class="vel-lane"><div class="vel-lane-title">Microtask 微任务队列 (FIFO)</div><div class="vel-lane-body">' + microHtml + '</div></div>' +
+      '<div class="vel-lane"><div class="vel-lane-title">Macrotask 宏任务 / 定时器</div><div class="vel-lane-body">' + macroHtml + '</div></div>' +
+      '<div class="vel-lane"><div class="vel-lane-title">Promise 状态表</div><div class="vel-lane-body vel-pgrid">' + promHtml + '</div></div>' +
+    '</div>' +
+    '</div></div>';
+}
+
+export const VIZ = {
+  array: vizArray, map: vizMap, set: vizSet, stack: vizStack,
+  string: vizString, grid: vizGrid, list: vizList,
+  heap: vizHeap, queue: vizQueue, tree: vizTree, graph: vizGraph, uf: vizUF,
+  interface: vizInterface, object: vizInterface,
+  eventloop: vizEventLoop,
+};
+
+export function pressure(d) {
+  if (!d) return 0;
+  let n = 0;
+  if (typeof d.total === 'number') n = d.total;
+  else if (d.items) n = d.items.length;
+  else if (d.fields) n = d.fields.length;
+  else if (d.entries) n = d.entries.length;
+  else if (d.nodes) n = d.nodes.length;
+  else if (d.cells) n = (d.totalRows || d.cells.length) * (d.totalCols || (d.cells[0] ? d.cells[0].length : 1));
+  switch (d.kind) {
+    case 'eventloop': return 1;
+    case 'grid': return Math.min(1, Math.max(0.5, n / 12));
+    case 'array':
+    case 'queue':
+    case 'uf': return Math.min(1, n / 11);
+    case 'heap': return Math.min(1, Math.max(0.46, n / 11));
+    case 'list': return Math.min(1, n / 7);
+    case 'map': return Math.min(1, n / 7);
+    case 'interface':
+    case 'object': return Math.min(1, n / 6);
+    case 'set': return Math.min(1, n / 9);
+    case 'string': return Math.min(1, n / 18);
+    case 'tree': return n >= 6 ? 0.38 : 0.28;
+    case 'graph': return n >= 5 ? 0.36 : 0.26;
+    case 'stack': return Math.min(0.35, n / 16);
+    default: return Math.min(1, n / 10);
+  }
+}
+const SPAN_UP = 0.45, SPAN_DOWN = 0.28;
+export function decideSpan(id, p) {
+  const curSpan = layoutSpan[id] || 1;
+  if (curSpan < 2 && p >= SPAN_UP) layoutSpan[id] = 2;
+  else if (curSpan > 1 && p <= SPAN_DOWN) layoutSpan[id] = 1;
+  return layoutSpan[id];
+}
+
+export function allocateSlotSpans(vars, ds) {
+  const meta = vars.map((s, idx) => {
+    const d = ds[s.id];
+    const kind = (d && d.kind) || s.kind;
+    const p = pressure(d);
+    const span = decideSpan(s.id, p);
+    return { s, d, kind, p, span, idx };
+  });
+
+  // Ensure 1-column cards always form complete 2-column pairs so there are no half-empty rows
+  const oneColItems = meta.filter(m => m.span === 1);
+  if (oneColItems.length % 2 === 1) {
+    let promote = oneColItems[0];
+    for (let i = 1; i < oneColItems.length; i++) {
+      if (oneColItems[i].p >= promote.p) {
+        promote = oneColItems[i];
+      }
+    }
+    promote.span = 2;
+  }
+
+  return meta;
+}
+
+let _DISCOVER_CACHE: any = { traceRef: null, scannedSteps: 0, map: new Map(), list: [] };
+
+export function discoverVars() {
+  const steps = (TRACE && TRACE.steps) || [];
+  if (_DISCOVER_CACHE.traceRef !== TRACE || steps.length < _DISCOVER_CACHE.scannedSteps) {
+    _DISCOVER_CACHE = { traceRef: TRACE, scannedSteps: 0, map: new Map(), list: [] };
+  }
+  if (_DISCOVER_CACHE.scannedSteps < steps.length) {
+    let changed = false;
+    for (let i = _DISCOVER_CACHE.scannedSteps; i < steps.length; i++) {
+      const st = steps[i];
+      const ds = (st && st.ds) || {};
+      const keys = Object.keys(ds);
+      for (let k = 0; k < keys.length; k++) {
+        const name = keys[k];
+        if (!_DISCOVER_CACHE.map.has(name)) {
+          _DISCOVER_CACHE.map.set(name, { id: name, name, kind: ds[name].kind || name });
+          changed = true;
+        }
+      }
+    }
+    _DISCOVER_CACHE.scannedSteps = steps.length;
+    if (changed) _DISCOVER_CACHE.list = [..._DISCOVER_CACHE.map.values()];
+  }
+  return _DISCOVER_CACHE.list;
+}
+
+export function renderPicker() {
+  const vars = discoverVars();
+  if (!vars.length) {
+    pickEl.innerHTML = '<span class="vempty">无结构变量</span>';
+    renderSlots();
+    return;
+  }
+  pickEl.innerHTML = vars.map(s =>
+    '<div class="chip-pick' + (watched.has(s.id) ? ' on' : '') + '" data-id="' + esc(s.id) + '">' + esc(s.name) + '</div>'
+  ).join('');
+  renderSlots();
+}
+
+export function renderSlots() {
+  const st: any = TRACE.steps[cur] || {};
+  const activeFrame = TRACE.steps[cur] ? getActiveFrame(st) : null;
+  const ds = Object.assign({}, (activeFrame && activeFrame.ds) || st.ds || {});
+  if (st.ds && st.ds.eventLoop && !ds.eventLoop) ds.eventLoop = st.ds.eventLoop;
+  const vars = discoverVars().filter(s => watched.has(s.id) && ds[s.id] !== undefined);
+  if (slotsEl && slotsEl.classList && slotsEl.classList.toggle) {
+    slotsEl.classList.toggle('single-col', slotsEl.clientWidth > 0 && slotsEl.clientWidth < 420);
+  }
+  if (!vars.length) {
+    slotsEl.innerHTML = '<div class="slot" style="grid-column:1/-1"><div class="vempty">' +
+      (TRACE.steps.length ? '点选变量以关注（或本步暂无结构）' : '生成轨迹后显示结构可视化') +
+      '</div></div>';
+    return;
+  }
+  const allocated = allocateSlotSpans(vars, ds);
+  slotsEl.innerHTML = allocated.map(({ s, d, kind, span }) => {
+    const fn = VIZ[kind];
+    const body = d ? (fn ? (fn(d) || '<div class="vempty">empty</div>') : '<div class="vempty">…</div>') : '<div class="vempty">empty</div>';
+    const winTag = d && d.win ? `<span class="win-tag">[${d.win[0]}..${d.win[1]}]</span>` : '';
+    let sizeTag = '';
+    if (d) {
+      if (kind === 'grid' && ((d.totalRows || 0) > 10 || (d.totalCols || 0) > 10)) {
+        sizeTag = `<span class="size-tag">${d.totalRows}×${d.totalCols}</span>`;
+      } else if (typeof d.total === 'number' && d.total > 20) {
+        sizeTag = `<span class="size-tag">共 ${d.total} 项</span>`;
+      }
+    }
+    const isHotSlot = d && (d.hot !== undefined || d.mark != null);
+    const kindPrefix = (d && d.isClass) ? 'class' : 'interface';
+    const kindBadge = (kind === 'interface' && d && d.interfaceName && d.interfaceName !== 'object' && !d.isSchema)
+      ? `${kindPrefix} · ${d.interfaceName}`
+      : (kind === 'interface' && d && d.isClass ? 'class' : kind);
+    return '<div class="slot' + (span === 2 ? ' span-2' : '') + (isHotSlot ? ' pulse' : '') + '" data-var="' + esc(s.name) + '">' +
+      '<div class="name"><span>' + esc(s.name) + '</span><span class="kind">' + esc(kindBadge) + '</span>' + sizeTag + winTag + '</div>' +
+      body + '</div>';
+  }).join('');
+}
+
+export function updateControlButtons() {
+  const prevBtn = $('prev');
+  const nextBtn = $('next');
+  const ckptBtn = $('nextCheckpoint');
+  const autoBtn = $('auto');
+  const atEnd = Boolean(TRACE.steps.length > 0 && cur >= TRACE.steps.length - 1 && DEBUG_SESSION.finished);
+  if (prevBtn) prevBtn.disabled = !TRACE.steps.length || cur <= 0;
+  if (nextBtn) nextBtn.disabled = atEnd;
+  if (ckptBtn) ckptBtn.disabled = atEnd;
+  if (autoBtn) autoBtn.disabled = atEnd;
+}
+
+export function renderStatic(i, withAnim = false) {
+  hideHoverTip();
+  const st = TRACE.steps[i];
+  const prevSt = i > 0 ? TRACE.steps[i - 1] : null;
+  if (!st) {
+    renderCallStack(null);
+    varsEl.innerHTML = '';
+    consoleEl.innerHTML = '<div><span class="p">›</span><span class="dim">开启 Debug 模式后当场计算并显示每步执行详情</span></div>';
+    cntEl.textContent = '未在调试';
+    cntEl.className = '';
+    updateControlButtons();
+    renderSlots();
+    updateEditorChrome();
+    return;
+  }
+
+  renderCallStack(st);
+  const activeFrame = getActiveFrame(st);
+  const v = (activeFrame && activeFrame.v) || st.v || {};
+  const prevV = (prevSt && prevSt.v) || {};
+  const primEntries = Object.keys(v).map(k => {
+    const val = v[k];
+    if (val !== null && typeof val === 'object') return '';
+    const changed = activeFrame.isTop && prevSt && prevV[k] !== val;
+    return '<div class="pair' + (changed ? ' changed' : '') + '" data-var="' + esc(k) + '"><span class="k">' + esc(k) + '</span><span class="v">' + esc(val) + '</span></div>';
+  }).join('');
+  if (primEntries) {
+    varsEl.innerHTML = primEntries;
+  } else if (activeFrame && activeFrame.fn === 'global') {
+    varsEl.innerHTML = '<div class="pair"><span class="k">scope</span><span class="v">global</span></div>' +
+      (DEBUG_SESSION.callExpr && DEBUG_SESSION.callExpr !== 'undefined'
+        ? '<div class="pair"><span class="k">entry</span><span class="v">' + esc(DEBUG_SESSION.callExpr) + '</span></div>'
+        : '');
+  } else {
+    varsEl.innerHTML = '<div class="vempty">（本帧无原始类型局部变量）</div>';
+  }
+
+  let animDesc = '';
+  if (st.error) {
+    animDesc = `<div class="anim-desc" style="color:var(--red)">runtime error · 已停止在报错行 (第 ${st.line} 行)</div>`;
+  } else if (st.anim) {
+    if (st.anim.type === 'assign') animDesc = `<div class="anim-desc">assign · ${esc(st.anim.from)} → ${esc(st.anim.to)} = ${esc(st.anim.val)}</div>`;
+    else if (st.anim.type === 'compare') animDesc = `<div class="anim-desc">compare · ${esc(st.anim.lhs)} ${esc(st.anim.op)} ${esc(st.anim.rhs)} ⇒ ${esc(st.anim.result)}</div>`;
+    else if (st.anim.type === 'call') animDesc = `<div class="anim-desc">call · ${esc(st.anim.fn)}(${esc((st.anim.argVals || []).join(', '))})</div>`;
+    else if (st.anim.type === 'checkpoint') animDesc = `<div class="anim-desc" style="color:var(--cyan)">checkpoint · 检查点已命中 (${esc((st.anim.argVals || []).join(', ') || '无参数')})</div>`;
+  }
+  consoleEl.innerHTML = '<div><span class="p">›</span>' + esc(st.note || '') + '</div>' + animDesc;
+
+  if (st.error) {
+    cntEl.textContent = '✗ 运行时报错';
+    cntEl.className = 'err';
+  } else if (st.isCheckpoint) {
+    cntEl.textContent = '◉ 命中检查点';
+    cntEl.className = 'ckpt';
+  } else if (DEBUG_SESSION.finished && i === TRACE.steps.length - 1) {
+    cntEl.textContent = '✓ 执行完毕';
+    cntEl.className = 'done';
+  } else {
+    cntEl.textContent = '● 调试运行中';
+    cntEl.className = 'running';
+  }
+
+  updateControlButtons();
+  updateEditorChrome();
+  scrollCodeTo(activeFrame ? activeFrame.line : st.line);
+  renderSlots();
+
+  if (withAnim) {
+    playStepAnimation(st);
+  }
+}
+
+
+export const renderMemory = renderSlots;
+export const renderAsyncQueues = vizEventLoop;
+export function drawArrows(): void {}
+export function scheduleArrowRedraw(): void {}

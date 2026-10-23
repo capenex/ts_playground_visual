@@ -1,40 +1,258 @@
 /* ================================================================
-   TypeScript Playground — static TypeScript type checker
-   Part 5/10 · loaded in order from index.html (classic script;
-   shares the global lexical scope with the other parts).
+   Static TypeScript Type Checker & Worker Bridge (src/compiler/type-checker.ts)
    ================================================================ */
+import {
+  findBalancedParen,
+  isIdentPart,
+  isIdentStart,
+  isWS,
+  readIdent,
+  skipString,
+  skipTemplateExpr,
+  splitTopLevel,
+  splitTopLevelSemicolons,
+  stripCommentsOnly,
+  stripInlineCommentSafe,
+  RESERVED_WORDS,
+} from "./comments";
+import { transpileEnums, stripTypes, tryParseType } from "./transpile";
+import { extractBindingNames } from "./instrumenter";
+import { isMapLike, isSetLike } from "../viz/memory-graph";
+import { say } from "../runtime/event-loop";
+import { updateEditorChrome, revealErrorLine } from "../viz/highlight";
 
-/* ================================================================
-   3.5) Mandatory TypeScript Static Type Checker (strict mode by default)
-   ================================================================ */
-function stripInlineCommentSafe(line) {
-  let out = '';
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (ch === '"' || ch === "'" || ch === '`') {
-      const end = skipString(line, i);
-      out += line.slice(i, end);
-      i = end - 1;
-      continue;
-    }
-    if (ch === '/' && line[i + 1] === '/') {
-      break;
-    }
-    if (ch === '/' && line[i + 1] === '*') {
-      const closeIdx = line.indexOf('*/', i + 2);
-      if (closeIdx >= 0) {
-        i = closeIdx + 1;
-        continue;
-      } else {
-        break;
-      }
-    }
-    out += ch;
+export function inferRuntimeTsType(val) {
+  if (val === null) return 'null';
+  if (Array.isArray(val)) {
+    if (!val.length) return 'any[]';
+    return inferRuntimeTsType(val[0]) + '[]';
   }
-  return out;
+  if (isMapLike(val)) return 'Map';
+  if (isSetLike(val)) return 'Set';
+  return typeof val;
 }
 
-function normalizeTsType(rawType) {
+export function extractTsInterfaceMetadata(src) {
+  const interfaces = new Map<any, any>();
+  const varTypes = new Map<any, any>();
+  if (!src || typeof src !== 'string') {
+    CURRENT_TS_META = { interfaces, varTypes };
+    return CURRENT_TS_META;
+  }
+
+  const lines = src.replace(/\r\n?/g, '\n').split('\n');
+  let activeIface = null;
+  let activeIfaceLine = 1;
+  let activeIsClass = false;
+  let activeBody = '';
+  let depth = 0;
+
+  function parseFieldsFromBody(bodyStr, isClass = false) {
+    const inner = bodyStr.trim().replace(/^\{/, '').replace(/\}$/, '').trim();
+    const fields = [];
+    const seen = new Set();
+    if (!inner) return fields;
+    // Strip nested method bodies `{ ... }` when parsing top-level class/interface fields
+    let topLevelOnly = '';
+    let bDepth = 0;
+    for (let i = 0; i < inner.length; i++) {
+      const ch = inner[i];
+      if (ch === '"' || ch === "'" || ch === '`') {
+        const end = skipString(inner, i);
+        if (bDepth === 0) topLevelOnly += inner.slice(i, end);
+        i = end - 1;
+        continue;
+      }
+      if (ch === '{') { bDepth++; continue; }
+      if (ch === '}') { bDepth = Math.max(0, bDepth - 1); continue; }
+      if (bDepth === 0) topLevelOnly += ch;
+    }
+    const members = topLevelOnly.split(/[;,\n]/).map(s => stripInlineCommentSafe(s).trim()).filter(Boolean);
+    members.forEach(mem => {
+      const cleaned = mem.replace(/^(?:(?:readonly|public|private|protected|static)\s+)+/, '');
+      if (/^(?:constructor|get\s+|set\s+|async\s+|[A-Za-z_$][\w$]*\s*\()/.test(cleaned)) return;
+      const m = cleaned.match(/^([A-Za-z_$][\w$]*)(\?)?\s*:\s*([^=]+?)(?:\s*=[\s\S]+)?$/);
+      if (m && !seen.has(m[1])) {
+        seen.add(m[1]);
+        fields.push({
+          k: m[1],
+          declaredType: m[3].trim(),
+          optional: Boolean(m[2]),
+        });
+        return;
+      }
+      if (isClass) {
+        const initOnly = cleaned.match(/^([A-Za-z_$][\w$]*)\s*=\s*(.+)$/);
+        if (initOnly && !seen.has(initOnly[1])) {
+          const rhs = initOnly[2].trim();
+          let inferred = 'any';
+          if (/^[+-]?\d+(?:\.\d+)?$/.test(rhs)) inferred = 'number';
+          else if (/^(true|false)$/.test(rhs)) inferred = 'boolean';
+          else if (/^["'`]/.test(rhs)) inferred = 'string';
+          else if (rhs.startsWith('[')) inferred = 'any[]';
+          seen.add(initOnly[1]);
+          fields.push({
+            k: initOnly[1],
+            declaredType: inferred,
+            optional: false,
+          });
+        }
+      }
+    });
+    if (isClass) {
+      const ctorM = inner.match(/\bconstructor\s*\(([^)]*)\)/);
+      if (ctorM && ctorM[1].trim()) {
+        splitTopLevel(ctorM[1]).forEach(rawP => {
+          const p = rawP.trim();
+          const pm = p.match(/^(?:(?:public|private|protected|readonly)\s+)+([A-Za-z_$][\w$]*)(\?)?(?:\s*:\s*([^=]+?))?(?:\s*=\s*([\s\S]+))?$/);
+          if (pm && !seen.has(pm[1])) {
+            seen.add(pm[1]);
+            let pType = pm[3] ? pm[3].trim() : 'any';
+            if (pType === 'any' && pm[4]) {
+              const rhs = pm[4].trim();
+              if (/^[+-]?\d+(?:\.\d+)?$/.test(rhs)) pType = 'number';
+              else if (/^(true|false)$/.test(rhs)) pType = 'boolean';
+              else if (/^["'`]/.test(rhs)) pType = 'string';
+            }
+            fields.push({ k: pm[1], declaredType: pType, optional: Boolean(pm[2]) });
+          }
+        });
+      }
+      const thisAssignRe = /\bthis\.([A-Za-z_$][\w$]*)\s*=/g;
+      let tm;
+      while ((tm = thisAssignRe.exec(inner))) {
+        if (!seen.has(tm[1])) {
+          seen.add(tm[1]);
+          fields.push({ k: tm[1], declaredType: 'any', optional: false });
+        }
+      }
+    }
+    return fields;
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const raw = stripInlineCommentSafe(lines[i]);
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+
+    if (activeIface) {
+      activeBody += '\n' + raw;
+      for (const ch of raw) {
+        if (ch === '{') depth++;
+        else if (ch === '}') depth--;
+      }
+      if (depth <= 0) {
+        const parsedFields = parseFieldsFromBody(activeBody, activeIsClass);
+        if (!activeIsClass || parsedFields.length > 0) {
+          interfaces.set(activeIface, {
+            name: activeIface,
+            line: activeIfaceLine,
+            isClass: activeIsClass,
+            fields: parsedFields,
+          });
+        }
+        activeIface = null;
+        activeIsClass = false;
+        activeBody = '';
+      }
+      continue;
+    }
+
+    const ifaceM = trimmed.match(/^(?:export\s+)?(?:abstract\s+)?(interface|class)\s+([A-Za-z_$][\w$]*)(?:\s*<[^>]*>)?(?:\s+extends\s+[^{]+)?(?:\s+implements\s+[^{]+)?\s*\{(.*)$/);
+    if (ifaceM) {
+      const isClass = ifaceM[1] === 'class';
+      const name = ifaceM[2];
+      const rest = '{' + ifaceM[3];
+      let d = 0;
+      for (const ch of rest) {
+        if (ch === '{') d++;
+        else if (ch === '}') d--;
+      }
+      if (d <= 0 && rest.includes('}')) {
+        const bodyPart = rest.slice(0, rest.lastIndexOf('}') + 1);
+        const parsedFields = parseFieldsFromBody(bodyPart, isClass);
+        if (!isClass || parsedFields.length > 0) {
+          interfaces.set(name, {
+            name,
+            line: i + 1,
+            isClass,
+            fields: parsedFields,
+          });
+        }
+      } else {
+        activeIface = name;
+        activeIfaceLine = i + 1;
+        activeIsClass = isClass;
+        activeBody = rest;
+        depth = d;
+      }
+      continue;
+    }
+
+    const typeObjM = trimmed.match(/^(?:export\s+)?type\s+([A-Za-z_$][\w$]*)\s*=\s*(\{[\s\S]*\});?$/);
+    if (typeObjM) {
+      interfaces.set(typeObjM[1], {
+        name: typeObjM[1],
+        line: i + 1,
+        isClass: false,
+        fields: parseFieldsFromBody(typeObjM[2], false),
+      });
+      continue;
+    }
+
+    const fnM = trimmed.match(/^(?:export\s+)?(?:default\s+)?function\s+[A-Za-z_$][\w$]*\s*\(([^)]*)\)/);
+    if (fnM && fnM[1].trim()) {
+      splitTopLevel(fnM[1]).forEach(p => {
+        const pm = p.trim().match(/^([A-Za-z_$][\w$]*)\??\s*:\s*(.+)$/);
+        if (pm) varTypes.set(pm[1], pm[2].trim());
+      });
+    }
+
+    const varM = trimmed.match(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*:\s*([^=]+?)(?:\s*=|$)/);
+    if (varM) {
+      varTypes.set(varM[1], varM[2].trim());
+    } else {
+      const varNewM = trimmed.match(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*new\s+([A-Za-z_$][\w$]*)\s*(?:<[^>]*>)?\s*\(/);
+      if (varNewM && !/^(Map|Set|Array)$/.test(varNewM[2])) {
+        varTypes.set(varNewM[1], varNewM[2]);
+      }
+    }
+  }
+
+  CURRENT_TS_META = { interfaces, varTypes };
+  return CURRENT_TS_META;
+}
+
+export function matchInterfaceForObject(name, value) {
+  const { interfaces, varTypes } = CURRENT_TS_META;
+  if (name && varTypes.has(name)) {
+    const cleanT = varTypes.get(name).replace(/\[\]$/, '').trim();
+    if (interfaces.has(cleanT)) return interfaces.get(cleanT);
+  }
+  if (value && typeof value === 'object' && value.__py_cls__ && interfaces.has(value.__py_cls__)) {
+    return interfaces.get(value.__py_cls__);
+  }
+  if (!value || typeof value !== 'object') return null;
+  const valKeys = Object.keys(value);
+  if (!valKeys.length) return null;
+  let best = null;
+  let bestScore = 0;
+  interfaces.forEach(iface => {
+    if (!iface.fields.length) return;
+    const overlap = iface.fields.filter(f => f.k in value).length;
+    if (overlap > 0 && overlap >= bestScore) {
+      const allKnown = valKeys.every(k => iface.fields.some(f => f.k === k));
+      const score = overlap * 2 + (allKnown ? 1 : 0);
+      if (score > bestScore) {
+        bestScore = score;
+        best = iface;
+      }
+    }
+  });
+  return best;
+}
+
+export function normalizeTsType(rawType) {
   if (!rawType) return 'any';
   let src = rawType.trim();
   let t = '';
@@ -85,7 +303,7 @@ function normalizeTsType(rawType) {
   return t;
 }
 
-function splitTopLevelUnion(typeStr) {
+export function splitTopLevelUnion(typeStr) {
   const parts = [];
   let depth = 0, cur = '';
   for (let i = 0; i < typeStr.length; i++) {
@@ -109,7 +327,7 @@ function splitTopLevelUnion(typeStr) {
   return parts;
 }
 
-function splitTopLevelIntersection(typeStr) {
+export function splitTopLevelIntersection(typeStr) {
   const parts = [];
   let depth = 0, cur = '';
   for (let i = 0; i < typeStr.length; i++) {
@@ -133,21 +351,21 @@ function splitTopLevelIntersection(typeStr) {
   return parts;
 }
 
-function stripNullableFromType(typeStr, target) {
+export function stripNullableFromType(typeStr, target) {
   if (!typeStr) return 'any';
   const norm = normalizeTsType(typeStr);
   const parts = splitTopLevelUnion(norm).filter(p => p !== target);
   return parts.length ? parts.join('|') : norm;
 }
 
-function isLiteralOfPrimitive(lit, prim) {
+export function isLiteralOfPrimitive(lit, prim) {
   if (prim === 'string') return (lit.startsWith('"') && lit.endsWith('"')) || (lit.startsWith('`') && lit.endsWith('`'));
   if (prim === 'number') return /^[+-]?\d+(?:\.\d+)?$/.test(lit);
   if (prim === 'boolean') return lit === 'true' || lit === 'false';
   return false;
 }
 
-function matchTemplateLiteralType(actualStr, patternTpl) {
+export function matchTemplateLiteralType(actualStr, patternTpl) {
   if (!actualStr.startsWith('"') || !actualStr.endsWith('"')) return null;
   if (!patternTpl.startsWith('`') || !patternTpl.endsWith('`')) return null;
   const val = actualStr.slice(1, -1);
@@ -185,7 +403,7 @@ function matchTemplateLiteralType(actualStr, patternTpl) {
   try {
     const m = val.match(new RegExp(regexStr));
     if (!m) return null;
-    const bindings = new Map();
+    const bindings = new Map<any, any>();
     for (let k = 0; k < inferNames.length; k++) {
       const captured = m[k + 1];
       const info = inferNames[k];
@@ -205,7 +423,7 @@ function matchTemplateLiteralType(actualStr, patternTpl) {
   }
 }
 
-function isTsAssignable(actual, expected) {
+export function isTsAssignable(actual, expected) {
   if (!actual || !expected) return true;
   const a = normalizeTsType(actual);
   const e = normalizeTsType(expected);
@@ -274,9 +492,9 @@ function isTsAssignable(actual, expected) {
   return false;
 }
 
-let _TYPECHECK_CACHE = { src: null, strict: null, diags: [] };
+let _TYPECHECK_CACHE: any = { src: null, strict: null, diags: [] };
 
-function typecheckTS(src, strict = STRICT_TS) {
+export function typecheckTS(src, strict = STRICT_TS) {
   extractTsInterfaceMetadata(src);
   if (!strict) return [];
   if (typeof src === 'string' && _TYPECHECK_CACHE.src === src && _TYPECHECK_CACHE.strict === strict) {
@@ -285,15 +503,15 @@ function typecheckTS(src, strict = STRICT_TS) {
   const diagnostics = [];
 
   const lines = src.replace(/\r\n?/g, '\n').split('\n');
-  const fns = new Map();
-  const typeAliases = new Map();
-  const genericTypeAliases = new Map(); // name -> { typeParams, body, line }
-  const interfaceTypeParams = new Map(); // name -> [{ name, constraint, defaultType }]
-  const interfaces = new Map(); // name -> Map<propName, { type, rawType, optional }>
-  const classParents = new Map(); // className -> parentClassName
+  const fns = new Map<any, any>();
+  const typeAliases = new Map<any, any>();
+  const genericTypeAliases = new Map<any, any>(); // name -> { typeParams, body, line }
+  const interfaceTypeParams = new Map<any, any>(); // name -> [{ name, constraint, defaultType }]
+  const interfaces = new Map<any, any>(); // name -> Map<propName, { type, rawType, optional }>
+  const classParents = new Map<any, any>(); // className -> parentClassName
   const enumsSet = new Set();
-  const env = new Map();
-  const activeTypeParams = new Map(); // current scope type params -> constraint or 'any'
+  const env = new Map<any, any>();
+  const activeTypeParams = new Map<any, any>(); // current scope type params -> constraint or 'any'
 
   const BUILTIN_TS_GLOBALS = new Set([
     'Math', 'JSON', 'Number', 'String', 'Boolean', 'Array', 'Object', 'Map', 'Set',
@@ -326,7 +544,7 @@ function typecheckTS(src, strict = STRICT_TS) {
     );
   }
 
-  function addDiag(line, code, message) {
+  function addDiag(line: any, code: any, message?: any) {
     if (!diagnostics.some(d => d.line === line && d.code === code && d.message === message)) {
       diagnostics.push({ line, code, message });
     }
@@ -495,7 +713,7 @@ function typecheckTS(src, strict = STRICT_TS) {
   }
 
   function matchConditionalExtends(checkT, extT, typeEnv, depth) {
-    const inferred = new Map();
+    const inferred = new Map<any, any>();
     const cNorm = evaluateType(checkT, typeEnv, depth + 1);
     const eSubst = substituteTypeParamsInStr(normalizeTsType(extT), typeEnv);
 
@@ -704,7 +922,7 @@ function typecheckTS(src, strict = STRICT_TS) {
     return 'any';
   }
 
-  function evaluateType(rawType, typeEnv = new Map(), depth = 0) {
+  function evaluateType(rawType, typeEnv = new Map<any, any>(), depth = 0) {
     if (!rawType || depth > 24) return 'any';
     let t = normalizeTsType(rawType);
     if (!t || t === 'any' || t === 'unknown' || t === 'never' || t === 'void' ||
@@ -780,7 +998,7 @@ function typecheckTS(src, strict = STRICT_TS) {
       if (evaled.length === 2 && evaled[1] === '{}') {
         return stripNullableFromType(stripNullableFromType(evaled[0], 'null'), 'undefined');
       }
-      const mergedProps = new Map();
+      const mergedProps = new Map<any, any>();
       let allShapes = true;
       for (const ep of evaled) {
         const sh = getInterfaceShape(ep);
@@ -1113,7 +1331,7 @@ function typecheckTS(src, strict = STRICT_TS) {
 
   function parseObjectShapeLiteral(typeBody, typeEnv = activeTypeParams) {
     const inner = typeBody.trim().replace(/^\{/, '').replace(/\}$/, '').trim();
-    const propMap = new Map();
+    const propMap = new Map<any, any>();
     if (!inner) return propMap;
     const members = [];
     let d = 0, ad = 0, cur = '';
@@ -1159,7 +1377,7 @@ function typecheckTS(src, strict = STRICT_TS) {
     const typeArgs = genM ? splitTopLevelDecl(genM[2]).map(a => evaluateType(a.trim(), activeTypeParams)) : [];
     const direct = interfaces.get(resolved) || interfaces.get(baseName);
     if (direct) {
-      let merged = new Map();
+      let merged = new Map<any, any>();
       if (classParents.has(resolved) || classParents.has(baseName)) {
         let p = classParents.get(resolved) || classParents.get(baseName);
         const visited = new Set([resolved, baseName]);
@@ -1177,7 +1395,7 @@ function typecheckTS(src, strict = STRICT_TS) {
         tParams.forEach((tp, idx) => {
           subEnv.set(tp.name, idx < typeArgs.length ? typeArgs[idx] : (tp.defaultType ? evaluateType(tp.defaultType, subEnv) : 'any'));
         });
-        const instantiated = new Map();
+        const instantiated = new Map<any, any>();
         merged.forEach((v, k) => {
           instantiated.set(k, {
             ...v,
@@ -1305,7 +1523,7 @@ function typecheckTS(src, strict = STRICT_TS) {
     const s = expr.trim();
     if (!s.startsWith('{') || !s.endsWith('}') || findBalancedParen(s, 0) !== s.length - 1) return null;
     const inner = s.slice(1, -1).trim();
-    const entries = new Map();
+    const entries = new Map<any, any>();
     if (!inner) return entries;
     const parts = splitTopLevel(inner);
     parts.forEach(part => {
@@ -1488,7 +1706,7 @@ function typecheckTS(src, strict = STRICT_TS) {
           const argTypes = args.map(a => inferType(a, lineNum));
           const clsTParams = interfaceTypeParams.get(clsName) || [];
           const ctorSig = getClassMethodSig(clsName, 'constructor');
-          const callEnv = new Map();
+          const callEnv = new Map<any, any>();
           if (ctorSig) {
             const effectiveSig = {
               ...ctorSig,
@@ -1565,7 +1783,7 @@ function typecheckTS(src, strict = STRICT_TS) {
     if (arrowExprM) {
       const rawParamStr = arrowExprM[1] !== undefined ? arrowExprM[1] : arrowExprM[2];
       const bodyStr = arrowExprM[3].trim();
-      const saved = new Map();
+      const saved = new Map<any, any>();
       const boundNames = new Set();
       splitTopLevelDecl(rawParamStr || '').forEach(p => {
         const cleanP = p.trim().replace(/^\.\.\./, '');
@@ -1954,7 +2172,7 @@ function typecheckTS(src, strict = STRICT_TS) {
         } else if (curType === 'string') {
           curType = 'string';
         } else if (litIdx && getInterfaceShape(curType)) {
-          curType = resolveIndexedAccess(curType, litIdx, new Map(), 0);
+          curType = resolveIndexedAccess(curType, litIdx, new Map<any, any>(), 0);
         } else if (activeTypeParams.has(curType) && activeTypeParams.has(idxType)) {
           curType = `${curType}[${idxType}]`;
         } else {
@@ -2034,7 +2252,7 @@ function typecheckTS(src, strict = STRICT_TS) {
       return sig.returnType || 'any';
     }
     const tParams = sig.typeParams || [];
-    const callEnv = outEnv || new Map();
+    const callEnv = outEnv || new Map<any, any>();
     if (tParams.length > 0) {
       const tpNames = new Set(tParams.map(tp => tp.name));
       const tpMetaMap = new Map(tParams.map(tp => [tp.name, tp]));
@@ -2053,7 +2271,7 @@ function typecheckTS(src, strict = STRICT_TS) {
         const litT = inferLiteralType(args[idx]);
         if (tpNames.has(rawPT)) {
           if (!callEnv.has(rawPT)) {
-            const meta = tpMetaMap.get(rawPT);
+            const meta: any = tpMetaMap.get(rawPT);
             const usedAsIndex = sig.rawReturnType && new RegExp(`\\[\\s*${rawPT}\\s*\\]`).test(sig.rawReturnType);
             const hasKeyofOrLitConstraint = meta && meta.constraint && (/\bkeyof\b|["']/.test(meta.constraint));
             if (litT && (usedAsIndex || hasKeyofOrLitConstraint)) {
@@ -2323,7 +2541,7 @@ function typecheckTS(src, strict = STRICT_TS) {
         const extM = headerTail.match(/\bextends\s+([A-Za-z_$][\w$]*)/);
         const parentName = extM ? extM[1] : null;
         const rest = afterTParams.slice(braceOpenIdx + 1).trim();
-        const propMap = new Map();
+        const propMap = new Map<any, any>();
         interfaces.set(ifaceName, propMap);
         if (parentName) {
           classParents.set(ifaceName, parentName);
@@ -2469,7 +2687,7 @@ function typecheckTS(src, strict = STRICT_TS) {
         const afterClose = headerStr.slice(closeP + 1).trim();
         const retM = afterClose.match(/^:\s*([^{]+?)(?:\s*\{[\s\S]*)?$/);
         const rawRetType = retM ? retM[1].trim() : 'any';
-        const tempEnv = new Map();
+        const tempEnv = new Map<any, any>();
         fnTParams.forEach(tp => tempEnv.set(tp.name, tp.name));
         const retType = retM ? resolveAlias(rawRetType, tempEnv) : 'any';
         const { params, minArgs } = parseParamList(paramStr, lineNum, true);
@@ -2605,7 +2823,7 @@ function typecheckTS(src, strict = STRICT_TS) {
       const clsName = classOpen ? classOpen[1] : classExprOpen[2];
       if (classExprOpen) {
         env.set(clsName, { type: clsName, isConst: classExprOpen[1] === 'const', line: lineNum, declaredType: clsName });
-        if (!interfaces.has(clsName)) interfaces.set(clsName, new Map());
+        if (!interfaces.has(clsName)) interfaces.set(clsName, new Map<any, any>());
       }
       const clsTParams = interfaceTypeParams.get(clsName) || [];
       clsTParams.forEach(tp => activeTypeParams.set(tp.name, tp.name));
@@ -3094,7 +3312,7 @@ function typecheckTS(src, strict = STRICT_TS) {
       const retExpr = inlineIfRet[3] ? inlineIfRet[3].trim() : '';
       inferType(condStr, lineNum);
       if (actionKw.startsWith('return')) {
-        const savedInlineNarrow = new Map();
+        const savedInlineNarrow = new Map<any, any>();
         condStr.split('&&').forEach(clause => {
           const cm = clause.trim().match(/^([A-Za-z_$][\w$]*)\s*!==\s*(null|undefined)$/);
           if (cm && env.has(cm[1])) {
@@ -3291,7 +3509,7 @@ function typecheckTS(src, strict = STRICT_TS) {
    3.6) Official TypeScript Compiler Web Worker Bridge (Plan B)
    Runs full `typescript` semantic checking off the main thread in the browser.
    ================================================================ */
-const _TS_WORKER_STATE = {
+const _TS_WORKER_STATE: any = {
   worker: null,
   failed: false,
   reqId: 0,
@@ -3301,7 +3519,7 @@ const _TS_WORKER_STATE = {
   timer: null,
 };
 
-function ensureTsWorker() {
+export function ensureTsWorker() {
   if (_TS_WORKER_STATE.worker || _TS_WORKER_STATE.failed) return _TS_WORKER_STATE.worker;
   if (typeof Worker === 'undefined' || typeof window === 'undefined') {
     _TS_WORKER_STATE.failed = true;
@@ -3335,7 +3553,7 @@ function ensureTsWorker() {
   }
 }
 
-function requestTsWorkerCheck(src, strict) {
+export function requestTsWorkerCheck(src, strict) {
   if (!strict || typeof src !== 'string' || typeof Worker === 'undefined') return;
   const w = ensureTsWorker();
   if (!w) return;
@@ -3349,7 +3567,7 @@ function requestTsWorkerCheck(src, strict) {
   }, 60);
 }
 
-function reportTypeErrors(diags) {
+export function reportTypeErrors(diags) {
   TYPE_ERROR_LINES = new Set(diags.map(d => d.line));
   updateEditorChrome();
   say(`✗ TypeScript 严格类型检查未通过 (共 ${diags.length} 处错误)：`, 'err');
@@ -3357,4 +3575,13 @@ function reportTypeErrors(diags) {
     say(`  • ${d.code} [第 ${d.line} 行]: ${d.message}`, 'err', d.line);
   });
   if (diags.length && diags[0].line) revealErrorLine(diags[0].line);
+}
+
+
+export const typeCheck = typecheckTS;
+export const parseType = normalizeTsType;
+export const typeToStr = normalizeTsType;
+export const isAssignable = isTsAssignable;
+export function inferExpr(expr: string): string {
+  return normalizeTsType(expr);
 }

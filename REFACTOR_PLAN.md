@@ -79,31 +79,31 @@
 
 ## 五、 分阶段执行步骤与检查清单 (Checklist)
 
-- [ ] **阶段 1：前置问题修复与基线加固**
-  - [ ] 修复 `new Promise(function(resolve) { ... })` 匿名函数参数在内置类型检查器与运行时中的识别问题
-  - [ ] 更新 `async_loop` 示例，显式声明基于标准 `new Promise` + `setTimeout` 的 `sleep` 函数，兼容官方 TypeScript Playground
-  - [ ] 验证 `node test-pipeline.mjs` 100% 通过
+- [x] **阶段 1：前置问题修复与基线加固**
+  - [x] 修复 `new Promise(function(resolve) { ... })` 匿名函数参数在内置类型检查器与运行时中的识别问题
+  - [x] 更新 `async_loop` 示例，显式声明基于标准 `new Promise` + `setTimeout` 的 `sleep` 函数，兼容官方 TypeScript Playground
+  - [x] 验证 `node test-pipeline.mjs` 100% 通过
 
-- [ ] **阶段 2：搭建 TypeScript 编译与打包基础设施**
-  - [ ] 创建 `tsconfig.json`（配置 `target: "ES2022"`, `module: "ESNext"`, `moduleResolution: "bundler"`）
-  - [ ] 创建 `src/types.ts` 与 `src/state.ts`
-  - [ ] 更新 `scripts/build-editor.mjs` 支持将 `src/main.ts` 打包为 `dist/app.bundle.js`（或 `js/app.bundle.js`）
+- [x] **阶段 2：搭建 TypeScript 编译与打包基础设施**
+  - [x] 创建 `tsconfig.json`（配置 `target: "ES2022"`, `module: "ESNext"`, `moduleResolution: "bundler"`）
+  - [x] 创建 `src/types.ts` 与 `src/state.ts`
+  - [x] 更新 `scripts/build-editor.mjs` 支持将 `src/main.ts` 打包为 `dist/app.bundle.js`（或 `js/app.bundle.js`）
 
-- [ ] **阶段 3：迁移编译器与运行时核心层 (`01` ~ `06`)**
-  - [ ] 迁移 `src/samples/ts-samples.ts` (`01`)
-  - [ ] 迁移 `src/compiler/comments.ts` 与 `src/compiler/transpile.ts` (`02`)
-  - [ ] 迁移 `src/compiler/instrumenter.ts` (`03`)
-  - [ ] 迁移 `src/compiler/type-checker.ts` (`05`)
-  - [ ] 迁移 `src/runtime/event-loop.ts` 与 `src/runtime/runner.ts` (`06`)
-  - [ ] 运行 `node test-pipeline.mjs` 验证编译器与运行时输出完全一致
+- [x] **阶段 3：迁移编译器与运行时核心层 (`01` ~ `06`)**
+  - [x] 迁移 `src/samples/ts-samples.ts` (`01`)
+  - [x] 迁移 `src/compiler/comments.ts` 与 `src/compiler/transpile.ts` (`02`)
+  - [x] 迁移 `src/compiler/instrumenter.ts` (`03`)
+  - [x] 迁移 `src/compiler/type-checker.ts` (`05`)
+  - [x] 迁移 `src/runtime/event-loop.ts` 与 `src/runtime/runner.ts` (`06`)
+  - [x] 运行 `node test-pipeline.mjs` 验证编译器与运行时输出完全一致
 
-- [ ] **阶段 4：迁移可视化与 UI 交互层 (`04`, `07` ~ `10`)**
-  - [ ] 迁移 `src/viz/ast-view.ts` (`04`)
-  - [ ] 迁移 `src/viz/highlight.ts` (`07`)
-  - [ ] 迁移 `src/viz/memory-graph.ts` (`08`)
-  - [ ] 迁移 `src/ui/controls.ts`, `src/ui/share.ts`, `src/main.ts` (`09`, `10`)
+- [x] **阶段 4：迁移可视化与 UI 交互层 (`04`, `07` ~ `10`)**
+  - [x] 迁移 `src/viz/ast-view.ts` (`04`)
+  - [x] 迁移 `src/viz/highlight.ts` (`07`)
+  - [x] 迁移 `src/viz/memory-graph.ts` (`08`)
+  - [x] 迁移 `src/ui/controls.ts`, `src/ui/share.ts`, `src/main.ts` (`09`, `10`)
 
-- [ ] **阶段 5：切换 HTML 引用、清理旧脚本与生产构建验证**
-  - [ ] 更新 `index.html` 与 `scripts/build.mjs` 使用打包后的模块化产物
-  - [ ] 移除旧的 `js/01-*.js` ~ `js/10-*.js`
-  - [ ] 运行 `npm run build` 与 `node test-pipeline.mjs` 进行最终验收
+- [x] **阶段 5：切换 HTML 引用、清理旧脚本与生产构建验证**
+  - [x] 更新 `index.html` 与 `scripts/build.mjs` 使用打包后的模块化产物
+  - [x] 移除旧的 `js/01-*.js` ~ `js/10-*.js`
+  - [x] 运行 `npm run build` 与 `node test-pipeline.mjs` 进行最终验收

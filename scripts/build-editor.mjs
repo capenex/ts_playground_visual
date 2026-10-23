@@ -5,6 +5,18 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = path.join(ROOT, 'editor', 'cm.bundle.js');
 const TS_WORKER_OUT = path.join(ROOT, 'editor', 'ts-worker.bundle.js');
+const APP_OUT = path.join(ROOT, 'js', 'app.bundle.js');
+
+await build({
+  entryPoints: [path.join(ROOT, 'src', 'main.ts')],
+  bundle: true,
+  minify: false,
+  format: 'iife',
+  target: ['chrome100', 'firefox100', 'safari16'],
+  outfile: APP_OUT,
+  legalComments: 'none',
+  logLevel: 'warning',
+});
 
 await build({
   entryPoints: [path.join(ROOT, 'editor', 'cm-entry.js')],
@@ -30,6 +42,7 @@ await build({
 });
 
 const fs = await import('node:fs');
+const appKb = Math.round(fs.statSync(APP_OUT).size / 1024);
 const kb = Math.round(fs.statSync(OUT).size / 1024);
 const tsKb = Math.round(fs.statSync(TS_WORKER_OUT).size / 1024);
-console.log(`built editor/cm.bundle.js · ${kb} KB | editor/ts-worker.bundle.js · ${tsKb} KB`);
+console.log(`built js/app.bundle.js · ${appKb} KB | editor/cm.bundle.js · ${kb} KB | editor/ts-worker.bundle.js · ${tsKb} KB`);

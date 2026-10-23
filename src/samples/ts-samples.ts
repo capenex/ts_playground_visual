@@ -1,16 +1,8 @@
 /* ================================================================
-   TypeScript Playground — prelude · built-in samples · DOM refs · runtime state
-   Part 1/10 · loaded in order from index.html (classic script;
-   shares the global lexical scope with the other parts).
+   Built-in TypeScript samples & expected lines (src/samples/ts-samples.ts)
    ================================================================ */
 
-/* ================================================================
-   TypeScript Playground — self-contained (no CDN, no server)
-   Unified source editor + trace debugger (single code surface)
-   ================================================================ */
-
-/* ── built-in samples (TypeScript source) ── */
-const SAMPLES = {
+export const SAMPLES: Record<string, string> = {
   showcase: `function visualShowcase(nums: number[], target: number): number {
   const tree = {
     val: 8,
@@ -264,8 +256,7 @@ runAsyncDemo()
 `,
 };
 
-/* Default initial step per sample so opening a sample shows populated visuals immediately */
-const SAMPLE_DEFAULT_STEP = {
+export const SAMPLE_DEFAULT_STEP: Record<string, number> = {
   showcase: 35,
   mergesort: 8,
   debug_crash: 0,
@@ -278,55 +269,6 @@ const SAMPLE_DEFAULT_STEP = {
   async_loop: 10,
 };
 
-/* ── DOM ── */
-const $ = (id) => document.getElementById(id);
-const editor = $('editor'), logEl = $('log');
-const gutterEl = $('gutter'), highlightEl = $('highlight');
-const varsEl = $('vars'), pickEl = $('pick');
-const callStackBarEl = $('callStackBar'), callStackHintEl = $('callStackHint');
-const slotsEl = $('slots'), consoleEl = $('console'), cntEl = $('cnt');
-const ctlHint = $('ctlHint');
-const mainEl = $('main'), sidePanelEl = $('sidePanel'), resizerEl = $('resizer');
-const flyLayerEl = $('flyLayer');
-const hoverTipEl = $('hoverTip');
-const stepVizEl = $('stepViz');
-const fileNameEl = $('fileName'), fileInputEl = $('fileInput'), btnImportEl = $('btnImport');
-let FILE_NAME = 'playground.ts';
-let LANG = 'ts';
-let LANG_BUFFERS = { ts: null, python: null };
-let PY_DIAGS = [];
-
-/* ── trace / on-demand debug state & safety limits ── */
-const MAX_STEPS = 5000;
-const MAX_EXEC_MS = 3500;
-/* ▶ 运行 (non-debug) wall-clock budget: an instrumented loop counter force-stops runaway loops. */
-const RUN_TIMEOUT_MS = 2000;
-const AUTO_PLAY_MS = 900;
-const VIDEO_WIDTH = 1920;
-const VIDEO_HEIGHT = 1080;
-const VIDEO_FPS = 60;
-const VIDEO_SPEED_OPTIONS = [0.75, 1, 1.5, 2, 3];
-let VIDEO_EXPORT_SPEED = 1;
-let IS_EXPORTING_VIDEO = false;
-const PAUSE_SIGNAL = { __debugPause: true };
-let TRACE = { title: 'TypeScript Playground · Debug', code: [], steps: [] };
-let cur = 0, timer = null, watched = new Set(), layoutSpan = Object.create(null);
-let SELECTED_FRAME_IDX = null;
-let SEEN_VARS_EVER = new Set();
-let IS_STILL = false;
-let URL_WATCH = null;
-let STRICT_TS = true;
-let TYPE_ERROR_LINES = new Set();
-let RUNTIME_ERROR_LINES = new Set();
-let lastEditorCursorLine = -1;
-let DEBUG_SESSION = {
-  active: false,
-  finished: false,
-  crashed: false,
-  error: null,
-  errorLine: -1,
-  returnValue: undefined,
-  compiledFn: null,
-  originalLines: [],
-  callExpr: 'undefined',
-};
+export const EXPECTED_LINES: Record<string, string[]> = Object.fromEntries(
+  Object.entries(SAMPLES).map(([k, v]) => [k, v.trim().split('\n')])
+);

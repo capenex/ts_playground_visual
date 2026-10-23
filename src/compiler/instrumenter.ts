@@ -1,13 +1,22 @@
 /* ================================================================
-   TypeScript Playground — instrumenter
-   Part 3/10 · loaded in order from index.html (classic script;
-   shares the global lexical scope with the other parts).
+   AST/line-level instrumenter & async snapshot hooks (src/compiler/instrumenter.ts)
    ================================================================ */
+import {
+  RESERVED_WORDS,
+  blankStrings,
+  findBalancedParen,
+  isIdentPart,
+  isIdentStart,
+  isWS,
+  readIdent,
+  skipString,
+  splitTopLevel,
+  splitTopLevelSemicolons,
+  stripInlineCommentSafe,
+} from './comments';
+import { stripTypes } from './transpile';
 
-/* ================================================================
-   2) Instrumenter — statement-safe, multi-line aware, destructuring aware
-   ================================================================ */
-function isTraceableLine(t) {
+export function isTraceableLine(t: string): boolean {
   if (!t) return false;
   if (t.startsWith('//') || t.startsWith('/*') || t.startsWith('*')) return false;
   if (/^[)}\].?:,&|]/.test(t)) return false;
@@ -17,39 +26,7 @@ function isTraceableLine(t) {
   return true;
 }
 
-function splitTopLevel(s) {
-  const parts = [];
-  let depth = 0, cur = '';
-  for (let i = 0; i < s.length; i++) {
-    const ch = s[i];
-    if (ch === '"' || ch === "'" || ch === '`') {
-      const end = skipString(s, i);
-      cur += s.slice(i, end);
-      i = end - 1;
-      continue;
-    }
-    if (ch === '(' || ch === '[' || ch === '{') depth++;
-    else if (ch === ')' || ch === ']' || ch === '}') depth--;
-    if (ch === ',' && depth === 0) {
-      parts.push(cur);
-      cur = '';
-    } else {
-      cur += ch;
-    }
-  }
-  if (cur) parts.push(cur);
-  return parts;
-}
-
-const RESERVED_WORDS = new Set([
-  'function', 'const', 'let', 'var', 'for', 'while', 'do', 'if', 'else',
-  'switch', 'case', 'default', 'break', 'continue', 'return', 'try', 'catch',
-  'finally', 'throw', 'new', 'delete', 'typeof', 'instanceof', 'void', 'in',
-  'of', 'class', 'extends', 'super', 'this', 'import', 'export', 'from',
-  'as', 'async', 'await', 'yield', 'true', 'false', 'null', 'undefined',
-]);
-
-function extractBindingNames(lhs, names) {
+export function extractBindingNames(lhs: string, names: Set<any>): void {
   let s = lhs.trim();
   if (!s) return;
   let eqIdx = -1, depth = 0;
@@ -97,45 +74,10 @@ function extractBindingNames(lhs, names) {
   if (m && !RESERVED_WORDS.has(m[1])) names.add(m[1]);
 }
 
-/* Blank string/template contents *and* comments so declaration scanning never
-   mistakes text in a comment for a real binding (e.g. `// const ghost = 1`). */
-function blankStrings(js) {
-  let out = '';
-  let i = 0;
-  const n = js.length;
-  while (i < n) {
-    const c = js[i];
-    if (c === '"' || c === "'" || c === '`') {
-      const end = skipString(js, i);
-      out += '""' + newlinesOf(js.slice(i, end));
-      i = end;
-      continue;
-    }
-    if (c === '/' && js[i + 1] === '/') {
-      let j = i + 2;
-      while (j < n && js[j] !== '\n') j++;
-      out += ' '.repeat(j - i);
-      i = j;
-      continue;
-    }
-    if (c === '/' && js[i + 1] === '*') {
-      let j = i + 2;
-      while (j < n && !(js[j] === '*' && js[j + 1] === '/')) j++;
-      j = Math.min(n, j + 2);
-      out += js.slice(i, j).replace(/[^\n]/g, ' ');
-      i = j;
-      continue;
-    }
-    out += c;
-    i++;
-  }
-  return out;
-}
-
-function collectNames(js) {
+export function collectNames(js: string): string[] {
   const clean = blankStrings(js);
-  const names = new Set();
-  let m;
+  const names = new Set<string>();
+  let m: RegExpExecArray | null;
 
   const forRe = /\bfor\s*\(\s*(?:const|let|var)\s+(.+?)\s+(?:of|in)\b/g;
   while ((m = forRe.exec(clean))) {
@@ -199,14 +141,14 @@ function collectNames(js) {
   return [...names];
 }
 
-function snapFnExpr(names) {
+export function snapFnExpr(names: string[]): string {
   const body = names.map(n =>
     `try{__v[${JSON.stringify(n)}]=${n};}catch(e){}`
   ).join('');
   return `function(){var __v={};${body}return __v;}`;
 }
 
-function endsWithContinuation(t) {
+function endsWithContinuation(t: string): boolean {
   if (!t) return false;
   if (/[.+\-*/%&|^<>?:=,(\[]$/.test(t)) {
     if (/(\+\+|--)$/.test(t)) return false;
@@ -215,67 +157,22 @@ function endsWithContinuation(t) {
   return false;
 }
 
-function isUnbracedControlHeader(t) {
+function isUnbracedControlHeader(t: string): boolean {
   if (!t || t.endsWith('{') || t.endsWith(';')) return false;
   if (/^(else|do)$/.test(t)) return true;
   if (/^(?:if|for|while|else\s+if)\s*\(.*\)$/.test(t)) return true;
   return false;
 }
 
-function findBalancedParen(s, openIdx) {
-  let depth = 0;
-  for (let i = openIdx; i < s.length; i++) {
-    const ch = s[i];
-    if (ch === '"' || ch === "'" || ch === '`') {
-      i = skipString(s, i) - 1;
-      continue;
-    }
-    if (ch === '/' && s[i + 1] === '/') break;
-    if (ch === '(' || ch === '[' || ch === '{') depth++;
-    else if (ch === ')' || ch === ']' || ch === '}') {
-      depth--;
-      if (depth === 0) return i;
-    }
-  }
-  return -1;
-}
-
-function splitTopLevelSemicolons(s) {
-  const parts = [];
-  let depth = 0, cur = '';
-  for (let i = 0; i < s.length; i++) {
-    const ch = s[i];
-    if (ch === '"' || ch === "'" || ch === '`') {
-      const end = skipString(s, i);
-      cur += s.slice(i, end);
-      i = end - 1;
-      continue;
-    }
-    if (ch === '(' || ch === '[' || ch === '{') depth++;
-    else if (ch === ')' || ch === ']' || ch === '}') depth--;
-    if (ch === ';' && depth === 0) {
-      parts.push(cur);
-      cur = '';
-    } else {
-      cur += ch;
-    }
-  }
-  parts.push(cur);
-  return parts;
-}
-
-function tryInjectLoopOrElseIf(raw, callExpr) {
+function tryInjectLoopOrElseIf(raw: string, callExpr: string): string | null {
   const mCond = raw.match(/^(\s*(?:}\s*)?(?:while|else\s+if)\s*)\(/);
   if (mCond) {
     const openIdx = mCond[1].length;
     const closeIdx = findBalancedParen(raw, openIdx);
     if (closeIdx > openIdx) {
-      const tail = raw.slice(closeIdx + 1);
-      {
-        const cond = raw.slice(openIdx + 1, closeIdx).trim();
-        if (cond) {
-          return raw.slice(0, openIdx + 1) + '(' + callExpr + ', (' + cond + '))' + raw.slice(closeIdx);
-        }
+      const cond = raw.slice(openIdx + 1, closeIdx).trim();
+      if (cond) {
+        return raw.slice(0, openIdx + 1) + '(' + callExpr + ', (' + cond + '))' + raw.slice(closeIdx);
       }
     }
   }
@@ -285,21 +182,18 @@ function tryInjectLoopOrElseIf(raw, callExpr) {
     const openIdx = mFor[1].length;
     const closeIdx = findBalancedParen(raw, openIdx);
     if (closeIdx > openIdx) {
-      const tail = raw.slice(closeIdx + 1);
-      {
-        const inside = raw.slice(openIdx + 1, closeIdx);
-        const semiParts = splitTopLevelSemicolons(inside);
-        if (semiParts.length === 3) {
-          const init = semiParts[0];
-          const cond = semiParts[1].trim();
-          const upd = semiParts[2];
-          const wrappedCond = cond ? '(' + callExpr + ', (' + cond + '))' : '(' + callExpr + ', true)';
-          return raw.slice(0, openIdx + 1) + init + '; ' + wrappedCond + ';' + upd + raw.slice(closeIdx);
-        } else if (semiParts.length === 1 && /\b(?:of|in)\b/.test(inside)) {
-          const bracePos = raw.indexOf('{', closeIdx + 1);
-          if (bracePos >= 0) {
-            return raw.slice(0, bracePos + 1) + ' ' + callExpr + ';' + raw.slice(bracePos + 1);
-          }
+      const inside = raw.slice(openIdx + 1, closeIdx);
+      const semiParts = splitTopLevelSemicolons(inside);
+      if (semiParts.length === 3) {
+        const init = semiParts[0];
+        const cond = semiParts[1].trim();
+        const upd = semiParts[2];
+        const wrappedCond = cond ? '(' + callExpr + ', (' + cond + '))' : '(' + callExpr + ', true)';
+        return raw.slice(0, openIdx + 1) + init + '; ' + wrappedCond + ';' + upd + raw.slice(closeIdx);
+      } else if (semiParts.length === 1 && /\b(?:of|in)\b/.test(inside)) {
+        const bracePos = raw.indexOf('{', closeIdx + 1);
+        if (bracePos >= 0) {
+          return raw.slice(0, bracePos + 1) + ' ' + callExpr + ';' + raw.slice(bracePos + 1);
         }
       }
     }
@@ -307,7 +201,16 @@ function tryInjectLoopOrElseIf(raw, callExpr) {
   return null;
 }
 
-function matchFunctionHeaderForStack(rawLine, lineNum) {
+interface FnHeaderStackInfo {
+  kind: 'fn';
+  name: string;
+  params: string[];
+  line: number;
+  fidVar: string;
+  isAsync: boolean;
+}
+
+function matchFunctionHeaderForStack(rawLine: string, lineNum: number): FnHeaderStackInfo | null {
   const clean = stripInlineCommentSafe(rawLine).trim();
   if (!clean.endsWith('{')) return null;
   let m = clean.match(/^(?:export\s+)?(?:default\s+)?(async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(([^)]*)\)\s*\{$/);
@@ -341,7 +244,7 @@ function matchFunctionHeaderForStack(rawLine, lineNum) {
     }
   }
   if (!m) return null;
-  const pSet = new Set();
+  const pSet = new Set<string>();
   splitTopLevel(paramRaw).forEach(p => extractBindingNames(p, pSet));
   return {
     kind: 'fn',
@@ -353,7 +256,7 @@ function matchFunctionHeaderForStack(rawLine, lineNum) {
   };
 }
 
-function rewriteAwaitExpressions(str, fidExpr, lineNum) {
+function rewriteAwaitExpressions(str: string, fidExpr: string, lineNum: number): string {
   if (!/\bawait\b/.test(str)) return str;
   let out = '';
   let i = 0;
@@ -371,7 +274,7 @@ function rewriteAwaitExpressions(str, fidExpr, lineNum) {
       break;
     }
     if (isIdentStart(ch)) {
-      const id = readIdent(str, i);
+      const id = readIdent(str, i)!;
       if (id.name === 'await') {
         let j = id.end;
         while (j < n && isWS(str[j])) j++;
@@ -379,7 +282,7 @@ function rewriteAwaitExpressions(str, fidExpr, lineNum) {
         let k = j;
         while (k < n) {
           const c = str[k];
-          if (c === '"' || c === "'" || c === '`') { k = skipString(str, k); continue; }
+          if (c === '"' || c === "'" || ch === '`') { k = skipString(str, k); continue; }
           if (c === '/' && str[k + 1] === '/') break;
           if (c === '(' || c === '[' || c === '{') d++;
           else if (c === ')' || c === ']' || c === '}') {
@@ -410,7 +313,7 @@ function rewriteAwaitExpressions(str, fidExpr, lineNum) {
 }
 
 /* Index of a real `class` keyword on this line (outside strings/comments), or -1. */
-function classKeywordIndex(raw) {
+function classKeywordIndex(raw: string): number {
   for (let k = 0; k < raw.length; k++) {
     const ch = raw[k];
     if (ch === '"' || ch === "'" || ch === '`') { k = skipString(raw, k) - 1; continue; }
@@ -421,7 +324,7 @@ function classKeywordIndex(raw) {
       continue;
     }
     if (isIdentStart(ch)) {
-      const id = readIdent(raw, k);
+      const id = readIdent(raw, k)!;
       if (id.name === 'class') return k;
       k = id.end - 1;
     }
@@ -429,18 +332,18 @@ function classKeywordIndex(raw) {
   return -1;
 }
 
-function instrument(js, originalLines, names) {
+export function instrument(js: string, originalLines: string[], names: string[]): string {
   const lines = js.split('\n');
-  const out = [];
+  const out: string[] = [];
   let parenDepth = 0;
-  const braceStack = [];
+  const braceStack: Array<string | FnHeaderStackInfo> = [];
   let prevContinued = false;
   let prevUnbracedControl = false;
 
   for (let i = 0; i < lines.length; i++) {
     const raw = lines[i];
     const t = raw.trim();
-    const indent = raw.match(/^\s*/)[0];
+    const indent = raw.match(/^\s*/)![0];
     const topBrace = braceStack.length > 0 ? braceStack[braceStack.length - 1] : null;
     const inObject = topBrace === 'object';
     const inClassBody = topBrace === 'classbody';
@@ -468,7 +371,7 @@ function instrument(js, originalLines, names) {
       !prevContinued &&
       !prevUnbracedControl;
 
-    let activeAsyncFn = null;
+    let activeAsyncFn: FnHeaderStackInfo | null = null;
     for (let bIdx = braceStack.length - 1; bIdx >= 0; bIdx--) {
       const bItem = braceStack[bIdx];
       if (bItem && typeof bItem === 'object' && bItem.kind === 'fn') {
@@ -490,7 +393,7 @@ function instrument(js, originalLines, names) {
       openFnBraceIdx = lastBrace;
     }
 
-    const closeFnSplices = [];
+    const closeFnSplices: Array<{ idx: number; fnInfo: FnHeaderStackInfo }> = [];
     for (let k = 0; k < raw.length; k++) {
       const ch = raw[k];
       if (ch === '"' || ch === "'" || ch === '`') {
@@ -555,7 +458,7 @@ function instrument(js, originalLines, names) {
       }
       transformedRaw = rebuilt;
     } else {
-      // Single-line async function or async arrow: `async function f() { return 1; }`
+      // Single-line async function: `async function f() { return 1; }`
       const singleAsyncFnM = transformedRaw.match(/^(\s*(?:export\s+)?(?:default\s+)?)async\s+function\s+([A-Za-z_$][\w$]*)\s*\(([^)]*)\)\s*\{([\s\S]*)\}\s*;?\s*$/);
       if (singleAsyncFnM) {
         const bodyRewritten = rewriteAwaitExpressions(singleAsyncFnM[4], '0', i + 1);
@@ -596,16 +499,12 @@ function instrument(js, originalLines, names) {
   return out.join('\n');
 }
 
-function extractCall(src) {
+export function extractCall(src: string): string | null {
   const m = src.match(/\/\/\s*调用[:：]\s*(.+)/);
   return m ? m[1].trim() : null;
 }
 
-/* Entry call: the recommended form is a real call on the last executable line.
-   The legacy `// 调用：expr` comment is still accepted for old snippets. */
-let ENTRY_CALL_LINE = 0;
-
-function findTrailingTopLevelCall(js) {
+export function findTrailingTopLevelCall(js: string): { index: number; expr: string; line: number } | null {
   const lines = String(js || '').replace(/\r/g, '').split('\n');
   let idx = lines.length - 1;
   while (idx >= 0) {
@@ -631,13 +530,13 @@ function findTrailingTopLevelCall(js) {
   return null;
 }
 
-function blankJsLine(js, index) {
+export function blankJsLine(js: string, index: number): string {
   const lines = String(js).split('\n');
   if (index >= 0 && index < lines.length) lines[index] = '';
   return lines.join('\n');
 }
 
-function resolveEntry(src, js) {
+export function resolveEntry(src: string, js: string): { expr: string; index: number; line: number; legacy: boolean } {
   const legacy = extractCall(src);
   if (legacy) {
     const idx = String(src).replace(/\r/g, '').split('\n').findIndex(l => /\/\/\s*调用[:：]/.test(l));
@@ -646,4 +545,18 @@ function resolveEntry(src, js) {
   const found = findTrailingTopLevelCall(js);
   if (found) return { expr: stripTypes(found.expr), index: found.index, line: found.line, legacy: false };
   return { expr: 'undefined', index: -1, line: 0, legacy: false };
+}
+
+export function formatVal(v: any): string {
+  if (v === undefined) return 'undefined';
+  if (v === null) return 'null';
+  try {
+    return typeof v === 'object' ? JSON.stringify(v) : String(v);
+  } catch (_) {
+    return String(v);
+  }
+}
+
+export function __describeHeapVal(v: any): any {
+  return v;
 }
