@@ -1504,13 +1504,528 @@ check('circular structure in return value runs and finishes debug without JSON c
   nbDoc.cells[2].source = origCell2Src;
   await runNotebookCell(nbDoc.cells[2].id, false);
   setViewMode('script');
+
+  // 7. Full TypeScript Grammar & Strict Type-Checker Matrix (52+ Positive & Negative Clauses)
+  const tsMatrix = [
+    // 1. Declarations & Destructuring
+    {
+      name: '1a. Typed destructuring with defaults & rest (Positive)',
+      pos: true,
+      src: [
+        'const { a, b = 10 }: { a: number; b?: number } = { a: 1 };',
+        'const [x, ...rest]: [number, ...string[]] = [1, "a", "b"];',
+      ].join('\n'),
+    },
+    {
+      name: '1b. Typed destructuring mismatch (Negative)',
+      pos: false,
+      src: 'const { a }: { a: number } = { a: "wrong" };',
+    },
+    // 2. Primitives, Literals & Special Types (unknown, never, void, unique symbol)
+    {
+      name: '2a. unknown assignment, unique symbol, void (Positive)',
+      pos: true,
+      src: [
+        'let u: unknown = 123;',
+        'u = "str";',
+        'const s: unique symbol = Symbol("k");',
+        'const v: void = undefined;',
+      ].join('\n'),
+    },
+    {
+      name: '2b. unknown assigned to number without narrowing (Negative)',
+      pos: false,
+      src: 'let u: unknown = 123;\nlet n: number = u;',
+    },
+    {
+      name: '2c. concrete value assigned to never (Negative)',
+      pos: false,
+      src: 'let nv: never = 1;',
+    },
+    // 3. Tuples: Optional, Rest & Labeled Tuple Elements
+    {
+      name: '3a. Labeled tuple with optional and rest elements (Positive)',
+      pos: true,
+      src: [
+        'type T1 = [name: string, age?: number, ...tags: boolean[]];',
+        'const t1: T1 = ["alice", 20, true, false];',
+        'const t2: T1 = ["bob"];',
+      ].join('\n'),
+    },
+    {
+      name: '3b. Labeled tuple element type mismatch (Negative)',
+      pos: false,
+      src: 'type T1 = [name: string, age?: number];\nconst t: T1 = ["alice", "not-a-number"];',
+    },
+    // 4. Interfaces: Optional, Readonly, Index Signatures & Extends
+    {
+      name: '4a. Interface inheritance + index signature (Positive)',
+      pos: true,
+      src: [
+        'interface Base { readonly id: number; }',
+        'interface Dict extends Base { name?: string; [k: string]: any; }',
+        'const d: Dict = { id: 1, extra: "ok" };',
+      ].join('\n'),
+    },
+    // 5. Classes & OOP: Parameter Properties, Modifiers, Getters/Setters, Static, Abstract & Implements
+    {
+      name: '5a. Abstract class, implements, parameter properties, get/set, override (Positive)',
+      pos: true,
+      runCheck: (ret) => ret === 'Hi Ada:30:1',
+      src: [
+        'interface Named { name: string; greet(): string; }',
+        'abstract class Base {',
+        '  abstract greet(): string;',
+        '}',
+        'class Person extends Base implements Named {',
+        '  private _age: number = 0;',
+        '  static count: number = 0;',
+        '  constructor(public readonly name: string, protected tag: string = "u") {',
+        '    super();',
+        '    Person.count++;',
+        '  }',
+        '  get age(): number { return this._age; }',
+        '  set age(v: number) { this._age = v; }',
+        '  override greet(): string { return "Hi " + this.name; }',
+        '}',
+        'function runOop(): string {',
+        '  const p = new Person("Ada");',
+        '  p.age = 30;',
+        '  return p.greet() + ":" + p.age + ":" + Person.count;',
+        '}',
+        'runOop();',
+      ].join('\n'),
+    },
+    {
+      name: '5b. Instantiating abstract class directly (Negative TS2511)',
+      pos: false,
+      src: 'abstract class A { abstract f(): void; }\nconst a = new A();',
+    },
+    {
+      name: '5c. Class failing implements interface contract (Negative TS2420)',
+      pos: false,
+      src: 'interface Named { name: string; }\nclass Bad implements Named { id: number = 1; }',
+    },
+    // 6. Enums & Const Enums (Numeric & String)
+    {
+      name: '6a. Numeric enum and const string enum (Positive)',
+      pos: true,
+      runCheck: (ret) => ret === '0:RED',
+      src: [
+        'enum Dir { Up, Down = 2 }',
+        'const enum Color { Red = "RED", Blue = "BLUE" }',
+        'function runEnum(): string {',
+        '  const d: Dir = Dir.Up;',
+        '  const c: Color = Color.Red;',
+        '  return d + ":" + c;',
+        '}',
+        'runEnum();',
+      ].join('\n'),
+    },
+    {
+      name: '6b. Assigning invalid string to string enum (Negative TS2322)',
+      pos: false,
+      src: 'enum E9 { A = "a" }\nconst e: E9 = "b";',
+    },
+    // 7. Functions: Overloads, Rest Parameters, Optional/Default & Generators
+    {
+      name: '7a. Function overloads, rest params, and function* generator (Positive)',
+      pos: true,
+      src: [
+        'function pad(s: string, n?: number): string;',
+        'function pad(s: string, n: number = 2, ...rest: number[]): string {',
+        '  return s + String(n + (rest[0] ?? 0));',
+        '}',
+        'function* gen(): Generator<number, string, unknown> {',
+        '  yield 1;',
+        '  return "done";',
+        '}',
+        'pad("x", 3, 4);',
+      ].join('\n'),
+    },
+    {
+      name: '7b. Invalid rest parameter argument type (Negative TS2345)',
+      pos: false,
+      src: 'function sum(...ns: number[]): number { return 0; }\nsum(1, "bad");',
+    },
+    // 8. Generics: Constraints, Defaults, keyof & Lookup Types
+    {
+      name: '8a. Generic function with object constraint, default type param, and keyof lookup (Positive)',
+      pos: true,
+      src: [
+        'function getProp<T extends object, K extends keyof T>(obj: T, key: K): T[K] {',
+        '  return obj[key];',
+        '}',
+        'function first<T extends { id: number }, U = string>(arr: T[]): [T | undefined, number] {',
+        '  return [arr[0], arr.length];',
+        '}',
+        'const v: number = getProp({ a: 42, b: "hi" }, "a");',
+        'const [f, len] = first([{ id: 7 }]);',
+      ].join('\n'),
+    },
+    {
+      name: '8b. Invalid keyof argument (Negative TS2345)',
+      pos: false,
+      src: 'function getProp<T, K extends keyof T>(obj: T, key: K): T[K] { return obj[key]; }\ngetProp({ a: 1 }, "nonexistent");',
+    },
+    {
+      name: '8c. Generic constraint violation (Negative TS2345)',
+      pos: false,
+      src: 'function f<T extends { id: number }>(x: T): number { return x.id; }\nf({ id: "not-num" });',
+    },
+    // 9. Type Operators & Advanced Type-Level Programming
+    {
+      name: '9a. Conditional types with infer, mapped types with as template remapping, template literal types, and recursive types (Positive)',
+      pos: true,
+      src: [
+        'const cfg = { port: 8080, host: "localhost" };',
+        'type Cfg = typeof cfg;',
+        'type Unpack<T> = T extends Array<infer U> ? U : T;',
+        'const a: Unpack<string[]> = "hello";',
+        'type Getters<T> = {',
+        '  readonly [K in keyof T as `get_${string & K}`]-?: () => T[K];',
+        '};',
+        'interface User { id?: number; }',
+        'const ug: Getters<User> = { get_id: () => 1 };',
+        'type EventName<T extends string> = `on${Capitalize<T>}`;',
+        'const ev: EventName<"click"> = "onClick";',
+        'type Json = string | number | boolean | null | Json[] | { [k: string]: Json };',
+        'const j: Json = { a: [1, "two", true, null] };',
+      ].join('\n'),
+    },
+    {
+      name: '9b. Mismatched conditional infer result (Negative TS2322)',
+      pos: false,
+      src: 'type Unpack<T> = T extends Array<infer U> ? U : T;\nconst a: Unpack<number[]> = "wrong";',
+    },
+    {
+      name: '9c. Mismatched template literal type (Negative TS2322)',
+      pos: false,
+      src: 'type EventName<T extends string> = `on${Capitalize<T>}`;\nconst ev: EventName<"click"> = "onclick";',
+    },
+    // 10. Built-in Utility Types
+    {
+      name: '10a. All built-in utility types (Partial, Required, Readonly, Pick, Omit, Record, Exclude, Extract, NonNullable, ReturnType, Parameters, Awaited) (Positive)',
+      pos: true,
+      src: [
+        'interface Todo { id: number; title: string; done?: boolean; }',
+        'const p: Partial<Todo> = {};',
+        'const req: Required<Todo> = { id: 1, title: "a", done: false };',
+        'const ro: Readonly<Todo> = { id: 1, title: "a" };',
+        'const pk: Pick<Todo, "id"> = { id: 1 };',
+        'const om: Omit<Todo, "title" | "done"> = { id: 1 };',
+        'const rec: Record<"a" | "b", number> = { a: 1, b: 2 };',
+        'const ex: Exclude<"a" | "b" | "c", "a"> = "b";',
+        'const ext: Extract<"a" | "b", "a" | "z"> = "a";',
+        'const nn: NonNullable<string | null | undefined> = "ok";',
+        'function fn(a: number, b: string): boolean { return true; }',
+        'const rt: ReturnType<typeof fn> = false;',
+        'const pr: Parameters<typeof fn> = [1, "x"];',
+        'const aw: Awaited<Promise<Promise<number>>> = 42;',
+      ].join('\n'),
+    },
+    {
+      name: '10b. Incomplete Required<T> (Negative)',
+      pos: false,
+      src: 'interface Todo { id: number; done?: boolean; }\nconst r: Required<Todo> = { id: 1 };',
+    },
+    // 11. Type Assertions, Non-Null (!), as const & satisfies
+    {
+      name: '11a. as T, <T>val, non-null !, as const, and satisfies (Positive)',
+      pos: true,
+      runCheck: (ret) => ret === 'hello:world:red:#00ff00:ok',
+      src: [
+        'function runAssert(): string {',
+        '  const v1 = ("hello" as unknown) as string;',
+        '  const v2 = <string>("world" as any);',
+        '  const colors = ["red", "blue"] as const;',
+        '  const palette = {',
+        '    red: [255, 0, 0],',
+        '    green: "#00ff00"',
+        '  } satisfies Record<string, string | number[]>;',
+        '  let maybe: string | null = "ok";',
+        '  const sure: string = maybe!;',
+        '  return [v1, v2, colors[0], palette.green, sure].join(":");',
+        '}',
+        'runAssert();',
+      ].join('\n'),
+    },
+    {
+      name: '11b. satisfies operator violation (Negative TS1360)',
+      pos: false,
+      src: 'const p = { a: 123 } satisfies Record<string, string>;',
+    },
+    // 12. Type Guards (x is T), Assertion Functions (asserts x is T) & Exhaustive Switch
+    {
+      name: '12a. Type predicate x is T, assertion function asserts x is T, and discriminated union narrowing (Positive)',
+      pos: true,
+      runCheck: (ret) => ret === '11:5',
+      src: [
+        'function isNum(x: unknown): x is number { return typeof x === "number"; }',
+        'function assertStr(x: unknown): asserts x is string {',
+        '  if (typeof x !== "string") throw new Error("not string");',
+        '}',
+        'function test(u: unknown): number {',
+        '  if (isNum(u)) {',
+        '    return u + 1;',
+        '  }',
+        '  assertStr(u);',
+        '  return u.length;',
+        '}',
+        'function runGuard(): string {',
+        '  return test(10) + ":" + test("hello");',
+        '}',
+        'runGuard();',
+      ].join('\n'),
+    },
+    {
+      name: '12b. Non-exhaustive switch default: never check (Negative TS2322)',
+      pos: false,
+      src: [
+        'type Kind = "a" | "b";',
+        'function f(k: Kind): number {',
+        '  switch (k) {',
+        '    case "a": return 1;',
+        '    default:',
+        '      const _ex: never = k;',
+        '      return _ex;',
+        '  }',
+        '}',
+      ].join('\n'),
+    },
+    // 13. Strict Null Checks & Unknown Checks
+    {
+      name: '13a. Unguarded property access on nullable value (Negative TS18047)',
+      pos: false,
+      src: 'interface Node2 { val: number; }\nlet cur: Node2 | null = null;\nconst x = cur.val;',
+    },
+    {
+      name: '13b. Arithmetic on unknown value without narrowing (Negative TS18046)',
+      pos: false,
+      src: 'let u: unknown = 10;\nconst y = u + 1;',
+    },
+  ];
+
+  for (const tc of tsMatrix) {
+    const diags = typecheckTS(tc.src, true);
+    if (tc.pos) {
+      check(`TS Matrix [${tc.name}] typechecks with 0 errors`, diags.length === 0, JSON.stringify(diags));
+      if (tc.runCheck) {
+        setEditorVal(tc.src);
+        const ok = startDebug(0);
+        while (getDebugState().DEBUG_SESSION.active && !getDebugState().DEBUG_SESSION.finished) {
+          stepNext();
+        }
+        const retVal = getDebugState().DEBUG_SESSION.returnValue;
+        check(`TS Matrix [${tc.name}] transpiles and executes accurately`, ok && tc.runCheck(retVal), JSON.stringify({ ok, retVal }));
+      }
+    } else {
+      check(`TS Matrix [${tc.name}] catches type error`, diags.length > 0, JSON.stringify(diags));
+    }
+  }
+
+  const cmEntrySrc = fs.readFileSync(new URL('./editor/cm-entry.js', ROOT), 'utf8');
+  check(
+    'cm-entry.js wires context-aware TypeScript & Python IntelliSense completion source (tsAndPyCompletionSource)',
+    cmEntrySrc.includes('function tsAndPyCompletionSource(') &&
+      cmEntrySrc.includes('function computeCompletionsForDoc(') &&
+      cmEntrySrc.includes('autocomplete: tsAndPyCompletionSource'),
+  );
+
+  // =========================================================================
+  // Strict TypeScript Codebase Gate (Enforced on Every Update per REFACTOR_PLAN.md)
+  // =========================================================================
+  function collectTsSourceFiles(dirUrl) {
+    const out = [];
+    for (const ent of fs.readdirSync(dirUrl, { withFileTypes: true })) {
+      const fullUrl = new URL(ent.name + (ent.isDirectory() ? '/' : ''), dirUrl);
+      if (ent.isDirectory()) {
+        out.push(...collectTsSourceFiles(fullUrl));
+      } else if (ent.isFile() && ent.name.endsWith('.ts')) {
+        out.push(fullUrl);
+      }
+    }
+    return out;
+  }
+
+  const { execFileSync } = await import('node:child_process');
+
+  function stripTsCommentsStringsAndRegexes(code) {
+    let out = '';
+    let i = 0;
+    const n = code.length;
+    let prevNonWs = '';
+    while (i < n) {
+      const c = code[i];
+      const next = code[i + 1];
+      if (c === '/' && next === '/') {
+        out += '  ';
+        i += 2;
+        while (i < n && code[i] !== '\n') {
+          out += ' ';
+          i++;
+        }
+        continue;
+      }
+      if (c === '/' && next === '*') {
+        out += '  ';
+        i += 2;
+        while (i < n && !(code[i] === '*' && code[i + 1] === '/')) {
+          out += code[i] === '\n' ? '\n' : ' ';
+          i++;
+        }
+        if (i < n) {
+          out += '  ';
+          i += 2;
+        }
+        continue;
+      }
+      if (c === "'" || c === '"' || c === '`') {
+        const quote = c;
+        out += quote;
+        i++;
+        let braceDepth = 0;
+        while (i < n) {
+          if (code[i] === '\\') {
+            out += '  ';
+            i += 2;
+            continue;
+          }
+          if (quote === '`') {
+            if (code[i] === '$' && code[i + 1] === '{') {
+              braceDepth++;
+              out += '  ';
+              i += 2;
+              continue;
+            }
+            if (braceDepth > 0) {
+              if (code[i] === '{') braceDepth++;
+              else if (code[i] === '}') braceDepth--;
+              out += code[i] === '\n' ? '\n' : ' ';
+              i++;
+              continue;
+            }
+          }
+          if (code[i] === quote) {
+            out += quote;
+            i++;
+            break;
+          }
+          out += code[i] === '\n' ? '\n' : ' ';
+          i++;
+        }
+        prevNonWs = quote;
+        continue;
+      }
+      // Regex literal detection: `/` after an operator/punctuator/keyword start
+      if (
+        c === '/' &&
+        next !== '/' &&
+        next !== '*' &&
+        next !== '=' &&
+        (!prevNonWs || /[=([,!?:;&|{+\-\n<>~^%]/.test(prevNonWs))
+      ) {
+        out += ' ';
+        i++;
+        let inCharClass = false;
+        while (i < n && code[i] !== '\n') {
+          if (code[i] === '\\') {
+            out += '  ';
+            i += 2;
+            continue;
+          }
+          if (code[i] === '[') inCharClass = true;
+          else if (code[i] === ']') inCharClass = false;
+          else if (code[i] === '/' && !inCharClass) {
+            out += ' ';
+            i++;
+            while (i < n && /[dgimsuvy]/.test(code[i])) {
+              out += ' ';
+              i++;
+            }
+            break;
+          }
+          out += ' ';
+          i++;
+        }
+        prevNonWs = '/';
+        continue;
+      }
+      if (!/\s/.test(c)) prevNonWs = c;
+      out += c;
+      i++;
+    }
+    return out;
+  }
+
+  const tsFiles = collectTsSourceFiles(new URL('./src/', ROOT));
+  check('Strict TS Gate: discovered all 17+ TypeScript modules in src/', tsFiles.length >= 17, `found ${tsFiles.length}`);
+
+  const anyViolations = [];
+  const bangViolations = [];
+  const tsIgnoreViolations = [];
+
+  for (const fileUrl of tsFiles) {
+    const relPath = fileUrl.pathname.slice(ROOT.pathname.length);
+    const raw = fs.readFileSync(fileUrl, 'utf8');
+    if (/@ts-(?:ignore|expect-error|nocheck)/.test(raw)) {
+      tsIgnoreViolations.push(relPath);
+    }
+    const stripped = stripTsCommentsStringsAndRegexes(raw);
+    const lines = stripped.split('\n');
+    lines.forEach((line, idx) => {
+      if (/\bany\b/.test(line)) {
+        anyViolations.push(`${relPath}:${idx + 1}: ${line.trim()}`);
+      }
+      if (/[\w$\])]!(?!=)/.test(line)) {
+        bangViolations.push(`${relPath}:${idx + 1}: ${line.trim()}`);
+      }
+    });
+  }
+
+  check(
+    'Strict TS Gate: zero `any` types across all src/**/*.ts modules',
+    anyViolations.length === 0,
+    anyViolations.slice(0, 10).join(' | '),
+  );
+  check(
+    'Strict TS Gate: zero non-null assertions (`!`) across all src/**/*.ts modules',
+    bangViolations.length === 0,
+    bangViolations.slice(0, 10).join(' | '),
+  );
+  check(
+    'Strict TS Gate: zero @ts-ignore / @ts-expect-error / @ts-nocheck directives in src/**/*.ts',
+    tsIgnoreViolations.length === 0,
+    tsIgnoreViolations.join(', '),
+  );
+
+  const tsconfigJson = JSON.parse(fs.readFileSync(new URL('./tsconfig.json', ROOT), 'utf8'));
+  const co = tsconfigJson.compilerOptions || {};
+  check(
+    'Strict TS Gate: tsconfig.json enforces strict, noUncheckedIndexedAccess, noUnusedLocals, noUnusedParameters, noImplicitOverride, noFallthroughCasesInSwitch',
+    co.strict === true &&
+      co.noUncheckedIndexedAccess === true &&
+      co.noUnusedLocals === true &&
+      co.noUnusedParameters === true &&
+      co.noImplicitOverride === true &&
+      co.noFallthroughCasesInSwitch === true,
+    JSON.stringify(co),
+  );
+
+  let tscPassed = false;
+  let tscOutput = '';
+  try {
+    execFileSync(process.execPath, [new URL('./node_modules/typescript/bin/tsc', ROOT).pathname, '--noEmit'], {
+      cwd: ROOT.pathname,
+      encoding: 'utf8',
+      stdio: 'pipe',
+    });
+    tscPassed = true;
+  } catch (err) {
+    tscOutput = String((err && err.stdout) || (err && err.stderr) || err);
+  }
+  check('Strict TS Gate: `tsc --noEmit` exits with 0 errors', tscPassed, tscOutput.slice(0, 500));
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nall passed');
 process.exit(failed ? 1 : 0);
-
-
-
-
-
-

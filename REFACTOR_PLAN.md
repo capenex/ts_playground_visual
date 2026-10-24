@@ -107,3 +107,45 @@
   - [x] 更新 `index.html` 与 `scripts/build.mjs` 使用打包后的模块化产物
   - [x] 移除旧的 `js/01-*.js` ~ `js/10-*.js`
   - [x] 运行 `npm run build` 与 `node test-pipeline.mjs` 进行最终验收
+
+- [x] **阶段 6：全代码库严格化改造 (`src/**/*.ts` 零 `any`、零 `!`、严格索引检查)**
+  - [x] 开启 `tsconfig.json` 工业级严格配置：`strict: true`、`noUncheckedIndexedAccess: true`、`noUnusedLocals: true`、`noUnusedParameters: true`、`noImplicitOverride: true`、`noFallthroughCasesInSwitch: true`
+  - [x] 建立 `src/globals.d.ts` 与 `src/types.ts` 完整类型契约，彻底消除 `src/**/*.ts` 全部 17 个模块中的 `any` 与非空断言 `!`
+  - [x] 将严格化静态扫描与 `tsc --noEmit` 零报错断言写入 `test-pipeline.mjs` 自动化验收流水线
+
+---
+
+## 六、 严格化 TypeScript 编程规范与每次更新验收清单 (Mandatory Per-Update Acceptance Checklist)
+
+> **强制铁律**：此后对本项目的**每一次代码修改或功能新增**，都必须严格遵守以下编程规范，并在提交前逐项通过下方验收清单，严禁退化或绕过。
+
+### 6.1 严格化编程红线（零容忍规则）
+1. **严禁任何形式的 `any` 类型**：
+   - `src/**/*.ts` 中出现 `: any`、`as any`、`any[]`、`Array<any>`、`Record<..., any>`、`Map<..., any>`、`Set<any>`、`Promise<any>` 的次数必须严格为 **`0`**。
+   - 动态外部数据或沙箱返回值必须使用 `unknown` 接收，配合类型守卫（Type Guards）、`typeof` / `instanceof` / `Array.isArray` 收窄，或使用 `src/types.ts` 中显式建模的领域接口（如 `StepAnim`、`StepSnapshot`、`PlaygroundElement`、`PyPayload` 等）。
+2. **严禁非空断言操作符 (`!`)**：
+   - `src/**/*.ts` 中禁止使用后缀非空断言（如 `arr[i]!`、`map.get(k)!`、`el!.value`）。
+   - 在 `noUncheckedIndexedAccess: true` 下，所有数组下标访问 `arr[i]`、正则捕获组 `m[1]`、字典索引 `obj[k]` 必须通过条件判断、空值合并 `??` 或可选链 `?.` 安全收窄。
+3. **严禁压制编译器报错**：
+   - 严禁在任何文件中使用 `@ts-ignore`、`@ts-expect-error`、`@ts-nocheck` 或 `eslint-disable`。
+4. **严禁回退 `tsconfig.json` 严格编译选项**：
+   - 必须始终保持：
+     - `"strict": true`
+     - `"noUncheckedIndexedAccess": true`
+     - `"noUnusedLocals": true`
+     - `"noUnusedParameters": true`
+     - `"noImplicitOverride": true`
+     - `"noFallthroughCasesInSwitch": true`
+
+### 6.2 每次更新必跑验收清单（Per-Update Verification Workflow）
+每次修改代码后，必须按顺序执行并通过以下 4 步验证（任一步失败均视为未完成）：
+
+- [ ] **Step 1 — 严格类型检查 (`tsc --noEmit`)**：
+  运行 `node node_modules/typescript/bin/tsc --noEmit`，确保退出码为 `0` 且无任何类型错误。
+- [ ] **Step 2 — 重新打包模块产物 (`build-editor.mjs`)**：
+  运行 `node scripts/build-editor.mjs`，确保 `js/app.bundle.js`、`js/cm-bundle.js`、`js/ts-worker.js` 同步更新且无打包警告。
+- [ ] **Step 3 — 端到端与严格化门禁测试 (`test-pipeline.mjs`)**：
+  运行 `node test-pipeline.mjs`，确保包含源码 `0 any` / `0 !` / `0 @ts-ignore` 门禁扫描与 `tsc --noEmit` 在内的全部自动化测试 100% 通过。
+- [ ] **Step 4 — 生产环境构建校验 (`npm run build` / `compile_applet`)**：
+  运行 `npm run build`（或调用 `compile_applet` 工具），确保 `dist/` 静态生产构建与全链路校验 100% 成功。
+

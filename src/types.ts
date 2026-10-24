@@ -31,41 +31,125 @@ export interface InterfaceSchemaMeta {
 }
 
 export interface TsMeta {
-  varTypes: Map<string, string> | Record<string, string>;
-  interfaces: Map<string, InterfaceSchemaMeta> | Record<string, InterfaceSchemaMeta>;
+  varTypes: Map<string, string>;
+  interfaces: Map<string, InterfaceSchemaMeta>;
 }
 
 export interface HeapObj {
   id: string;
   type: string;
   label?: string;
-  data?: any;
+  data?: unknown;
 }
 
-export interface Frame {
-  id?: number;
+export interface StepAnim {
+  id?: number | string;
   fn?: string;
   name?: string;
   label?: string;
-  line: number;
+  line?: number;
   lastLine?: number;
-  vars?: Record<string, any>;
-  v?: Record<string, any>;
-  ds?: Record<string, any>;
-  [key: string]: any;
+  isTop?: boolean;
+  total?: number;
+  idx?: number;
+  var?: string;
+  type?: string;
+  key?: string;
+  r?: number;
+  c?: number;
+  from?: string | number | null;
+  to?: string | number | null;
+  val?: unknown;
+  value?: unknown;
+  lhs?: string;
+  rhs?: string;
+  op?: string;
+  lhsVal?: string;
+  rhsVal?: string;
+  result?: string | number | boolean | null;
+  args?: string[];
+  argVals?: string[];
+  message?: string;
+  kind?: string;
+  items?: unknown[];
+  entries?: Array<{ k: string | unknown; v: unknown }>;
+  fields?: Array<{ k: string; v?: unknown; declaredType?: string; optional?: boolean }>;
+  nodes?: Frame[];
+  edges?: Array<[number | string, number | string] | Frame>;
+  cells?: unknown[][];
+  viewCells?: unknown[][];
+  rowIndices?: number[];
+  colIndices?: number[];
+  totalRows?: number;
+  totalCols?: number;
+  totalNodes?: number;
+  totalEdges?: number;
+  baseIdx?: number;
+  root?: number;
+  hot?: unknown;
+  mark?: [number, number] | number | null;
+  win?: [number, number] | null;
+  deps?: Array<[number, number]>;
+  pointers?: Record<number, string[]>;
+  windowed?: Array<{ gap?: boolean; count?: number; from?: number; to?: number; idx?: number; val?: unknown }> | null;
+  interfaceName?: string;
+  isClass?: boolean;
+  isSchema?: boolean;
+  instanceName?: string | null;
+  phase?: string;
+  now?: number;
+  virtualTime?: number;
+  activeTask?: string | null;
+  activeTaskLabel?: string | null;
+  coroutines?: Frame[];
+  microtasks?: Frame[];
+  macrotasks?: Frame[];
+  promises?: Frame[];
+  vars?: Record<string, unknown>;
+  v?: Record<string, unknown>;
+  ds?: Record<string, StepAnim>;
+  snap?: (() => Record<string, unknown>) | Record<string, unknown> | null;
+  snapFn?: (() => Record<string, unknown>) | null;
+  self?: Record<string, unknown> | null;
+  __raw?: unknown;
+  __rawNodes?: object[];
+  __rawVals?: unknown[];
+  __nodeMap?: Map<object, number>;
+  __pyMeta?: Frame;
+  __extraFocal?: number[];
+  sparse?: Map<number, unknown>;
+  left?: Frame | number | null;
+  right?: Frame | number | null;
+  next?: Frame | null;
+  x?: number;
+  y?: number;
+  status?: string;
+  state?: string;
+  awaitingExpr?: string | null;
+  awaitExpr?: string | null;
+  returnVal?: unknown;
+  due?: number;
+  delay?: number;
+  reactions?: number;
+  valStr?: string;
+  [key: string]: unknown;
 }
+
+export type Frame = StepAnim;
 
 export interface EventLoopTaskItem {
   id: number | string;
   label: string;
   delay?: number;
+  due?: number;
   state?: string;
   status?: string;
   line?: number;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface EventLoopSnapshot {
+  kind?: string;
   phase: string;
   currentTask?: string | null;
   activeTask?: string | null;
@@ -73,69 +157,46 @@ export interface EventLoopSnapshot {
   webApis?: EventLoopTaskItem[];
   microtasks: EventLoopTaskItem[];
   macrotasks: EventLoopTaskItem[];
-  coroutines?: any[];
-  promises?: any[];
-  settledPromises?: Array<{ id: number; state: string; value: any; label?: string }>;
+  coroutines?: Frame[];
+  promises?: Frame[];
+  settledPromises?: Array<{ id: number; state: string; value: unknown; label?: string }>;
   ticks?: number;
   now?: number;
   virtualTime?: number;
-  [key: string]: any;
-}
-
-export interface StepAnim {
-  var?: string;
-  type?: string;
-  idx?: number;
-  key?: string;
-  r?: number;
-  c?: number;
-  from?: any;
-  to?: any;
-  val?: any;
-  lhs?: string;
-  rhs?: string;
-  op?: string;
-  lhsVal?: string;
-  rhsVal?: string;
-  result?: any;
-  fn?: string;
-  args?: string[];
-  argVals?: string[];
-  message?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface StepSnapshot {
   line: number;
   note: string;
   rawNote?: string;
-  vars?: Record<string, any>;
-  v?: Record<string, any>;
-  ds?: Record<string, any>;
+  vars?: Record<string, unknown>;
+  v: Record<string, unknown>;
+  vRaw?: Record<string, unknown>;
+  ds: Record<string, StepAnim>;
   callStack: Frame[];
   eventLoop?: EventLoopSnapshot | null;
   anim?: StepAnim | null;
   ckpt?: boolean;
   isCheckpoint?: boolean;
-  ckptArgs?: any[];
-  checkpointVals?: any[];
+  ckptArgs?: unknown[];
+  checkpointVals?: string[] | null;
   crashed?: boolean;
   error?: string | null;
   errorMsg?: string;
   isFinalReturn?: boolean;
-  returnValue?: any;
+  returnValue?: unknown;
   l?: number;
   r?: number;
   tsTypes?: Record<string, string>;
   tsInterfaces?: Record<string, InterfaceSchemaMeta>;
-  [key: string]: any;
 }
 
 export interface TraceData {
   title: string;
   code: string[];
   steps: StepSnapshot[];
-  returnValue?: any;
+  returnValue?: unknown;
   tsMeta?: TsMeta;
 }
 
@@ -143,16 +204,15 @@ export interface DebugSession {
   active: boolean;
   finished: boolean;
   crashed: boolean;
-  error: any;
+  error: string | Error | null;
   errorLine: number;
-  returnValue: any;
+  returnValue: unknown;
   compiledFn: Function | null;
   originalLines: string[];
   callExpr: string;
   hasAsync?: boolean;
   tsMeta?: TsMeta;
   rawStepCount?: number;
-  [key: string]: any;
 }
 
 export interface LangBuffer {
@@ -194,7 +254,61 @@ export interface NotebookDocument {
   debuggingCellId: string | null;
   cells: NotebookCell[];
   executedHistory: NotebookExecutedEntry[];
-  lastGlobalVars: Record<string, any>;
-  lastGlobalDs: Record<string, any>;
+  lastGlobalVars: Record<string, unknown>;
+  lastGlobalDs: Record<string, StepAnim>;
 }
 
+export interface PlaygroundElement extends HTMLElement {
+  value: string;
+  disabled: boolean;
+  files: FileList | null;
+  selectionStart: number;
+  selectionEnd: number;
+  select(): void;
+  setPointerCapture(pointerId: number): void;
+  querySelectorAll(selectors: string): NodeListOf<PlaygroundElement>;
+  querySelector(selectors: string): PlaygroundElement | null;
+  closest(selectors: string): PlaygroundElement | null;
+  contains(other: EventTarget | Node | null): boolean;
+  onclick: ((e: MouseEvent) => unknown) | (() => unknown) | null;
+  onchange: ((e?: Event) => unknown) | null;
+  onkeydown: ((e: KeyboardEvent) => unknown) | null;
+  __vizHtml?: string;
+}
+
+export interface PyPayload {
+  syntaxError?: { line?: number; msg?: string } | null;
+  stdout?: string;
+  returnValue?: unknown;
+  entryExpr?: string;
+  meta?: Record<string, unknown>;
+  finalVars?: Record<string, unknown>;
+  error?: string | null;
+  errorLine?: number | null;
+  __returnValueHydrated?: unknown;
+  __callExpr?: string;
+}
+
+export interface PyEngineBridge {
+  builtins?: Iterable<string>;
+  samples?: Record<string, string>;
+  PY_SAMPLES?: Record<string, string>;
+  collectDeclared(src: string | null | undefined): Set<string>;
+  hl(t: string, declared?: Set<string> | null): string;
+  hlActiveLine(rawLine: string, anim?: StepAnim | null, declared?: Set<string> | null): string;
+  start(targetStep?: number): Promise<boolean> | boolean;
+  stepNext(fromAuto?: boolean): void;
+  stepPrev(): void;
+  runToNextCheckpoint(): void;
+  runOnce(): void;
+  runOnly(timeoutMs?: number): Promise<unknown> | unknown;
+  run(src: string, opts?: Record<string, unknown>): Promise<PyPayload>;
+  hydrate(val: unknown): unknown;
+  hydrateVars(vars: Record<string, unknown>): Record<string, unknown>;
+  cloneVars(vars: Record<string, unknown>): Record<string, unknown>;
+  fmtReturn(val: unknown): string;
+  applyMeta(meta: Record<string, unknown>): void;
+  buildSteps(payload: PyPayload, sourceLines: string[]): StepSnapshot[];
+  loadSample(key: string): void;
+  setLang?(lang: 'ts' | 'python'): void;
+}

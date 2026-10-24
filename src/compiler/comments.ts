@@ -48,11 +48,11 @@ export function newlinesOf(s: string): string {
   return m ? m.map(() => '\n').join('') : '';
 }
 
-export function isIdentStart(c: string | undefined): c is string {
+export function isIdentStart(c: string | undefined): boolean {
   return Boolean(c && /[A-Za-z_$]/.test(c));
 }
 
-export function isIdentPart(c: string | undefined): c is string {
+export function isIdentPart(c: string | undefined): boolean {
   return Boolean(c && /[\w$]/.test(c));
 }
 

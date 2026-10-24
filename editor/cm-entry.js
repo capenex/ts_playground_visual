@@ -158,7 +158,25 @@ function init() {
     '.cm-panel.cm-search': { padding: '8px 10px', fontFamily: 'system-ui,"PingFang SC","Microsoft YaHei",sans-serif', fontSize: '12px' },
     '.cm-textfield': { backgroundColor: '#121a26', color: '#e2e8f0', border: '1px solid #2a3342', borderRadius: '4px', padding: '3px 6px' },
     '.cm-button': { backgroundColor: '#1a2230', color: '#cbd5e1', border: '1px solid #2a3342', borderRadius: '4px', padding: '3px 8px' },
-    '.cm-tooltip': { backgroundColor: '#0d1219', color: '#cbd5e1', border: '1px solid #263041' },
+    '.cm-tooltip': { backgroundColor: '#0d1219', color: '#cbd5e1', border: '1px solid #263041', borderRadius: '6px' },
+    '.cm-tooltip.cm-tooltip-autocomplete > ul': {
+      fontFamily: '"Cascadia Code","JetBrains Mono",Consolas,ui-monospace,monospace',
+      fontSize: '12.5px',
+      maxHeight: '240px',
+    },
+    '.cm-tooltip-autocomplete ul li[aria-selected]': {
+      backgroundColor: 'rgba(56,189,248,.22)',
+      color: '#f8fafc',
+    },
+    '.cm-completionLabel': { color: '#e2e8f0' },
+    '.cm-completionDetail': { color: '#38bdf8', fontStyle: 'normal', marginLeft: '10px', opacity: '0.9' },
+    '.cm-completionInfo': {
+      backgroundColor: '#0b1017',
+      color: '#94a3b8',
+      border: '1px solid #1e293b',
+      padding: '6px 10px',
+      fontSize: '12px',
+    },
     '.cm-lintRange-error, .cm-lintRange-warning, .cm-lintRange-info, .cm-lintRange-active': {
       backgroundImage: 'none !important',
     },
@@ -293,9 +311,458 @@ function init() {
     decorations: v => v.decorations,
   });
 
+  // ================================================================
+  // Context-Aware TypeScript & Python IntelliSense Completion Engine
+  // ================================================================
+  const TS_PRIMITIVE_TYPES = [
+    { label: 'number', type: 'type', detail: '原始数值类型', boost: 90 },
+    { label: 'string', type: 'type', detail: '原始字符串类型', boost: 90 },
+    { label: 'boolean', type: 'type', detail: '布尔类型 (true | false)', boost: 90 },
+    { label: 'unknown', type: 'type', detail: '类型安全的顶层未知类型', boost: 86 },
+    { label: 'never', type: 'type', detail: '永不存在的值类型 / 穷尽检查', boost: 86 },
+    { label: 'void', type: 'type', detail: '无返回值类型', boost: 86 },
+    { label: 'any', type: 'type', detail: '任意动态类型', boost: 84 },
+    { label: 'null', type: 'type', detail: '空值类型', boost: 84 },
+    { label: 'undefined', type: 'type', detail: '未定义类型', boost: 84 },
+    { label: 'symbol', type: 'type', detail: '符号类型', boost: 82 },
+    { label: 'unique symbol', type: 'type', detail: '唯一符号名义类型', boost: 80 },
+    { label: 'bigint', type: 'type', detail: '大整数类型', boost: 80 },
+    { label: 'object', type: 'type', detail: '非原始对象类型', boost: 82 },
+    { label: 'readonly', type: 'keyword', detail: '只读类型修饰符', boost: 82 },
+    { label: 'keyof', type: 'keyword', detail: '索引键查询操作符 keyof T', boost: 85 },
+    { label: 'typeof', type: 'keyword', detail: '类型查询操作符 typeof val', boost: 85 },
+    { label: 'infer', type: 'keyword', detail: '条件类型推导关键字 infer U', boost: 85 },
+    { label: 'asserts', type: 'keyword', detail: '断言函数返回修饰 asserts x is T', boost: 82 },
+    { label: 'const', type: 'keyword', detail: '字面量常量断言 as const', boost: 82 },
+  ];
+
+  const TS_UTILITY_TYPES = [
+    { label: 'Partial', type: 'type', detail: 'Partial<T> · 将所有属性设为可选', boost: 88 },
+    { label: 'Required', type: 'type', detail: 'Required<T> · 将所有属性设为必选', boost: 88 },
+    { label: 'Readonly', type: 'type', detail: 'Readonly<T> · 将所有属性设为只读', boost: 88 },
+    { label: 'Pick', type: 'type', detail: 'Pick<T, K> · 挑选指定属性子集', boost: 88 },
+    { label: 'Omit', type: 'type', detail: 'Omit<T, K> · 剔除指定属性', boost: 88 },
+    { label: 'Record', type: 'type', detail: 'Record<K, V> · 键值对映射类型', boost: 88 },
+    { label: 'Exclude', type: 'type', detail: 'Exclude<T, U> · 从联合类型排除子集', boost: 86 },
+    { label: 'Extract', type: 'type', detail: 'Extract<T, U> · 从联合类型提取子集', boost: 86 },
+    { label: 'NonNullable', type: 'type', detail: 'NonNullable<T> · 剔除 null 和 undefined', boost: 86 },
+    { label: 'ReturnType', type: 'type', detail: 'ReturnType<F> · 获取函数返回值类型', boost: 86 },
+    { label: 'Parameters', type: 'type', detail: 'Parameters<F> · 获取函数参数元组类型', boost: 86 },
+    { label: 'ConstructorParameters', type: 'type', detail: 'ConstructorParameters<C> · 构造函数参数类型', boost: 82 },
+    { label: 'InstanceType', type: 'type', detail: 'InstanceType<C> · 类实例类型', boost: 82 },
+    { label: 'Awaited', type: 'type', detail: 'Awaited<T> · 递归解包 Promise 类型', boost: 86 },
+    { label: 'Uppercase', type: 'type', detail: 'Uppercase<S> · 字符串字面量转大写', boost: 80 },
+    { label: 'Lowercase', type: 'type', detail: 'Lowercase<S> · 字符串字面量转小写', boost: 80 },
+    { label: 'Capitalize', type: 'type', detail: 'Capitalize<S> · 首字母大写字面量类型', boost: 80 },
+    { label: 'Uncapitalize', type: 'type', detail: 'Uncapitalize<S> · 首字母小写字面量类型', boost: 80 },
+    { label: 'Promise', type: 'class', detail: 'Promise<T> · 异步 Promise 容器', boost: 88 },
+    { label: 'Array', type: 'class', detail: 'Array<T> · 泛型数组', boost: 86 },
+    { label: 'ReadonlyArray', type: 'interface', detail: 'ReadonlyArray<T> · 只读数组', boost: 84 },
+    { label: 'Map', type: 'class', detail: 'Map<K, V> · 哈希映射表', boost: 88 },
+    { label: 'Set', type: 'class', detail: 'Set<T> · 哈希集合', boost: 88 },
+    { label: 'Generator', type: 'interface', detail: 'Generator<Y, R, N> · 生成器返回类型', boost: 84 },
+    { label: 'AsyncGenerator', type: 'interface', detail: 'AsyncGenerator<Y, R, N> · 异步生成器', boost: 82 },
+    { label: 'IterableIterator', type: 'interface', detail: 'IterableIterator<T> · 可迭代迭代器', boost: 82 },
+    { label: 'ListNode', type: 'class', detail: 'ListNode { val: number; next: ListNode | null }', boost: 85 },
+    { label: 'TreeNode', type: 'class', detail: 'TreeNode { val: number; left; right }', boost: 85 },
+  ];
+
+  const TS_SYNTAX_KEYWORDS = [
+    { label: 'interface', type: 'keyword', detail: '定义接口结构 interface Name { ... }', boost: 85 },
+    { label: 'type', type: 'keyword', detail: '定义类型别名 type Name<T> = ...', boost: 85 },
+    { label: 'enum', type: 'keyword', detail: '定义枚举 enum Name { ... }', boost: 84 },
+    { label: 'const enum', type: 'keyword', detail: '定义常量枚举 const enum Name { ... }', boost: 82 },
+    { label: 'abstract class', type: 'keyword', detail: '定义抽象类 abstract class Name { ... }', boost: 82 },
+    { label: 'class', type: 'keyword', detail: '定义类 class Name implements I { ... }', boost: 85 },
+    { label: 'implements', type: 'keyword', detail: '类实现接口契约 class C implements I', boost: 82 },
+    { label: 'extends', type: 'keyword', detail: '继承类/接口或泛型约束 T extends U', boost: 82 },
+    { label: 'public', type: 'keyword', detail: '公开成员/参数属性修饰符', boost: 80 },
+    { label: 'private', type: 'keyword', detail: '私有成员/参数属性修饰符', boost: 80 },
+    { label: 'protected', type: 'keyword', detail: '受保护成员/参数属性修饰符', boost: 80 },
+    { label: 'readonly', type: 'keyword', detail: '只读属性/元组修饰符', boost: 82 },
+    { label: 'override', type: 'keyword', detail: '显式覆写父类方法修饰符', boost: 80 },
+    { label: 'static', type: 'keyword', detail: '静态类成员修饰符', boost: 80 },
+    { label: 'abstract', type: 'keyword', detail: '抽象类或抽象方法修饰符', boost: 80 },
+    { label: 'function', type: 'keyword', detail: '函数声明 function fn<T>(x: T): T', boost: 86 },
+    { label: 'function*', type: 'keyword', detail: '生成器函数声明 function* gen()', boost: 80 },
+    { label: 'async', type: 'keyword', detail: '异步函数修饰符 async function', boost: 84 },
+    { label: 'await', type: 'keyword', detail: '等待 Promise 结果 await expr', boost: 84 },
+    { label: 'yield', type: 'keyword', detail: '生成器产出值 yield expr', boost: 80 },
+    { label: 'declare', type: 'keyword', detail: '环境类型声明 declare const/function', boost: 78 },
+    { label: 'namespace', type: 'keyword', detail: '命名空间声明 namespace N { ... }', boost: 78 },
+    { label: 'satisfies', type: 'keyword', detail: '类型满足性校验 expr satisfies Type', boost: 84 },
+    { label: 'as const', type: 'keyword', detail: '字面量只读断言 expr as const', boost: 84 },
+    { label: 'keyof', type: 'keyword', detail: '获取对象键名联合类型 keyof T', boost: 82 },
+    { label: 'typeof', type: 'keyword', detail: '获取值或类型守卫 typeof x', boost: 82 },
+    { label: 'infer', type: 'keyword', detail: '条件类型内提取类型变量 infer U', boost: 80 },
+    { label: 'asserts', type: 'keyword', detail: '断言函数返回类型 asserts x is T', boost: 78 },
+    { label: 'checkpoint', type: 'function', detail: 'checkpoint(...args): void · 插入调试检查点', boost: 92 },
+    { label: '断点', type: 'function', detail: '断点(...args): void · 插入调试检查点', boost: 88 },
+    { label: 'sleep', type: 'function', detail: 'sleep(ms: number, val?: T): Promise<T>', boost: 86 },
+    { label: 'queueMicrotask', type: 'function', detail: 'queueMicrotask(cb: () => void): void', boost: 82 },
+    { label: 'setTimeout', type: 'function', detail: 'setTimeout(cb: () => void, ms: number): number', boost: 82 },
+    { label: 'console', type: 'variable', detail: 'Console · 控制台输出 console.log(...)', boost: 86 },
+  ];
+
+  const BUILTIN_NAMESPACE_MEMBERS = {
+    Math: [
+      { label: 'max', type: 'method', detail: '(...values: number[]): number' },
+      { label: 'min', type: 'method', detail: '(...values: number[]): number' },
+      { label: 'floor', type: 'method', detail: '(x: number): number' },
+      { label: 'ceil', type: 'method', detail: '(x: number): number' },
+      { label: 'round', type: 'method', detail: '(x: number): number' },
+      { label: 'abs', type: 'method', detail: '(x: number): number' },
+      { label: 'sqrt', type: 'method', detail: '(x: number): number' },
+      { label: 'pow', type: 'method', detail: '(x: number, y: number): number' },
+      { label: 'trunc', type: 'method', detail: '(x: number): number' },
+      { label: 'PI', type: 'property', detail: 'number (3.14159...)' },
+    ],
+    console: [
+      { label: 'log', type: 'method', detail: '(...data: any[]): void' },
+      { label: 'warn', type: 'method', detail: '(...data: any[]): void' },
+      { label: 'error', type: 'method', detail: '(...data: any[]): void' },
+    ],
+    Promise: [
+      { label: 'resolve', type: 'method', detail: '<T>(value?: T): Promise<Awaited<T>>' },
+      { label: 'reject', type: 'method', detail: '<T = never>(reason?: any): Promise<T>' },
+      { label: 'all', type: 'method', detail: '<T>(values: T[]): Promise<Awaited<T>[]>' },
+      { label: 'race', type: 'method', detail: '<T>(values: T[]): Promise<Awaited<T>>' },
+    ],
+    Object: [
+      { label: 'keys', type: 'method', detail: '(o: object): string[]' },
+      { label: 'values', type: 'method', detail: '<T>(o: Record<string, T>): T[]' },
+      { label: 'entries', type: 'method', detail: '<T>(o: Record<string, T>): [string, T][]' },
+      { label: 'assign', type: 'method', detail: '<T, U>(target: T, source: U): T & U' },
+      { label: 'fromEntries', type: 'method', detail: '<T>(entries: Iterable<[PropertyKey, T]>): Record<string, T>' },
+    ],
+    Array: [
+      { label: 'isArray', type: 'method', detail: '(arg: any): arg is any[]' },
+      { label: 'from', type: 'method', detail: '<T, U>(iterable: Iterable<T>, mapfn?: (v: T, k: number) => U): U[]' },
+      { label: 'of', type: 'method', detail: '<T>(...items: T[]): T[]' },
+    ],
+    JSON: [
+      { label: 'stringify', type: 'method', detail: '(value: any, replacer?: any, space?: number): string' },
+      { label: 'parse', type: 'method', detail: '(text: string): any' },
+    ],
+    Number: [
+      { label: 'isFinite', type: 'method', detail: '(n: unknown): boolean' },
+      { label: 'isInteger', type: 'method', detail: '(n: unknown): boolean' },
+      { label: 'isNaN', type: 'method', detail: '(n: unknown): boolean' },
+      { label: 'parseInt', type: 'method', detail: '(s: string, radix?: number): number' },
+      { label: 'MAX_SAFE_INTEGER', type: 'property', detail: 'number' },
+      { label: 'MIN_SAFE_INTEGER', type: 'property', detail: 'number' },
+    ],
+  };
+
+  const COMMON_INSTANCE_MEMBERS = [
+    { label: 'length', type: 'property', detail: 'number · 数组或字符串长度', boost: 85 },
+    { label: 'push', type: 'method', detail: '(...items: T[]): number · 尾部追加元素', boost: 85 },
+    { label: 'pop', type: 'method', detail: '(): T | undefined · 弹出尾部元素', boost: 85 },
+    { label: 'shift', type: 'method', detail: '(): T | undefined · 弹出头部元素', boost: 82 },
+    { label: 'unshift', type: 'method', detail: '(...items: T[]): number · 头部插入元素', boost: 82 },
+    { label: 'map', type: 'method', detail: '<U>(fn: (v: T, i: number) => U): U[]', boost: 85 },
+    { label: 'filter', type: 'method', detail: '(fn: (v: T, i: number) => boolean): T[]', boost: 85 },
+    { label: 'reduce', type: 'method', detail: '<U>(fn: (acc: U, v: T) => U, init: U): U', boost: 84 },
+    { label: 'forEach', type: 'method', detail: '(fn: (v: T, i: number) => void): void', boost: 82 },
+    { label: 'find', type: 'method', detail: '(fn: (v: T) => boolean): T | undefined', boost: 82 },
+    { label: 'findIndex', type: 'method', detail: '(fn: (v: T) => boolean): number', boost: 80 },
+    { label: 'some', type: 'method', detail: '(fn: (v: T) => boolean): boolean', boost: 80 },
+    { label: 'every', type: 'method', detail: '(fn: (v: T) => boolean): boolean', boost: 80 },
+    { label: 'includes', type: 'method', detail: '(searchElement: T): boolean', boost: 84 },
+    { label: 'indexOf', type: 'method', detail: '(searchElement: T): number', boost: 80 },
+    { label: 'slice', type: 'method', detail: '(start?: number, end?: number): T[] | string', boost: 84 },
+    { label: 'splice', type: 'method', detail: '(start: number, deleteCount?: number, ...items: T[]): T[]', boost: 80 },
+    { label: 'sort', type: 'method', detail: '(compareFn?: (a: T, b: T) => number): this', boost: 84 },
+    { label: 'reverse', type: 'method', detail: '(): T[]', boost: 80 },
+    { label: 'join', type: 'method', detail: '(separator?: string): string', boost: 82 },
+    { label: 'fill', type: 'method', detail: '(value: T, start?: number, end?: number): this', boost: 82 },
+    { label: 'get', type: 'method', detail: '(key: K): V | undefined · Map 读取', boost: 84 },
+    { label: 'set', type: 'method', detail: '(key: K, value: V): this · Map 写入', boost: 84 },
+    { label: 'has', type: 'method', detail: '(key: K): boolean · Map/Set 包含检查', boost: 84 },
+    { label: 'add', type: 'method', detail: '(value: T): this · Set 添加元素', boost: 82 },
+    { label: 'delete', type: 'method', detail: '(key: K): boolean · Map/Set 删除元素', boost: 80 },
+    { label: 'size', type: 'property', detail: 'number · Map/Set 元素数量', boost: 82 },
+    { label: 'then', type: 'method', detail: '<U>(onfulfilled: (v: T) => U): Promise<U>', boost: 82 },
+    { label: 'catch', type: 'method', detail: '(onrejected: (err: any) => any): Promise<T>', boost: 80 },
+    { label: 'trim', type: 'method', detail: '(): string · 去除首尾空白', boost: 80 },
+    { label: 'split', type: 'method', detail: '(separator: string | RegExp): string[]', boost: 82 },
+    { label: 'startsWith', type: 'method', detail: '(prefix: string): boolean', boost: 80 },
+    { label: 'endsWith', type: 'method', detail: '(suffix: string): boolean', boost: 80 },
+    { label: 'val', type: 'property', detail: 'number · ListNode / TreeNode 节点值', boost: 80 },
+    { label: 'next', type: 'property', detail: 'ListNode | null · 链表下一节点或生成器 next()', boost: 80 },
+    { label: 'left', type: 'property', detail: 'TreeNode | null · 二叉树左子节点', boost: 80 },
+    { label: 'right', type: 'property', detail: 'TreeNode | null · 二叉树右子节点', boost: 80 },
+  ];
+
+  const PY_COMPLETIONS = [
+    { label: 'def', type: 'keyword', detail: '定义函数 def fn(x: int) -> int:', boost: 90 },
+    { label: 'class', type: 'keyword', detail: '定义类 class Node:', boost: 88 },
+    { label: 'checkpoint', type: 'function', detail: 'checkpoint(*args) · 插入调试检查点', boost: 92 },
+    { label: '断点', type: 'function', detail: '断点(*args) · 插入调试检查点', boost: 88 },
+    { label: 'List', type: 'type', detail: 'typing.List[T]', boost: 85 },
+    { label: 'Dict', type: 'type', detail: 'typing.Dict[K, V]', boost: 85 },
+    { label: 'Set', type: 'type', detail: 'typing.Set[T]', boost: 85 },
+    { label: 'Tuple', type: 'type', detail: 'typing.Tuple[...]', boost: 85 },
+    { label: 'Optional', type: 'type', detail: 'typing.Optional[T]', boost: 85 },
+    { label: 'deque', type: 'class', detail: 'collections.deque 双端队列', boost: 86 },
+    { label: 'defaultdict', type: 'class', detail: 'collections.defaultdict', boost: 84 },
+    { label: 'Counter', type: 'class', detail: 'collections.Counter 计数器', boost: 84 },
+    { label: 'heappush', type: 'function', detail: 'heapq.heappush(heap, item)', boost: 84 },
+    { label: 'heappop', type: 'function', detail: 'heapq.heappop(heap)', boost: 84 },
+  ];
+
+  function extractDocSymbols(docText) {
+    const shapes = new Map(); // name -> { kind, parent, members: Map<name, { type, detail }> }
+    const enums = new Map(); // enumName -> string[]
+    const functions = new Map(); // fnName -> detail
+    const variables = new Map(); // varName -> typeName
+    const typeAliases = new Map(); // aliasName -> rhs
+
+    const lines = String(docText || '').split('\n');
+    let curShape = null;
+    let curDepth = 0;
+
+    for (let i = 0; i < lines.length; i++) {
+      const raw = lines[i].replace(/\/\/.*$/, '').trim();
+      if (!raw) continue;
+
+      if (curShape) {
+        for (let k = 0; k < raw.length; k++) {
+          if (raw[k] === '{') curDepth++;
+          else if (raw[k] === '}') curDepth--;
+        }
+        if (curDepth >= 1) {
+          const cleanMem = raw.replace(/^(?:(?:public|private|protected|readonly|static|override|abstract)\s+)+/, '');
+          const getSetM = cleanMem.match(/^(?:get|set)\s+([A-Za-z_$][\w$]*)\s*\(([^)]*)\)(?:\s*:\s*([^{;]+))?/);
+          const methodM = !getSetM ? cleanMem.match(/^([A-Za-z_$][\w$]*)\s*(?:<[^>]*>)?\s*\(([^)]*)\)(?:\s*:\s*([^{;]+))?/) : null;
+          const propM = (!getSetM && !methodM) ? cleanMem.match(/^([A-Za-z_$][\w$]*)(\?)?\s*:\s*([^=;]+)/) : null;
+          if (getSetM && getSetM[1]) {
+            curShape.members.set(getSetM[1], { type: 'property', detail: (getSetM[3] || 'any').trim() });
+          } else if (methodM && methodM[1] && methodM[1] !== 'constructor') {
+            curShape.members.set(methodM[1], {
+              type: 'method',
+              detail: `(${(methodM[2] || '').trim()}): ${(methodM[3] || 'any').trim()}`,
+            });
+          } else if (propM && propM[1]) {
+            curShape.members.set(propM[1], {
+              type: 'property',
+              detail: `${propM[2] ? '(optional) ' : ''}${propM[3].trim()}`,
+            });
+          }
+          const ctorM = cleanMem.match(/^constructor\s*\(([^)]*)\)/);
+          if (ctorM && ctorM[1]) {
+            ctorM[1].split(',').forEach((p) => {
+              const pm = p.trim().match(/^(?:(?:public|private|protected|readonly|override)\s+)+([A-Za-z_$][\w$]*)(\?)?(?:\s*:\s*([^=]+))?/);
+              if (pm && pm[1]) {
+                curShape.members.set(pm[1], { type: 'property', detail: (pm[3] || 'any').trim() });
+              }
+            });
+          }
+        }
+        if (curDepth <= 0) {
+          curShape = null;
+          curDepth = 0;
+        }
+        continue;
+      }
+
+      const ifaceOrCls = raw.match(/^(?:export\s+)?(?:declare\s+)?(?:abstract\s+)?(interface|class)\s+([A-Za-z_$][\w$]*)(?:<[^>]*>)?(?:\s+extends\s+([A-Za-z_$][\w$]*))?/);
+      if (ifaceOrCls && ifaceOrCls[2]) {
+        const kind = ifaceOrCls[1];
+        const name = ifaceOrCls[2];
+        const parent = ifaceOrCls[3] || null;
+        const entry = { kind, parent, members: new Map() };
+        shapes.set(name, entry);
+        let d = 0;
+        for (let k = 0; k < raw.length; k++) {
+          if (raw[k] === '{') d++;
+          else if (raw[k] === '}') d--;
+        }
+        if (d > 0) {
+          curShape = entry;
+          curDepth = d;
+        } else if (raw.includes('{') && raw.includes('}')) {
+          const inner = raw.slice(raw.indexOf('{') + 1, raw.lastIndexOf('}'));
+          inner.split(/[;,]/).forEach((part) => {
+            const pm = part.trim().replace(/^readonly\s+/, '').match(/^([A-Za-z_$][\w$]*)(\?)?\s*:\s*(.+)$/);
+            if (pm && pm[1]) entry.members.set(pm[1], { type: 'property', detail: pm[3].trim() });
+          });
+        }
+        continue;
+      }
+
+      const enumM = raw.match(/^(?:export\s+)?(?:const\s+)?enum\s+([A-Za-z_$][\w$]*)\s*\{([^}]*)\}?/);
+      if (enumM && enumM[1]) {
+        const eName = enumM[1];
+        const body = enumM[2] || '';
+        const mems = [];
+        body.split(',').forEach((part) => {
+          const em = part.trim().match(/^([A-Za-z_$][\w$]*)/);
+          if (em && em[1]) mems.push(em[1]);
+        });
+        enums.set(eName, mems);
+        continue;
+      }
+
+      const typeM = raw.match(/^(?:export\s+)?type\s+([A-Za-z_$][\w$]*)(?:<[^>]*>)?\s*=\s*(.+)$/);
+      if (typeM && typeM[1] && typeM[2]) {
+        typeAliases.set(typeM[1], typeM[2].replace(/;\s*$/, '').trim());
+        continue;
+      }
+
+      const fnM = raw.match(/^(?:export\s+)?(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)\s*(?:<[^>]*>)?\s*\(([^)]*)\)(?:\s*:\s*([^{;]+))?/);
+      if (fnM && fnM[1]) {
+        functions.set(fnM[1], `(${(fnM[2] || '').trim()}): ${(fnM[3] || 'any').trim()}`);
+        fnM[2].split(',').forEach((param) => {
+          const pm = param.trim().match(/^([A-Za-z_$][\w$]*)\??\s*:\s*(.+)$/);
+          if (pm && pm[1] && pm[2]) variables.set(pm[1], pm[2].trim());
+        });
+        continue;
+      }
+
+      const varM = raw.match(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)(?:\s*:\s*([^=]+))?(?:\s*=\s*(.+))?$/);
+      if (varM && varM[1]) {
+        const vName = varM[1];
+        let vType = varM[2] ? varM[2].trim() : '';
+        const init = varM[3] ? varM[3].replace(/;\s*$/, '').trim() : '';
+        if (!vType && init) {
+          const newM = init.match(/^new\s+([A-Za-z_$][\w$]*)/);
+          if (newM && newM[1]) vType = newM[1];
+          else if (init.startsWith('[')) vType = 'Array';
+          else if (/^["'`]/.test(init)) vType = 'string';
+          else if (/^-?\d/.test(init)) vType = 'number';
+        }
+        variables.set(vName, vType || 'any');
+      }
+    }
+
+    return { shapes, enums, functions, variables, typeAliases };
+  }
+
+  function computeCompletionsForDoc(docText, pos, explicit, lang) {
+    const lineStart = docText.lastIndexOf('\n', Math.max(0, pos - 1)) + 1;
+    const linePrefix = docText.slice(lineStart, pos);
+
+    if (lang === 'python') {
+      const pyWordM = linePrefix.match(/[A-Za-z_\u4e00-\u9fa5][\w\u4e00-\u9fa5]*$/);
+      if (!pyWordM && !explicit) return null;
+      const from = pyWordM ? pos - pyWordM[0].length : pos;
+      return { from, options: PY_COMPLETIONS };
+    }
+
+    const syms = extractDocSymbols(docText);
+
+    // 1. Member access completion after `.` or `?.` (e.g., `user.`, `Dir.`, `Math.`, `this.`)
+    const dotM = linePrefix.match(/([A-Za-z_$][\w$]*)\s*(?:\?\.)?\.\s*([A-Za-z_$][\w$]*)?$/);
+    if (dotM && dotM[1]) {
+      const receiver = dotM[1];
+      const partial = dotM[2] || '';
+      const from = pos - partial.length;
+      const opts = [];
+      const seen = new Set();
+      const pushOpt = (opt) => {
+        if (!seen.has(opt.label)) {
+          seen.add(opt.label);
+          opts.push(opt);
+        }
+      };
+
+      if (syms.enums.has(receiver)) {
+        (syms.enums.get(receiver) || []).forEach((mem) => {
+          pushOpt({ label: mem, type: 'enum', detail: `${receiver}.${mem}`, boost: 99 });
+        });
+        return { from, options: opts };
+      }
+
+      if (BUILTIN_NAMESPACE_MEMBERS[receiver]) {
+        BUILTIN_NAMESPACE_MEMBERS[receiver].forEach((m) => pushOpt({ ...m, boost: 98 }));
+        return { from, options: opts };
+      }
+
+      const rawVarType = receiver === 'this'
+        ? (Array.from(syms.shapes.keys()).pop() || '')
+        : (syms.variables.get(receiver) || '');
+      const cleanType = rawVarType.replace(/<[^>]*>$/, '').split('|')[0].trim();
+
+      let curShapeName = cleanType;
+      let guard = 0;
+      while (curShapeName && syms.shapes.has(curShapeName) && guard++ < 6) {
+        const sh = syms.shapes.get(curShapeName);
+        sh.members.forEach((info, mName) => {
+          pushOpt({ label: mName, type: info.type, detail: info.detail, boost: 96 });
+        });
+        curShapeName = sh.parent;
+      }
+
+      COMMON_INSTANCE_MEMBERS.forEach(pushOpt);
+      return { from, options: opts };
+    }
+
+    // 2. Type-annotation position (after `:`, `<`, `extends`, `implements`, `as`, `satisfies`, or `type X =`)
+    const inTypePos =
+      /(?::\s*|[<,|&]\s*|\b(?:extends|implements|as|satisfies)\s+|type\s+[A-Za-z_$][\w$]*(?:<[^>]*>)?\s*=\s*)([A-Za-z_$][\w$]*)?$/.test(linePrefix) &&
+      !/^\s*(?:case|default)\b/.test(linePrefix);
+
+    const wordM = linePrefix.match(/[A-Za-z_$\u4e00-\u9fa5][\w$\u4e00-\u9fa5]*$/);
+    if (!wordM && !explicit && !inTypePos) return null;
+    const from = wordM ? pos - wordM[0].length : pos;
+    if (!wordM && inTypePos && !explicit) return null;
+
+    const options = [];
+    const seen = new Set();
+    const addOpt = (opt) => {
+      if (!seen.has(opt.label)) {
+        seen.add(opt.label);
+        options.push(opt);
+      }
+    };
+
+    if (inTypePos) {
+      syms.shapes.forEach((info, name) => {
+        addOpt({ label: name, type: info.kind, detail: `${info.kind} ${name}`, boost: 96 });
+      });
+      syms.typeAliases.forEach((rhs, name) => {
+        addOpt({ label: name, type: 'type', detail: `type ${name} = ${rhs.slice(0, 36)}`, boost: 95 });
+      });
+      syms.enums.forEach((_, name) => {
+        addOpt({ label: name, type: 'enum', detail: `enum ${name}`, boost: 94 });
+      });
+      TS_PRIMITIVE_TYPES.forEach(addOpt);
+      TS_UTILITY_TYPES.forEach(addOpt);
+      return { from, options };
+    }
+
+    // 3. General statement / expression position
+    syms.functions.forEach((sig, name) => {
+      addOpt({ label: name, type: 'function', detail: sig, boost: 95 });
+    });
+    syms.variables.forEach((vType, name) => {
+      addOpt({ label: name, type: 'variable', detail: vType, boost: 94 });
+    });
+    syms.shapes.forEach((info, name) => {
+      addOpt({ label: name, type: info.kind, detail: `${info.kind} ${name}`, boost: 92 });
+    });
+    syms.enums.forEach((_, name) => {
+      addOpt({ label: name, type: 'enum', detail: `enum ${name}`, boost: 92 });
+    });
+    syms.typeAliases.forEach((rhs, name) => {
+      addOpt({ label: name, type: 'type', detail: `type ${name}`, boost: 90 });
+    });
+    TS_SYNTAX_KEYWORDS.forEach(addOpt);
+    TS_UTILITY_TYPES.forEach(addOpt);
+    TS_PRIMITIVE_TYPES.forEach(addOpt);
+
+    return { from, options };
+  }
+
+  function tsAndPyCompletionSource(context) {
+    const docText = context.state.doc.toString();
+    return computeCompletionsForDoc(docText, context.pos, context.explicit, currentLang);
+  }
+
   const languageExt = (lang) => lang === 'python'
-    ? python()
-    : javascript({ typescript: true });
+    ? [python(), EditorState.languageData.of(() => [{ autocomplete: tsAndPyCompletionSource }])]
+    : [javascript({ typescript: true }), EditorState.languageData.of(() => [{ autocomplete: tsAndPyCompletionSource }])];
 
   const placeholderFor = (lang) => lang === 'python'
     ? '# 写 Python，可在任意位置调用 checkpoint() 设置检查点，最后一行直接写入口调用，例如 main()'

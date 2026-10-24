@@ -4,7 +4,7 @@
 import { stripTypes, transpileEnums } from "../compiler/transpile";
 import { collectNames, instrument, resolveEntry, blankJsLine, snapFnExpr } from "../compiler/instrumenter";
 import { typecheckTS, reportTypeErrors, extractTsInterfaceMetadata } from "../compiler/type-checker";
-import { Frame, InterfaceFieldMeta } from "../types";
+import { Frame, InterfaceFieldMeta, StepAnim, StepSnapshot } from "../types";
 import {
   say,
   sourceLineFromStack,
@@ -30,7 +30,24 @@ import { updateEditorChrome, revealErrorLine } from "../viz/highlight";
 import { clearFlyLayer } from "../viz/ast-view";
 import { stopAuto } from "../ui/controls";
 
-export function evalCall(js: any, call?: any, opts?: any) {
+interface TraceHookFn {
+  (line?: number, note?: string, snap?: unknown, self?: unknown): void;
+  __env?: unknown;
+  __async?: unknown;
+  __await?: (val: unknown, fid: number, line: number, exprText: string) => { __isAwait: boolean; value: unknown; fid: number; line: number; expr: string };
+  __drain?: unknown;
+  __initGlobal?: (snapFn: (() => Record<string, unknown>) | null) => void;
+  __enter?: (fnName: string, paramNames: string[], paramVals: unknown[], defLine: number, snapFn: (() => Record<string, unknown>) | null) => number;
+  __leave?: (fid: number) => void;
+  __ckpt?: (args: unknown[]) => void;
+  __fin?: (snap: unknown) => void;
+}
+
+export function evalCall(
+  js: string,
+  call?: string,
+  opts?: { budgetMs?: number; entryLine?: number; instrumented?: boolean }
+) {
   const o = opts || {};
   const expr = stripTypes(call || 'undefined');
   const budgetMs = o.budgetMs || 0;
@@ -41,12 +58,12 @@ export function evalCall(js: any, call?: any, opts?: any) {
   let lastLine = 0;
   let expired = false;
   const timeoutError = () => {
-    const err: any = new Error('RUN_TIMEOUT');
+    const err = new Error('RUN_TIMEOUT') as Error & { __timeout?: boolean; __line?: number };
     err.__timeout = true;
     err.__line = lastLine;
     return err;
   };
-  const __t: any = function (line?: any) {
+  const __t: TraceHookFn = function (line?: number) {
     if (line) lastLine = line;
     if (!budgetMs) return;
     if (expired) throw timeoutError();   // keep throwing: a user try/catch must not swallow the abort
@@ -65,7 +82,7 @@ export function evalCall(js: any, call?: any, opts?: any) {
   const body = stub + js + '\n;return (function(){ try { var __v = (' + expr + '); if (__t && __t.__drain) __v = __t.__drain(__v); return { ok:true, value:__v }; } catch (e) { return { ok:false, error: e && e.message ? e.message : String(e), stack: e && e.stack ? String(e.stack) : "", line: (e && e.__line) || 0, timeout: Boolean(e && e.__timeout) }; } })();';
   const logs: string[] = [];
   const f = new Function('__t', 'console', body);
-  let r;
+  let r: { ok: boolean; value?: unknown; error?: string; stack?: string; line?: number; timeout?: boolean };
   try {
     r = f(__t, { log: (...a: unknown[]) => logs.push(a.map(x => {
       try { return typeof x === 'object' ? JSON.stringify(x) : String(x); } catch (_) { return String(x); }
@@ -86,7 +103,7 @@ export function evalCall(js: any, call?: any, opts?: any) {
   return { ...r, logs, elapsedMs: Date.now() - t0 };
 }
 
-export function runOnce(budgetMs?: any) {
+export function runOnce(budgetMs?: number) {
   if (LANG === 'python') return PY_ENGINE.runOnly(budgetMs);
   const budget = (typeof budgetMs === 'number' && budgetMs > 0) ? budgetMs : RUN_TIMEOUT_MS;
   const src = editor.value;
@@ -187,7 +204,7 @@ export function buildFrameSnapshotFromClosure(frame: Frame, fallbackLine: number
     const val = raw[k];
     v[k] = (val !== null && typeof val === 'object') ? cloneDeepBounded(val, 2) : val;
   });
-  const ds: Record<string, unknown> = {};
+  const ds: Record<string, StepAnim> = {};
   Object.keys(raw).forEach(name => {
     const d = classifyValue(name, raw[name]);
     if (d) ds[name] = d;
@@ -195,7 +212,7 @@ export function buildFrameSnapshotFromClosure(frame: Frame, fallbackLine: number
   populateInterfaceSchemas(ds);
   enrichFromNote(ds, raw, noteForEnrich || '');
   const win = detectWindowRange(raw);
-  const snapFrame: any = {
+  const snapFrame: Frame = {
     id: frame.id,
     fn: frame.fn,
     label: frame.label,
@@ -211,7 +228,7 @@ export function buildFrameSnapshotFromClosure(frame: Frame, fallbackLine: number
 }
 
 /* ── On-demand step-by-step Debug Engine ── */
-export function computeAndAppendNextStep(opts: any = {}) {
+export function computeAndAppendNextStep(opts: { silent?: boolean } = {}) {
   if (!DEBUG_SESSION.active || DEBUG_SESSION.finished) return false;
   const targetIdx = TRACE.steps.length;
   if (targetIdx >= MAX_STEPS) {
@@ -231,14 +248,14 @@ export function computeAndAppendNextStep(opts: any = {}) {
   let curLineTracker = globalCallLine;
   let activeRecording = false;
   let unwindingPause = false;
-  let pendingStep: any = null;
-  let pendingStepSnapFn: any = null;
-  let pendingEventLoopPhase: any = null;
-  let nextVRaw: any = null;
+  let pendingStep: StepSnapshot | null = null;
+  let pendingStepSnapFn: (() => Record<string, unknown>) | Record<string, unknown> | null = null;
+  let pendingEventLoopPhase: { phase: string; activeTaskLabel: string; virtualTime: number } | null = null;
+  let nextVRaw: Record<string, unknown> | null = null;
   const stepLogs: string[] = [];
   const t0 = Date.now();
 
-  const liveCallStack: any[] = [
+  const liveCallStack: Frame[] = [
     {
       id: 0,
       fn: 'global',
@@ -248,25 +265,25 @@ export function computeAndAppendNextStep(opts: any = {}) {
       snapFn: null,
     },
   ];
-  const suspendedFrames = new Map();
+  const suspendedFrames = new Map<number, Frame>();
 
   const evLoop = createVirtualEventLoop(
-    (line: number, note: string, snap: unknown, self?: unknown) => __t(line, note, snap, self),
+    (line?: number, note?: string, snap?: unknown, self?: unknown) => __t(line, note, snap, self),
     () => curLineTracker,
     (fid: number) => {
       if (unwindingPause) return;
       for (let k = liveCallStack.length - 1; k >= 1; k--) {
-        if (liveCallStack[k].id === fid) {
+        if (liveCallStack[k]?.id === fid) {
           const [removed] = liveCallStack.splice(k, 1);
-          suspendedFrames.set(fid, removed);
+          if (removed) suspendedFrames.set(fid, removed);
           break;
         }
       }
     },
     (fid: number) => {
       if (unwindingPause) return;
-      if (suspendedFrames.has(fid)) {
-        const frame = suspendedFrames.get(fid);
+      const frame = suspendedFrames.get(fid);
+      if (frame) {
         suspendedFrames.delete(fid);
         liveCallStack.push(frame);
       }
@@ -276,7 +293,8 @@ export function computeAndAppendNextStep(opts: any = {}) {
     evLoop.loop.used = true;
   }
 
-  const __t: any = (line?: any, note?: any, snap?: any, self?: any) => {
+  const __t: TraceHookFn = (line?: number, note?: string, snap?: unknown, self?: unknown) => {
+    const stepLine = line || curLineTracker || 1;
     if (line) curLineTracker = line;
     const idx = count++;
     if ((idx & 63) === 63 && Date.now() - t0 > MAX_EXEC_MS) {
@@ -284,20 +302,23 @@ export function computeAndAppendNextStep(opts: any = {}) {
     }
     const topFrame = liveCallStack[liveCallStack.length - 1];
     if (topFrame) {
-      topFrame.lastLine = line;
-      if (snap) topFrame.snapFn = snap;
-      if (self && typeof self === 'object') topFrame.self = self;
+      topFrame.lastLine = stepLine;
+      if (typeof snap === 'function') topFrame.snapFn = snap as () => Record<string, unknown>;
+      if (self && typeof self === 'object') topFrame.self = self as Record<string, unknown>;
     }
     if (idx < targetIdx) {
       return;
     }
     if (idx === targetIdx) {
-      const effectiveSnap = snap || (topFrame && topFrame.snapFn) || evLoop.loop.globalSnapFn;
-      const vRaw = (typeof effectiveSnap === 'function' ? effectiveSnap() : effectiveSnap) || {};
+      const effectiveSnap = (typeof snap === 'function' ? (snap as () => Record<string, unknown>) : null) ||
+        (topFrame && topFrame.snapFn) ||
+        evLoop.loop.globalSnapFn;
+      const vRaw: Record<string, unknown> = (typeof effectiveSnap === 'function' ? effectiveSnap() : (snap && typeof snap === 'object' ? (snap as Record<string, unknown>) : {})) || {};
       if (self && typeof self === 'object') {
         try {
           const selfCopy: Record<string, unknown> = {};
-          for (const k in self) { try { selfCopy[k] = self[k]; } catch (e) {} }
+          const selfRec = self as Record<string, unknown>;
+          for (const k in selfRec) { try { selfCopy[k] = selfRec[k]; } catch (e) {} }
           vRaw['this'] = selfCopy;
         } catch (e) {}
       }
@@ -306,17 +327,17 @@ export function computeAndAppendNextStep(opts: any = {}) {
         const val = vRaw[k];
         v[k] = (val !== null && typeof val === 'object') ? cloneDeepBounded(val, 2) : val;
       });
-      const ds: Record<string, unknown> = {};
+      const ds: Record<string, StepAnim> = {};
       Object.keys(vRaw).forEach(name => {
         const d = classifyValue(name, vRaw[name]);
         if (d) ds[name] = d;
       });
-      enrichFromNote(ds, vRaw, note);
+      enrichFromNote(ds, vRaw, note || '');
       const win = detectWindowRange(vRaw);
       const capturedStack = liveCallStack.map((fr, fIdx) => {
         const isTop = fIdx === liveCallStack.length - 1;
-        const fNote = isTop ? note : (originalLines[(fr.lastLine || fr.line || 1) - 1] || '');
-        return buildFrameSnapshotFromClosure(fr, isTop ? line : fr.line, fNote);
+        const fNote = isTop ? (note || '') : (originalLines[(fr.lastLine || fr.line || 1) - 1] || '');
+        return buildFrameSnapshotFromClosure(fr, isTop ? stepLine : (fr.line || 1), fNote);
       });
       pendingStepSnapFn = effectiveSnap;
       pendingEventLoopPhase = {
@@ -324,9 +345,9 @@ export function computeAndAppendNextStep(opts: any = {}) {
         activeTaskLabel: evLoop.loop.activeTaskLabel,
         virtualTime: evLoop.loop.virtualTime,
       };
-      pendingStep = {
-        line,
-        note,
+      const stepToCommit: StepSnapshot = {
+        line: stepLine,
+        note: note || '',
         v,
         vRaw,
         ds,
@@ -335,7 +356,8 @@ export function computeAndAppendNextStep(opts: any = {}) {
         checkpointVals: null,
         error: null,
       };
-      if (win) { pendingStep.l = win[0]; pendingStep.r = win[1]; }
+      if (win) { stepToCommit.l = win[0]; stepToCommit.r = win[1]; }
+      pendingStep = stepToCommit;
       activeRecording = true;
       return;
     }
@@ -343,7 +365,10 @@ export function computeAndAppendNextStep(opts: any = {}) {
       activeRecording = false;
       unwindingPause = true;
       const sameScopeRaw = (typeof pendingStepSnapFn === 'function' ? pendingStepSnapFn() : null);
-      nextVRaw = sameScopeRaw || (typeof snap === 'function' ? snap() : snap) || {};
+      const fallbackRaw = typeof snap === 'function'
+        ? (snap as () => Record<string, unknown>)()
+        : (snap && typeof snap === 'object' ? (snap as Record<string, unknown>) : {});
+      nextVRaw = sameScopeRaw || fallbackRaw || {};
       throw PAUSE_SIGNAL;
     }
   };
@@ -379,7 +404,7 @@ export function computeAndAppendNextStep(opts: any = {}) {
     if (unwindingPause) return;
     suspendedFrames.delete(fid);
     for (let k = liveCallStack.length - 1; k >= 1; k--) {
-      if (liveCallStack[k].id === fid) {
+      if (liveCallStack[k]?.id === fid) {
         liveCallStack.splice(k, 1);
         break;
       }
@@ -397,7 +422,10 @@ export function computeAndAppendNextStep(opts: any = {}) {
     if (activeRecording) {
       activeRecording = false;
       const sameScopeRaw = (typeof pendingStepSnapFn === 'function' ? pendingStepSnapFn() : null);
-      nextVRaw = sameScopeRaw || (typeof snap === 'function' ? snap() : snap) || {};
+      const fallbackRaw = typeof snap === 'function'
+        ? (snap as () => Record<string, unknown>)()
+        : (snap && typeof snap === 'object' ? (snap as Record<string, unknown>) : {});
+      nextVRaw = sameScopeRaw || fallbackRaw || {};
     }
   };
 
@@ -459,75 +487,82 @@ export function computeAndAppendNextStep(opts: any = {}) {
     // If the file only defines interface/type schemas without executable steps yet, synthesize an inspection step
     if (targetIdx === 0 && CURRENT_TS_META.interfaces && CURRENT_TS_META.interfaces.size > 0) {
       const firstIface = [...CURRENT_TS_META.interfaces.values()][0];
-      const schemaDs = {};
-      populateInterfaceSchemas(schemaDs);
-      const schemaStep = {
-        line: firstIface.line || 1,
-        note: `interface ${firstIface.name} { ${firstIface.fields.map((f: InterfaceFieldMeta) => f.k + (f.optional ? '?' : '') + ': ' + f.declaredType).join('; ')} }`,
-        v: {},
-        ds: schemaDs,
-        callStack: [{ id: 0, fn: 'global', label: 'global', line: firstIface.line || 1, v: {}, ds: schemaDs }],
-        anim: null,
-        isCheckpoint: false,
-        error: null,
-        isFinalReturn: true,
-      };
-      TRACE.steps.push(schemaStep);
-      DEBUG_SESSION.finished = true;
-      DEBUG_SESSION.returnValue = retVal;
-      return true;
+      if (firstIface) {
+        const schemaDs: Record<string, StepAnim> = {};
+        populateInterfaceSchemas(schemaDs);
+        const schemaStep: StepSnapshot = {
+          line: firstIface.line || 1,
+          note: `interface ${firstIface.name} { ${firstIface.fields.map((f: InterfaceFieldMeta) => f.k + (f.optional ? '?' : '') + ': ' + f.declaredType).join('; ')} }`,
+          v: {},
+          ds: schemaDs,
+          callStack: [{ id: 0, fn: 'global', label: 'global', line: firstIface.line || 1, v: {}, ds: schemaDs }],
+          anim: null,
+          isCheckpoint: false,
+          error: null,
+          isFinalReturn: true,
+        };
+        TRACE.steps.push(schemaStep);
+        DEBUG_SESSION.finished = true;
+        DEBUG_SESSION.returnValue = retVal;
+        return true;
+      }
     }
     DEBUG_SESSION.finished = true;
     DEBUG_SESSION.returnValue = retVal;
     return false;
   }
 
-  const rawLine = originalLines[pendingStep.line - 1] || pendingStep.note || '';
-  const nextContext = Object.assign({}, nextVRaw || pendingStep.vRaw);
-  if (pendingStep.checkpointVals) {
-    nextContext.__ckptVals = pendingStep.checkpointVals;
+  const stepObj: StepSnapshot = pendingStep;
+  const rawLine = originalLines[stepObj.line - 1] || stepObj.note || '';
+  const nextContext: Record<string, unknown> = Object.assign({}, nextVRaw || stepObj.vRaw);
+  if (stepObj.checkpointVals) {
+    nextContext['__ckptVals'] = stepObj.checkpointVals;
   }
 
-  // Update primitive/Promise summary values in `pendingStep.v` if a variable was initialized on this line
+  // Update primitive/Promise summary values in `stepObj.v` if a variable was initialized on this line
   if (nextVRaw) {
-    Object.keys(nextVRaw).forEach(name => {
-      const nv = nextVRaw[name];
-      if (nv && nv.__isVirtualPromise) {
-        pendingStep.v[name] = cloneDeepBounded(nv, 2);
+    const rawMap = nextVRaw;
+    Object.keys(rawMap).forEach(name => {
+      const nv = rawMap[name];
+      if (nv && typeof nv === 'object' && '__isVirtualPromise' in nv) {
+        stepObj.v[name] = cloneDeepBounded(nv, 2);
       }
-      if (pendingStep.vRaw[name] === undefined && nv !== undefined && !pendingStep.ds[name]) {
+      if (stepObj.vRaw && stepObj.vRaw[name] === undefined && nv !== undefined && !stepObj.ds[name]) {
         const d = classifyValue(name, nv);
-        if (d) pendingStep.ds[name] = d;
+        if (d) stepObj.ds[name] = d;
       }
     });
   }
-  populateInterfaceSchemas(pendingStep.ds);
-  enrichFromNote(pendingStep.ds, nextVRaw || pendingStep.vRaw, rawLine);
+  populateInterfaceSchemas(stepObj.ds);
+  enrichFromNote(stepObj.ds, nextVRaw || stepObj.vRaw || {}, rawLine);
 
   if (evLoop.loop.used) {
     const elSnap = evLoop.toVizSnapshot();
-    if (pendingEventLoopPhase) {
-      elSnap.phase = pendingEventLoopPhase.phase;
-      elSnap.activeTaskLabel = pendingEventLoopPhase.activeTaskLabel;
-      elSnap.virtualTime = pendingEventLoopPhase.virtualTime;
+    const phaseInfo = pendingEventLoopPhase as { phase: string; activeTaskLabel: string; virtualTime: number } | null;
+    if (phaseInfo) {
+      elSnap.phase = phaseInfo.phase;
+      elSnap.activeTaskLabel = phaseInfo.activeTaskLabel;
+      elSnap.virtualTime = phaseInfo.virtualTime;
     }
-    pendingStep.ds['eventLoop'] = elSnap;
+    stepObj.ds['eventLoop'] = elSnap;
   }
 
-  if (pendingStep.callStack && pendingStep.callStack.length > 0) {
-    const topF = pendingStep.callStack[pendingStep.callStack.length - 1];
-    topF.line = pendingStep.line;
-    topF.v = pendingStep.v;
-    topF.ds = pendingStep.ds;
+  if (stepObj.callStack && stepObj.callStack.length > 0) {
+    const topF = stepObj.callStack[stepObj.callStack.length - 1];
+    if (topF) {
+      topF.line = stepObj.line;
+      topF.v = stepObj.v;
+      topF.ds = stepObj.ds;
+    }
   }
 
-  const derived = deriveAnimAndNote(rawLine, pendingStep.vRaw, nextContext);
-  delete pendingStep.vRaw;
-  pendingStep.anim = derived.anim;
-  pendingStep.rawNote = pendingStep.note;
-  pendingStep.note = derived.note || pendingStep.note;
+  const derived = deriveAnimAndNote(rawLine, stepObj.vRaw || {}, nextContext);
+  delete stepObj.vRaw;
+  stepObj.anim = derived.anim;
+  stepObj.rawNote = stepObj.note;
+  stepObj.note = derived.note || stepObj.note;
   if (derived.isCheckpoint) {
-    pendingStep.isCheckpoint = true;
+    stepObj.isCheckpoint = true;
   }
 
   if (runtimeErr) {
@@ -536,21 +571,21 @@ export function computeAndAppendNextStep(opts: any = {}) {
       : (runtimeErr && typeof runtimeErr === 'object' && 'message' in runtimeErr && typeof runtimeErr.message === 'string'
         ? runtimeErr.message
         : String(runtimeErr));
-    pendingStep.error = errMsg;
-    pendingStep.note = `${rawLine.trim()}  →  ✗ 运行时错误: ${errMsg}`;
-    RUNTIME_ERROR_LINES.add(pendingStep.line);
+    stepObj.error = errMsg;
+    stepObj.note = `${rawLine.trim()}  →  ✗ 运行时错误: ${errMsg}`;
+    RUNTIME_ERROR_LINES.add(stepObj.line);
     DEBUG_SESSION.finished = true;
     DEBUG_SESSION.crashed = true;
     DEBUG_SESSION.error = errMsg;
-    DEBUG_SESSION.errorLine = pendingStep.line;
+    DEBUG_SESSION.errorLine = stepObj.line;
   } else if (!paused) {
     DEBUG_SESSION.finished = true;
     DEBUG_SESSION.returnValue = retVal;
-    pendingStep.isFinalReturn = true;
-    pendingStep.returnValue = retVal;
+    stepObj.isFinalReturn = true;
+    stepObj.returnValue = retVal;
   }
 
-  TRACE.steps.push(pendingStep);
+  TRACE.steps.push(stepObj);
 
   discoverVars().forEach((s: { id: string }) => {
     if (!SEEN_VARS_EVER.has(s.id)) {
@@ -562,7 +597,7 @@ export function computeAndAppendNextStep(opts: any = {}) {
   });
 
   if (runtimeErr) {
-    say('✗ 运行时错误 [第 ' + pendingStep.line + ' 行]: ' + pendingStep.error + '（已运行到报错为止）', 'err');
+    say('✗ 运行时错误 [第 ' + stepObj.line + ' 行]: ' + stepObj.error + '（已运行到报错为止）', 'err');
   } else if (!paused && !opts.silent) {
     say('✓ 调试运行完成  →  ' + safeJSONStringify(retVal), 'ok');
   }
@@ -613,7 +648,7 @@ export function startDebug(initialStep = 0) {
   ENTRY_CALL_LINE = entry.line || 0;
   const jsBody = entry.index >= 0 ? blankJsLine(js0, entry.index) : js0;
 
-  let compiledFn;
+  let compiledFn: (...args: unknown[]) => unknown;
   try {
     const names = collectNames(jsBody);
     const js = instrument(jsBody, originalLines, names);
@@ -624,7 +659,7 @@ export function startDebug(initialStep = 0) {
       'if (typeof __t === "function" && __t.__drain) { __entryVal = __t.__drain(__entryVal, ' + snapStr + '); }\n' +
       'try{if(typeof __t==="function"&&__t.__fin)__t.__fin(' + snapStr + ');}catch(_){}\n' +
       'return __entryVal;';
-    compiledFn = new Function('__t', 'console', body);
+    compiledFn = new Function('__t', 'console', body) as (...args: unknown[]) => unknown;
   } catch (e) {
     resetTraceState();
     say('✗ 编译失败: ' + (e instanceof Error && e.message ? e.message : e), 'err');

@@ -83,8 +83,8 @@ export function normalizeTree(value: Frame | null | undefined) {
     seen.add(node);
     if (nodes.length >= 31) {
       if (seen.size < 2000) {
-        walk(node.left);
-        walk(node.right);
+        walk(node.left as Frame | null | undefined);
+        walk(node.right as Frame | null | undefined);
       }
       return null;
     }
@@ -96,8 +96,8 @@ export function normalizeTree(value: Frame | null | undefined) {
       right: null,
     };
     nodes.push(item);
-    item.left = walk(node.left);
-    item.right = walk(node.right);
+    item.left = walk(node.left as Frame | null | undefined);
+    item.right = walk(node.right as Frame | null | undefined);
     return idx;
   }
   const root = walk(value);
@@ -107,7 +107,9 @@ export function normalizeTree(value: Frame | null | undefined) {
 }
 
 export function normalizeList(value: Frame | unknown[] | null | undefined) {
-  const pyMeta = (value && typeof value === 'object' && '__py_meta__' in value) ? (value as Frame).__py_meta__ : null;
+  const pyMeta: Frame | null = (value && typeof value === 'object' && '__py_meta__' in value)
+    ? ((value as unknown as { __py_meta__?: Frame }).__py_meta__ || null)
+    : null;
   if (Array.isArray(value)) {
     const total = (pyMeta && typeof pyMeta.total === 'number') ? pyMeta.total : value.length;
     const out = { kind: 'list', items: value.slice(0, 30).map((x: unknown) => cloneDeepBounded(x, 1)), total };
@@ -150,18 +152,21 @@ export function normalizeGraph(value: Frame | null | undefined) {
       const y = n && typeof n.y === 'number' ? n.y : Math.round(68 + 48 * Math.sin(angle));
       return { id, label: String(label), x, y };
     });
-    const edges = value.edges.slice(0, 32).map((e: Frame) => Array.isArray(e) ? [e[0], e[1]] : [e.from, e.to]);
+    const edges: Array<[number | string, number | string]> = value.edges.slice(0, 32).map((e: [number | string, number | string] | Frame): [number | string, number | string] =>
+      Array.isArray(e) ? [e[0], e[1]] : [e.from ?? 0, e.to ?? 0]
+    );
     return { kind: 'graph', nodes, edges, totalNodes: value.nodes.length, totalEdges: value.edges.length };
   }
   return { kind: 'graph', nodes: [], edges: [] };
 }
 
-export function snapshot(kind: any, value: any, extra?: any): any {
-  const pyMeta = (value && typeof value === 'object' && value.__py_meta__) ? value.__py_meta__ : null;
+export function snapshot(kind: string, value: unknown, extra?: Record<string, unknown>): StepAnim {
+  const recVal = value && typeof value === 'object' ? (value as Frame) : null;
+  const pyMeta = recVal && recVal.__py_meta__ ? (recVal.__py_meta__ as Frame) : null;
   if (kind === 'stack') {
     const arr = Array.isArray(value) ? value : [];
     const total = (pyMeta && typeof pyMeta.total === 'number') ? pyMeta.total : arr.length;
-    let items;
+    let items: unknown[];
     let baseIdx = 0;
     if (pyMeta && Array.isArray(pyMeta.tail) && total > arr.length) {
       items = pyMeta.tail.map((x: unknown) => cloneDeepBounded(x, 1));
@@ -186,13 +191,13 @@ export function snapshot(kind: any, value: any, extra?: any): any {
     return out;
   }
   if (kind === 'list') {
-    return Object.assign(normalizeList(value), extra || {});
+    return Object.assign(normalizeList(value as Frame | unknown[] | null | undefined), extra || {});
   }
   if (kind === 'tree') {
-    return Object.assign(normalizeTree(value), extra || {});
+    return Object.assign(normalizeTree(value as Frame | null | undefined), extra || {}) as StepAnim;
   }
   if (kind === 'graph') {
-    return Object.assign(normalizeGraph(value), extra || {});
+    return Object.assign(normalizeGraph(value as Frame | null | undefined), extra || {}) as StepAnim;
   }
   if (kind === 'string') {
     const s = String(value);
@@ -208,20 +213,21 @@ export function snapshot(kind: any, value: any, extra?: any): any {
     const entries: Array<{ k: unknown; v: unknown }> = [];
     let total = 0;
     if (isMapLike(value)) {
-      total = (pyMeta && typeof pyMeta.total === 'number') ? pyMeta.total : value.size;
-      for (const [k, v] of value) {
+      const mapVal = value as Map<unknown, unknown>;
+      total = (pyMeta && typeof pyMeta.total === 'number') ? pyMeta.total : mapVal.size;
+      for (const [k, v] of mapVal) {
         if (entries.length >= 40) break;
         entries.push({ k: cloneDeepBounded(k, 1), v: cloneDeepBounded(v, 1) });
       }
-    } else if (value && typeof value.forEach === 'function') {
-      value.forEach((v: unknown, k: unknown) => {
+    } else if (recVal && typeof recVal.forEach === 'function') {
+      (recVal.forEach as (cb: (v: unknown, k: unknown) => void) => void)((v: unknown, k: unknown) => {
         total++;
         if (entries.length < 40) entries.push({ k: cloneDeepBounded(k, 1), v: cloneDeepBounded(v, 1) });
       });
-    } else if (value && typeof value === 'object') {
-      const keys = Object.keys(value);
+    } else if (recVal) {
+      const keys = Object.keys(recVal);
       total = keys.length;
-      keys.slice(0, 40).forEach(k => entries.push({ k, v: cloneDeepBounded(value[k], 1) }));
+      keys.slice(0, 40).forEach(k => entries.push({ k, v: cloneDeepBounded(recVal[k], 1) }));
     }
     const out = Object.assign({ kind, entries, total }, extra || {});
     if (total > 20) defineHidden(out, '__raw', value);
@@ -231,13 +237,14 @@ export function snapshot(kind: any, value: any, extra?: any): any {
     const items: unknown[] = [];
     let total = 0;
     if (isSetLike(value)) {
-      total = (pyMeta && typeof pyMeta.total === 'number') ? pyMeta.total : value.size;
-      for (const v of value) {
+      const setVal = value as Set<unknown>;
+      total = (pyMeta && typeof pyMeta.total === 'number') ? pyMeta.total : setVal.size;
+      for (const v of setVal) {
         if (items.length >= 40) break;
         items.push(cloneDeepBounded(v, 1));
       }
-    } else if (value && typeof value.forEach === 'function') {
-      value.forEach((v: unknown) => {
+    } else if (recVal && typeof recVal.forEach === 'function') {
+      (recVal.forEach as (cb: (v: unknown) => void) => void)((v: unknown) => {
         total++;
         if (items.length < 40) items.push(cloneDeepBounded(v, 1));
       });
@@ -334,14 +341,14 @@ export function classifyValue(name: string, value: unknown) {
   return null;
 }
 
-export function populateInterfaceSchemas(ds: StepAnim) {
+export function populateInterfaceSchemas(ds: Record<string, StepAnim>) {
   const { interfaces, varTypes } = CURRENT_TS_META;
   if (!interfaces || !interfaces.size) return;
   interfaces.forEach(iface => {
     if (iface.isClass && (!iface.fields || !iface.fields.length)) return;
     const prefix = iface.isClass ? 'class ' : 'interface ';
     const slotKey = (iface.name in ds) ? (prefix + iface.name) : iface.name;
-    let boundInstance: { fields?: Array<{ k: string; v: unknown }> } | null = null;
+    let boundInstance: StepAnim | null = null;
     let boundVarName: string | null = null;
     Object.keys(ds).forEach(k => {
       const item = ds[k];
@@ -358,9 +365,10 @@ export function populateInterfaceSchemas(ds: StepAnim) {
       });
     }
     const fields = iface.fields.map((f: InterfaceFieldMeta) => {
-      const instField = boundInstance && boundInstance.fields ? boundInstance.fields.find(x => x.k === f.k) : null;
+      const key = f.k || f.name || '';
+      const instField = boundInstance && boundInstance.fields ? boundInstance.fields.find(x => x.k === key) : null;
       return {
-        k: f.k,
+        k: key,
         declaredType: f.declaredType,
         optional: Boolean(f.optional),
         v: instField ? instField.v : undefined,
@@ -373,17 +381,19 @@ export function populateInterfaceSchemas(ds: StepAnim) {
       isSchema: true,
       instanceName: boundVarName,
       fields,
-      entries: fields.map((f: { k?: string; v?: unknown; declaredType?: string }) => ({ k: f.k, v: f.v !== undefined ? f.v : f.declaredType })),
+      entries: fields.map((f: { k: string; v?: unknown; declaredType?: string }) => ({ k: f.k, v: f.v !== undefined ? f.v : f.declaredType })),
     };
   });
 }
 
-export function detectWindowRange(v: StepAnim | null | undefined) {
+export function detectWindowRange(v: StepAnim | null | undefined): [number, number] | null {
   if (!v) return null;
   const pairs: Array<[string, string]> = [['l', 'r'], ['left', 'right'], ['lo', 'hi'], ['start', 'end']];
   for (const [lk, rk] of pairs) {
-    if (typeof v[lk] === 'number' && typeof v[rk] === 'number' && v[lk] >= 0 && v[rk] >= v[lk]) {
-      return [v[lk], v[rk]];
+    const lv = v[lk];
+    const rv = v[rk];
+    if (typeof lv === 'number' && typeof rv === 'number' && lv >= 0 && rv >= lv) {
+      return [lv, rv];
     }
   }
   return null;
@@ -464,19 +474,23 @@ export function selectGridAxisIndices(total: number, focusIdx?: number, maxCount
   return [...set].sort((a, b) => a - b);
 }
 
-export function enrichFromNote(ds: StepAnim | null | undefined, v: StepAnim | null | undefined, note?: string | null) {
+export function enrichFromNote(ds: Record<string, StepAnim> | null | undefined, v: StepAnim | null | undefined, note?: string | null) {
   if (!ds || typeof ds !== 'object') return;
   const safeV: StepAnim = v || {};
   const text = String(note || '');
 
-  const evalIdx = (expr: string | undefined) => {
+  const evalIdx = (expr: string | undefined): number | undefined => {
     const t = String(expr || '').trim();
     if (!t) return undefined;
     if (/^\d+$/.test(t)) return +t;
-    if (t in safeV && typeof safeV[t] === 'number' && Number.isInteger(safeV[t])) return safeV[t];
+    const directVal = safeV[t];
+    if (t in safeV && typeof directVal === 'number' && Number.isInteger(directVal)) return directVal;
     const m = t.match(/^([A-Za-z_$][\w$]*)\s*([+-])\s*(\d+)$/);
-    if (m && m[1] && m[3] !== undefined && typeof safeV[m[1]] === 'number' && Number.isInteger(safeV[m[1]])) {
-      return m[2] === '+' ? safeV[m[1]] + (+m[3]) : safeV[m[1]] - (+m[3]);
+    if (m && m[1] && m[3] !== undefined) {
+      const baseVal = safeV[m[1]];
+      if (typeof baseVal === 'number' && Number.isInteger(baseVal)) {
+        return m[2] === '+' ? baseVal + (+m[3]) : baseVal - (+m[3]);
+      }
     }
     const evaluated = safeEvalExpr(t, safeV);
     return (typeof evaluated === 'number' && Number.isInteger(evaluated)) ? evaluated : undefined;
@@ -485,8 +499,9 @@ export function enrichFromNote(ds: StepAnim | null | undefined, v: StepAnim | nu
   const win = detectWindowRange(safeV);
   if (win) {
     Object.keys(ds).forEach(k => {
-      if (ds[k] && (ds[k].kind === 'array' || ds[k].kind === 'string')) {
-        ds[k].win = win;
+      const item = ds[k];
+      if (item && (item.kind === 'array' || item.kind === 'string')) {
+        item.win = win;
       }
     });
   }
@@ -498,23 +513,25 @@ export function enrichFromNote(ds: StepAnim | null | undefined, v: StepAnim | nu
     while ((pm = propRe.exec(text))) {
       const rawObj = pm[1] || '', propName = pm[2];
       const objName: string = (rawObj === 'self' && !ds.self && ds.this) ? 'this' : rawObj;
-      if (ds[objName] && (ds[objName].kind === 'interface' || ds[objName].kind === 'object')) {
-        ds[objName].hot = propName;
-        const ifaceName = ds[objName].interfaceName;
-        if (ifaceName && ds[ifaceName] && ds[ifaceName].kind === 'interface') {
-          ds[ifaceName].hot = propName;
+      const objItem = ds[objName];
+      if (objItem && (objItem.kind === 'interface' || objItem.kind === 'object')) {
+        objItem.hot = propName;
+        const ifaceName = objItem.interfaceName;
+        const ifaceItem = ifaceName ? ds[ifaceName] : undefined;
+        if (ifaceItem && ifaceItem.kind === 'interface') {
+          ifaceItem.hot = propName;
         }
       }
     }
 
     // 2D Grid subscript access: dp[i][j]
     const g = text.match(/\b([A-Za-z_$][\w$]*)\s*\[\s*([^[\]]+?)\s*\]\s*\[\s*([^[\]]+?)\s*\]/);
-    if (g && g[1] && ds[g[1]] && ds[g[1]].kind === 'grid') {
-      const gName = g[1];
+    const gItem = g && g[1] ? ds[g[1]] : undefined;
+    if (g && g[1] && gItem && gItem.kind === 'grid') {
       const row = evalIdx(g[2]);
       const col = evalIdx(g[3]);
       if (typeof row === 'number' && typeof col === 'number') {
-        ds[gName].mark = [row, col];
+        gItem.mark = [row, col];
       }
       const deps: Array<[number, number]> = [];
       const re = /\b[A-Za-z_$][\w$]*\s*\[\s*([^[\]]+?)\s*\]\s*\[\s*([^[\]]+?)\s*\]/g;
@@ -523,12 +540,13 @@ export function enrichFromNote(ds: StepAnim | null | undefined, v: StepAnim | nu
         const r = evalIdx(m[1]);
         const c = evalIdx(m[2]);
         if (typeof r === 'number' && typeof c === 'number') {
-          if (!(ds[gName].mark && ds[gName].mark[0] === r && ds[gName].mark[1] === c)) {
+          const curMark = gItem.mark;
+          if (!(Array.isArray(curMark) && curMark[0] === r && curMark[1] === c)) {
             deps.push([r, c]);
           }
         }
       }
-      ds[gName].deps = deps;
+      gItem.deps = deps;
     }
 
     // 1D subscript access: nums[mid], s[i], etc. (match all occurrences on the line)
@@ -546,15 +564,16 @@ export function enrichFromNote(ds: StepAnim | null | undefined, v: StepAnim | nu
           d.hot = idx;
         } else {
           if (!d.__extraFocal) defineHidden(d, '__extraFocal', []);
-          d.__extraFocal.push(idx);
+          if (d.__extraFocal) d.__extraFocal.push(idx);
         }
       }
     }
 
     // Container mutation / lookup methods: push, set, add, pop, shift, unshift, get, has
     const p = text.match(/\b([A-Za-z_$][\w$]*)\s*\.\s*(push|set|add|pop|shift|unshift|get|has)\s*\(\s*([^,)]*)/);
-    if (p && p[1] && ds[p[1]]) {
-      const d = ds[p[1]];
+    const pItem = p && p[1] ? ds[p[1]] : undefined;
+    if (p && p[1] && pItem) {
+      const d = pItem;
       const method = p[2];
       const firstArg = p[3] ? p[3].trim() : '';
       if (method === 'get' || method === 'has' || method === 'set' || method === 'add') {
@@ -570,7 +589,10 @@ export function enrichFromNote(ds: StepAnim | null | undefined, v: StepAnim | nu
           const total = typeof d.total === 'number' ? d.total : (d.items ? d.items.length : 0);
           if (total > 0) d.hot = method === 'unshift' ? 0 : total - 1;
         } else if (d.kind === 'map' && d.hot === undefined) {
-          if (d.entries && d.entries.length) d.hot = d.entries[d.entries.length - 1].k;
+          if (d.entries && d.entries.length) {
+            const lastEntry = d.entries[d.entries.length - 1];
+            if (lastEntry) d.hot = lastEntry.k;
+          }
         } else if (d.kind === 'set' && d.hot === undefined) {
           if (d.items && d.items.length) d.hot = d.items[d.items.length - 1];
         }
@@ -604,18 +626,19 @@ export function enrichFromNote(ds: StepAnim | null | undefined, v: StepAnim | nu
         if (ref && typeof ref === 'object') {
           const idx = d.__rawNodes.indexOf(ref);
           if (idx >= 0) {
-            if (!nodePtrs[idx]) nodePtrs[idx] = [];
-            if (!nodePtrs[idx].includes(pName)) nodePtrs[idx].push(pName);
+            const ptrArr = nodePtrs[idx] || (nodePtrs[idx] = []);
+            if (!ptrArr.includes(pName)) ptrArr.push(pName);
             if (d.hot === undefined) d.hot = idx;
             focal.push(idx);
           }
         }
       }
       if (Object.keys(nodePtrs).length) d.pointers = nodePtrs;
-      const total = d.total || d.__rawVals.length;
+      const rawVals = d.__rawVals || [];
+      const total = d.total || rawVals.length;
       if (total > 20) {
         if (typeof d.hot === 'number') focal.unshift(d.hot);
-        d.windowed = build1DFocalSlice(total, (idx: number) => cloneDeepBounded(d.__rawVals[idx], 1), focal);
+        d.windowed = build1DFocalSlice(total, (idx: number) => cloneDeepBounded(rawVals[idx], 1), focal);
       }
     }
 
@@ -642,8 +665,8 @@ export function enrichFromNote(ds: StepAnim | null | undefined, v: StepAnim | nu
         for (const pName of POINTER_VAR_NAMES) {
           const val = safeV[pName];
           if (typeof val === 'number' && Number.isInteger(val) && val >= 0 && val < total) {
-            if (!ptrs[val]) ptrs[val] = [];
-            if (!ptrs[val].includes(pName)) ptrs[val].push(pName);
+            const pArr = ptrs[val] || (ptrs[val] = []);
+            if (!pArr.includes(pName)) pArr.push(pName);
             focal.push(val);
           }
         }
@@ -674,15 +697,19 @@ export function enrichFromNote(ds: StepAnim | null | undefined, v: StepAnim | nu
 
     // 4) Large Map / Set: ensure accessed hot key/value beyond index 40 is included in entries/items
     if (d.kind === 'map' && d.hot !== undefined && d.__raw && isMapLike(d.__raw)) {
-      const exists = (d.entries || []).some((e: { k: unknown }) => e.k === d.hot);
-      if (!exists && d.__raw.has(d.hot)) {
-        d.entries.push({ k: cloneDeepBounded(d.hot, 1), v: cloneDeepBounded(d.__raw.get(d.hot), 1) });
+      const rawMap = d.__raw as Map<unknown, unknown>;
+      const entries = d.entries || (d.entries = []);
+      const exists = entries.some((e: { k: unknown }) => e.k === d.hot);
+      if (!exists && rawMap.has(d.hot)) {
+        entries.push({ k: cloneDeepBounded(d.hot, 1), v: cloneDeepBounded(rawMap.get(d.hot), 1) });
       }
     }
     if (d.kind === 'set' && d.hot !== undefined && d.__raw && isSetLike(d.__raw)) {
-      const exists = (d.items || []).some((x: unknown) => x === d.hot);
-      if (!exists && d.__raw.has(d.hot)) {
-        d.items.push(cloneDeepBounded(d.hot, 1));
+      const rawSet = d.__raw as Set<unknown>;
+      const items = d.items || (d.items = []);
+      const exists = items.some((x: unknown) => x === d.hot);
+      if (!exists && rawSet.has(d.hot)) {
+        items.push(cloneDeepBounded(d.hot, 1));
       }
     }
 
@@ -697,14 +724,16 @@ export function enrichFromNote(ds: StepAnim | null | undefined, v: StepAnim | nu
           d.colIndices = pyMeta.colIndices;
           d.viewCells = pyMeta.viewCells;
         } else {
-          let focusR = d.mark ? d.mark[0] : (d.deps && d.deps[0] ? d.deps[0][0] : undefined);
-          let focusC = d.mark ? d.mark[1] : (d.deps && d.deps[0] ? d.deps[0][1] : undefined);
+          let focusR = Array.isArray(d.mark) ? d.mark[0] : (d.deps && d.deps[0] ? d.deps[0][0] : undefined);
+          let focusC = Array.isArray(d.mark) ? d.mark[1] : (d.deps && d.deps[0] ? d.deps[0][1] : undefined);
           if (focusR === undefined || focusC === undefined) {
             const coordPairs: Array<[string, string]> = [['i', 'j'], ['r', 'c'], ['row', 'col'], ['x', 'y']];
             for (const [rk, ck] of coordPairs) {
-              if (typeof safeV[rk] === 'number' && typeof safeV[ck] === 'number') {
-                focusR = safeV[rk];
-                focusC = safeV[ck];
+              const rv = safeV[rk];
+              const cv = safeV[ck];
+              if (typeof rv === 'number' && typeof cv === 'number') {
+                focusR = rv;
+                focusC = cv;
                 break;
               }
             }
@@ -715,7 +744,7 @@ export function enrichFromNote(ds: StepAnim | null | undefined, v: StepAnim | nu
           d.rowIndices = rowIndices;
           d.colIndices = colIndices;
           d.viewCells = rowIndices.map(r => {
-            const rowArr = rawGrid && Array.isArray(rawGrid[r]) ? rawGrid[r] : [];
+            const rowArr = rawGrid && Array.isArray(rawGrid[r]) ? (rawGrid[r] as unknown[]) : [];
             return colIndices.map(c => cloneDeepBounded(rowArr[c], 2));
           });
         }
@@ -787,7 +816,11 @@ export function splitLogicalClauses(condExpr: string) {
   return clauses.filter(c => c.expr);
 }
 
-export function deriveAnimAndNote(rawLine: any, v?: any, nextV?: any): any {
+export function deriveAnimAndNote(
+  rawLine: string,
+  v?: StepAnim | null,
+  nextV?: StepAnim | null
+): { anim: StepAnim | null; note: string; isCheckpoint?: boolean } {
   const clean = stripTypes(rawLine || '').trim().replace(/;$/, '');
   if (!clean) return { anim: null, note: rawLine };
 
@@ -855,8 +888,9 @@ export function deriveAnimAndNote(rawLine: any, v?: any, nextV?: any): any {
   if (ckptCall && ckptCall[1] !== undefined) {
     const fnName = clean.startsWith('断点') ? '断点' : 'checkpoint';
     const args = splitTopLevel(ckptCall[1]).map(s => s.trim()).filter(Boolean);
-    const argVals = Array.isArray(nextV && nextV.__ckptVals) && nextV.__ckptVals.length === args.length
-      ? nextV.__ckptVals
+    const ckptVals = nextV && Array.isArray(nextV.__ckptVals) ? (nextV.__ckptVals as string[]) : null;
+    const argVals = ckptVals && ckptVals.length === args.length
+      ? ckptVals
       : args.map(a => formatShortVal(safeEvalExpr(a, v)));
     const anim = { type: 'checkpoint', fn: fnName, args, argVals };
     const detail = args.length
@@ -999,7 +1033,11 @@ export function renderCallStack(st: StepSnapshot | Frame | null | undefined) {
   }
 }
 
-export function truncMap(arr: any, render: any, d?: any) {
+export function truncMap<T = unknown>(
+  arr: T[] | null | undefined,
+  render: (val: T, idx: number) => string,
+  d?: Frame | null
+): string {
   if (d && Array.isArray(d.windowed) && d.windowed.length) {
     return d.windowed.map((entry: { gap?: boolean; from?: number; to?: number; count?: number; val?: unknown; idx?: number }) => {
       if (entry && entry.gap) {
@@ -1008,16 +1046,16 @@ export function truncMap(arr: any, render: any, d?: any) {
           : '';
         return '<div class="vmore"' + tip + '>…<span class="vmore-cnt">+' + entry.count + '</span></div>';
       }
-      return render(entry.val, entry.idx);
+      return render(entry.val as T, entry.idx ?? 0);
     }).join('');
   }
   const MAX = 20, HEAD = 10, TAIL = 5;
-  if (!arr || arr.length <= MAX) return (arr || []).map((x: unknown, i: number) => render(x, i)).join('');
+  if (!arr || arr.length <= MAX) return (arr || []).map((x: T, i: number) => render(x, i)).join('');
   const total = (d && typeof d.total === 'number' && d.total >= arr.length) ? d.total : arr.length;
   const hidden = Math.max(1, total - HEAD - TAIL);
-  const head = arr.slice(0, HEAD).map((x: unknown, i: number) => render(x, i)).join('');
+  const head = arr.slice(0, HEAD).map((x: T, i: number) => render(x, i)).join('');
   const tailStart = total - TAIL;
-  const tail = arr.slice(arr.length - TAIL).map((x: unknown, i: number) => render(x, tailStart + i)).join('');
+  const tail = arr.slice(arr.length - TAIL).map((x: T, i: number) => render(x, tailStart + i)).join('');
   return head + '<div class="vmore" title="省略 ' + hidden + ' 项">…<span class="vmore-cnt">+' + hidden + '</span></div>' + tail;
 }
 
@@ -1116,7 +1154,7 @@ export function vizString(d: Frame | null | undefined) {
   if (!d || !d.items || !d.items.length) return null;
   const win = d.win;
   if (Array.isArray(d.windowed) && d.windowed.length) {
-    const cells = truncMap(d.items, (ch: string, k: number) => {
+    const cells = truncMap(d.items as string[], (ch: string, k: number) => {
       let cls = 'ch';
       if (win && k >= win[0] && k <= win[1]) cls += ' win';
       if (d.hot === k) cls += ' hot';
@@ -1125,7 +1163,7 @@ export function vizString(d: Frame | null | undefined) {
     }, d);
     return '<div class="viz"><div class="vstr">' + cells + '</div></div>';
   }
-  return '<div class="viz"><div class="vstr">' + d.items.map((ch: string, k: number) => {
+  return '<div class="viz"><div class="vstr">' + (d.items as string[]).map((ch: string, k: number) => {
     let cls = 'ch';
     if (win && k >= win[0] && k <= win[1]) cls += ' win';
     if (d.hot === k) cls += ' hot';
@@ -1144,8 +1182,10 @@ export function vizGrid(d: Frame | null | undefined) {
     const cIdxs = d.colIndices;
     const colTracks: Array<{ gap: true } | { gap: false; c: number; ci: number }> = [];
     for (let ci = 0; ci < cIdxs.length; ci++) {
-      if (ci > 0 && cIdxs[ci] > cIdxs[ci - 1] + 1) colTracks.push({ gap: true });
-      colTracks.push({ gap: false, c: cIdxs[ci], ci });
+      const curC = cIdxs[ci] ?? 0;
+      const prevC = cIdxs[ci - 1] ?? 0;
+      if (ci > 0 && curC > prevC + 1) colTracks.push({ gap: true });
+      colTracks.push({ gap: false, c: curC, ci });
     }
     const gridCols = colTracks.length + 1; // +1 for row header column
     let html = '<div class="ghead">r\\c</div>';
@@ -1153,19 +1193,19 @@ export function vizGrid(d: Frame | null | undefined) {
       if (ct.gap) {
         html += '<div class="ggap">⋯</div>';
       } else {
-        const isFocusCol = d.mark && d.mark[1] === ct.c;
+        const isFocusCol = Array.isArray(d.mark) && d.mark[1] === ct.c;
         html += '<div class="ghead' + (isFocusCol ? ' focus' : '') + '">' + ct.c + '</div>';
       }
     }
     for (let ri = 0; ri < rIdxs.length; ri++) {
       const realR = rIdxs[ri];
-      if (ri > 0 && realR > rIdxs[ri - 1] + 1) {
+      if (ri > 0 && realR !== undefined && realR > (rIdxs[ri - 1] ?? 0) + 1) {
         html += '<div class="ggap">⋮</div>';
         for (let gi = 0; gi < colTracks.length; gi++) {
           html += '<div class="ggap">' + (colTracks[gi]?.gap ? '⋱' : '⋮') + '</div>';
         }
       }
-      const isFocusRow = d.mark && d.mark[0] === realR;
+      const isFocusRow = Array.isArray(d.mark) && d.mark[0] === realR;
       html += '<div class="ghead' + (isFocusRow ? ' focus' : '') + '">' + realR + '</div>';
       const rowVals = d.viewCells[ri] || [];
       for (const ct of colTracks) {
@@ -1174,7 +1214,7 @@ export function vizGrid(d: Frame | null | undefined) {
         } else {
           const realC = ct.c;
           let cls = 'gcell';
-          if (d.mark && d.mark[0] === realR && d.mark[1] === realC) cls += ' hot';
+          if (Array.isArray(d.mark) && d.mark[0] === realR && d.mark[1] === realC) cls += ' hot';
           else if (depSet.has(realR + ',' + realC)) cls += ' dep';
           const val = rowVals[ct.ci];
           html += '<div class="' + cls + '" title="[' + realR + '][' + realC + ']">' + (val === undefined || val === null ? '·' : esc(val)) + '</div>';
@@ -1184,14 +1224,14 @@ export function vizGrid(d: Frame | null | undefined) {
     return '<div class="viz"><div class="vgrid-wrap"><div class="vgrid" style="grid-template-columns:repeat(' + gridCols + ',auto)">' + html + '</div></div></div>';
   }
 
-  const cols = d.cells[0].length;
+  const cols = d.cells[0]?.length ?? 0;
   let html = '';
   for (let r = 0; r < d.cells.length; r++) {
     for (let c = 0; c < cols; c++) {
       let cls = 'gcell';
-      if (d.mark && d.mark[0] === r && d.mark[1] === c) cls += ' hot';
+      if (Array.isArray(d.mark) && d.mark[0] === r && d.mark[1] === c) cls += ' hot';
       else if (depSet.has(r + ',' + c)) cls += ' dep';
-      const val = d.cells[r][c];
+      const val = d.cells[r]?.[c];
       html += '<div class="' + cls + '">' + (val === undefined || val === null ? '·' : esc(val)) + '</div>';
     }
   }
@@ -1214,18 +1254,20 @@ export function vizList(d: Frame | null | undefined) {
 
 export function vizTree(d: Frame | null | undefined) {
   if (!d || !d.nodes || !d.nodes.length) return null;
-  const nodes = d.nodes;
+  const nodes = d.nodes as Array<{ val: unknown; left?: number | null; right?: number | null }>;
   const root = d.root ?? 0;
   const coords = new Map<number, { x: number; y: number; val: unknown; left?: number | null; right?: number | null }>();
   let maxDepth = 0;
   function layout(idx: number | null | undefined, depth: number, xMin: number, xMax: number) {
     if (idx == null || !nodes[idx] || coords.has(idx) || depth > 5) return;
+    const node = nodes[idx];
+    if (!node) return;
     maxDepth = Math.max(maxDepth, depth);
     const x = (xMin + xMax) / 2;
     const y = 20 + depth * 36;
-    coords.set(idx, { x, y, val: nodes[idx].val, left: nodes[idx].left, right: nodes[idx].right });
-    layout(nodes[idx].left, depth + 1, xMin, x);
-    layout(nodes[idx].right, depth + 1, x, xMax);
+    coords.set(idx, { x, y, val: node.val, left: node.left, right: node.right });
+    layout(node.left, depth + 1, xMin, x);
+    layout(node.right, depth + 1, x, xMax);
   }
   layout(root, 0, 14, 226);
   const h = Math.max(60, (maxDepth + 1) * 36 + 10);
@@ -1248,8 +1290,10 @@ export function vizGraph(d: Frame | null | undefined) {
   const byId = new Map<number | string, Frame>();
   d.nodes.forEach((n: Frame, idx: number) => byId.set(n.id ?? idx, n));
   let edgesSvg = '', nodesSvg = '';
-  (d.edges || []).forEach((e: [number | string, number | string]) => {
-    const a = byId.get(e[0]), b = byId.get(e[1]);
+  (d.edges || []).forEach((e: [number | string, number | string] | Frame) => {
+    const e0 = Array.isArray(e) ? e[0] : (e.from ?? 0);
+    const e1 = Array.isArray(e) ? e[1] : (e.to ?? 0);
+    const a = byId.get(e0), b = byId.get(e1);
     if (a && b) {
       edgesSvg += `<line class="vsvg-edge" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"/>`;
     }
@@ -1264,7 +1308,7 @@ export function vizGraph(d: Frame | null | undefined) {
 
 export function vizInterface(d: Frame | null | undefined) {
   if (!d) return null;
-  const fields = d.fields || (d.entries ? d.entries.map((e: { k: string; v: unknown }) => ({ k: e.k, v: e.v, declaredType: typeof e.v })) : []);
+  const fields = d.fields || (d.entries ? d.entries.map((e: { k: unknown; v: unknown }) => ({ k: String(e.k), v: e.v, declaredType: typeof e.v })) : []);
   if (!fields.length && !d.isClass) return null;
   const ifaceTitle = d.interfaceName && d.interfaceName !== 'object' ? d.interfaceName : 'Object';
   const kwTxt = d.isClass ? 'class' : 'interface';
@@ -1303,7 +1347,7 @@ export function vizEventLoop(d: Frame | null | undefined) {
     microtask: { label: 'Microtask · 微任务出队', cls: 'micro' },
     macrotask: { label: 'Macrotask · 宏任务触发', cls: 'macro' },
   };
-  const ph = phaseMap[d.phase] || { label: d.phase || 'Event Loop', cls: 'sync' };
+  const ph = (d.phase ? phaseMap[d.phase] : undefined) || { label: d.phase || 'Event Loop', cls: 'sync' };
   const nowMs = typeof d.now === 'number' ? d.now : 0;
 
   const coroutines = Array.isArray(d.coroutines) ? d.coroutines : [];
@@ -1328,7 +1372,7 @@ export function vizEventLoop(d: Frame | null | undefined) {
         `<div class="vel-qitem micro${idx === 0 ? ' head' : ''}">` +
         `<span class="vel-qidx">#${idx + 1}</span>` +
         `<span class="vel-qlabel">${esc(m.label)}</span>` +
-        (m.line > 0 ? `<span class="vel-qmeta">@L${m.line}</span>` : '') +
+        ((m.line ?? 0) > 0 ? `<span class="vel-qmeta">@L${m.line}</span>` : '') +
         `</div>`
       ).join('')
     : '<span class="vel-empty">队列为空 (0)</span>';
@@ -1349,8 +1393,9 @@ export function vizEventLoop(d: Frame | null | undefined) {
     ? promises.map((p: Frame) => {
         const st = p.state || 'pending';
         const icon = st === 'fulfilled' ? '✓' : (st === 'rejected' ? '✗' : '⏳');
+        const reactions = p.reactions ?? 0;
         const valPart = st === 'pending'
-          ? (p.reactions > 0 ? `<span class="vel-pval dim">${p.reactions} waiter${p.reactions > 1 ? 's' : ''}</span>` : '<span class="vel-pval dim">pending</span>')
+          ? (reactions > 0 ? `<span class="vel-pval dim">${reactions} waiter${reactions > 1 ? 's' : ''}</span>` : '<span class="vel-pval dim">pending</span>')
           : `<span class="vel-pval">${esc(p.value)}</span>`;
         return `<div class="vel-pcard ${esc(st)}">` +
           `<span class="vel-phead"><span class="vel-picon">${icon}</span><span class="vel-pname">P#${p.id} · ${esc(p.label)}</span></span>` +
@@ -1424,7 +1469,7 @@ export interface DiscoveredVar {
   kind?: string;
 }
 
-export function allocateSlotSpans(vars: DiscoveredVar[], ds: StepAnim) {
+export function allocateSlotSpans(vars: DiscoveredVar[], ds: Record<string, StepAnim>) {
   const meta = vars.map((s: DiscoveredVar, idx: number) => {
     const d: Frame | undefined = ds[s.id];
     const kind: string = (d && d.kind) || s.kind || 'array';
@@ -1451,7 +1496,12 @@ export function allocateSlotSpans(vars: DiscoveredVar[], ds: StepAnim) {
   return meta;
 }
 
-let _DISCOVER_CACHE: any = { traceRef: null, scannedSteps: 0, map: new Map(), list: [] };
+let _DISCOVER_CACHE: { traceRef: unknown; scannedSteps: number; map: Map<string, DiscoveredVar>; list: DiscoveredVar[] } = {
+  traceRef: null,
+  scannedSteps: 0,
+  map: new Map(),
+  list: [],
+};
 
 export function discoverVars(): DiscoveredVar[] {
   const steps = (TRACE && TRACE.steps) || [];
@@ -1466,8 +1516,9 @@ export function discoverVars(): DiscoveredVar[] {
       const keys = Object.keys(ds);
       for (let k = 0; k < keys.length; k++) {
         const name = keys[k];
-        if (name && !_DISCOVER_CACHE.map.has(name)) {
-          _DISCOVER_CACHE.map.set(name, { id: name, name, kind: ds[name].kind || name });
+        const item = name ? ds[name] : undefined;
+        if (name && item && !_DISCOVER_CACHE.map.has(name)) {
+          _DISCOVER_CACHE.map.set(name, { id: name, name, kind: item.kind || name });
           changed = true;
         }
       }
@@ -1492,8 +1543,9 @@ export function renderPicker() {
 }
 
 export function renderSlots() {
-  const st: any = TRACE.steps[cur] || {};
-  const activeFrame = TRACE.steps[cur] ? getActiveFrame(st) : null;
+  const stepAtCur = TRACE.steps[cur];
+  const st: Partial<StepSnapshot> = stepAtCur || {};
+  const activeFrame = stepAtCur ? getActiveFrame(stepAtCur) : null;
   const ds = Object.assign({}, (activeFrame && activeFrame.ds) || st.ds || {});
   if (st.ds && st.ds.eventLoop && !ds.eventLoop) ds.eventLoop = st.ds.eventLoop;
   const vars = discoverVars().filter((s: DiscoveredVar) => watched.has(s.id) && ds[s.id] !== undefined);
@@ -1606,8 +1658,8 @@ export function renderStatic(i: number, withAnim = false) {
 
   updateControlButtons();
   updateEditorChrome();
-  if (typeof VIEW_MODE !== 'undefined' && VIEW_MODE === 'notebook' && typeof (globalThis as any).renderNotebookUI === 'function') {
-    (globalThis as any).renderNotebookUI(false);
+  if (typeof VIEW_MODE !== 'undefined' && VIEW_MODE === 'notebook' && typeof globalThis.renderNotebookUI === 'function') {
+    globalThis.renderNotebookUI(false);
   } else {
     scrollCodeTo(activeFrame ? activeFrame.line : st.line);
   }

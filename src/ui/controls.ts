@@ -204,7 +204,7 @@ export function rebuildDebugAtPosition(newTargetLine: number, targetVisits: numb
   return true;
 }
 
-export function addCheckpointFunction(preferredLine?: any) {
+export function addCheckpointFunction(preferredLine?: number) {
   if (LANG === 'python') {
     const text = editor.value.replace(/\r\n?/g, '\n');
     const lines = text.split('\n');
@@ -240,7 +240,7 @@ export function addCheckpointFunction(preferredLine?: any) {
   let fnCloseIdx = lines.length - 1;
   let depth = 0;
   for (let i = 0; i < lines.length; i++) {
-    const raw = lines[i];
+    const raw = lines[i] || '';
     if (fnOpenIdx < 0 && /^\s*(?:export\s+)?(?:default\s+)?function\b/.test(raw)) {
       fnOpenIdx = i;
     }
@@ -340,8 +340,9 @@ if ($('btnAddCheckpoint')) {
   $('btnAddCheckpoint').onclick = () => addCheckpointFunction();
 }
 if (gutterEl) {
-  gutterEl.addEventListener('click', (e: any) => {
-    const g = (e.target as any).closest('.gline');
+  gutterEl.addEventListener('click', (e: MouseEvent) => {
+    const target = e.target as HTMLElement | null;
+    const g = target && target.closest ? (target.closest('.gline') as HTMLElement | null) : null;
     if (!g || !g.dataset.line) return;
     addCheckpointFunction(parseInt(g.dataset.line, 10));
   });
@@ -367,8 +368,8 @@ $('auto').onclick = async () => {
 
 $('btnRun').onclick = () => {
   stopAuto();
-  if (typeof VIEW_MODE !== 'undefined' && VIEW_MODE === 'notebook' && typeof (globalThis as any).runNotebookCell === 'function') {
-    (globalThis as any).runNotebookCell(undefined, true);
+  if (typeof VIEW_MODE !== 'undefined' && VIEW_MODE === 'notebook' && typeof globalThis.runNotebookCell === 'function') {
+    globalThis.runNotebookCell(undefined, true);
     return;
   }
   runOnce();
@@ -376,8 +377,8 @@ $('btnRun').onclick = () => {
 $('btnTrace').onclick = () => {
   stopAuto();
   if (document.body && document.body.classList) document.body.classList.remove('editing-code');
-  if (typeof VIEW_MODE !== 'undefined' && VIEW_MODE === 'notebook' && typeof (globalThis as any).debugNotebookCell === 'function') {
-    (globalThis as any).debugNotebookCell(undefined);
+  if (typeof VIEW_MODE !== 'undefined' && VIEW_MODE === 'notebook' && typeof globalThis.debugNotebookCell === 'function') {
+    globalThis.debugNotebookCell(undefined);
     return;
   }
   startDebug(0);
@@ -421,8 +422,9 @@ if (btnExportMenu && exportMenuWrap) {
 }
 
 if (videoSpeedGroup) {
-  videoSpeedGroup.addEventListener('click', (e: any) => {
-    const btn = (e.target as any).closest ? (e.target as any).closest('.speed-opt') : null;
+  videoSpeedGroup.addEventListener('click', (e: MouseEvent) => {
+    const target = e.target as HTMLElement | null;
+    const btn = target && target.closest ? (target.closest('.speed-opt') as HTMLElement | null) : null;
     if (!btn || !btn.dataset.speed) return;
     e.stopPropagation();
     setVideoExportSpeed( parseFloat(btn.dataset.speed) );
@@ -452,23 +454,23 @@ export function setFileName(name: string | null | undefined) {
   if (fileNameEl && fileNameEl.value !== FILE_NAME) fileNameEl.value = FILE_NAME;
   const tag = $('fileExportTag');
   if (tag) tag.textContent = exportFileName();
-  if (typeof (globalThis as any).syncActiveScriptTabFromFileName === 'function') {
-    try { (globalThis as any).syncActiveScriptTabFromFileName(FILE_NAME); } catch (_) {}
+  if (typeof globalThis.syncActiveScriptTabFromFileName === 'function') {
+    try { globalThis.syncActiveScriptTabFromFileName(FILE_NAME); } catch (_) {}
   }
 }
 
 export function loadImportedSource(text: string | null | undefined, name?: string) {
   const src = String(text == null ? '' : text).replace(/\r\n?/g, '\n');
-  if (name && /\.ipynb$/i.test(name) && typeof (globalThis as any).importNotebookFromJson === 'function') {
-    if ((globalThis as any).importNotebookFromJson(src, name)) return;
+  if (name && /\.ipynb$/i.test(name) && typeof globalThis.importNotebookFromJson === 'function') {
+    if (globalThis.importNotebookFromJson(src, name)) return;
   }
-  if (typeof VIEW_MODE !== 'undefined' && VIEW_MODE === 'notebook' && typeof (globalThis as any).setViewMode === 'function') {
-    (globalThis as any).setViewMode('script');
+  if (typeof VIEW_MODE !== 'undefined' && VIEW_MODE === 'notebook' && typeof globalThis.setViewMode === 'function') {
+    globalThis.setViewMode('script');
   }
   editor.value = src;
   setFileName(name || (LANG === 'python' ? 'imported.py' : 'imported.ts'));
-  if (typeof (globalThis as any).syncActiveScriptTabSource === 'function') {
-    try { (globalThis as any).syncActiveScriptTabSource(src); } catch (_) {}
+  if (typeof globalThis.syncActiveScriptTabSource === 'function') {
+    try { globalThis.syncActiveScriptTabSource(src); } catch (_) {}
   }
   lastEditorCursorLine = -1;
   resetTraceState();
@@ -497,7 +499,7 @@ if (fileNameEl) {
   const commitName = () => setFileName(fileNameEl.value);
   fileNameEl.addEventListener('change', commitName);
   fileNameEl.addEventListener('blur', commitName);
-  fileNameEl.addEventListener('keydown', (e: any) => {
+  fileNameEl.addEventListener('keydown', (e: KeyboardEvent) => {
     if (e.key === 'Enter') { e.preventDefault(); commitName(); fileNameEl.blur(); }
     else if (e.key === 'Escape') { fileNameEl.value = FILE_NAME; fileNameEl.blur(); }
   });
@@ -529,17 +531,19 @@ if ($('btnExportTs')) {
 
 $('sampleSel').onchange = () => loadSample($('sampleSel').value);
 
-pickEl.addEventListener('click', (e: any) => {
-  const el = (e.target as any).closest('.chip-pick');
-  if (!el) return;
+pickEl.addEventListener('click', (e: MouseEvent) => {
+  const target = e.target as HTMLElement | null;
+  const el = target && target.closest ? (target.closest('.chip-pick') as HTMLElement | null) : null;
+  if (!el || !el.dataset.id) return;
   const id = el.dataset.id;
   if (watched.has(id)) watched.delete(id); else watched.add(id);
   renderPicker();
 });
 
 if (callStackBarEl) {
-  callStackBarEl.addEventListener('click', (e: any) => {
-    const btn = (e.target as any).closest('.cs-crumb');
+  callStackBarEl.addEventListener('click', (e: MouseEvent) => {
+    const target = e.target as HTMLElement | null;
+    const btn = target && target.closest ? (target.closest('.cs-crumb') as HTMLElement | null) : null;
     if (!btn || btn.dataset.frameIdx === undefined) return;
     selectStackFrame(parseInt(btn.dataset.frameIdx, 10));
   });
@@ -637,7 +641,7 @@ editor.addEventListener('blur', () => {
     document.body.classList.remove('editing-code');
   }
 });
-editor.addEventListener('keydown', (e: any) => {
+editor.addEventListener('keydown', (e: KeyboardEvent) => {
   if (e.key === 'Tab') {
     e.preventDefault();
     const s = editor.selectionStart, t = editor.selectionEnd;
@@ -692,7 +696,8 @@ if (editor && editor.addEventListener) {
 }
 if (sidePanelEl && sidePanelEl.addEventListener) {
   sidePanelEl.addEventListener('mousemove', (e: MouseEvent) => {
-    const card = e && e.target && (e.target as any).closest ? (e.target as any).closest('[data-var]') : null;
+    const target = e && (e.target as HTMLElement | null);
+    const card = target && target.closest ? target.closest('[data-var]') : null;
     if (!card || !card.getAttribute) { hideHoverTip(); return; }
     hoverTipForName(card.getAttribute('data-var'), e.clientX, e.clientY);
   });
@@ -704,13 +709,14 @@ addEventListener('resize', () => positionStepViz());
 
 addEventListener('keydown', e => {
   if (isEditorFocused()) return;
+  const target = e.target as HTMLElement | null;
   if (e.key === 'ArrowRight' || e.key === ' ') {
-    if ((e.target as any).closest && (e.target as any).closest('button,select,input,textarea')) return;
+    if (target && target.closest && target.closest('button,select,input,textarea')) return;
     e.preventDefault();
     stepNext();
   }
   if (e.key === 'ArrowLeft') {
-    if ((e.target as any).closest && (e.target as any).closest('button,select,input,textarea')) return;
+    if (target && target.closest && target.closest('button,select,input,textarea')) return;
     e.preventDefault();
     stepPrev();
   }
@@ -751,7 +757,7 @@ export const renderStep = renderStatic;
 export const scheduleRebuild = onSourceChanged;
 export function togglePlay(): void {
   const autoBtn = $("auto");
-  if (autoBtn && typeof autoBtn.onclick === "function") autoBtn.onclick();
+  if (autoBtn && typeof autoBtn.onclick === "function") (autoBtn.onclick as () => unknown)();
 }
 export function setStatus(msg: string, cls?: string): void {
   say(msg, cls);

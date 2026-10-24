@@ -6,8 +6,9 @@ import { formatShortVal, isMapLike, isSetLike, renderPicker, renderStatic } from
 import { revealErrorLine, updateEditorChrome } from "../viz/highlight";
 import { clearFlyLayer } from "../viz/ast-view";
 import { stopAuto } from "../ui/controls";
+import { EventLoopSnapshot } from "../types";
 
-export function say(msg: any, cls?: any, line?: any) {
+export function say(msg: string, cls?: string, line?: number) {
   const d = document.createElement('div');
   if (cls) d.className = cls;
   if (line) {
@@ -24,14 +25,15 @@ export function say(msg: any, cls?: any, line?: any) {
 
 /* clicking a diagnostic in the log jumps to (and highlights) its line */
 if (logEl && logEl.addEventListener) {
-  logEl.addEventListener('click', (e: { target?: { closest?: (sel: string) => { getAttribute?: (attr: string) => string | null } | null } | null }) => {
-    const target = e && e.target && e.target.closest ? e.target.closest('.diag') : null;
+  logEl.addEventListener('click', (e: MouseEvent) => {
+    const el = e && (e.target as HTMLElement | null);
+    const target = el && el.closest ? el.closest('.diag') : null;
     if (!target || !target.getAttribute) return;
     revealErrorLine(parseInt(target.getAttribute('data-line') || '0', 10), true);
   });
 }
 
-export function clearLog(msg?: any) {
+export function clearLog(msg?: string) {
   logEl.innerHTML = '';
   if (msg) say(msg, 'dim');
 }
@@ -61,7 +63,7 @@ export function fnBodyLineOffset() {
 
 /* Map a compiled-function stack line back to the editor line it came from.
    The generated body is: line 1 = checkpoint stub, source line 1 starts on body line 2. */
-export function sourceLineFromStack(stack: any, lineCount?: any) {
+export function sourceLineFromStack(stack: unknown, lineCount?: number) {
   const stackLine = anonStackLine(stack);
   if (!stackLine) return 0;
   const line = stackLine - fnBodyLineOffset() - 1;
@@ -107,13 +109,72 @@ export function hasAsyncConstructs(src: unknown) {
   return /\b(?:async|await|Promise|setTimeout|queueMicrotask|sleep)\b/.test(clean);
 }
 
-export function createVirtualEventLoop(__t: any, getCurLine?: any, onSuspendFrame?: any, onResumeFrame?: any) {
+export interface VirtualMicrotaskEntry {
+  id: number;
+  label: string;
+  line: number;
+  status: string;
+  isInternalAwait: boolean;
+  run: () => void;
+  rawCb: unknown;
+}
+
+export interface VirtualMacrotaskEntry {
+  id: number;
+  label: string;
+  delay: number;
+  fireAt: number;
+  line: number;
+  status: string;
+  cb: ((...a: unknown[]) => unknown) | null | undefined;
+  args: unknown[];
+}
+
+export interface VirtualCoroutineEntry {
+  id: number;
+  name: string;
+  line: number;
+  status: string;
+  awaitExpr: string | null;
+  fid: number;
+}
+
+export interface VirtualPromiseLike {
+  __isVirtualPromise: boolean;
+  id: number;
+  label: string;
+  state: string;
+  value: unknown;
+  reason: unknown;
+  line: number;
+  _internal?: boolean;
+  reactions?: unknown[];
+}
+
+export interface VirtualLoopState {
+  used: boolean;
+  virtualTime: number;
+  phase: string;
+  activeTaskLabel: string;
+  coroutines: VirtualCoroutineEntry[];
+  microtasks: VirtualMicrotaskEntry[];
+  macrotasks: VirtualMacrotaskEntry[];
+  promises: VirtualPromiseLike[];
+  globalSnapFn: (() => Record<string, unknown>) | null;
+}
+
+export function createVirtualEventLoop(
+  __t: ((line?: number, note?: string, snap?: unknown, self?: unknown) => void) | null | undefined,
+  getCurLine: () => number = () => 1,
+  onSuspendFrame?: (fid: number, line?: number, expr?: string) => void,
+  onResumeFrame?: (fid: number) => void
+) {
   let promiseSeq = 0;
   let microSeq = 0;
   let macroSeq = 0;
   let coroSeq = 0;
 
-  const loop: any = {
+  const loop: VirtualLoopState = {
     used: false,
     virtualTime: 0,
     phase: 'sync', // 'sync' | 'microtask' | 'macrotask' | 'idle'
@@ -142,7 +203,7 @@ export function createVirtualEventLoop(__t: any, getCurLine?: any, onSuspendFram
     rawCb?: unknown;
   }) {
     loop.used = true;
-    const task = {
+    const task: VirtualMicrotaskEntry = {
       id: ++microSeq,
       label: item.label || ('microtask#' + microSeq),
       line: item.line || getCurLine() || 1,
@@ -164,8 +225,18 @@ export function createVirtualEventLoop(__t: any, getCurLine?: any, onSuspendFram
     isInternalAwait?: boolean;
   }
 
-  class VirtualPromise {
-    [key: string]: any;
+  class VirtualPromise implements VirtualPromiseLike {
+    __isVirtualPromise: boolean;
+    id: number;
+    label: string;
+    state: string;
+    value: unknown;
+    reason: unknown;
+    line: number;
+    _handlers: PromiseHandler[];
+    _internal?: boolean;
+    reactions?: unknown[];
+
     constructor(
       executor?: ((resolve: (val?: unknown) => void, reject: (reason?: unknown) => void) => void) | null,
       label?: string
@@ -258,7 +329,12 @@ export function createVirtualEventLoop(__t: any, getCurLine?: any, onSuspendFram
       });
     }
 
-    then(onFulfilled?: any, onRejected?: any, metaLabel?: any, isInternalAwait?: any) {
+    then(
+      onFulfilled?: ((v: unknown) => unknown) | null,
+      onRejected?: ((r: unknown) => unknown) | null,
+      metaLabel?: string,
+      isInternalAwait?: boolean
+    ) {
       const callLine = getCurLine() || this.line || 1;
       const child = new VirtualPromise(null, metaLabel || (this.label + '.then'));
       // Hide internal child promises created purely for chaining from cluttering the promise list if needed
@@ -471,7 +547,7 @@ export function createVirtualEventLoop(__t: any, getCurLine?: any, onSuspendFram
     return outPromise;
   }
 
-  function drainEventLoop(entryVal: unknown, fallbackSnapFn?: unknown) {
+  function drainEventLoop(entryVal: unknown, fallbackSnapFn?: (() => Record<string, unknown>) | null) {
     if (fallbackSnapFn && !loop.globalSnapFn) loop.globalSnapFn = fallbackSnapFn;
     if (!loop.used) return entryVal;
 
@@ -492,16 +568,7 @@ export function createVirtualEventLoop(__t: any, getCurLine?: any, onSuspendFram
       }
 
       // 2. Pick the earliest waiting macrotask timer
-      let bestMacro: {
-        id: number;
-        label: string;
-        delay: number;
-        fireAt: number;
-        line: number;
-        status: string;
-        cb: (...args: unknown[]) => unknown;
-        args: unknown[];
-      } | null = null;
+      let bestMacro: VirtualMacrotaskEntry | null = null;
       for (const m of loop.macrotasks) {
         if (m.status !== 'waiting') continue;
         if (!bestMacro || m.fireAt < bestMacro.fireAt || (m.fireAt === bestMacro.fireAt && m.id < bestMacro.id)) {
@@ -550,7 +617,7 @@ export function createVirtualEventLoop(__t: any, getCurLine?: any, onSuspendFram
     return entryVal;
   }
 
-  function toVizSnapshot() {
+  function toVizSnapshot(): EventLoopSnapshot {
     return {
       kind: 'eventloop',
       now: loop.virtualTime,

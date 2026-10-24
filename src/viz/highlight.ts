@@ -5,7 +5,7 @@ import { blankStrings, isIdentPart, RESERVED_WORDS } from "../compiler/comments"
 import { stripTypes } from "../compiler/transpile";
 import { collectNames } from "../compiler/instrumenter";
 import { typecheckTS, inferRuntimeTsType } from "../compiler/type-checker";
-import { Diag } from "../types";
+import { Diag, StepAnim } from "../types";
 import { updateStepViz, positionStepViz } from "./ast-view";
 import { getActiveFrame, isMapLike, isSetLike, formatShortVal, VIZ } from "./memory-graph";
 
@@ -16,7 +16,7 @@ export const HIGHLIGHT_BUILTINS = new Set([
   'parseInt', 'parseFloat', 'isNaN', 'setTimeout', 'clearTimeout',
 ]);
 
-let DECLARED_NAMES_CACHE: any = { src: null, names: new Set() };
+let DECLARED_NAMES_CACHE: { src: string | null; names: Set<string> } = { src: null, names: new Set() };
 
 /* All names the current buffer actually declares: const/let/var (incl. destructuring),
    function & arrow params, loop/catch bindings, function/class/interface/type names. */
@@ -53,7 +53,7 @@ export function collectHighlightBuiltins(declared: Set<string>): Set<string> {
   return out;
 }
 
-export function hl(t: any, declared?: any) {
+export function hl(t: string, declared?: Set<string> | null): string {
   if (LANG === 'python') return PY_ENGINE.hl(t, declared);
   const re = /(\/\/.*$)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)|\b(function|const|let|var|new|class|extends|typeof|instanceof|import|export|from|async|await|interface|type|as|satisfies)\b|\b(for|if|else|return|while|do|switch|case|break|continue|try|catch|finally|throw|yield)\b|\b(number|string|boolean|void|any|unknown|never|Math|Map|Set|Array|Object|JSON|Number|String|Boolean|Promise|Record|Error)\b|\b(true|false|null|undefined|\d+(?:\.\d+)?)\b|(\b[A-Za-z_$][\w$]*)(?=\s*\()|(?<=\.)([A-Za-z_$][\w$]*)\b|([{,][ \t]*)([A-Za-z_$][\w$]*)(?=[ \t]*:)|(^[ \t]*)([A-Za-z_$][\w$]*)(?=[ \t]*:)|\b([A-Za-z_$][\w$]*)\b|(===|!==|>=|<=|=>|&&|\|\||\+\+|--)/g;
   let out = '', last = 0, m;
@@ -106,7 +106,7 @@ export function findExprSpan(line: string, target: string, fromIndex = 0) {
   return -1;
 }
 
-export function hlActiveLine(rawLine: any, anim?: any, declared?: any) {
+export function hlActiveLine(rawLine: string, anim?: StepAnim | null, declared?: Set<string> | null): string {
   if (LANG === 'python') return PY_ENGINE.hlActiveLine(rawLine, anim, declared);
   if (!anim) return hl(rawLine, declared);
   const h = (s: string) => hl(s, declared);
@@ -114,7 +114,7 @@ export function hlActiveLine(rawLine: any, anim?: any, declared?: any) {
   const declPrefix = rawLine.match(/^\s*(?:(?:export\s+)?(?:const|let|var)\b\s*)/);
   const lhsSearchStart = declPrefix ? declPrefix[0].length : 0;
 
-  if (anim.type === 'assign' && anim.from && anim.to) {
+  if (anim.type === 'assign' && typeof anim.from === 'string' && anim.from && typeof anim.to === 'string' && anim.to) {
     const toIdx = findExprSpan(rawLine, anim.to, lhsSearchStart);
     if (toIdx >= 0) {
       const afterTo = toIdx + anim.to.length;
@@ -143,8 +143,9 @@ export function hlActiveLine(rawLine: any, anim?: any, declared?: any) {
     if (lIdx >= 0) {
       if (anim.rhs) {
         const afterLhs = lIdx + anim.lhs.length;
-        const opIdx = anim.op ? rawLine.indexOf(anim.op, afterLhs) : -1;
-        const rhsStart = opIdx >= 0 ? opIdx + anim.op.length : afterLhs;
+        const opStr = anim.op || '';
+        const opIdx = opStr ? rawLine.indexOf(opStr, afterLhs) : -1;
+        const rhsStart = opIdx >= 0 ? opIdx + opStr.length : afterLhs;
         const rIdx = findExprSpan(rawLine, anim.rhs, rhsStart);
         if (rIdx >= afterLhs) {
           const p1 = rawLine.slice(0, lIdx);
@@ -178,14 +179,15 @@ export function hlActiveLine(rawLine: any, anim?: any, declared?: any) {
   }
 
   if (anim.type === 'call' && anim.fn) {
-    const toIdx = anim.to ? findExprSpan(rawLine, anim.to, lhsSearchStart) : -1;
-    const fnSearchStart = toIdx >= 0 ? toIdx + anim.to.length : lhsSearchStart;
+    const toStr = typeof anim.to === 'string' && anim.to ? anim.to : '';
+    const toIdx = toStr ? findExprSpan(rawLine, toStr, lhsSearchStart) : -1;
+    const fnSearchStart = toIdx >= 0 ? toIdx + toStr.length : lhsSearchStart;
     const fnIdx = findExprSpan(rawLine, anim.fn, fnSearchStart);
     if (fnIdx >= 0) {
       if (toIdx >= 0 && fnIdx > toIdx) {
         const p1 = rawLine.slice(0, toIdx);
-        const p2 = rawLine.slice(toIdx, toIdx + anim.to.length);
-        const p3 = rawLine.slice(toIdx + anim.to.length, fnIdx);
+        const p2 = rawLine.slice(toIdx, toIdx + toStr.length);
+        const p3 = rawLine.slice(toIdx + toStr.length, fnIdx);
         const p4 = rawLine.slice(fnIdx, fnIdx + anim.fn.length);
         const p5 = rawLine.slice(fnIdx + anim.fn.length);
         return h(p1) +
@@ -262,7 +264,7 @@ export function updateEditorChrome() {
   syncScroll();
 }
 
-let LIVE_TYPE_CACHE: any = { src: null, diags: [] };
+let LIVE_TYPE_CACHE: { src: string | null; diags: Diag[] } = { src: null, diags: [] };
 export function liveTypeDiags(src: string | null | undefined): Diag[] {
   if (LANG === 'python') return PY_DIAGS;
   const text = String(src == null ? '' : src);
@@ -274,7 +276,7 @@ export function liveTypeDiags(src: string | null | undefined): Diag[] {
 }
 
 /* Scroll (and optionally place the caret) on the given line — used by error badges & log entries. */
-export function revealErrorLine(line: any, focus?: any) {
+export function revealErrorLine(line: number | string, focus?: boolean) {
   const ln = Math.round(Number(line) || 0);
   if (ln < 1) return;
   if (window.PlaygroundCM) { window.PlaygroundCM.revealLine(ln, focus); return; }

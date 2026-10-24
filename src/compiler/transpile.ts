@@ -58,13 +58,19 @@ function emitTemplate(src: string, i: number): { next: number; text: string } {
 function looksLikeTypeText(text: string): boolean {
   const t = text.trim();
   if (!t) return false;
+  if (/^\{/.test(t)) {
+    // Reject statement blocks `{ const ...; return ...; }` so `default: { ... }` is never mistaken for an object type
+    if (/\b(return|const|let|var|if|for|while|switch|break|continue|throw|try|catch|finally)\b/.test(t)) return false;
+    if (/(?<![=!<>:])=(?![=>])/.test(t)) return false;
+    return true;
+  }
   if (/^(number|string|boolean|void|any|unknown|never|object|symbol|bigint|undefined|null|true|false)\b/.test(t)) return true;
   if (/^(typeof|keyof|infer|asserts|readonly|unique)\b/.test(t)) return true;
+  if (/^(?:asserts\s+)?(?:[A-Za-z_$][\w$]*|this)\s+is\b/.test(t)) return true;
   if (/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/.test(t)) return true;
   if (/[<>\[\]|&]/.test(t)) return true;
   if (/\bextends\b/.test(t)) return true;
   if (/^[([]/.test(t)) return true;
-  if (/^\{/.test(t)) return true;   // object or mapped type literal
   if (/^["'`]/.test(t)) return true; // string or template literal type
   if (/^-?\d/.test(t)) return true;  // numeric literal type
   return false;
@@ -122,6 +128,26 @@ function tryParseTypeAtom(src: string, i: number): number {
 
   if (/^readonly\b/.test(rest) && !isIdentPart(src[j + 8] || '')) {
     return tryParseTypeAtom(src, j + 8);
+  }
+
+  if (/^unique\s+symbol\b/.test(rest)) {
+    const m = /^unique\s+symbol\b/.exec(rest);
+    return m ? tryParseTypeSuffix(src, j + m[0].length) : -1;
+  }
+
+  // `asserts v` or `asserts v is Type`
+  if (/^asserts\b/.test(rest) && !isIdentPart(src[j + 7] || '')) {
+    let k = j + 7;
+    while (k < n && isWS(src[k])) k++;
+    const targetId = readIdent(src, k);
+    if (!targetId) return -1;
+    let m = targetId.end;
+    while (m < n && (src[m] === ' ' || src[m] === '\t')) m++;
+    if (src.startsWith('is', m) && !isIdentPart(src[m + 2] || '')) {
+      const predEnd = tryParseType(src, m + 2);
+      if (predEnd > m + 2) return predEnd;
+    }
+    return targetId.end;
   }
 
   if (/^(typeof|keyof)\b/.test(rest)) {
@@ -205,6 +231,17 @@ function tryParseTypeAtom(src: string, i: number): number {
   const id = readIdent(src, j);
   if (!id) return -1;
   j = id.end;
+
+  // Type predicate: `v is Type` or `this is Type`
+  {
+    let m = j;
+    while (m < n && (src[m] === ' ' || src[m] === '\t')) m++;
+    if (src.startsWith('is', m) && !isIdentPart(src[m + 2] || '')) {
+      const predEnd = tryParseType(src, m + 2);
+      if (predEnd > m + 2) return predEnd;
+    }
+  }
+
   while (j < n && src[j] === '.') {
     const nextId = readIdent(src, j + 1);
     if (!nextId) break;
@@ -303,12 +340,64 @@ function tryStripGenericArrow(src: string, i: number): number {
   return -1;
 }
 
+/* `<number>anyV` or `<string>x` — drop prefix angle-bracket type assertion when in unary expression position. */
+function tryStripAngleTypeAssertion(src: string, i: number, prevSigIdx: number): number {
+  const n = src.length;
+  // Must be in unary prefix position
+  if (prevSigIdx >= 0) {
+    const prev = src[prevSigIdx] || '';
+    if (isIdentPart(prev)) {
+      let w = prevSigIdx;
+      while (w >= 0 && isIdentPart(src[w])) w--;
+      const word = src.slice(w + 1, prevSigIdx + 1);
+      if (!/^(return|yield|await|throw|case|typeof|void|delete|in|of|instanceof|new)$/.test(word)) {
+        return -1;
+      }
+    } else if (!/[=([,:;?!+\-*/%&|^~{<>]/.test(prev)) {
+      return -1;
+    }
+  }
+  let j = i + 1;
+  let depth = 1;
+  while (j < n && depth > 0) {
+    const ch = src[j];
+    if (ch === '"' || ch === "'" || ch === '`') { j = skipString(src, j); continue; }
+    if (ch === '\n' || ch === '\r' || ch === ';') return -1;
+    if (ch === '<') depth++;
+    else if (ch === '>' && src[j - 1] !== '=') depth--;
+    j++;
+  }
+  if (depth !== 0) return -1;
+  const inner = src.slice(i + 1, j - 1).trim();
+  if (!inner || !looksLikeTypeText(inner)) return -1;
+  const parsedEnd = tryParseType(inner, 0);
+  if (parsedEnd < inner.length) {
+    let rem = parsedEnd;
+    while (rem < inner.length && isWS(inner[rem])) rem++;
+    if (rem < inner.length) return -1;
+  }
+  let k = j;
+  while (k < n && (src[k] === ' ' || src[k] === '\t')) k++;
+  const nextCh = src[k] || '';
+  // Next token must be the start of a unary/primary expression
+  if (
+    isIdentStart(nextCh) ||
+    (nextCh >= '0' && nextCh <= '9') ||
+    nextCh === '(' || nextCh === '[' || nextCh === '{' ||
+    nextCh === '"' || nextCh === "'" || nextCh === '`' ||
+    nextCh === '!' || nextCh === '+' || nextCh === '-' || nextCh === '~'
+  ) {
+    return j;
+  }
+  return -1;
+}
+
 /* `enum E { A, B = 5 }` → `var E; (function (E) { E[E["A"] = 0] = "A"; ... })(E || (E = {}));`
    Emitted as a single line so the debugger's 1:1 line mapping survives. */
 export function buildEnumIIFE(name: string, body: string, line: number): { code?: string; error: { line: number; message: string } | null } {
   const parts = splitTopLevel(stripCommentsOnly(body));
   const stmts: string[] = [];
-  const known: Record<string, any> = Object.create(null);
+  const known: Record<string, string | number> = Object.create(null);
   let next = 0;
   for (const rawPart of parts) {
     const part = rawPart.trim();
@@ -326,7 +415,7 @@ export function buildEnumIIFE(name: string, body: string, line: number): { code?
       continue;
     }
     if (/^["']/.test(init)) {
-      let val: any = undefined;
+      let val: unknown = undefined;
       try { val = new Function('return (' + init + ');')(); } catch (_) { val = undefined; }
       if (typeof val !== 'string') {
         return { error: { line, message: 'enum 成员 "' + key + '" 的值无法静态求值' } };
@@ -335,7 +424,7 @@ export function buildEnumIIFE(name: string, body: string, line: number): { code?
       known[key] = val;
       continue;
     }
-    let value: any;
+    let value: unknown;
     try {
       const argNames = Object.keys(known);
       value = new Function(...argNames, 'return (' + init + ');')(...argNames.map(k => known[k]));
@@ -381,7 +470,8 @@ export function transpileEnums(src: string): { code: string; error: { line: numb
       continue;
     }
     if (isIdentStart(c)) {
-      const id = readIdent(src, i)!;
+      const id = readIdent(src, i);
+      if (!id) { i++; continue; }
       const isConstEnum = id.name === 'const' && /^\s*enum\b/.test(src.slice(i + 5));
       if (id.name === 'enum' || isConstEnum) {
         const start = i;
@@ -542,11 +632,16 @@ function extractConstructorParamProps(paramSlice: string): string[] {
   const props: string[] = [];
   for (const rawP of parts) {
     const p = rawP.trim();
-    const m = p.match(/^(?:(?:public|private|protected|readonly)\s+)+([A-Za-z_$][\w$]*)/);
+    const m = p.match(/^(?:(?:public|private|protected|readonly|override)\s+)+([A-Za-z_$][\w$]*)/);
     if (m && m[1]) props.push(m[1]);
   }
   return props;
 }
+
+const NON_TYPED_KEYWORDS = new Set([
+  'default', 'case', 'return', 'throw', 'else', 'do', 'try', 'finally',
+  'yield', 'await', 'typeof', 'void', 'delete', 'new', 'in', 'of', 'instanceof',
+]);
 
 let _STRIP_TYPES_CACHE: { src: string | null; out: string } = { src: null, out: '' };
 
@@ -660,7 +755,17 @@ export function stripTypes(rawSrc: string): string {
 
     if (c === '<') {
       const genericEnd = tryStripGenericArrow(src, i);
-      if (genericEnd > i) { i = genericEnd; continue; }
+      if (genericEnd > i) {
+        out += newlinesOf(src.slice(i, genericEnd));
+        i = genericEnd;
+        continue;
+      }
+      const assertEnd = tryStripAngleTypeAssertion(src, i, lookBackSignificant(i));
+      if (assertEnd > i) {
+        out += newlinesOf(src.slice(i, assertEnd));
+        i = assertEnd;
+        continue;
+      }
     }
 
     if (c === '(' || c === '[') {
@@ -689,7 +794,8 @@ export function stripTypes(rawSrc: string): string {
     }
 
     if (isIdentStart(c)) {
-      const id = readIdent(src, i)!;
+      const id = readIdent(src, i);
+      if (!id) { out += c; i++; continue; }
       const word = id.name;
       const wordStart = i;
       i = id.end;
@@ -730,6 +836,13 @@ export function stripTypes(rawSrc: string): string {
           i = j + 7;
           continue;
         }
+        if (src.startsWith('type', j) && !isIdentPart(src[j + 4] || '')) {
+          let kt = j + 4;
+          while (kt < n && isWS(src[kt])) kt++;
+          if (src[kt] === '{' || src[kt] === '*') {
+            j = kt;
+          }
+        }
         if (src[j] === '*') {
           while (j < n && src[j] !== ';' && src[j] !== '\n') j++;
           if (src[j] === ';') j++;
@@ -745,7 +858,10 @@ export function stripTypes(rawSrc: string): string {
             else if (src[j] === '"' || src[j] === "'" || src[j] === '`') { j = skipString(src, j); continue; }
             j++;
           }
-          while (j < n && isWS(src[j])) j++;
+          while (j < n && (src[j] === ' ' || src[j] === '\t')) j++;
+          if (src.startsWith('from', j) && !isIdentPart(src[j + 4] || '')) {
+            while (j < n && src[j] !== ';' && src[j] !== '\n') j++;
+          }
           if (src[j] === ';') j++;
           out += newlinesOf(src.slice(wordStart, j));
           i = j;
@@ -934,7 +1050,7 @@ export function stripTypes(rawSrc: string): string {
         continue;
       }
 
-      if (/^(public|private|protected|readonly|namespace|implements)$/.test(word)) {
+      if (/^(public|private|protected|readonly|override|namespace|implements)$/.test(word)) {
         continue;
       }
 
@@ -1006,7 +1122,12 @@ export function stripTypes(rawSrc: string): string {
 
       if (word === 'as' || word === 'satisfies') {
         const end = tryParseType(src, i);
-        i = end > 0 ? end : id.end;
+        if (end > 0) {
+          out += newlinesOf(src.slice(i, end));
+          i = end;
+        } else {
+          i = id.end;
+        }
         continue;
       }
 
@@ -1056,7 +1177,7 @@ export function stripTypes(rawSrc: string): string {
         const typeStart = j + 2;
         const typeEnd = tryParseType(src, typeStart);
         if (typeEnd > typeStart) {
-          out += src.slice(i, j);
+          out += src.slice(i, j) + newlinesOf(src.slice(j, typeEnd));
           i = typeEnd;
           continue;
         }
@@ -1068,7 +1189,7 @@ export function stripTypes(rawSrc: string): string {
         continue;
       }
 
-      if (src[j] === ':') {
+      if (src[j] === ':' && !NON_TYPED_KEYWORDS.has(word)) {
         if (isTernaryColonNow()) {
           ternaryStack.pop();
           out += src.slice(i, j + 1);
@@ -1082,7 +1203,7 @@ export function stripTypes(rawSrc: string): string {
           const typeText = src.slice(typeStart, typeEnd);
           const inObject = braceStack.length > 0 && braceStack[braceStack.length - 1] === 'object';
           if (!inObject && looksLikeTypeText(typeText)) {
-            out += src.slice(i, j);
+            out += src.slice(i, j) + newlinesOf(src.slice(j, typeEnd));
             i = typeEnd;
             continue;
           }
@@ -1114,11 +1235,27 @@ export function stripTypes(rawSrc: string): string {
       }
       const k = lookBackSignificant(i);
       if (k >= 0 && (src[k] === ')' || src[k] === ']' || src[k] === '}')) {
+        const inObject = braceStack.length > 0 && braceStack[braceStack.length - 1] === 'object';
         const typeStart = i + 1;
         const typeEnd = tryParseType(src, typeStart);
         if (typeEnd > typeStart && looksLikeTypeText(src.slice(typeStart, typeEnd))) {
-          i = typeEnd;
-          continue;
+          if (src[k] === ')') {
+            out += newlinesOf(src.slice(i, typeEnd));
+            i = typeEnd;
+            continue;
+          }
+          // For `]:` or `}:`, only strip if not in an object literal (`{ [key]: val }`) and followed by `=`, `,`, `)`, or `of`/`in`
+          if (!inObject) {
+            let afterIdx = typeEnd;
+            while (afterIdx < n && (src[afterIdx] === ' ' || src[afterIdx] === '\t')) afterIdx++;
+            const afterCh = src[afterIdx] || '';
+            const afterWord = readIdent(src, afterIdx)?.name || '';
+            if (afterCh === '=' || afterCh === ',' || afterCh === ')' || afterWord === 'of' || afterWord === 'in') {
+              out += newlinesOf(src.slice(i, typeEnd));
+              i = typeEnd;
+              continue;
+            }
+          }
         }
       }
       out += c;
@@ -1131,14 +1268,27 @@ export function stripTypes(rawSrc: string): string {
       let kind = 'block';
       if (k >= 0) {
         const prev = src[k];
-        if (prev === '=' || prev === '(' || prev === ',' || prev === '[' || prev === '!' || prev === '&' || prev === '|' || prev === '?' || prev === ':') kind = 'object';
-        else if (prev === '>' && k >= 1 && src[k - 1] === '=') kind = 'block';
-        else if (prev === ')') kind = 'block';
-        else if (isIdentPart(prev)) {
+        if (prev === ':') {
+          // Check if this `{` opens a `default: {` or `case ...: {` block inside a switch statement
+          const lineStart = src.lastIndexOf('\n', k) + 1;
+          const linePrefix = src.slice(lineStart, k + 1).trim();
+          const inObject = braceStack.length > 0 && braceStack[braceStack.length - 1] === 'object';
+          if (!inObject && /^(?:default|case\b[\s\S]*):$/.test(linePrefix)) {
+            kind = 'block';
+          } else {
+            kind = 'object';
+          }
+        } else if (prev === '=' || prev === '(' || prev === ',' || prev === '[' || prev === '!' || prev === '&' || prev === '|' || prev === '?') {
+          kind = 'object';
+        } else if (prev === '>' && k >= 1 && src[k - 1] === '=') {
+          kind = 'block';
+        } else if (prev === ')') {
+          kind = 'block';
+        } else if (isIdentPart(prev)) {
           let w = k;
           while (w >= 0 && isIdentPart(src[w])) w--;
           const prevWord = src.slice(w + 1, k + 1);
-          if (prevWord === 'return' || prevWord === 'case' || prevWord === 'default' || prevWord === 'yield' || prevWord === 'typeof' || prevWord === 'const' || prevWord === 'let' || prevWord === 'var') {
+          if (prevWord === 'return' || prevWord === 'case' || prevWord === 'yield' || prevWord === 'typeof' || prevWord === 'const' || prevWord === 'let' || prevWord === 'var') {
             kind = 'object';
           } else {
             kind = 'block';
@@ -1194,8 +1344,31 @@ export function stripTypes(rawSrc: string): string {
 
 export const transpileTS = stripTypes;
 
-export function detectUnsupportedSyntax(_src: string): Array<{ line: number; feature: string; hint: string }> {
-  return [];
+export function detectUnsupportedSyntax(src: string): Array<{ line: number; feature: string; hint: string }> {
+  if (typeof src !== 'string' || !src.trim()) return [];
+  const results: Array<{ line: number; feature: string; hint: string }> = [];
+  const cleaned = stripCommentsOnly(src);
+  const lines = cleaned.split('\n');
+  for (let idx = 0; idx < lines.length; idx++) {
+    const line = (lines[idx] ?? '').trim();
+    if (!line) continue;
+    const lineNo = idx + 1;
+    if (/^with\s*\(/.test(line)) {
+      results.push({
+        line: lineNo,
+        feature: 'with 语句',
+        hint: '严格模式下不支持 `with (...)` 语句，请直接访问对象属性或使用解构赋值。',
+      });
+    }
+    if (/^import\s+[A-Za-z_$][\w$]*\s*=\s*require\s*\(/.test(line)) {
+      results.push({
+        line: lineNo,
+        feature: 'import = require()',
+        hint: '浏览器沙箱不支持 CommonJS `import x = require(...)`，请直接定义所需模块或使用标准 ES 语法。',
+      });
+    }
+  }
+  return results;
 }
 
 export const findSyntaxErrors = detectUnsupportedSyntax;

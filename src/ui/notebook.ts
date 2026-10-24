@@ -3,7 +3,7 @@
    Supports Multi-Tab .ipynb, Code & Markdown Cells, Cross-Cell Context,
    Inline Outputs, and Live Right-Panel LOCALS/WATCH + Single-Cell Step Debug
    ================================================================ */
-import type { NotebookCell, NotebookDocument } from "../types";
+import type { Diag, NotebookCell, NotebookDocument, StepAnim } from "../types";
 import { stripTypes, transpileEnums } from "../compiler/transpile";
 import { collectNames, instrument, resolveEntry, blankJsLine, snapFnExpr } from "../compiler/instrumenter";
 import { typecheckTS, extractTsInterfaceMetadata } from "../compiler/type-checker";
@@ -365,10 +365,10 @@ export function typecheckNotebookCellTS(
   const { preambleLines, combinedTs } = buildTsTypecheckContext(doc, cell);
   const allDiags = typecheckTS(combinedTs, STRICT_TS) || [];
   return allDiags
-    .filter((d: any) => d && typeof d.line === "number" && d.line > preambleLines)
-    .map((d: any) => ({
+    .filter((d: Diag) => Boolean(d && typeof d.line === "number" && d.line > preambleLines))
+    .map((d: Diag) => ({
       line: d.line - preambleLines,
-      code: d.code || "TS",
+      code: String(d.code || "TS"),
       message: d.message || "类型错误",
     }));
 }
@@ -496,7 +496,7 @@ export async function runNotebookCell(cellId?: string, advanceToNext = false): P
 
       const vRaw = PY_ENGINE.hydrateVars(payload.finalVars || {});
       const v = PY_ENGINE.cloneVars(vRaw);
-      const ds: Record<string, any> = {};
+      const ds: Record<string, StepAnim> = {};
       Object.keys(vRaw).forEach((name) => {
         const d = classifyValue(name, vRaw[name]);
         if (d) ds[name] = d;
@@ -536,9 +536,9 @@ export async function runNotebookCell(cellId?: string, advanceToNext = false): P
       }
       renderNotebookUI();
       return !payload.error;
-    } catch (err: any) {
+    } catch (err: unknown) {
       cell.status = "error";
-      cell.output = { logs: [], returnValue: null, error: (err && err.message) || String(err) };
+      cell.output = { logs: [], returnValue: null, error: (err instanceof Error && err.message) || String(err) };
       renderNotebookUI();
       return false;
     }
@@ -598,7 +598,7 @@ export async function runNotebookCell(cellId?: string, advanceToNext = false): P
   const logs: string[] = [];
   let recordLogs = false;
   const customConsole = {
-    log: (...args: any[]) => {
+    log: (...args: unknown[]) => {
       if (!recordLogs) return;
       logs.push(
         args
@@ -637,9 +637,9 @@ export async function runNotebookCell(cellId?: string, advanceToNext = false): P
     const res = fn(customConsole);
     const elapsedMs = Date.now() - t0;
 
-    const vRaw = res.vars || {};
-    const v: Record<string, any> = {};
-    const ds: Record<string, any> = {};
+    const vRaw = (res.vars || {}) as StepAnim;
+    const v: StepAnim = {};
+    const ds: Record<string, StepAnim> = {};
     Object.keys(vRaw).forEach((k) => {
       const val = vRaw[k];
       v[k] = val !== null && typeof val === "object" ? cloneDeepBounded(val, 2) : val;
@@ -676,8 +676,8 @@ export async function runNotebookCell(cellId?: string, advanceToNext = false): P
     }
     renderNotebookUI();
     return true;
-  } catch (err: any) {
-    const msg = err && err.message ? err.message : String(err);
+  } catch (err: unknown) {
+    const msg = err instanceof Error && err.message ? err.message : String(err);
     cell.status = "error";
     cell.output = {
       logs,
@@ -757,7 +757,7 @@ export async function debugNotebookCell(cellId?: string): Promise<boolean> {
 
       const vRaw = PY_ENGINE.hydrateVars(payload.finalVars || {});
       const v = PY_ENGINE.cloneVars(vRaw);
-      const ds: Record<string, any> = {};
+      const ds: Record<string, StepAnim> = {};
       Object.keys(vRaw).forEach((name) => {
         const d = classifyValue(name, vRaw[name]);
         if (d) ds[name] = d;
@@ -788,7 +788,7 @@ export async function debugNotebookCell(cellId?: string): Promise<boolean> {
       renderNotebookUI();
       say(`✓ [Cell ${cell.executionCount}] 已进入单步调试模式（共 ${steps.length} 步，可使用底部控制栏逐步观察）`, "ok");
       return true;
-    } catch (err: any) {
+    } catch (_err: unknown) {
       cell.status = "error";
       doc.debuggingCellId = null;
       renderNotebookUI();
@@ -865,12 +865,12 @@ export async function debugNotebookCell(cellId?: string): Promise<boolean> {
       ");}catch(_){}\n" +
       "return __entryVal;";
     compiledFn = new Function("__t", "console", body);
-  } catch (e: any) {
+  } catch (e: unknown) {
     cell.status = "error";
     cell.output = {
       logs: [],
       returnValue: null,
-      error: "编译失败: " + (e && e.message ? e.message : String(e)),
+      error: "编译失败: " + (e instanceof Error && e.message ? e.message : String(e)),
     };
     renderNotebookUI();
     return false;
@@ -1172,19 +1172,21 @@ export function importNotebookFromJson(jsonText: string, fileName: string): bool
     if (!data || !Array.isArray(data.cells)) return false;
     const lang = LANG === "python" ? "python" : "ts";
     const store = ensureLangNotebooks(lang);
-    const cells: NotebookCell[] = data.cells.map((rawCell: any) => {
-      const type = rawCell.cell_type === "markdown" ? "markdown" : "code";
-      const src = Array.isArray(rawCell.source) ? rawCell.source.join("") : String(rawCell.source || "");
-      return {
-        id: nextCellId(),
-        type,
-        source: src.replace(/\r\n?/g, "\n"),
-        executionCount: typeof rawCell.execution_count === "number" ? rawCell.execution_count : null,
-        status: "idle",
-        output: null,
-        markdownRendered: type === "markdown",
-      };
-    });
+    const cells: NotebookCell[] = data.cells.map(
+      (rawCell: { cell_type?: string; source?: string[] | string; execution_count?: number | null }) => {
+        const type = rawCell.cell_type === "markdown" ? "markdown" : "code";
+        const src = Array.isArray(rawCell.source) ? rawCell.source.join("") : String(rawCell.source || "");
+        return {
+          id: nextCellId(),
+          type,
+          source: src.replace(/\r\n?/g, "\n"),
+          executionCount: typeof rawCell.execution_count === "number" ? rawCell.execution_count : null,
+          status: "idle",
+          output: null,
+          markdownRendered: type === "markdown",
+        };
+      }
+    );
     if (!cells.length) {
       cells.push({
         id: nextCellId(),
@@ -1244,7 +1246,7 @@ export function setViewMode(mode: "script" | "notebook") {
   }
   const modeSwitch = $("modeSwitch");
   if (modeSwitch && modeSwitch.querySelectorAll) {
-    modeSwitch.querySelectorAll(".mode-tab").forEach((btn: any) => {
+    modeSwitch.querySelectorAll(".mode-tab").forEach((btn: HTMLElement) => {
       if (btn.classList && typeof btn.classList.toggle === "function") {
         btn.classList.toggle("active", btn.dataset.mode === next);
       }
@@ -1366,7 +1368,7 @@ export function renderNotebookUI(focusActiveEditor = false) {
       `<button type="button" class="nb-tab-add" id="nbBtnNewTab" title="新建空白 Notebook 标签页">＋</button>`;
   }
 
-  const typeSel = $("nbCellType") as HTMLSelectElement | null;
+  const typeSel = $("nbCellType");
   if (typeSel && activeCell) {
     typeSel.value = activeCell.type;
   }
@@ -1476,7 +1478,7 @@ export function renderNotebookUI(focusActiveEditor = false) {
 
   // Auto-fit any rendered Markdown textareas so wrapped lines are never clipped or omitted
   if (cellsContainer.querySelectorAll) {
-    cellsContainer.querySelectorAll(".nb-cell-textarea.md-textarea").forEach((el: any) => {
+    cellsContainer.querySelectorAll(".nb-cell-textarea.md-textarea").forEach((el: HTMLElement) => {
       if (el && el.scrollHeight && el.scrollHeight > el.clientHeight) {
         el.style.height = Math.max(92, el.scrollHeight + 10) + "px";
       }
@@ -1576,7 +1578,7 @@ const PY_SAMPLE_METADATA: Array<{ key: string; label: string; desc: string }> = 
 ];
 
 function getPySamplesDict(): Record<string, string> {
-  const eng = (globalThis as any).PY_ENGINE;
+  const eng = typeof PY_ENGINE !== "undefined" ? PY_ENGINE : null;
   return (eng && eng.samples) ? eng.samples : {};
 }
 
@@ -1637,7 +1639,7 @@ function ensureVfsInitialized() {
       if (raw) {
         const saved = JSON.parse(raw);
         if (Array.isArray(saved)) {
-          saved.forEach((entry: any) => {
+          saved.forEach((entry: Partial<VfsNode> | null) => {
             if (entry && typeof entry.path === "string" && typeof entry.name === "string") {
               VFS_NODES.set(entry.path, {
                 path: entry.path,
@@ -1959,8 +1961,8 @@ function openVfsFile(path: string) {
   // If user clicked a built-in sample under examples/ts/ or examples/python/, open it in Single-File mode
   const tsMatch = path.match(/^examples\/ts\/([A-Za-z0-9_]+)\.ts$/);
   if (tsMatch && tsMatch[1]) {
-    if (LANG === "python" && (globalThis as any).PY_ENGINE) {
-      (globalThis as any).PY_ENGINE.setLang("ts");
+    if (LANG === "python" && typeof PY_ENGINE !== "undefined" && PY_ENGINE.setLang) {
+      PY_ENGINE.setLang("ts");
     }
     setViewMode("script");
     loadSample(tsMatch[1]);
@@ -1969,8 +1971,8 @@ function openVfsFile(path: string) {
 
   const pyMatch = path.match(/^examples\/python\/([A-Za-z0-9_]+)\.py$/);
   if (pyMatch && pyMatch[1]) {
-    if (LANG !== "python" && (globalThis as any).PY_ENGINE) {
-      (globalThis as any).PY_ENGINE.setLang("python");
+    if (LANG !== "python" && typeof PY_ENGINE !== "undefined" && PY_ENGINE.setLang) {
+      PY_ENGINE.setLang("python");
     }
     setViewMode("script");
     loadSample(pyMatch[1]);
@@ -1979,10 +1981,10 @@ function openVfsFile(path: string) {
 
   // Otherwise open or activate in Single-File script tabs
   const isPyFile = node.name.endsWith(".py");
-  if (isPyFile && LANG !== "python" && (globalThis as any).PY_ENGINE) {
-    (globalThis as any).PY_ENGINE.setLang("python");
-  } else if (node.name.endsWith(".ts") && LANG === "python" && (globalThis as any).PY_ENGINE) {
-    (globalThis as any).PY_ENGINE.setLang("ts");
+  if (isPyFile && LANG !== "python" && typeof PY_ENGINE !== "undefined" && PY_ENGINE.setLang) {
+    PY_ENGINE.setLang("python");
+  } else if (node.name.endsWith(".ts") && LANG === "python" && typeof PY_ENGINE !== "undefined" && PY_ENGINE.setLang) {
+    PY_ENGINE.setLang("ts");
   }
 
   setViewMode("script");
@@ -2073,8 +2075,8 @@ function bindGlobalVfsApi() {
       return ok;
     },
   };
-  (globalThis as any).__VFS__ = api;
-  (globalThis as any).vfs = api;
+  globalThis.__VFS__ = api;
+  globalThis.vfs = api;
 }
 
 /* ── Wire Up Notebook DOM Events, Single-File Multi-Tabs, Import Menu & Right VFS Sidebar ── */
@@ -2084,10 +2086,11 @@ export function initNotebookUI() {
 
   const modeSwitch = $("modeSwitch");
   if (modeSwitch && modeSwitch.addEventListener) {
-    modeSwitch.addEventListener("click", (e: any) => {
-      const btn = e.target && e.target.closest ? e.target.closest(".mode-tab") : null;
+    modeSwitch.addEventListener("click", (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      const btn = target && target.closest ? (target.closest(".mode-tab") as HTMLElement | null) : null;
       if (!btn || !btn.dataset.mode) return;
-      setViewMode(btn.dataset.mode);
+      setViewMode(btn.dataset.mode === "notebook" ? "notebook" : "script");
     });
   }
 
@@ -2099,14 +2102,14 @@ export function initNotebookUI() {
   const fileInput = $("fileInput") as HTMLInputElement | null;
 
   if (btnImport && importMenuWrap) {
-    btnImport.onclick = (e: any) => {
+    btnImport.onclick = (e?: MouseEvent) => {
       if (e && typeof e.stopPropagation === "function") e.stopPropagation();
       renderImportSampleMenu();
       if (importMenuWrap.classList) {
         importMenuWrap.classList.toggle("open");
       }
     };
-    addEventListener("click", (e: any) => {
+    addEventListener("click", (e: MouseEvent) => {
       if (!importMenuWrap.classList || !importMenuWrap.classList.contains("open")) return;
       if (importMenuWrap.contains && importMenuWrap.contains(e.target)) return;
       importMenuWrap.classList.remove("open");
@@ -2114,7 +2117,7 @@ export function initNotebookUI() {
   }
 
   if (btnUploadLocalFile && fileInput) {
-    btnUploadLocalFile.onclick = (e: any) => {
+    btnUploadLocalFile.onclick = (e?: MouseEvent) => {
       if (e && typeof e.stopPropagation === "function") e.stopPropagation();
       if (importMenuWrap && importMenuWrap.classList) importMenuWrap.classList.remove("open");
       fileInput.click();
@@ -2122,8 +2125,9 @@ export function initNotebookUI() {
   }
 
   if (importSampleList && importSampleList.addEventListener) {
-    importSampleList.addEventListener("click", (e: any) => {
-      const btn = e.target && e.target.closest ? e.target.closest(".import-sample-item") : null;
+    importSampleList.addEventListener("click", (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      const btn = target && target.closest ? (target.closest(".import-sample-item") as HTMLElement | null) : null;
       if (!btn) return;
       if (importMenuWrap && importMenuWrap.classList) importMenuWrap.classList.remove("open");
       const nbFile = btn.getAttribute("data-import-sample-notebook");
@@ -2162,11 +2166,13 @@ export function initNotebookUI() {
   /* ── 2. Single-File Mode Multi-Tab Bar (#scriptTabsList) with Double-Click Rename ── */
   const scriptTabsEl = $("scriptTabsList");
   if (scriptTabsEl && scriptTabsEl.addEventListener) {
-    scriptTabsEl.addEventListener("click", (e: any) => {
+    scriptTabsEl.addEventListener("click", (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
       const lang = LANG === "python" ? "python" : "ts";
       const store = ensureScriptTabsForLang(lang);
 
-      const closeBtn = e.target.closest ? e.target.closest("[data-close-script-tab]") : null;
+      const closeBtn = target.closest ? (target.closest("[data-close-script-tab]") as HTMLElement | null) : null;
       if (closeBtn) {
         e.stopPropagation();
         const closeId = closeBtn.getAttribute("data-close-script-tab");
@@ -2191,7 +2197,7 @@ export function initNotebookUI() {
         return;
       }
 
-      const newBtn = e.target.closest ? e.target.closest("#scriptBtnNewTab") : null;
+      const newBtn = target.closest ? (target.closest("#scriptBtnNewTab") as HTMLElement | null) : null;
       if (newBtn) {
         // Save current buffer first
         syncActiveScriptTabSource(editor ? editor.value : "");
@@ -2226,7 +2232,7 @@ export function initNotebookUI() {
         return;
       }
 
-      const tabEl = e.target.closest ? e.target.closest("[data-script-tab-id]") : null;
+      const tabEl = target.closest ? (target.closest("[data-script-tab-id]") as HTMLElement | null) : null;
       if (tabEl) {
         const tabId = tabEl.getAttribute("data-script-tab-id");
         // IMPORTANT: Do NOT re-render DOM if clicking the already-active tab so dblclick works reliably!
@@ -2246,8 +2252,9 @@ export function initNotebookUI() {
       }
     });
 
-    scriptTabsEl.addEventListener("dblclick", (e: any) => {
-      const tabEl = e.target.closest ? e.target.closest("[data-script-tab-id]") : null;
+    scriptTabsEl.addEventListener("dblclick", (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      const tabEl = target && target.closest ? (target.closest("[data-script-tab-id]") as HTMLElement | null) : null;
       if (!tabEl) return;
       const tabId = tabEl.getAttribute("data-script-tab-id");
       const lang = LANG === "python" ? "python" : "ts";
@@ -2379,8 +2386,10 @@ export function initNotebookUI() {
 
   const vfsTreeList = $("vfsTreeList");
   if (vfsTreeList && vfsTreeList.addEventListener) {
-    vfsTreeList.addEventListener("click", (e: any) => {
-      const delBtn = e.target.closest ? e.target.closest("[data-vfs-del]") : null;
+    vfsTreeList.addEventListener("click", (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      const delBtn = target.closest ? (target.closest("[data-vfs-del]") as HTMLElement | null) : null;
       if (delBtn) {
         e.stopPropagation();
         const delPath = delBtn.getAttribute("data-vfs-del");
@@ -2393,7 +2402,7 @@ export function initNotebookUI() {
         return;
       }
 
-      const folderRow = e.target.closest ? e.target.closest("[data-vfs-folder]") : null;
+      const folderRow = target.closest ? (target.closest("[data-vfs-folder]") as HTMLElement | null) : null;
       if (folderRow) {
         const folderPath = folderRow.getAttribute("data-vfs-folder");
         if (folderPath) {
@@ -2404,7 +2413,7 @@ export function initNotebookUI() {
         return;
       }
 
-      const fileRow = e.target.closest ? e.target.closest("[data-vfs-file]") : null;
+      const fileRow = target.closest ? (target.closest("[data-vfs-file]") as HTMLElement | null) : null;
       if (fileRow) {
         const filePath = fileRow.getAttribute("data-vfs-file");
         if (filePath) {
@@ -2420,8 +2429,9 @@ export function initNotebookUI() {
       }
     });
 
-    vfsTreeList.addEventListener("dblclick", (e: any) => {
-      const row = e.target.closest ? e.target.closest("[data-vfs-file], [data-vfs-folder]") : null;
+    vfsTreeList.addEventListener("dblclick", (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      const row = target && target.closest ? (target.closest("[data-vfs-file], [data-vfs-folder]") as HTMLElement | null) : null;
       if (!row) return;
       const oldPath = row.getAttribute("data-vfs-file") || row.getAttribute("data-vfs-folder");
       if (!oldPath || oldPath.startsWith("examples/")) return;
@@ -2492,8 +2502,10 @@ export function initNotebookUI() {
 
   const tabsEl = $("nbTabsList");
   if (tabsEl && tabsEl.addEventListener) {
-    tabsEl.addEventListener("click", (e: any) => {
-      const closeBtn = e.target.closest ? e.target.closest("[data-close-doc]") : null;
+    tabsEl.addEventListener("click", (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      const closeBtn = target.closest ? (target.closest("[data-close-doc]") as HTMLElement | null) : null;
       const lang = LANG === "python" ? "python" : "ts";
       const store = ensureLangNotebooks(lang);
       if (closeBtn) {
@@ -2513,7 +2525,7 @@ export function initNotebookUI() {
         }
         return;
       }
-      const newBtn = e.target.closest ? e.target.closest("#nbBtnNewTab") : null;
+      const newBtn = target.closest ? (target.closest("#nbBtnNewTab") as HTMLElement | null) : null;
       if (newBtn) {
         const cId = nextCellId();
         const newDoc: NotebookDocument = {
@@ -2544,7 +2556,7 @@ export function initNotebookUI() {
         renderVfsTreeUI();
         return;
       }
-      const tab = e.target.closest ? e.target.closest(".nb-tab") : null;
+      const tab = target.closest ? (target.closest(".nb-tab") as HTMLElement | null) : null;
       if (tab && tab.dataset.docId) {
         // IMPORTANT: Only re-render if switching to a DIFFERENT tab so double-clicking a tab to rename is never interrupted!
         if (store.activeDocId !== tab.dataset.docId) {
@@ -2556,8 +2568,9 @@ export function initNotebookUI() {
       }
     });
 
-    tabsEl.addEventListener("dblclick", (e: any) => {
-      const tab = e.target.closest ? e.target.closest(".nb-tab") : null;
+    tabsEl.addEventListener("dblclick", (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      const tab = target && target.closest ? (target.closest(".nb-tab") as HTMLElement | null) : null;
       if (!tab || !tab.dataset.docId) return;
       const lang = LANG === "python" ? "python" : "ts";
       const store = ensureLangNotebooks(lang);
@@ -2621,7 +2634,7 @@ export function initNotebookUI() {
   bindBtn("nbBtnRestart", () => restartNotebookKernel(false));
   bindBtn("nbBtnRunAll", () => runAllNotebookCells());
 
-  const typeSel = $("nbCellType") as HTMLSelectElement | null;
+  const typeSel = $("nbCellType");
   if (typeSel) {
     typeSel.onchange = () => {
       const doc = getActiveNotebook();
@@ -2637,30 +2650,32 @@ export function initNotebookUI() {
 
   const cellsList = $("nbCellsList");
   if (cellsList && cellsList.addEventListener) {
-    cellsList.addEventListener("click", (e: any) => {
-      if (e.target.closest && e.target.closest("#nbBottomAddCode")) {
+    cellsList.addEventListener("click", (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      if (target.closest && target.closest("#nbBottomAddCode")) {
         const doc = getActiveNotebook();
         const last = doc.cells[doc.cells.length - 1];
         insertNotebookCell("below", last ? last.id : undefined, "code");
         return;
       }
-      if (e.target.closest && e.target.closest("#nbBottomAddMd")) {
+      if (target.closest && target.closest("#nbBottomAddMd")) {
         const doc = getActiveNotebook();
         const last = doc.cells[doc.cells.length - 1];
         insertNotebookCell("below", last ? last.id : undefined, "markdown");
         return;
       }
 
-      const gline = e.target.closest ? e.target.closest(".nb-gline") : null;
+      const gline = target.closest ? (target.closest(".nb-gline") as HTMLElement | null) : null;
       if (gline && gline.dataset.line) {
-        const cellEl = gline.closest(".nb-cell");
+        const cellEl = gline.closest(".nb-cell") as HTMLElement | null;
         if (cellEl && cellEl.dataset.cellId) {
           toggleNotebookCellCheckpoint(cellEl.dataset.cellId, parseInt(gline.dataset.line, 10));
           return;
         }
       }
 
-      const actEl = e.target.closest ? e.target.closest("[data-cell-act]") : null;
+      const actEl = target.closest ? (target.closest("[data-cell-act]") as HTMLElement | null) : null;
       if (actEl) {
         const act = actEl.getAttribute("data-cell-act");
         const cid = actEl.getAttribute("data-cell-id");
@@ -2710,14 +2725,14 @@ export function initNotebookUI() {
         }
       }
 
-      const cellBox = e.target.closest ? e.target.closest(".nb-cell") : null;
+      const cellBox = target.closest ? (target.closest(".nb-cell") as HTMLElement | null) : null;
       if (cellBox && cellBox.dataset.cellId) {
         const doc = getActiveNotebook();
         if (doc.activeCellId !== cellBox.dataset.cellId) {
           doc.activeCellId = cellBox.dataset.cellId;
           ACTIVE_NB_CELL_ID = doc.activeCellId;
           if (cellsList.querySelectorAll) {
-            cellsList.querySelectorAll(".nb-cell").forEach((el: any) => {
+            cellsList.querySelectorAll(".nb-cell").forEach((el: HTMLElement) => {
               el.classList.toggle("active", el.dataset.cellId === doc.activeCellId);
             });
           }
@@ -2727,8 +2742,9 @@ export function initNotebookUI() {
       }
     });
 
-    cellsList.addEventListener("dblclick", (e: any) => {
-      const mdPrev = e.target.closest ? e.target.closest('[data-cell-act="edit-md"]') : null;
+    cellsList.addEventListener("dblclick", (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      const mdPrev = target && target.closest ? (target.closest('[data-cell-act="edit-md"]') as HTMLElement | null) : null;
       if (mdPrev) {
         const cid = mdPrev.getAttribute("data-cell-id");
         const doc = getActiveNotebook();
@@ -2741,7 +2757,7 @@ export function initNotebookUI() {
       }
     });
 
-    cellsList.addEventListener("input", (e: any) => {
+    cellsList.addEventListener("input", (e: Event) => {
       const ta = e.target as HTMLTextAreaElement;
       if (!ta || !ta.classList || !ta.classList.contains("nb-cell-textarea")) return;
       const cid = ta.getAttribute("data-cell-id");
@@ -2775,7 +2791,7 @@ export function initNotebookUI() {
       }
     });
 
-    cellsList.addEventListener("keydown", (e: any) => {
+    cellsList.addEventListener("keydown", (e: KeyboardEvent) => {
       const ta = e.target as HTMLTextAreaElement;
       if (!ta || !ta.classList || !ta.classList.contains("nb-cell-textarea")) return;
       const cid = ta.getAttribute("data-cell-id") || undefined;
@@ -2808,7 +2824,7 @@ export function initNotebookUI() {
   }
 
   if (typeof window !== "undefined") {
-    (window as any).onNotebookLangChanged = (_nextLang: "ts" | "python") => {
+    window.onNotebookLangChanged = (_nextLang: "ts" | "python") => {
       renderImportSampleMenu();
       renderScriptTabsUI();
       renderVfsTreeUI();

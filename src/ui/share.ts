@@ -188,16 +188,18 @@ export function drawVizCardOnCanvas(
   }
 
   if (kind === 'tree' && d.nodes && d.nodes.length) {
-    const nodes = d.nodes;
+    const nodes = d.nodes as Array<{ val: unknown; left?: number | null; right?: number | null }>;
     const root = d.root ?? 0;
     const coords = new Map<number, { x: number; y: number; val: unknown; left?: number | null; right?: number | null }>();
     function layout(idx: number | null | undefined, depth: number, xMin: number, xMax: number) {
       if (idx == null || !nodes[idx] || coords.has(idx) || depth > 4) return;
+      const node = nodes[idx];
+      if (!node) return;
       const nx = (xMin + xMax) / 2;
       const ny = by + 16 + depth * 32;
-      coords.set(idx, { x: nx, y: ny, val: nodes[idx].val, left: nodes[idx].left, right: nodes[idx].right });
-      layout(nodes[idx].left, depth + 1, xMin, nx);
-      layout(nodes[idx].right, depth + 1, nx, xMax);
+      coords.set(idx, { x: nx, y: ny, val: node.val, left: node.left, right: node.right });
+      layout(node.left, depth + 1, xMin, nx);
+      layout(node.right, depth + 1, nx, xMax);
     }
     layout(root, 0, bx + 16, bx + bw - 16);
     ctx.strokeStyle = '#334155';
@@ -236,18 +238,20 @@ export function drawVizCardOnCanvas(
     const byId = new Map<number | string, { id: number | string; label: number | string; x: number; y: number }>();
     const scaleX = bw / 180;
     const scaleY = Math.min(1.15, bh / 136);
-    d.nodes.forEach((n: { id?: number | string; label?: number | string; x: number; y: number }, idx: number) => {
+    d.nodes.forEach((n: Frame, idx: number) => {
       byId.set(n.id ?? idx, {
         id: n.id ?? idx,
         label: n.label ?? (n.id ?? idx),
-        x: bx + n.x * scaleX,
-        y: by + n.y * scaleY,
+        x: bx + (n.x ?? 0) * scaleX,
+        y: by + (n.y ?? 0) * scaleY,
       });
     });
     ctx.strokeStyle = '#334155';
     ctx.lineWidth = 1.5;
-    (d.edges || []).forEach((e: [number | string, number | string]) => {
-      const a = byId.get(e[0]), b = byId.get(e[1]);
+    (d.edges || []).forEach((e: [number | string, number | string] | Frame) => {
+      const e0 = Array.isArray(e) ? e[0] : (e.from ?? 0);
+      const e1 = Array.isArray(e) ? e[1] : (e.to ?? 0);
+      const a = byId.get(e0), b = byId.get(e1);
       if (a && b) {
         ctx.beginPath();
         ctx.moveTo(a.x, a.y);
@@ -280,7 +284,7 @@ export function drawVizCardOnCanvas(
       for (let c = 0; c < cols; c++) {
         const gx = bx + c * (cellS + 3);
         const gy = by + r * (cellS + 3);
-        const isCellHot = d.mark && d.mark[0] === r && d.mark[1] === c;
+        const isCellHot = Array.isArray(d.mark) && d.mark[0] === r && d.mark[1] === c;
         roundRectPath(ctx, gx, gy, cellS, cellS, 4);
         ctx.fillStyle = isCellHot ? 'rgba(255,180,84,0.24)' : '#121823';
         ctx.fill();
@@ -288,7 +292,7 @@ export function drawVizCardOnCanvas(
         ctx.stroke();
         ctx.font = '600 11px "Cascadia Code", Consolas, monospace';
         ctx.fillStyle = isCellHot ? '#ffb454' : '#cbd5e1';
-        const vStr = String(d.cells[r][c] ?? '·');
+        const vStr = String(d.cells[r]?.[c] ?? '·');
         ctx.fillText(vStr, gx + (cellS - ctx.measureText(vStr).width) / 2, gy + cellS / 2 + 4);
       }
     }
@@ -296,7 +300,7 @@ export function drawVizCardOnCanvas(
   }
 
   if (kind === 'interface' || kind === 'object') {
-    const fields = d.fields || (d.entries ? d.entries.map((e: { k: string; v: unknown }) => ({ k: e.k, v: e.v, declaredType: typeof e.v })) : []);
+    const fields = d.fields || (d.entries ? d.entries.map((e: { k: unknown; v: unknown }) => ({ k: String(e.k), v: e.v, declaredType: typeof e.v })) : []);
     const rowH = 22;
     fields.slice(0, 5).forEach((f: { k: string; v?: unknown; optional?: boolean; declaredType?: string }, idx: number) => {
       const ry = by + idx * (rowH + 4);
@@ -332,7 +336,7 @@ export function drawVizCardOnCanvas(
   }
 
   if (kind === 'string' && d.items) {
-    const chars = d.items.slice(0, 24);
+    const chars = d.items.slice(0, 24) as string[];
     chars.forEach((ch: string, idx: number) => {
       const cx = bx + idx * 24;
       if (cx + 22 > bx + bw) return;
@@ -1075,7 +1079,9 @@ export async function exportVideo(speedMult = VIDEO_EXPORT_SPEED) {
   say(`🎬 开始极速导出视频：分辨率 ${VIDEO_WIDTH}×${VIDEO_HEIGHT} · ${VIDEO_FPS}fps · 倍速 ${mult}x`, 'ok');
 
   try {
-    const canvas: any = document.createElement('canvas');
+    const canvas = document.createElement('canvas') as HTMLCanvasElement & {
+      captureStream?: (fps?: number) => MediaStream;
+    };
     canvas.width = VIDEO_WIDTH;
     canvas.height = VIDEO_HEIGHT;
     const ctx = canvas.getContext('2d');
@@ -1131,8 +1137,10 @@ export async function exportVideo(speedMult = VIDEO_EXPORT_SPEED) {
     // Render initial frame BEFORE attaching captureStream so stream starts cleanly at t=0
     if (ctx) renderVideoFrameToCanvas(ctx, 0, 0, mult);
     const stream = canvas.captureStream(VIDEO_FPS);
-    const videoTrack: any = stream.getVideoTracks && stream.getVideoTracks()[0];
-    const recorderOpts: any = { videoBitsPerSecond: 8_000_000 };
+    const videoTrack = (stream.getVideoTracks && stream.getVideoTracks()[0]) as
+      | (MediaStreamTrack & { requestFrame?: () => void })
+      | undefined;
+    const recorderOpts: MediaRecorderOptions = { videoBitsPerSecond: 8_000_000 };
     if (mimeType) recorderOpts.mimeType = mimeType;
     const recorder = new MediaRecorder(stream, recorderOpts);
     const chunks: Blob[] = [];
@@ -1217,7 +1225,7 @@ export function loadSample(key: string) {
   if (LANG === 'python') { PY_ENGINE.loadSample(key); return; }
   const targetKey = SAMPLES[key] ? key : 'showcase';
   if ($('sampleSel')) $('sampleSel').value = targetKey;
-  editor.value = SAMPLES[targetKey];
+  editor.value = SAMPLES[targetKey] || '';
   setFileName(targetKey + '.ts');
   lastEditorCursorLine = -1;
   clearLog('已加载样例 · 自动开启 Debug 调试模式（可按 ← / → 逐步当场计算，或点击左下「运行到下一个检查点」）');
@@ -1273,7 +1281,7 @@ export function boot() {
   } catch {}
 
   if ($('sampleSel')) $('sampleSel').value = sampleKey;
-  editor.value = SAMPLES[sampleKey] || SAMPLES.showcase;
+  editor.value = SAMPLES[sampleKey] || SAMPLES.showcase || '';
   setFileName(sampleKey + '.ts');
   updateEditorChrome();
   const initialStep = customStep !== null ? customStep : (SAMPLE_DEFAULT_STEP[sampleKey] || 0);

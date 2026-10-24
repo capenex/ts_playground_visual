@@ -16,7 +16,7 @@ import { extractBindingNames } from "./instrumenter";
 import { isMapLike, isSetLike } from "../viz/memory-graph";
 import { say } from "../runtime/event-loop";
 import { updateEditorChrome, revealErrorLine } from "../viz/highlight";
-import { Diag, StepAnim } from "../types";
+import { Diag, Frame, InterfaceSchemaMeta, StepAnim } from "../types";
 
 export function inferRuntimeTsType(val: unknown): string {
   if (val === null) return 'null';
@@ -30,8 +30,8 @@ export function inferRuntimeTsType(val: unknown): string {
 }
 
 export function extractTsInterfaceMetadata(src: string | null | undefined) {
-  const interfaces = new Map<any, any>();
-  const varTypes = new Map<any, any>();
+  const interfaces = new Map<string, InterfaceSchemaMeta>();
+  const varTypes = new Map<string, string>();
   if (!src || typeof src !== 'string') {
     CURRENT_TS_META = { interfaces, varTypes };
     return CURRENT_TS_META;
@@ -220,25 +220,23 @@ export function extractTsInterfaceMetadata(src: string | null | undefined) {
   return CURRENT_TS_META;
 }
 
-export function matchInterfaceForObject(name: string | null | undefined, value: StepAnim | null | undefined) {
+export function matchInterfaceForObject(name: string | null | undefined, value: StepAnim | Frame | null | undefined): InterfaceSchemaMeta | null {
   const { interfaces, varTypes } = CURRENT_TS_META;
   const declaredVarT = name ? varTypes.get(name) : undefined;
   if (declaredVarT) {
     const cleanT = declaredVarT.replace(/\[\]$/, '').trim();
-    if (interfaces.has(cleanT)) return interfaces.get(cleanT);
+    if (interfaces.has(cleanT)) return interfaces.get(cleanT) || null;
   }
-  if (value && typeof value === 'object' && value.__py_cls__ && interfaces.has(value.__py_cls__)) {
-    return interfaces.get(value.__py_cls__);
+  if (value && typeof value === 'object') {
+    const pyCls = typeof value.__py_cls__ === 'string' ? value.__py_cls__ : '';
+    if (pyCls && interfaces.has(pyCls)) {
+      return interfaces.get(pyCls) || null;
+    }
   }
   if (!value || typeof value !== 'object') return null;
   const valKeys = Object.keys(value);
   if (!valKeys.length) return null;
-  let best: {
-    name: string;
-    line: number;
-    isClass: boolean;
-    fields: Array<{ k: string; declaredType: string; optional: boolean }>;
-  } | null = null;
+  let best: InterfaceSchemaMeta | null = null;
   let bestScore = 0;
   interfaces.forEach(iface => {
     if (!iface.fields.length) return;
@@ -276,7 +274,7 @@ export function normalizeTsType(rawType: string | null | undefined): string {
       while (i < src.length && /\s/.test(src[i] || '')) i++;
       const prev = t[t.length - 1] || '';
       const next = src[i] || '';
-      if (/[A-Za-z0-9_$?]/.test(prev) && /[A-Za-z0-9_$]/.test(next)) {
+      if (/[A-Za-z0-9_$?]/.test(prev) && /[A-Za-z0-9_$"`']/.test(next)) {
         t += ' ';
       }
       continue;
@@ -303,7 +301,21 @@ export function normalizeTsType(rawType: string | null | undefined): string {
   if (t.startsWith('readonly ')) {
     t = t.slice('readonly '.length).trim();
   }
+  if (t === 'unique symbol') {
+    return 'symbol';
+  }
   return t;
+}
+
+export function stripTupleElementLabel(elemStr: string): string {
+  const s = elemStr.trim();
+  const m = s.match(/^(\.\.\.)?(?:readonly\s+)?[A-Za-z_$][\w$]*(\?)?\s*:\s*([\s\S]+)$/);
+  if (m && m[3]) {
+    const prefix = m[1] || '';
+    const optSuffix = m[2] ? '?' : '';
+    return `${prefix}${m[3].trim()}${optSuffix}`;
+  }
+  return s.replace(/^readonly\s+/, '').trim();
 }
 
 export function splitTopLevelUnion(typeStr: string): string[] {
@@ -406,7 +418,7 @@ export function matchTemplateLiteralType(actualStr: string, patternTpl: string):
   try {
     const m = val.match(new RegExp(regexStr));
     if (!m) return null;
-    const bindings = new Map<any, any>();
+    const bindings = new Map<string, string>();
     for (let k = 0; k < inferNames.length; k++) {
       const captured = m[k + 1] ?? '';
       const info = inferNames[k];
@@ -427,28 +439,36 @@ export function matchTemplateLiteralType(actualStr: string, patternTpl: string):
   }
 }
 
-export function isTsAssignable(actual: string | null | undefined, expected: string | null | undefined): boolean {
+export function isTsAssignable(
+  actual: string | null | undefined,
+  expected: string | null | undefined,
+  knownNominalTypes?: Set<string>,
+): boolean {
   if (!actual || !expected) return true;
   const a = normalizeTsType(actual);
   const e = normalizeTsType(expected);
-  if (a === e || a === 'any' || a === 'unknown' || e === 'any' || e === 'unknown' || a === 'never') return true;
+  if (a === e || a === 'any' || e === 'any' || e === 'unknown' || a === 'never') return true;
+  if (a === 'undefined' && e === 'void') return true;
+  if (a === 'unknown') return false;
   if (e === 'never') return a === 'never';
   if (isLiteralOfPrimitive(a, e)) return true;
   if (e.startsWith('`') && e.endsWith('`') && a.startsWith('"') && a.endsWith('"')) {
     if (matchTemplateLiteralType(a, e) !== null) return true;
   }
-  if (/^[A-Z]\d*$/.test(a) || /^[A-Z]\d*$/.test(e)) return true;
+  const aIsUnboundTypeParam = /^[A-Z]\d*$/.test(a) && (!knownNominalTypes || !knownNominalTypes.has(a));
+  const eIsUnboundTypeParam = /^[A-Z]\d*$/.test(e) && (!knownNominalTypes || !knownNominalTypes.has(e));
+  if (aIsUnboundTypeParam || eIsUnboundTypeParam) return true;
   const eParts = splitTopLevelUnion(e);
   if (eParts.length > 1) {
     const aPartsForUnion = splitTopLevelUnion(a);
     if (aPartsForUnion.length > 1) {
-      return aPartsForUnion.every(ap => eParts.some(ep => isTsAssignable(ap, ep)));
+      return aPartsForUnion.every(ap => eParts.some(ep => isTsAssignable(ap, ep, knownNominalTypes)));
     }
-    return eParts.some(part => isTsAssignable(a, part));
+    return eParts.some(part => isTsAssignable(a, part, knownNominalTypes));
   }
   const aParts = splitTopLevelUnion(a);
   if (aParts.length > 1) {
-    return aParts.every(part => isTsAssignable(part, e));
+    return aParts.every(part => isTsAssignable(part, e, knownNominalTypes));
   }
   if (a === 'any[]' && e.endsWith('[]')) return true;
   if (a === 'any[][]' && e.endsWith('[][]')) return true;
@@ -457,24 +477,24 @@ export function isTsAssignable(actual: string | null | undefined, expected: stri
   if ((aParenArr || a.endsWith('[]')) && (eParenArr || e.endsWith('[]'))) {
     const elemA = aParenArr ? aParenArr[1] : a.slice(0, -2);
     const elemE = eParenArr ? eParenArr[1] : e.slice(0, -2);
-    return isTsAssignable(elemA, elemE);
+    return isTsAssignable(elemA, elemE, knownNominalTypes);
   }
   if (a.startsWith('[') && a.endsWith(']') && e.startsWith('[') && e.endsWith(']')) {
-    const aPartsTup = a.slice(1, -1).split(',').map(s => s.trim()).filter(Boolean);
-    const ePartsTup = e.slice(1, -1).split(',').map(s => s.trim()).filter(Boolean);
-    if (aPartsTup.length === ePartsTup.length && aPartsTup.every((ap, idx) => isTsAssignable(ap, ePartsTup[idx]))) {
+    const aPartsTup = a.slice(1, -1).split(',').map(s => stripTupleElementLabel(s)).filter(Boolean);
+    const ePartsTup = e.slice(1, -1).split(',').map(s => stripTupleElementLabel(s)).filter(Boolean);
+    if (aPartsTup.length === ePartsTup.length && aPartsTup.every((ap, idx) => isTsAssignable(ap, ePartsTup[idx], knownNominalTypes))) {
       return true;
     }
   }
   if (a.startsWith('[') && a.endsWith(']') && e.endsWith('[]')) {
     const elemE = eParenArr ? eParenArr[1] : e.slice(0, -2);
-    const aPartsTup = a.slice(1, -1).split(',').map(s => s.trim()).filter(Boolean);
-    if (aPartsTup.every(ap => isTsAssignable(ap, elemE))) return true;
+    const aPartsTup = a.slice(1, -1).split(',').map(s => stripTupleElementLabel(s)).filter(Boolean);
+    if (aPartsTup.every(ap => isTsAssignable(ap, elemE, knownNominalTypes))) return true;
   }
   if (a.endsWith('[]') && e.startsWith('[') && e.endsWith(']')) {
     const elemA = aParenArr ? aParenArr[1] : a.slice(0, -2);
-    const tupleParts = e.slice(1, -1).split(',').map(s => s.trim()).filter(Boolean);
-    if (tupleParts.length > 0 && tupleParts.every(tp => isTsAssignable(elemA, tp))) {
+    const tupleParts = e.slice(1, -1).split(',').map(s => stripTupleElementLabel(s)).filter(Boolean);
+    if (tupleParts.length > 0 && tupleParts.every(tp => isTsAssignable(elemA, tp, knownNominalTypes))) {
       return true;
     }
   }
@@ -484,19 +504,19 @@ export function isTsAssignable(actual: string | null | undefined, expected: stri
     const aArrowIdx = a.lastIndexOf('=>');
     if (aArrowIdx > 0 && a.startsWith('(')) {
       const actualRet = a.slice(aArrowIdx + 2).trim();
-      return isTsAssignable(actualRet, expectedRet);
+      return isTsAssignable(actualRet, expectedRet, knownNominalTypes);
     }
-    if (a === 'function' || isTsAssignable(a, expectedRet)) return true;
+    if (a === 'function' || isTsAssignable(a, expectedRet, knownNominalTypes)) return true;
   }
   const aGenM = a.match(/^([A-Za-z_$][\w$]*)<(.+)>$/);
   const eGenM = e.match(/^([A-Za-z_$][\w$]*)<(.+)>$/);
   if (aGenM && eGenM && aGenM[1] === eGenM[1]) {
-    return isTsAssignable(aGenM[2], eGenM[2]);
+    return isTsAssignable(aGenM[2], eGenM[2], knownNominalTypes);
   }
   return false;
 }
 
-let _TYPECHECK_CACHE: any = { src: null, strict: null, diags: [] };
+let _TYPECHECK_CACHE: { src: string | null; strict: boolean | null; diags: Diag[] } = { src: null, strict: null, diags: [] };
 
 export function typecheckTS(src: string, strict = STRICT_TS) {
   extractTsInterfaceMetadata(src);
@@ -506,33 +526,58 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
   }
   const diagnostics: Array<{ line: number; code: string; message?: string }> = [];
 
+  interface TypeParamInfo {
+    name: string;
+    constraint: string | null;
+    defaultType: string | null;
+  }
+
+  interface PropShapeInfo {
+    type: string;
+    rawType: string;
+    optional: boolean;
+  }
+
+  interface VarEnvInfo {
+    type: string;
+    isConst?: boolean;
+    line?: number;
+    declaredType?: string;
+    literalType?: string | null;
+  }
+
   interface FnSigInfo {
     name: string;
-    params: Array<{ name: string; type: string; rawType: string; optional: boolean }>;
+    params: Array<{ name: string; type: string; rawType: string; optional: boolean; isRest?: boolean }>;
     minArgs: number;
     returnType: string;
     rawReturnType: string;
-    typeParams: Array<{ name: string; constraint: string | null; defaultType: string | null }>;
+    typeParams: TypeParamInfo[];
     line: number;
     hasValueReturn: boolean;
   }
 
   const lines = src.replace(/\r\n?/g, '\n').split('\n');
-  const fns = new Map<any, any>();
-  const typeAliases = new Map<any, any>();
-  const genericTypeAliases = new Map<any, any>(); // name -> { typeParams, body, line }
-  const interfaceTypeParams = new Map<any, any>(); // name -> [{ name, constraint, defaultType }]
-  const interfaces = new Map<any, any>(); // name -> Map<propName, { type, rawType, optional }>
-  const classParents = new Map<any, any>(); // className -> parentClassName
-  const enumsSet = new Set();
-  const env = new Map<any, any>();
-  const activeTypeParams = new Map<any, any>(); // current scope type params -> constraint or 'any'
+  const fns = new Map<string, FnSigInfo>();
+  const typeAliases = new Map<string, string>();
+  const genericTypeAliases = new Map<string, { typeParams: TypeParamInfo[]; body: string; line: number }>(); // name -> { typeParams, body, line }
+  const interfaceTypeParams = new Map<string, TypeParamInfo[]>(); // name -> [{ name, constraint, defaultType }]
+  const interfaces = new Map<string, Map<string, PropShapeInfo>>(); // name -> Map<propName, { type, rawType, optional }>
+  const classParents = new Map<string, string>(); // className -> parentClassName
+  const classImplements = new Map<string, { interfaces: string[]; line: number }>();
+  const abstractClasses = new Set<string>();
+  const enumsSet = new Set<string>();
+  const enumMembers = new Map<string, Set<string>>();
+  const enumValueTypes = new Map<string, Set<string>>();
+  const env = new Map<string, VarEnvInfo>();
+  const activeTypeParams = new Map<string, string>(); // current scope type params -> constraint or 'any'
 
   const BUILTIN_TS_GLOBALS = new Set([
     'Math', 'JSON', 'Number', 'String', 'Boolean', 'Array', 'Object', 'Map', 'Set',
     'WeakMap', 'WeakSet', 'Date', 'RegExp', 'Error', 'TypeError', 'RangeError',
     'SyntaxError', 'ReferenceError', 'URIError', 'EvalError', 'AggregateError',
     'Promise', 'Symbol', 'BigInt', 'Intl', 'Reflect', 'Proxy',
+    'Generator', 'AsyncGenerator', 'Iterator', 'AsyncIterator', 'Iterable', 'AsyncIterable',
     'ArrayBuffer', 'SharedArrayBuffer', 'DataView',
     'Int8Array', 'Uint8Array', 'Uint8ClampedArray', 'Int16Array', 'Uint16Array',
     'Int32Array', 'Uint32Array', 'Float32Array', 'Float64Array', 'BigInt64Array', 'BigUint64Array',
@@ -543,6 +588,15 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
     'Infinity', 'NaN', 'undefined', 'null', 'true', 'false', 'this', 'super', 'arguments',
     'checkpoint', '断点',
   ]);
+
+  function getKnownNominalTypes(): Set<string> {
+    const s = new Set<string>();
+    enumsSet.forEach(k => s.add(k));
+    interfaces.forEach((_, k) => s.add(k));
+    typeAliases.forEach((_, k) => s.add(k));
+    activeTypeParams.forEach((_, k) => s.delete(k));
+    return s;
+  }
 
   function isKnownIdentifier(name: string) {
     if (!name || !/^[A-Za-z_$][\w$]*$/.test(name)) return true;
@@ -559,7 +613,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
     );
   }
 
-  function addDiag(line: any, code: any, message?: any) {
+  function addDiag(line: number, code: string, message?: string) {
     if (!diagnostics.some(d => d.line === line && d.code === code && d.message === message)) {
       diagnostics.push({ line, code, message });
     }
@@ -733,13 +787,13 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
   }
 
   function matchConditionalExtends(checkT: string, extT: string, typeEnv: Map<string, string>, depth: number): { matched: boolean; inferred: Map<string, string> } {
-    const inferred = new Map<any, any>();
+    const inferred = new Map<string, string>();
     const cNorm = evaluateType(checkT, typeEnv, depth + 1);
     const eSubst = substituteTypeParamsInStr(normalizeTsType(extT), typeEnv);
 
     // 1. Direct `infer U` or `infer U extends Constraint`
     const directInfer = eSubst.match(/^infer\s+([A-Za-z_$][\w$]*)(?:\s+extends\s+([\s\S]+))?$/);
-    if (directInfer) {
+    if (directInfer && directInfer[1]) {
       const varName = directInfer[1];
       if (directInfer[2]) {
         const constraintT = evaluateType(directInfer[2], typeEnv, depth + 1);
@@ -752,7 +806,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
     // 2. Array pattern: `(infer U)[]`, `infer U[]`, `Array<infer U>`
     const arrInferM = eSubst.match(/^(?:\(\s*infer\s+([A-Za-z_$][\w$]*)\s*\)\[\]|infer\s+([A-Za-z_$][\w$]*)\[\]|(?:Readonly)?Array<\s*infer\s+([A-Za-z_$][\w$]*)\s*>)$/);
     if (arrInferM) {
-      const varName = arrInferM[1] || arrInferM[2] || arrInferM[3];
+      const varName = arrInferM[1] || arrInferM[2] || arrInferM[3] || '';
       if (cNorm.endsWith('[]') && splitTopLevelUnion(cNorm).length === 1) {
         let elem = cNorm.slice(0, -2);
         if (elem.startsWith('(') && elem.endsWith(')') && findBalancedParen(elem, 0) === elem.length - 1) {
@@ -762,7 +816,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
         return { matched: true, inferred };
       }
       if (cNorm.startsWith('[') && cNorm.endsWith(']')) {
-        const parts = splitTopLevelDecl(cNorm.slice(1, -1)).map(s => s.trim()).filter(Boolean);
+        const parts = splitTopLevelDecl(cNorm.slice(1, -1)).map(s => stripTupleElementLabel(s)).filter(Boolean);
         const unique = Array.from(new Set(parts));
         inferred.set(varName, unique.length ? unique.join('|') : 'never');
         return { matched: true, inferred };
@@ -786,7 +840,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
             retMatch.inferred.forEach((v, k) => inferred.set(k, v));
 
             const restInferM = eParamStr.match(/^\.\.\.[A-Za-z_$][\w$]*\s*:\s*infer\s+([A-Za-z_$][\w$]*)$/);
-            if (restInferM) {
+            if (restInferM && restInferM[1]) {
               const pList = cParamStr ? splitTopLevelDecl(cParamStr).map(p => {
                 const colon = p.indexOf(':');
                 return colon >= 0 ? evaluateType(p.slice(colon + 1).trim(), typeEnv, depth + 1) : 'any';
@@ -835,8 +889,8 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
     // 4. Tuple pattern: `[infer H, ...infer T]` or `[infer A, infer B]`
     if (eSubst.startsWith('[') && eSubst.endsWith(']')) {
       if (!cNorm.startsWith('[') || !cNorm.endsWith(']')) return { matched: false, inferred };
-      const eItems = splitTopLevelDecl(eSubst.slice(1, -1)).map(s => s.trim()).filter(Boolean);
-      const cItems = splitTopLevelDecl(cNorm.slice(1, -1)).map(s => s.trim()).filter(Boolean);
+      const eItems = splitTopLevelDecl(eSubst.slice(1, -1)).map(s => stripTupleElementLabel(s)).filter(Boolean);
+      const cItems = splitTopLevelDecl(cNorm.slice(1, -1)).map(s => stripTupleElementLabel(s)).filter(Boolean);
       for (let idx = 0; idx < eItems.length; idx++) {
         const ei = eItems[idx] || '';
         const restInfer = ei.match(/^\.\.\.(?:infer\s+([A-Za-z_$][\w$]*)|([A-Za-z_$][\w$]*))$/);
@@ -915,7 +969,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
       return objT.slice(0, -2);
     }
     if (objT.startsWith('[') && objT.endsWith(']')) {
-      const elems = splitTopLevelDecl(objT.slice(1, -1)).map(s => s.trim()).filter(Boolean);
+      const elems = splitTopLevelDecl(objT.slice(1, -1)).map(s => stripTupleElementLabel(s)).filter(Boolean);
       if (keyT === 'number') {
         return Array.from(new Set(elems)).join('|') || 'never';
       }
@@ -930,9 +984,12 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
       if (shape.has(cleanKey)) {
         return (shape.get(cleanKey) || { type: 'any' }).type;
       }
+      if (shape.has('__index__')) {
+        return (shape.get('__index__') || { type: 'any' }).type;
+      }
       if (keyT === 'keyof ' + objT) {
         const vals: string[] = [];
-        shape.forEach((v: { type: string }) => { if (!vals.includes(v.type)) vals.push(v.type); });
+        shape.forEach((v: { type: string }, k: string) => { if (k !== '__index__' && !vals.includes(v.type)) vals.push(v.type); });
         return vals.join('|') || 'any';
       }
     }
@@ -942,7 +999,12 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
     return 'any';
   }
 
-  function evaluateType(rawType: string | null | undefined, typeEnv: Map<string, string> = new Map<string, string>(), depth = 0): string {
+  function evaluateType(
+    rawType: string | null | undefined,
+    typeEnv: Map<string, string> = new Map<string, string>(),
+    depth = 0,
+    expanding: Set<string> = new Set<string>(),
+  ): string {
     if (!rawType || depth > 24) return 'any';
     let t = normalizeTsType(rawType);
     if (!t || t === 'any' || t === 'unknown' || t === 'never' || t === 'void' ||
@@ -950,6 +1012,8 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
         t === 'undefined' || t === 'object' || t === 'symbol' || t === 'bigint') {
       return t || 'any';
     }
+    if (/^asserts\s+/.test(t)) return 'void';
+    if (/^(?:[A-Za-z_$][\w$]*|this)\s+is\s+/.test(t)) return 'boolean';
 
     // 1. Direct type parameter lookup
     if (typeEnv && typeEnv.has(t)) {
@@ -961,7 +1025,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
     if (cond) {
       const rawCheck = cond.checkType.trim();
       const isNakedTypeParam = /^[A-Za-z_$][\w$]*$/.test(rawCheck) && typeEnv && typeEnv.has(rawCheck);
-      const resolvedCheck = evaluateType(rawCheck, typeEnv, depth + 1);
+      const resolvedCheck = evaluateType(rawCheck, typeEnv, depth + 1, expanding);
       if (isNakedTypeParam && resolvedCheck === 'never') {
         return 'never';
       }
@@ -974,12 +1038,12 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
           const m = matchConditionalExtends(member, cond.extendsType, memberEnv, depth + 1);
           if (m.matched) {
             m.inferred.forEach((v, k) => memberEnv.set(k, v));
-            const branchT = evaluateType(cond.trueType, memberEnv, depth + 1);
+            const branchT = evaluateType(cond.trueType, memberEnv, depth + 1, expanding);
             if (branchT !== 'never') {
               splitTopLevelUnion(branchT).forEach(u => { if (!results.includes(u)) results.push(u); });
             }
           } else {
-            const branchF = evaluateType(cond.falseType, memberEnv, depth + 1);
+            const branchF = evaluateType(cond.falseType, memberEnv, depth + 1, expanding);
             if (branchF !== 'never') {
               splitTopLevelUnion(branchF).forEach(u => { if (!results.includes(u)) results.push(u); });
             }
@@ -991,9 +1055,9 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
       if (m.matched) {
         const trueEnv = new Map(typeEnv);
         m.inferred.forEach((v, k) => trueEnv.set(k, v));
-        return evaluateType(cond.trueType, trueEnv, depth + 1);
+        return evaluateType(cond.trueType, trueEnv, depth + 1, expanding);
       } else {
-        return evaluateType(cond.falseType, typeEnv, depth + 1);
+        return evaluateType(cond.falseType, typeEnv, depth + 1, expanding);
       }
     }
 
@@ -1002,7 +1066,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
     if (unionParts.length > 1) {
       const evaled: string[] = [];
       unionParts.forEach(part => {
-        const r = evaluateType(part, typeEnv, depth + 1);
+        const r = evaluateType(part, typeEnv, depth + 1, expanding);
         splitTopLevelUnion(r).forEach(u => {
           if (u !== 'never' && !evaled.includes(u)) evaled.push(u);
         });
@@ -1013,38 +1077,55 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
     // 4. Top-level intersection `A & B`
     const interParts = splitTopLevelIntersection(t);
     if (interParts.length > 1) {
-      const evaled = interParts.map(p => evaluateType(p, typeEnv, depth + 1));
+      const evaled = interParts.map(p => evaluateType(p, typeEnv, depth + 1, expanding));
       if (evaled.includes('never')) return 'never';
       if (evaled.length === 2 && evaled[1] === '{}') {
         return stripNullableFromType(stripNullableFromType(evaled[0], 'null'), 'undefined');
       }
-      const mergedProps = new Map<any, any>();
+      // Simplify intersections like `string & "dark"` -> `"dark"`
+      const simplified = evaled.filter((p, idx) =>
+        !evaled.some((q, qIdx) => {
+          if (qIdx === idx) return false;
+          if (p === q) return qIdx < idx;
+          const qUnion = splitTopLevelUnion(q);
+          return qUnion.length > 0 && qUnion.every(qm => isLiteralOfPrimitive(qm, p));
+        })
+      );
+      if (simplified.length === 1 && simplified[0]) {
+        return simplified[0];
+      }
+      const mergedProps = new Map<string, PropShapeInfo>();
       let allShapes = true;
-      for (const ep of evaled) {
+      for (const ep of simplified) {
         const sh = getInterfaceShape(ep);
         if (!sh) { allShapes = false; break; }
         sh.forEach((v, k) => mergedProps.set(k, v));
       }
       if (allShapes && mergedProps.size > 0) {
         const propStrs: string[] = [];
-        mergedProps.forEach((v, k) => propStrs.push(`${k}${v.optional ? '?' : ''}:${v.type}`));
+        mergedProps.forEach((v, k) => {
+          if (k === '__index__') propStrs.push(`[k: string]:${v.type}`);
+          else propStrs.push(`${k}${v.optional ? '?' : ''}:${v.type}`);
+        });
         return `{${propStrs.join(';')}}`;
       }
-      return evaled.join('&');
+      return simplified.join('&');
     }
 
     // 5. `keyof T`
     if (t.startsWith('keyof ')) {
-      const target = evaluateType(t.slice(6).trim(), typeEnv, depth + 1);
+      const target = evaluateType(t.slice(6).trim(), typeEnv, depth + 1, expanding);
       if (target === 'any') return 'string|number|symbol';
       const shape = getInterfaceShape(target);
       if (shape) {
-        const keys = Array.from(shape.keys()).map(k => `"${k}"`);
-        return keys.length ? keys.join('|') : 'never';
+        const keys = Array.from(shape.keys()).filter(k => k !== '__index__' && !k.startsWith('[')).map(k => `"${k}"`);
+        if (keys.length) return keys.join('|');
+        if (shape.has('__index__')) return 'string';
+        return 'never';
       }
       if (target.startsWith('Record<')) {
         const recArgs = splitTopLevelDecl(target.slice(7, -1));
-        if (recArgs.length >= 1) return evaluateType(recArgs[0], typeEnv, depth + 1);
+        if (recArgs.length >= 1) return evaluateType(recArgs[0], typeEnv, depth + 1, expanding);
       }
       return 'string';
     }
@@ -1052,9 +1133,9 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
     // 6. `typeof varName`
     if (t.startsWith('typeof ')) {
       const exprName = t.slice(7).trim();
-      if (env.has(exprName)) return env.get(exprName).type;
-      if (fns.has(exprName)) {
-        const sig = fns.get(exprName);
+      if (env.has(exprName)) return (env.get(exprName) || { type: 'any' }).type;
+      const sig = fns.get(exprName);
+      if (sig) {
         const pStr = sig.params.map((p: { name: string; optional?: boolean; type: string }) => `${p.name}${p.optional ? '?' : ''}:${p.type}`).join(',');
         return `(${pStr})=>${sig.returnType}`;
       }
@@ -1064,8 +1145,8 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
     // 7. Mapped Type: `{ [K in Union as Remap]?: ValueType }`
     if (t.startsWith('{') && t.endsWith('}')) {
       const inner = t.slice(1, -1).trim().replace(/;$/, '').trim();
-      const mappedM = inner.match(/^(?:(?:\+|-)?readonly\s+)?\[\s*([A-Za-z_$][\w$]*)\s+in\s+([\s\S]+?)\s*\]([+\-]?)\?\s*:\s*([\s\S]+)$/) ||
-                      inner.match(/^(?:(?:\+|-)?readonly\s+)?\[\s*([A-Za-z_$][\w$]*)\s+in\s+([\s\S]+?)\s*\]\s*:\s*([\s\S]+)$/);
+      const mappedM = inner.match(/^(?:(?:\+|-)?readonly\s*)?\[\s*([A-Za-z_$][\w$]*)\s+in\s+([\s\S]+?)\s*\]([+\-]?)\?\s*:\s*([\s\S]+)$/) ||
+                      inner.match(/^(?:(?:\+|-)?readonly\s*)?\[\s*([A-Za-z_$][\w$]*)\s+in\s+([\s\S]+?)\s*\]\s*:\s*([\s\S]+)$/);
       if (mappedM && mappedM[1] && mappedM[2]) {
         const kVar = mappedM[1];
         let inClause = mappedM[2].trim();
@@ -1086,19 +1167,22 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
           else if (ch === ')' || ch === ']' || ch === '}') d = Math.max(0, d - 1);
           else if (ch === '<') ad++;
           else if (ch === '>' && inClause[i - 1] !== '=') ad = Math.max(0, ad - 1);
-          else if (d === 0 && ad === 0 && inClause.slice(i).startsWith(' as ')) {
-            asClause = inClause.slice(i + 4).trim();
-            inClause = inClause.slice(0, i).trim();
-            break;
+          else if (d === 0 && ad === 0) {
+            const asM = inClause.slice(i).match(/^\s+as(?:\s+|(?=[`"']))/);
+            if (asM) {
+              asClause = inClause.slice(i + asM[0].length).trim();
+              inClause = inClause.slice(0, i).trim();
+              break;
+            }
           }
         }
         let sourceObjShape: Map<string, { type: string; rawType: string; optional: boolean }> | null = null;
         const keyofM = inClause.match(/^keyof\s+([\s\S]+)$/);
         if (keyofM && keyofM[1]) {
-          const srcT = evaluateType(keyofM[1].trim(), typeEnv, depth + 1);
+          const srcT = evaluateType(keyofM[1].trim(), typeEnv, depth + 1, expanding);
           sourceObjShape = getInterfaceShape(srcT);
         }
-        const keysUnion = evaluateType(inClause, typeEnv, depth + 1);
+        const keysUnion = evaluateType(inClause, typeEnv, depth + 1, expanding);
         const keyItems = splitTopLevelUnion(keysUnion).filter(k => k !== 'never');
         const outProps: string[] = [];
         for (const rawKey of keyItems) {
@@ -1108,11 +1192,11 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
           mapEnv.set(kVar, litKey);
           let finalKeyName = litKey.slice(1, -1);
           if (asClause) {
-            const remapped = evaluateType(asClause, mapEnv, depth + 1);
+            const remapped = evaluateType(asClause, mapEnv, depth + 1, expanding);
             if (remapped === 'never') continue;
             finalKeyName = remapped.replace(/^["']|["']$/g, '');
           }
-          const propValType = evaluateType(valTemplate, mapEnv, depth + 1);
+          const propValType = evaluateType(valTemplate, mapEnv, depth + 1, expanding);
           let isOpt = false;
           const srcProp = sourceObjShape ? sourceObjShape.get(litKey.slice(1, -1)) : undefined;
           if (srcProp) {
@@ -1141,7 +1225,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
           const end = body.indexOf('}', i + 2);
           if (end > i) {
             const innerExpr = body.slice(i + 2, end).trim();
-            const ev = evaluateType(innerExpr, typeEnv, depth + 1);
+            const ev = evaluateType(innerExpr, typeEnv, depth + 1, expanding);
             if (ev.startsWith('"') && ev.endsWith('"')) {
               out += ev.slice(1, -1);
             } else {
@@ -1159,16 +1243,23 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
     // 9. Array type suffix `T[]`
     if (t.endsWith('[]')) {
       const elemRaw = t.slice(0, -2);
-      const elemEval = evaluateType(elemRaw, typeEnv, depth + 1);
+      const elemEval = evaluateType(elemRaw, typeEnv, depth + 1, expanding);
       if (elemEval.includes('|') || elemEval.includes('&') || elemEval.includes('=>')) {
         return `(${elemEval})[]`;
       }
       return `${elemEval}[]`;
     }
 
-    // 10. Tuple type `[A, B]`
+    // 10. Tuple type `[A, B]` or labeled tuple `[name: string, age?: number, ...rest: boolean[]]`
     if (t.startsWith('[') && t.endsWith(']')) {
-      const elems = splitTopLevelDecl(t.slice(1, -1)).map(e => evaluateType(e.trim(), typeEnv, depth + 1));
+      const elems = splitTopLevelDecl(t.slice(1, -1)).map(rawE => {
+        const stripped = stripTupleElementLabel(rawE);
+        const isRest = stripped.startsWith('...');
+        const isOpt = !isRest && stripped.endsWith('?');
+        const core = isRest ? stripped.slice(3).trim() : (isOpt ? stripped.slice(0, -1).trim() : stripped);
+        const ev = evaluateType(core, typeEnv, depth + 1, expanding);
+        return `${isRest ? '...' : ''}${ev}${isOpt ? '?' : ''}`;
+      });
       return `[${elems.join(',')}]`;
     }
 
@@ -1186,8 +1277,8 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
         const objPart = t.slice(0, openB).trim();
         const keyPart = t.slice(openB + 1, -1).trim();
         if (keyPart) {
-          const objEval = evaluateType(objPart, typeEnv, depth + 1);
-          const keyEval = evaluateType(keyPart, typeEnv, depth + 1);
+          const objEval = evaluateType(objPart, typeEnv, depth + 1, expanding);
+          const keyEval = evaluateType(keyPart, typeEnv, depth + 1, expanding);
           return resolveIndexedAccess(objEval, keyEval, typeEnv, depth + 1);
         }
       }
@@ -1197,7 +1288,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
     const genM = t.match(/^([A-Za-z_$][\w$]*)<([\s\S]+)>$/);
     if (genM && genM[1] && genM[2]) {
       const baseName = genM[1];
-      const rawArgs = splitTopLevelDecl(genM[2]).map(a => evaluateType(a.trim(), typeEnv, depth + 1));
+      const rawArgs = splitTopLevelDecl(genM[2]).map(a => evaluateType(a.trim(), typeEnv, depth + 1, expanding));
       const arg0 = rawArgs[0] || 'any';
       const arg1 = rawArgs[1] || 'any';
 
@@ -1209,7 +1300,10 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
         const shape = getInterfaceShape(arg0);
         if (shape) {
           const props: string[] = [];
-          shape.forEach((v, k) => props.push(`${k}?:${v.type}`));
+          shape.forEach((v, k) => {
+            if (k === '__index__') props.push(`[k: string]:${v.type}`);
+            else props.push(`${k}?:${v.type}`);
+          });
           return `{${props.join(';')}}`;
         }
       }
@@ -1217,7 +1311,10 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
         const shape = getInterfaceShape(arg0);
         if (shape) {
           const props: string[] = [];
-          shape.forEach((v, k) => props.push(`${k}:${v.type}`));
+          shape.forEach((v, k) => {
+            if (k === '__index__') props.push(`[k: string]:${v.type}`);
+            else props.push(`${k}:${v.type}`);
+          });
           return `{${props.join(';')}}`;
         }
       }
@@ -1226,7 +1323,10 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
         const shape = getInterfaceShape(arg0);
         if (shape) {
           const props: string[] = [];
-          shape.forEach((v, k) => props.push(`${k}${v.optional ? '?' : ''}:${v.type}`));
+          shape.forEach((v, k) => {
+            if (k === '__index__') props.push(`[k: string]:${v.type}`);
+            else props.push(`${k}${v.optional ? '?' : ''}:${v.type}`);
+          });
           return `{${props.join(';')}}`;
         }
         return arg0;
@@ -1248,7 +1348,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
           const omitKeys = new Set(splitTopLevelUnion(arg1).map(k => k.replace(/^["']|["']$/g, '')));
           const props: string[] = [];
           shape.forEach((v, k) => {
-            if (!omitKeys.has(k)) props.push(`${k}${v.optional ? '?' : ''}:${v.type}`);
+            if (!omitKeys.has(k) && k !== '__index__') props.push(`${k}${v.optional ? '?' : ''}:${v.type}`);
           });
           return `{${props.join(';')}}`;
         }
@@ -1282,7 +1382,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
       if (baseName === 'ReturnType' && rawArgs.length === 1) {
         const fnT = arg0;
         const arrowIdx = fnT.lastIndexOf('=>');
-        if (arrowIdx > 0) return evaluateType(fnT.slice(arrowIdx + 2).trim(), typeEnv, depth + 1);
+        if (arrowIdx > 0) return evaluateType(fnT.slice(arrowIdx + 2).trim(), typeEnv, depth + 1, expanding);
         return 'any';
       }
       if (baseName === 'Parameters' && rawArgs.length === 1) {
@@ -1293,7 +1393,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
             const pInner = fnT.slice(1, closeP).trim();
             const pTypes = pInner ? splitTopLevelDecl(pInner).map(p => {
               const colon = p.indexOf(':');
-              return colon >= 0 ? evaluateType(p.slice(colon + 1).trim(), typeEnv, depth + 1) : 'any';
+              return colon >= 0 ? evaluateType(p.slice(colon + 1).trim(), typeEnv, depth + 1, expanding) : 'any';
             }) : [];
             return `[${pTypes.join(',')}]`;
           }
@@ -1305,7 +1405,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
         let guard = 0;
         while (guard++ < 8) {
           const pm = cur.match(/^Promise<(.+)>$/);
-          if (pm && pm[1]) cur = evaluateType(pm[1], typeEnv, depth + 1);
+          if (pm && pm[1]) cur = evaluateType(pm[1], typeEnv, depth + 1, expanding);
           else break;
         }
         return cur;
@@ -1323,21 +1423,29 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
       }
 
       if (genericTypeAliases.has(baseName)) {
+        if (expanding.has(baseName)) return `${baseName}<${rawArgs.join(',')}>`;
         const info = genericTypeAliases.get(baseName);
-        const subEnv = new Map(typeEnv);
-        info.typeParams.forEach((tp: { name: string; defaultType?: string | null }, idx: number) => {
-          const argVal = rawArgs[idx] ?? (tp.defaultType ? evaluateType(tp.defaultType, subEnv, depth + 1) : 'any');
-          subEnv.set(tp.name, argVal);
-        });
-        return evaluateType(info.body, subEnv, depth + 1);
+        if (info) {
+          const subEnv = new Map(typeEnv);
+          const nextExp = new Set(expanding);
+          nextExp.add(baseName);
+          info.typeParams.forEach((tp: { name: string; defaultType?: string | null }, idx: number) => {
+            const argVal = rawArgs[idx] ?? (tp.defaultType ? evaluateType(tp.defaultType, subEnv, depth + 1, nextExp) : 'any');
+            subEnv.set(tp.name, argVal);
+          });
+          return evaluateType(info.body, subEnv, depth + 1, nextExp);
+        }
       }
 
       return `${baseName}<${rawArgs.join(',')}>`;
     }
 
-    // 13. Non-generic type alias lookup
+    // 13. Non-generic type alias lookup (with recursive cycle guard)
     if (typeAliases.has(t)) {
-      return evaluateType(typeAliases.get(t), typeEnv, depth + 1);
+      if (expanding.has(t)) return t;
+      const nextExp = new Set(expanding);
+      nextExp.add(t);
+      return evaluateType(typeAliases.get(t), typeEnv, depth + 1, nextExp);
     }
 
     // 14. Function type `(a: T) => R` with active typeEnv substitution
@@ -1352,9 +1460,9 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
     return evaluateType(t, typeEnv, 0);
   }
 
-  function parseObjectShapeLiteral(typeBody: string, typeEnv: Map<string, string> = activeTypeParams): Map<string, { type: string; rawType: string; optional: boolean }> {
+  function parseObjectShapeLiteral(typeBody: string, typeEnv: Map<string, string> = activeTypeParams): Map<string, PropShapeInfo> {
     const inner = typeBody.trim().replace(/^\{/, '').replace(/\}$/, '').trim();
-    const propMap = new Map<any, any>();
+    const propMap = new Map<string, PropShapeInfo>();
     if (!inner) return propMap;
     const members: string[] = [];
     let d = 0, ad = 0, cur = '';
@@ -1380,6 +1488,26 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
     if (cur.trim()) members.push(cur.trim());
     members.forEach(mem => {
       const cleaned = mem.replace(/^(?:readonly|public|private|protected|static)\s+/, '');
+      const idxM = cleaned.match(/^\[\s*[A-Za-z_$][\w$]*\s*:\s*(?:string|number|symbol|any)\s*\]\s*:\s*([\s\S]+)$/);
+      if (idxM && idxM[1]) {
+        const rawT = idxM[1].trim();
+        propMap.set('__index__', { type: evaluateType(rawT, typeEnv), rawType: rawT, optional: true });
+        return;
+      }
+      const compM = cleaned.match(/^\[\s*([A-Za-z_$][\w$]*)\s*\](\?)?\s*:\s*([\s\S]+)$/);
+      if (compM && compM[1] && compM[3]) {
+        const rawT = compM[3].trim();
+        propMap.set(`[${compM[1]}]`, { type: evaluateType(rawT, typeEnv), rawType: rawT, optional: Boolean(compM[2]) });
+        propMap.set('__index__', { type: evaluateType(rawT, typeEnv), rawType: rawT, optional: true });
+        return;
+      }
+      const methM = cleaned.match(/^([A-Za-z_$][\w$]*)(\?)?\s*\(([^)]*)\)\s*:\s*([\s\S]+)$/);
+      if (methM && methM[1] && methM[4]) {
+        const rawRet = methM[4].trim();
+        const fnT = `(${(methM[3] || '').trim()})=>${evaluateType(rawRet, typeEnv)}`;
+        propMap.set(methM[1], { type: fnT, rawType: fnT, optional: Boolean(methM[2]) });
+        return;
+      }
       const m = cleaned.match(/^([A-Za-z_$][\w$]*)(\?)?\s*:\s*([\s\S]+)$/);
       if (m && m[1] && m[3]) {
         const rawT = m[3].trim();
@@ -1389,7 +1517,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
     return propMap;
   }
 
-  function getInterfaceShape(typeName: string | null | undefined): Map<string, { type: string; rawType: string; optional: boolean }> | null {
+  function getInterfaceShape(typeName: string | null | undefined): Map<string, PropShapeInfo> | null {
     if (!typeName) return null;
     const resolved = evaluateType(typeName, activeTypeParams);
     if (resolved.startsWith('{') && resolved.endsWith('}')) {
@@ -1400,25 +1528,25 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
     const typeArgs = (genM && genM[2]) ? splitTopLevelDecl(genM[2]).map(a => evaluateType(a.trim(), activeTypeParams)) : [];
     const direct = interfaces.get(resolved) || interfaces.get(baseName);
     if (direct) {
-      let merged = new Map<any, any>();
+      const merged = new Map<string, PropShapeInfo>();
       if (classParents.has(resolved) || classParents.has(baseName)) {
         let p = classParents.get(resolved) || classParents.get(baseName);
         const visited = new Set([resolved, baseName]);
         while (p && !visited.has(p)) {
           visited.add(p);
           const pShape = interfaces.get(p);
-          if (pShape) pShape.forEach((v: { type: string; rawType: string; optional: boolean }, k: string) => { if (!merged.has(k)) merged.set(k, { ...v }); });
+          if (pShape) pShape.forEach((v: PropShapeInfo, k: string) => { if (!merged.has(k)) merged.set(k, { ...v }); });
           p = classParents.get(p);
         }
       }
-      direct.forEach((v: { type: string; rawType: string; optional: boolean }, k: string) => merged.set(k, { ...v }));
+      direct.forEach((v: PropShapeInfo, k: string) => merged.set(k, { ...v }));
       const tParams = interfaceTypeParams.get(baseName);
       if (tParams && tParams.length > 0 && typeArgs.length > 0) {
         const subEnv = new Map(activeTypeParams);
         tParams.forEach((tp: { name: string; defaultType?: string | null }, idx: number) => {
           subEnv.set(tp.name, typeArgs[idx] ?? (tp.defaultType ? evaluateType(tp.defaultType, subEnv) : 'any'));
         });
-        const instantiated = new Map<any, any>();
+        const instantiated = new Map<string, PropShapeInfo>();
         merged.forEach((v, k) => {
           instantiated.set(k, {
             ...v,
@@ -1435,7 +1563,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
   function getClassMethodSig(className: string, methodName: string): FnSigInfo | null {
     const resolved = evaluateType(className, activeTypeParams);
     const genM = resolved.match(/^([A-Za-z_$][\w$]*)<([\s\S]+)>$/);
-    let cur = (genM && genM[1]) ? genM[1] : resolved;
+    let cur: string | undefined = (genM && genM[1]) ? genM[1] : resolved;
     const typeArgs = (genM && genM[2]) ? splitTopLevelDecl(genM[2]).map(a => evaluateType(a.trim(), activeTypeParams)) : [];
     const tParams = interfaceTypeParams.get(cur);
     const classEnv = new Map(activeTypeParams);
@@ -1444,16 +1572,16 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
         classEnv.set(tp.name, typeArgs[idx] ?? (tp.defaultType ? evaluateType(tp.defaultType, classEnv) : 'any'));
       });
     }
-    const visited = new Set();
+    const visited = new Set<string>();
     while (cur && !visited.has(cur)) {
       visited.add(cur);
       const key = cur + '.' + methodName;
-      if (fns.has(key)) {
-        const rawSig = fns.get(key);
+      const rawSig = fns.get(key);
+      if (rawSig) {
         if (classEnv.size === 0) return rawSig;
         return {
           ...rawSig,
-          params: rawSig.params.map((p: { name: string; type: string; rawType: string; optional: boolean }) => ({
+          params: rawSig.params.map((p: { name: string; type: string; rawType: string; optional: boolean; isRest?: boolean }) => ({
             ...p,
             type: evaluateType(p.rawType || p.type, classEnv),
             rawType: substituteTypeParamsInStr(p.rawType || p.type, classEnv),
@@ -1478,25 +1606,76 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
     return null;
   }
 
-  function isTypeCompatible(actualType: string | null | undefined, expectedType: string | null | undefined): boolean {
+  function isTypeCompatible(
+    actualType: string | null | undefined,
+    expectedType: string | null | undefined,
+    seenPairs: Set<string> = new Set<string>(),
+  ): boolean {
     if (!actualType || !expectedType) return true;
     const a = evaluateType(actualType, activeTypeParams);
     const e = evaluateType(expectedType, activeTypeParams);
-    if (isTsAssignable(a, e)) return true;
+    const pairKey = `${a}==>${e}`;
+    if (seenPairs.has(pairKey)) return true;
+    const nextSeen = new Set(seenPairs);
+    nextSeen.add(pairKey);
+
+    const knownNominals = getKnownNominalTypes();
+    if (isTsAssignable(a, e, knownNominals)) return true;
+
+    if (e === 'object') {
+      if ((a.startsWith('{') && a.endsWith('}')) || a.endsWith('[]') || (a.startsWith('[') && a.endsWith(']')) || a.includes('=>') || interfaces.has(a) || a.startsWith('Record<') || a.startsWith('Map<') || a.startsWith('Set<')) {
+        return true;
+      }
+      return false;
+    }
+
+    // Enum assignability check: numeric enums accept numbers; string enums only accept the enum itself
+    if (enumsSet.has(e)) {
+      if (a === e || a.startsWith(e + '.')) return true;
+      const vTypes = enumValueTypes.get(e);
+      if (vTypes && vTypes.has('number') && !vTypes.has('string')) {
+        if (a === 'number' || /^[+-]?\d+(?:\.\d+)?$/.test(a)) return true;
+      }
+      return false;
+    }
+
+    // Union splitting with full recursive compatibility (handles recursive type aliases & interfaces)
+    const eParts = splitTopLevelUnion(e);
+    if (eParts.length > 1) {
+      const aParts = splitTopLevelUnion(a);
+      if (aParts.length > 1) {
+        return aParts.every(ap => eParts.some(ep => isTypeCompatible(ap, ep, nextSeen)));
+      }
+      return eParts.some(ep => isTypeCompatible(a, ep, nextSeen));
+    }
+    const aParts = splitTopLevelUnion(a);
+    if (aParts.length > 1) {
+      return aParts.every(ap => isTypeCompatible(ap, e, nextSeen));
+    }
+
+    // Array / tuple recursive compatibility (e.g. `Json[]` inside `Json`)
+    const aParenArr = a.match(/^\((.+)\)\[\]$/);
+    const eParenArr = e.match(/^\((.+)\)\[\]$/);
+    if ((aParenArr || a.endsWith('[]')) && (eParenArr || e.endsWith('[]'))) {
+      const elemA = aParenArr ? aParenArr[1] : a.slice(0, -2);
+      const elemE = eParenArr ? eParenArr[1] : e.slice(0, -2);
+      return isTypeCompatible(elemA, elemE, nextSeen);
+    }
+
     const recM = e.match(/^Record<([^,]+),([\s\S]+)>$/);
     if (recM && recM[2]) {
       const valExpected = recM[2].trim();
       const aShape = getInterfaceShape(a);
       if (aShape) {
         for (const [, propInfo] of aShape.entries()) {
-          if (!isTypeCompatible(propInfo.type, valExpected)) return false;
+          if (!isTypeCompatible(propInfo.type, valExpected, nextSeen)) return false;
         }
         return true;
       }
     }
     const eShape = getInterfaceShape(e);
     if (eShape) {
-      if (e === 'object' || e === '{}') return !['number', 'string', 'boolean', 'null', 'undefined', 'void'].includes(a);
+      if (e === 'object' || e === '{}') return !['number', 'string', 'boolean', 'null', 'undefined', 'void', 'unknown'].includes(a);
       if (a === 'string' || a.startsWith('"')) {
         if (eShape.size === 1 && eShape.has('length') && (eShape.get('length') || { type: '' }).type === 'number') return true;
       }
@@ -1505,12 +1684,22 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
       }
       const aShape = getInterfaceShape(a);
       if (aShape) {
+        const indexExpected = eShape.has('__index__') ? (eShape.get('__index__') || { type: 'any' }).type : null;
         for (const [propName, propInfo] of eShape.entries()) {
+          if (propName === '__index__') continue;
           if (!aShape.has(propName)) {
             if (!propInfo.optional) return false;
           } else {
             const actualPropT = (aShape.get(propName) || { type: 'any' }).type;
-            if (!isTypeCompatible(actualPropT, propInfo.type)) return false;
+            if (!isTypeCompatible(actualPropT, propInfo.type, nextSeen)) return false;
+          }
+        }
+        if (indexExpected) {
+          for (const [aPropName, aPropInfo] of aShape.entries()) {
+            if (aPropName === '__index__') continue;
+            if (!eShape.has(aPropName) && !isTypeCompatible(aPropInfo.type, indexExpected, nextSeen)) {
+              return false;
+            }
           }
         }
         return true;
@@ -1530,12 +1719,58 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
       const eParts = splitTopLevelUnion(e);
       for (const ep of eParts) {
         if (ep.startsWith('[') && ep.endsWith(']')) {
-          const tupleTypes = splitTopLevelDecl(ep.slice(1, -1)).map(s => s.trim()).filter(Boolean);
+          const tupleTypes = splitTopLevelDecl(ep.slice(1, -1)).map(s => stripTupleElementLabel(s)).filter(Boolean);
           const elemExprs = splitTopLevel(trimmedExpr.slice(1, -1)).map(s => s.trim()).filter(Boolean);
-          if (tupleTypes.length === elemExprs.length &&
-              elemExprs.every((el, idx) => isExpressionAssignable(el, inferType(el, lineNum), tupleTypes[idx] || 'any', lineNum))) {
+          const restIdx = tupleTypes.findIndex(t => t.startsWith('...'));
+          const minRequired = tupleTypes.filter(t => !t.startsWith('...') && !t.endsWith('?')).length;
+          const maxAllowed = restIdx >= 0 ? Infinity : tupleTypes.length;
+          if (elemExprs.length >= minRequired && elemExprs.length <= maxAllowed) {
+            const allMatch = elemExprs.every((el, idx) => {
+              let targetT = 'any';
+              const restElem = restIdx >= 0 ? tupleTypes[restIdx] : undefined;
+              if (restIdx >= 0 && idx >= restIdx && restElem) {
+                const rawRest = restElem.slice(3).trim();
+                targetT = rawRest.endsWith('[]') ? rawRest.slice(0, -2) : rawRest;
+              } else if (idx < tupleTypes.length) {
+                const rawElem = tupleTypes[idx] || 'any';
+                targetT = rawElem.endsWith('?') ? rawElem.slice(0, -1).trim() : rawElem;
+              }
+              return isExpressionAssignable(el, inferType(el, lineNum), targetT, lineNum);
+            });
+            if (allMatch) return true;
+          }
+        } else if (ep.endsWith('[]')) {
+          const elemExpected = ep.slice(0, -2).replace(/^\((.+)\)$/, '$1');
+          const elemExprs = splitTopLevel(trimmedExpr.slice(1, -1)).map(s => s.trim()).filter(Boolean);
+          if (elemExprs.every(el => isExpressionAssignable(el, inferType(el, lineNum), elemExpected, lineNum))) {
             return true;
           }
+        }
+      }
+    }
+    if (trimmedExpr.startsWith('{') && trimmedExpr.endsWith('}')) {
+      const eParts = splitTopLevelUnion(e);
+      for (const ep of eParts) {
+        const shape = getInterfaceShape(ep);
+        const entries = parseObjectLiteralEntries(trimmedExpr);
+        if (shape && entries) {
+          let ok = true;
+          shape.forEach((propInfo, propName) => {
+            if (propName !== '__index__' && !propInfo.optional && !entries.has(propName)) ok = false;
+          });
+          if (ok) {
+            entries.forEach((valExpr, propName) => {
+              const expPropT = shape.has(propName)
+                ? (shape.get(propName) || { type: 'any' }).type
+                : (shape.has('__index__') ? (shape.get('__index__') || { type: 'any' }).type : null);
+              if (!expPropT && !propName.startsWith('[')) {
+                ok = false;
+              } else if (expPropT && !isExpressionAssignable(valExpr, inferType(valExpr, lineNum), expPropT, lineNum)) {
+                ok = false;
+              }
+            });
+          }
+          if (ok) return true;
         }
       }
     }
@@ -1546,16 +1781,29 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
     const s = expr.trim();
     if (!s.startsWith('{') || !s.endsWith('}') || findBalancedParen(s, 0) !== s.length - 1) return null;
     const inner = s.slice(1, -1).trim();
-    const entries = new Map<any, any>();
+    const entries = new Map<string, string>();
     if (!inner) return entries;
     const parts = splitTopLevel(inner);
     parts.forEach(part => {
       const p = part.trim();
       if (!p) return;
+      // Handle getter / method inside object literal: `get double(): number { return 2; }` or `foo(): number { return 1; }`
+      const getterLitM = p.match(/^get\s+([A-Za-z_$][\w$]*)\s*\(\s*\)\s*(?::\s*([^{]+?))?\s*\{([\s\S]*)\}$/);
+      if (getterLitM && getterLitM[1]) {
+        const gRet = getterLitM[2] ? getterLitM[2].trim() : '0';
+        entries.set(getterLitM[1], `undefined as ${gRet}`);
+        return;
+      }
+      const methodLitM = p.match(/^(?:async\s+)?([A-Za-z_$][\w$]*)\s*\(([^)]*)\)\s*(?::\s*([^{]+?))?\s*\{([\s\S]*)\}$/);
+      if (methodLitM && methodLitM[1]) {
+        entries.set(methodLitM[1], `(${methodLitM[2] || ''}) => undefined`);
+        return;
+      }
       let colonIdx = -1, d = 0;
       for (let i = 0; i < p.length; i++) {
         const ch = p[i];
         if (ch === '"' || ch === "'" || ch === '`') { i = skipString(p, i) - 1; continue; }
+        if (ch === '(' && d === 0) break;
         if (ch === '(' || ch === '[' || ch === '{') d++;
         else if (ch === ')' || ch === ']' || ch === '}') d--;
         else if (d === 0 && ch === ':') { colonIdx = i; break; }
@@ -1572,12 +1820,15 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
   }
 
   function checkObjectLiteralAgainstShape(objExpr: string, expectedType: string, lineNum: number, contextDesc: string): boolean {
-    const shape = getInterfaceShape(expectedType);
+    const nonNullExpected = stripNullableFromType(stripNullableFromType(evaluateType(expectedType, activeTypeParams), 'null'), 'undefined');
+    const shape = getInterfaceShape(nonNullExpected) || getInterfaceShape(expectedType);
     const entries = parseObjectLiteralEntries(objExpr);
     if (!shape || !entries) return false;
+    const indexProp = shape.get('__index__');
 
     // 1. Check required properties exist
     shape.forEach((propInfo, propName) => {
+      if (propName === '__index__' || propName.startsWith('[')) return;
       if (!propInfo.optional && !entries.has(propName)) {
         addDiag(lineNum, 'TS2741', `类型中缺少属性 "${propName}"，但类型 "${expectedType}" 中需要该属性 (${contextDesc})`);
       }
@@ -1586,12 +1837,31 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
     // 2. Check each provided property exists on shape and matches type
     entries.forEach((valExpr, propName) => {
       const valT = inferType(valExpr, lineNum);
+      if (propName.startsWith('[') && propName.endsWith(']')) {
+        const keyExpr = propName.slice(1, -1).trim();
+        inferType(keyExpr, lineNum);
+        const targetProp = shape.get(propName) || indexProp;
+        if (targetProp && valT !== 'any' && !isExpressionAssignable(valExpr, valT, targetProp.type, lineNum)) {
+          addDiag(lineNum, 'TS2322', `属性 "${propName}" 的类型 "${valT}" 不能分配给类型 "${targetProp.type}" (${contextDesc})`);
+        }
+        return;
+      }
       if (!shape.has(propName)) {
-        addDiag(lineNum, 'TS2353', `对象字面量只能指定已知属性，并且 "${propName}" 不存在于类型 "${expectedType}" 中 (${contextDesc})`);
+        if (indexProp) {
+          const expectedPropT = indexProp.type;
+          if (valExpr.trim().startsWith('{') && getInterfaceShape(expectedPropT)) {
+            checkObjectLiteralAgainstShape(valExpr, expectedPropT, lineNum, `属性 "${propName}"`);
+          } else if (valT !== 'any' && !isExpressionAssignable(valExpr, valT, expectedPropT, lineNum)) {
+            addDiag(lineNum, 'TS2322', `属性 "${propName}" 的类型 "${valT}" 不能分配给索引签名类型 "${expectedPropT}" (${contextDesc})`);
+          }
+        } else {
+          addDiag(lineNum, 'TS2353', `对象字面量只能指定已知属性，并且 "${propName}" 不存在于类型 "${expectedType}" 中 (${contextDesc})`);
+        }
       } else {
         const expectedPropT = (shape.get(propName) || { type: 'any' }).type;
-        if (valExpr.trim().startsWith('{') && getInterfaceShape(expectedPropT)) {
-          checkObjectLiteralAgainstShape(valExpr, expectedPropT, lineNum, `属性 "${propName}"`);
+        const nonNullPropT = stripNullableFromType(stripNullableFromType(evaluateType(expectedPropT, activeTypeParams), 'null'), 'undefined');
+        if (valExpr.trim().startsWith('{') && (getInterfaceShape(expectedPropT) || getInterfaceShape(nonNullPropT))) {
+          checkObjectLiteralAgainstShape(valExpr, nonNullPropT || expectedPropT, lineNum, `属性 "${propName}"`);
         } else if (valT !== 'any' && !isExpressionAssignable(valExpr, valT, expectedPropT, lineNum)) {
           addDiag(lineNum, 'TS2322', `属性 "${propName}" 的类型 "${valT}" 不能分配给类型 "${expectedPropT}" (${contextDesc})`);
         }
@@ -1624,6 +1894,33 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
       s = s.slice(1, -1).trim();
     }
 
+    // Yield expression: `yield expr` or `yield* expr`
+    const yieldM = s.match(/^yield\s*(\*)?\s*([\s\S]*)$/);
+    if (yieldM) {
+      if (yieldM[2]?.trim()) inferType(yieldM[2].trim(), lineNum);
+      return 'any';
+    }
+
+    // Prefix angle-bracket type assertion: `<string>val`
+    if (s.startsWith('<') && !s.includes('=>')) {
+      let ad = 1, k = 1;
+      while (k < s.length && ad > 0) {
+        const ch = s[k];
+        if (ch === '"' || ch === "'" || ch === '`') { k = skipString(s, k); continue; }
+        if (ch === '<') ad++;
+        else if (ch === '>' && s[k - 1] !== '=') ad--;
+        k++;
+      }
+      if (ad === 0 && k < s.length) {
+        const castT = s.slice(1, k - 1).trim();
+        const restExpr = s.slice(k).trim();
+        if (castT && restExpr) {
+          inferType(restExpr, lineNum);
+          return resolveAlias(castT);
+        }
+      }
+    }
+
     const hadTrailingBang = s.endsWith('!') && !s.endsWith('!=');
     while (s.endsWith('!') && !s.endsWith('!=')) {
       s = s.slice(0, -1).trim();
@@ -1635,21 +1932,39 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
 
     // Top-level `as` or `satisfies` cast (only when outside parens/brackets/braces)
     {
-      let d = 0, castType: string | null = null;
+      let d = 0, castPos = -1, castKw = '', castTarget = '';
       for (let i = 0; i < s.length; i++) {
         const ch = s[i];
         if (ch === '"' || ch === "'" || ch === '`') { i = skipString(s, i) - 1; continue; }
         if (ch === '(' || ch === '[' || ch === '{') d++;
         else if (ch === ')' || ch === ']' || ch === '}') d--;
         else if (d === 0 && isWS(ch)) {
-          const m = s.slice(i).match(/^\s+(?:as|satisfies)\s+([A-Za-z_$][\w$<>[\]\s|()]*)$/);
-          if (m && m[1] && !/[()]/.test(m[1].replace(/\([^()]*\)\[\]/g, ''))) {
-            castType = resolveAlias(m[1]);
+          const m = s.slice(i).match(/^\s+(as|satisfies)\s+([A-Za-z_$][\w$<>[\]\s|(){}:;,?"']*)$/);
+          if (m && m[1] && m[2]) {
+            castPos = i;
+            castKw = m[1];
+            castTarget = m[2].trim();
             break;
           }
         }
       }
-      if (castType) return castType;
+      if (castPos > 0 && castTarget) {
+        const lhsExpr = s.slice(0, castPos).trim();
+        const lhsT = inferType(lhsExpr, lineNum);
+        if (castKw === 'as' && castTarget === 'const') {
+          return lhsT;
+        }
+        const resolvedCast = resolveAlias(castTarget);
+        if (castKw === 'satisfies') {
+          if (lhsExpr.startsWith('{') && getInterfaceShape(resolvedCast)) {
+            checkObjectLiteralAgainstShape(lhsExpr, resolvedCast, lineNum, `satisfies "${resolvedCast}"`);
+          } else if (!isExpressionAssignable(lhsExpr, lhsT, resolvedCast, lineNum)) {
+            addDiag(lineNum, 'TS1360', `类型 "${lhsT}" 不满足预期类型 "${resolvedCast}"`);
+          }
+          return lhsT;
+        }
+        return resolvedCast;
+      }
     }
 
     if (/^(true|false)$/.test(s)) return 'boolean';
@@ -1700,11 +2015,13 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
     }
     const newClassM = s.match(/^new\s+([A-Za-z_$][\w$]*)\s*(?:<([\s\S]*)>)?\s*\(([\s\S]*)\)$/);
     if (newClassM && newClassM[1] && !/^(Map|Set|Array|Promise)$/.test(newClassM[1]) && findBalancedParen(s, s.lastIndexOf('(')) === s.length - 1) {
-      // Properly extract class name, optional <...>, and (...)
       const afterNew = s.replace(/^new\s+/, '');
       const idInfo = readIdent(afterNew, 0);
       if (idInfo) {
         const clsName = idInfo.name;
+        if (abstractClasses.has(clsName)) {
+          addDiag(lineNum, 'TS2511', `无法创建抽象类 "${clsName}" 的实例`);
+        }
         let pIdx = idInfo.end;
         while (pIdx < afterNew.length && isWS(afterNew[pIdx])) pIdx++;
         let explicitTypeArgs: string[] = [];
@@ -1729,7 +2046,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
           const argTypes = args.map(a => inferType(a, lineNum));
           const clsTParams = interfaceTypeParams.get(clsName) || [];
           const ctorSig = getClassMethodSig(clsName, 'constructor');
-          const callEnv = new Map<any, any>();
+          const callEnv = new Map<string, string>();
           if (ctorSig) {
             const effectiveSig = {
               ...ctorSig,
@@ -1753,7 +2070,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
           }
           if (clsTParams.length > 0) {
             const instArgs = clsTParams.map((tp: { name: string; constraint?: string | null; defaultType?: string | null }, idx: number) => {
-              if (callEnv.has(tp.name)) return callEnv.get(tp.name);
+              if (callEnv.has(tp.name)) return callEnv.get(tp.name) || 'any';
               if (idx < explicitTypeArgs.length) return evaluateType(explicitTypeArgs[idx]);
               return tp.defaultType ? evaluateType(tp.defaultType) : 'any';
             });
@@ -1768,6 +2085,9 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
       const openIdx = s.indexOf('(');
       const closeIdx = findBalancedParen(s, openIdx);
       if (closeIdx === s.length - 1) {
+        if (abstractClasses.has(newClassPrefixM[1])) {
+          addDiag(lineNum, 'TS2511', `无法创建抽象类 "${newClassPrefixM[1]}" 的实例`);
+        }
         return resolveAlias(newClassPrefixM[1]);
       }
     }
@@ -1806,19 +2126,19 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
     if (arrowExprM && arrowExprM[3]) {
       const rawParamStr = arrowExprM[1] !== undefined ? arrowExprM[1] : arrowExprM[2];
       const bodyStr = arrowExprM[3].trim();
-      const saved = new Map<any, any>();
-      const boundNames = new Set();
+      const saved = new Map<string, VarEnvInfo | undefined>();
+      const boundNames = new Set<string>();
       splitTopLevelDecl(rawParamStr || '').forEach(p => {
         const cleanP = p.trim().replace(/^\.\.\./, '');
         const pm = cleanP.match(/^([A-Za-z_$][\w$]*)(\?)?(?:\s*:\s*([^=]+))?/);
-        if (pm) {
+        if (pm && pm[1]) {
           const pName = pm[1];
           const pType = pm[3] ? resolveAlias(pm[3].trim()) : 'any';
           boundNames.add(pName);
           saved.set(pName, env.get(pName));
           env.set(pName, { type: pType, isConst: false, line: lineNum, declaredType: pType });
         } else {
-          const dSet = new Set();
+          const dSet = new Set<string>();
           extractBindingNames(cleanP, dSet);
           dSet.forEach(pName => {
             boundNames.add(pName);
@@ -1860,7 +2180,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
         const eqNullM = condExpr.match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*(===|!==)\s*(null|undefined)$/);
         let savedNarrow: {
           key: string;
-          prev: { type: string; isConst: boolean; line: number; declaredType?: string; literalType?: string | null } | undefined;
+          prev: VarEnvInfo | undefined;
         } | null = null;
         const applyNarrow = (targetExpr: string, nullKind: string) => {
           const baseT = inferType(targetExpr, lineNum);
@@ -1982,6 +2302,9 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
           if (!lhs || !rhs || /[+\-*/%&|^<>?:=(,]$/.test(lhs)) continue;
           const lt = inferType(lhs, lineNum);
           const rt = inferType(rhs, lineNum);
+          if (lt === 'unknown' || rt === 'unknown') {
+            addDiag(lineNum, 'TS18046', `对象的类型为 "unknown"`);
+          }
           if (ch === '+') {
             if (lt === 'string' || rt === 'string') return 'string';
             if (lt === 'number' && rt === 'number') return 'number';
@@ -2026,7 +2349,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
     }
 
     // Function or method call: callee(args) or callee<T1, T2>(args)
-    const callPrefixM = s.match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*(?:<([\s\S]+)>)?\s*\(/);
+    const callPrefixM = s.match(/^([A-Za-z_$][\w$!]*(?:(?:\?\.|\.)[A-Za-z_$][\w$!]*)*)\s*(?:<([\s\S]+)>)?\s*\(/);
     if (callPrefixM && callPrefixM[1]) {
       const callee = callPrefixM[1];
       let scanPos = callee.length;
@@ -2066,6 +2389,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
         if (callee === 'Number' || callee === 'parseInt' || callee === 'parseFloat') return 'number';
         if (callee === 'String' || callee === 'JSON.stringify') return 'string';
         if (callee === 'Boolean' || callee === 'Array.isArray') return 'boolean';
+        if (callee === 'Symbol') return 'symbol';
         if (callee === 'Promise.resolve') {
           const t0 = explicitTypeArgs[0] ? evaluateType(explicitTypeArgs[0]) : (argTypes[0] || 'void');
           return `Promise<${t0}>`;
@@ -2092,9 +2416,23 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
 
         const dotIdx = callee.lastIndexOf('.');
         if (dotIdx > 0) {
-          const objName = callee.slice(0, dotIdx);
-          const method = callee.slice(dotIdx + 1);
-          const objType = inferType(objName, lineNum);
+          const isOptChain = callee[dotIdx - 1] === '?';
+          const objName = callee.slice(0, isOptChain ? dotIdx - 1 : dotIdx);
+          const method = callee.slice(dotIdx + 1).replace(/!+$/, '');
+          const rawObjType = inferType(objName, lineNum);
+          if (rawObjType === 'unknown') {
+            addDiag(lineNum, 'TS18046', `"${objName}" 的类型为 "unknown"`);
+            return 'any';
+          }
+          if (!isOptChain && !objName.endsWith('!')) {
+            const uParts = splitTopLevelUnion(rawObjType);
+            if (uParts.includes('undefined')) {
+              addDiag(lineNum, 'TS18048', `"${objName}" 可能为 "undefined"`);
+            } else if (uParts.includes('null')) {
+              addDiag(lineNum, 'TS18047', `"${objName}" 可能为 "null"`);
+            }
+          }
+          const objType = stripNullableFromType(stripNullableFromType(rawObjType, 'null'), 'undefined');
 
           const mapM = objType.match(/^Map<([^,]+),(.+)>$/);
           if (mapM && mapM[1] && mapM[2]) {
@@ -2163,8 +2501,8 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
           }
         }
 
-        if (fns.has(callee)) {
-          const sig = fns.get(callee);
+        const sig = fns.get(callee);
+        if (sig) {
           return instantiateAndCheckCall(sig, explicitTypeArgs, args, argTypes, `函数 "${callee}"`, lineNum);
         }
 
@@ -2180,7 +2518,19 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
     const bracketOpen = s.indexOf('[');
     if (bracketOpen > 0 && s.endsWith(']')) {
       let curBase = s.slice(0, bracketOpen).trim();
+      const isOptBracket = curBase.endsWith('?.');
+      if (isOptBracket) curBase = curBase.slice(0, -2).trim();
       let curType = inferType(curBase, lineNum);
+      if (curType === 'unknown') {
+        addDiag(lineNum, 'TS18046', `"${curBase}" 的类型为 "unknown"`);
+        return 'any';
+      }
+      if (!isOptBracket && !curBase.endsWith('!')) {
+        const uParts = splitTopLevelUnion(curType);
+        if (uParts.includes('undefined')) addDiag(lineNum, 'TS18048', `"${curBase}" 可能为 "undefined"`);
+        else if (uParts.includes('null')) addDiag(lineNum, 'TS18047', `"${curBase}" 可能为 "null"`);
+      }
+      curType = stripNullableFromType(stripNullableFromType(curType, 'null'), 'undefined');
       let pos = bracketOpen;
       while (pos < s.length && s[pos] === '[') {
         const closeB = findBalancedParen(s, pos);
@@ -2193,12 +2543,19 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
             addDiag(lineNum, 'TS2538', `数组或字符串的索引类型必须为 "number"，不能使用类型 "${idxType}"`);
           }
         }
+        const shape = getInterfaceShape(curType);
         if (curType.endsWith('[]')) {
           curType = curType.slice(0, -2);
+        } else if (curType.startsWith('[') && curType.endsWith(']') && litIdx && /^\d+$/.test(litIdx)) {
+          curType = resolveIndexedAccess(curType, litIdx, new Map<string, string>(), 0);
         } else if (curType === 'string') {
           curType = 'string';
-        } else if (litIdx && getInterfaceShape(curType)) {
-          curType = resolveIndexedAccess(curType, litIdx, new Map<any, any>(), 0);
+        } else if (litIdx && shape) {
+          curType = resolveIndexedAccess(curType, litIdx, new Map<string, string>(), 0);
+        } else if (shape && shape.has(`[${idxExpr}]`)) {
+          curType = (shape.get(`[${idxExpr}]`) || { type: 'any' }).type;
+        } else if (shape && shape.has('__index__')) {
+          curType = (shape.get('__index__') || { type: 'any' }).type;
         } else if (activeTypeParams.has(curType) && activeTypeParams.has(idxType)) {
           curType = `${curType}[${idxType}]`;
         } else {
@@ -2209,62 +2566,107 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
       if (pos === s.length) return curType;
     }
 
-    // Property access chain: a.b.c (with optional non-null assertions a!.b!.c)
-    if (/^[A-Za-z_$][\w$]*!*(?:\.[A-Za-z_$][\w$]*!*)+$/.test(s)) {
-      if (env.has(s)) return env.get(s).type;
-      const rawParts = s.split('.');
-      const firstPart = rawParts[0] || '';
-      const firstBase = firstPart.replace(/!+$/, '');
-      if (!isKnownIdentifier(firstBase)) {
-        addDiag(lineNum, 'TS2304', `找不到名称 "${firstBase}"（变量未声明，请使用 let 或 const 声明）`);
-        return 'any';
+    // Property access chain: a.b.c (with optional non-null assertions a!.b!.c or optional chaining a?.b)
+    if (/^[A-Za-z_$][\w$]*!*(?:(?:\?\.|\.)[A-Za-z_$][\w$]*!*)+$/.test(s)) {
+      if (env.has(s)) return (env.get(s) || { type: 'any' }).type;
+      const tokens: Array<{ name: string; hasBang: boolean; optChainBefore: boolean }> = [];
+      let rem = s;
+      let nextOpt = false;
+      while (rem.length > 0) {
+        const m = rem.match(/^([A-Za-z_$][\w$]*)(!*)(\?\.|\.)?/);
+        if (!m || !m[1]) break;
+        tokens.push({ name: m[1], hasBang: Boolean(m[2]), optChainBefore: nextOpt });
+        nextOpt = m[3] === '?.';
+        rem = rem.slice(m[0].length);
       }
-      let curType = env.has(firstBase) ? env.get(firstBase).type : (interfaces.has(firstBase) ? firstBase : 'any');
-      if (firstPart.endsWith('!')) {
-        curType = stripNullableFromType(stripNullableFromType(curType, 'null'), 'undefined');
-      }
-      for (let pIdx = 1; pIdx < rawParts.length; pIdx++) {
-        const rawProp = rawParts[pIdx] || '';
-        const hasBang = rawProp.endsWith('!');
-        const prop = rawProp.replace(/!+$/, '');
-        const lookupType = stripNullableFromType(stripNullableFromType(curType, 'null'), 'undefined');
-        if (prop === 'length' && (lookupType.endsWith('[]') || lookupType === 'string')) {
-          curType = 'number';
-          continue;
+      const firstTok = tokens[0];
+      if (tokens.length >= 2 && firstTok) {
+        const firstBase = firstTok.name;
+        if (!isKnownIdentifier(firstBase)) {
+          addDiag(lineNum, 'TS2304', `找不到名称 "${firstBase}"（变量未声明，请使用 let 或 const 声明）`);
+          return 'any';
         }
-        if (prop === 'size' && (lookupType.startsWith('Map<') || lookupType.startsWith('Set<'))) {
-          curType = 'number';
-          continue;
-        }
-        const shape = getInterfaceShape(lookupType);
-        if (shape) {
-          if (!shape.has(prop)) {
-            addDiag(lineNum, 'TS2339', `类型 "${lookupType}" 上不存在属性 "${prop}"`);
-            return 'any';
+        if (enumsSet.has(firstBase)) {
+          const secondTok = tokens[1];
+          const memberProp = secondTok ? secondTok.name : '';
+          const memSet = enumMembers.get(firstBase);
+          if (memSet && memSet.size > 0 && !memSet.has(memberProp)) {
+            addDiag(lineNum, 'TS2339', `类型 "typeof ${firstBase}" 上不存在属性 "${memberProp}"`);
           }
-          curType = (shape.get(prop) || { type: 'any' }).type;
-        } else {
-          if (prop === 'length' || prop === 'size' || prop === 'val') curType = 'number';
-          else curType = 'any';
+          return firstBase;
         }
-        if (hasBang) {
+        let curType = env.has(firstBase) ? (env.get(firstBase) || { type: 'any' }).type : (interfaces.has(firstBase) ? firstBase : 'any');
+        if (firstTok.hasBang) {
           curType = stripNullableFromType(stripNullableFromType(curType, 'null'), 'undefined');
         }
+        let hadOptChain = false;
+        for (let pIdx = 1; pIdx < tokens.length; pIdx++) {
+          const tok = tokens[pIdx];
+          if (!tok) continue;
+          const prop = tok.name;
+          const prefixLabel = tokens.slice(0, pIdx).map(t => t.name).join('.');
+          if (curType === 'unknown') {
+            addDiag(lineNum, 'TS18046', `"${prefixLabel}" 的类型为 "unknown"`);
+            return 'any';
+          }
+          if (tok.optChainBefore) {
+            hadOptChain = true;
+          } else if (!tokens[pIdx - 1]?.hasBang) {
+            const cParts = splitTopLevelUnion(curType);
+            if (cParts.includes('undefined')) {
+              addDiag(lineNum, 'TS18048', `"${prefixLabel}" 可能为 "undefined"`);
+            } else if (cParts.includes('null')) {
+              addDiag(lineNum, 'TS18047', `"${prefixLabel}" 可能为 "null"`);
+            }
+          }
+          const lookupType = stripNullableFromType(stripNullableFromType(curType, 'null'), 'undefined');
+          if (prop === 'length' && (lookupType.endsWith('[]') || lookupType.startsWith('[') || lookupType === 'string')) {
+            curType = 'number';
+            continue;
+          }
+          if (prop === 'size' && (lookupType.startsWith('Map<') || lookupType.startsWith('Set<'))) {
+            curType = 'number';
+            continue;
+          }
+          const shape = getInterfaceShape(lookupType);
+          if (shape) {
+            if (shape.has(prop)) {
+              curType = (shape.get(prop) || { type: 'any' }).type;
+            } else if (getClassMethodSig(lookupType, prop)) {
+              curType = 'function';
+            } else if (shape.has('__index__')) {
+              curType = (shape.get('__index__') || { type: 'any' }).type;
+            } else {
+              addDiag(lineNum, 'TS2339', `类型 "${lookupType}" 上不存在属性 "${prop}"`);
+              return 'any';
+            }
+          } else {
+            if (prop === 'length' || prop === 'size' || prop === 'val') curType = 'number';
+            else curType = 'any';
+          }
+          if (tok.hasBang) {
+            curType = stripNullableFromType(stripNullableFromType(curType, 'null'), 'undefined');
+            hadOptChain = false;
+          }
+        }
+        if (hadOptChain && curType !== 'any' && !splitTopLevelUnion(curType).includes('undefined')) {
+          curType = `${curType}|undefined`;
+        }
+        return curType;
       }
-      return curType;
     }
 
     // Prefix / postfix ++ or -- inside expression
     const exprIncM = s.match(/^(?:(\+\+|--)\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)|([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*(\+\+|--))$/);
     if (exprIncM) {
-      const target = exprIncM[2] || exprIncM[3];
+      const target = exprIncM[2] || exprIncM[3] || '';
       inferType(target, lineNum);
       return 'number';
     }
 
     // Identifier lookup
     if (/^[A-Za-z_$][\w$]*$/.test(s)) {
-      if (env.has(s)) return env.get(s).type;
+      if (env.has(s)) return (env.get(s) || { type: 'any' }).type;
       if (!isKnownIdentifier(s)) {
         addDiag(lineNum, 'TS2304', `找不到名称 "${s}"（变量未声明，请使用 let 或 const 声明）`);
       }
@@ -2274,12 +2676,13 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
   }
 
   function instantiateAndCheckCall(sig: FnSigInfo, explicitTypeArgs: string[], args: string[], argTypes: string[], calleeLabel: string, lineNum: number, outEnv: Map<string, string> | null = null): string {
-    if (args.length < sig.minArgs || args.length > sig.params.length) {
+    const hasRest = sig.params.some(p => p.isRest);
+    if (args.length < sig.minArgs || (!hasRest && args.length > sig.params.length)) {
       addDiag(lineNum, 'TS2554', `${calleeLabel} 应有 ${sig.minArgs === sig.params.length ? sig.params.length : sig.minArgs + '-' + sig.params.length} 个参数，但获得 ${args.length} 个`);
       return sig.returnType || 'any';
     }
     const tParams = sig.typeParams || [];
-    const callEnv = outEnv || new Map<any, any>();
+    const callEnv = outEnv || new Map<string, string>();
     if (tParams.length > 0) {
       const tpNames = new Set(tParams.map(tp => tp.name));
       const tpMetaMap = new Map(tParams.map(tp => [tp.name, tp]));
@@ -2299,7 +2702,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
         const litT = inferLiteralType(args[idx]);
         if (tpNames.has(rawPT)) {
           if (!callEnv.has(rawPT)) {
-            const meta: any = tpMetaMap.get(rawPT);
+            const meta = tpMetaMap.get(rawPT);
             const usedAsIndex = sig.rawReturnType && new RegExp(`\\[\\s*${rawPT}\\s*\\]`).test(sig.rawReturnType);
             const hasKeyofOrLitConstraint = meta && meta.constraint && (/\bkeyof\b|["']/.test(meta.constraint));
             if (litT && (usedAsIndex || hasKeyofOrLitConstraint)) {
@@ -2309,7 +2712,6 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
             }
           }
         } else if (actT && actT !== 'any') {
-          // Replace unbound type params in rawPT with `infer TP` and pattern-match against actT
           let patWithInfer = rawPT;
           let replacedAny = false;
           tpNames.forEach(tpName => {
@@ -2350,10 +2752,14 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
     }
 
     // Check each argument against its (possibly generic-instantiated) parameter type
+    const lastParam = sig.params[sig.params.length - 1];
     for (let idx = 0; idx < args.length; idx++) {
-      const p = sig.params[idx];
+      const p = idx < sig.params.length ? sig.params[idx] : (lastParam?.isRest ? lastParam : undefined);
       if (!p) continue;
-      const expectedPT = tParams.length > 0 ? evaluateType(p.rawType || p.type, callEnv) : p.type;
+      let expectedPT = tParams.length > 0 ? evaluateType(p.rawType || p.type, callEnv) : p.type;
+      if (p.isRest && expectedPT.endsWith('[]')) {
+        expectedPT = expectedPT.slice(0, -2);
+      }
       const at = argTypes[idx] || 'any';
       const rawArg = (args[idx] || '').trim();
       if (expectedPT && expectedPT !== 'any') {
@@ -2389,28 +2795,29 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
 
   function parseParamList(paramStr: string, lineNum: number, checkImplicitAny = true) {
     const rawParams = paramStr ? splitTopLevelDecl(paramStr) : [];
-    const params: Array<{ name: string; type: string; rawType: string; optional: boolean }> = [];
+    const params: Array<{ name: string; type: string; rawType: string; optional: boolean; isRest?: boolean }> = [];
     let minArgs = 0;
     rawParams.forEach(pRaw => {
-      const p = pRaw.trim().replace(/^(?:public|private|protected|readonly)\s+/, '');
+      const p = pRaw.trim().replace(/^(?:(?:public|private|protected|readonly|override)\s+)+/, '');
       if (!p) return;
-      const pm = p.match(/^(?:\.\.\.)?([A-Za-z_$][\w$]*)(\?)?(?:\s*:\s*((?:[^=]|=>)+?))?(?:\s*=\s*(?!=|>)([\s\S]+))?$/);
-      if (pm && pm[1]) {
-        const pName = pm[1];
-        const isOpt = Boolean(pm[2] || pm[4]);
-        const rawType = pm[3] ? pm[3].trim() : null;
+      const pm = p.match(/^(\.\.\.)?([A-Za-z_$][\w$]*)(\?)?(?:\s*:\s*((?:[^=]|=>)+?))?(?:\s*=\s*(?!=|>)([\s\S]+))?$/);
+      if (pm && pm[2]) {
+        const isRest = Boolean(pm[1]);
+        const pName = pm[2];
+        const isOpt = Boolean(pm[3] || pm[5] || isRest);
+        const rawType = pm[4] ? pm[4].trim() : null;
         let pType = rawType ? resolveAlias(rawType) : null;
-        if (!pType && pm[4]) {
-          pType = inferType(pm[4].trim(), lineNum);
+        if (!pType && pm[5]) {
+          pType = inferType(pm[5].trim(), lineNum);
         }
         if (!pType) {
           if (checkImplicitAny) {
             addDiag(lineNum, 'TS7006', `参数 "${pName}" 隐式具有 "any" 类型（严格模式下请显式添加类型注解，如 ${pName}: number）`);
           }
-          pType = 'any';
+          pType = isRest ? 'any[]' : 'any';
         }
         if (!isOpt) minArgs++;
-        params.push({ name: pName, type: pType, rawType: rawType || pType, optional: isOpt });
+        params.push({ name: pName, type: pType, rawType: rawType || pType, optional: isOpt, isRest });
       }
     });
     return { params, minArgs };
@@ -2419,14 +2826,58 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
   function parseClassTopMember(mem: string, propMap: Map<string, { type: string; rawType: string; optional: boolean }>, clsName: string, lineNum: number) {
     const s = mem.trim();
     if (!s) return;
-    const getterM = s.match(/^(?:(?:public|private|protected|static|readonly)\s+)*get\s+([A-Za-z_$][\w$]*)\s*\(\s*\)\s*(?::\s*([^{]+))?/);
+    const getterM = s.match(/^(?:(?:public|private|protected|static|readonly|override)\s+)*get\s+([A-Za-z_$][\w$]*)\s*\(\s*\)\s*(?::\s*([^{]+))?/);
     if (getterM && getterM[1]) {
       const rawGT = getterM[2] ? getterM[2].trim() : 'any';
       const gType = resolveAlias(rawGT);
       propMap.set(getterM[1], { type: gType, rawType: rawGT, optional: false });
+      fns.set(clsName + '.get.' + getterM[1], {
+        name: clsName + '.' + getterM[1],
+        params: [],
+        minArgs: 0,
+        returnType: gType,
+        rawReturnType: rawGT,
+        typeParams: [],
+        line: lineNum,
+        hasValueReturn: /\breturn\s+[^;}\s]/.test(s),
+      });
       return;
     }
-      const methodHdrM = s.match(/^(?:(?:public|private|protected|static|async|readonly|abstract)\s+)*([A-Za-z_$][\w$]*)\s*(<[\s\S]*>)?\s*\(/);
+    const setterM = s.match(/^(?:(?:public|private|protected|static|readonly|override)\s+)*set\s+([A-Za-z_$][\w$]*)\s*\(([^)]*)\)/);
+    if (setterM && setterM[1]) {
+      const sName = setterM[1];
+      const { params, minArgs } = parseParamList((setterM[2] || '').trim(), lineNum, true);
+      const sType = params[0]?.type || 'any';
+      const sRaw = params[0]?.rawType || sType;
+      if (!propMap.has(sName)) {
+        propMap.set(sName, { type: sType, rawType: sRaw, optional: false });
+      }
+      fns.set(clsName + '.set.' + sName, {
+        name: clsName + '.' + sName,
+        params,
+        minArgs,
+        returnType: 'void',
+        rawReturnType: 'void',
+        typeParams: [],
+        line: lineNum,
+        hasValueReturn: true,
+      });
+      return;
+    }
+    const idxM = s.match(/^(?:readonly\s+)?\[\s*[A-Za-z_$][\w$]*\s*:\s*(?:string|number|symbol|any)\s*\]\s*:\s*([^;=]+)$/);
+    if (idxM && idxM[1]) {
+      const rawT = idxM[1].trim();
+      propMap.set('__index__', { type: resolveAlias(rawT), rawType: rawT, optional: true });
+      return;
+    }
+    const compM = s.match(/^(?:(?:readonly|public|private|protected|static)\s+)*\[\s*([A-Za-z_$][\w$]*)\s*\](\?)?\s*:\s*([^;=]+)(?:\s*=\s*[\s\S]+)?$/);
+    if (compM && compM[1] && compM[3]) {
+      const rawT = compM[3].trim();
+      propMap.set(`[${compM[1]}]`, { type: resolveAlias(rawT), rawType: rawT, optional: Boolean(compM[2]) });
+      propMap.set('__index__', { type: resolveAlias(rawT), rawType: rawT, optional: true });
+      return;
+    }
+    const methodHdrM = s.match(/^(?:(?:public|private|protected|static|async|readonly|abstract|override)\s+)*\*?\s*([A-Za-z_$][\w$]*)\s*(<[\s\S]*>)?\s*\(/);
     if (methodHdrM && methodHdrM[1] && !RESERVED_WORDS.has(methodHdrM[1])) {
       const mName = methodHdrM[1];
       let openP = -1, ad = 0;
@@ -2449,12 +2900,17 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
           splitTopLevelDecl(paramStr).forEach((rawP, idx) => {
             const pTrim = rawP.trim();
             const pInfo = params[idx];
-            if (/^(?:(?:public|private|protected|readonly)\s+)+/.test(pTrim) && pInfo) {
+            if (/^(?:(?:public|private|protected|readonly|override)\s+)+/.test(pTrim) && pInfo) {
               propMap.set(pInfo.name, { type: pInfo.type, rawType: pInfo.rawType || pInfo.type, optional: Boolean(pInfo.optional) });
             }
           });
+        } else {
+          const fnShapeStr = `(${params.map(p => `${p.name}${p.optional ? '?' : ''}:${p.type}`).join(',')})=>${retType}`;
+          if (!propMap.has(mName)) {
+            propMap.set(mName, { type: fnShapeStr, rawType: fnShapeStr, optional: false });
+          }
         }
-        const isAbstractOrOverload = /^\s*(?:(?:public|private|protected|static|async|readonly)\s+)*abstract\b/.test(s) || /;\s*$/.test(afterClose);
+        const isAbstractOrOverload = /^\s*(?:(?:public|private|protected|static|async|readonly|override)\s+)*abstract\b/.test(s) || /;\s*$/.test(afterClose);
         const hasValRet = isAbstractOrOverload || /\breturn\s+[^;}\s]/.test(s);
         fns.set(clsName + '.' + mName, {
           name: clsName + '.' + mName,
@@ -2470,7 +2926,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
       }
     }
     if (s.includes('(') && !s.includes('=>') && (!s.includes('=') || s.indexOf('(') < s.indexOf('='))) return;
-    const cleaned = s.replace(/^(?:(?:readonly|public|private|protected|static|abstract)\s+)+/, '');
+    const cleaned = s.replace(/^(?:(?:readonly|public|private|protected|static|abstract|override)\s+)+/, '');
     const pm = cleaned.match(/^([A-Za-z_$][\w$]*)(\?)?\s*:\s*((?:[^=]|=>)+?)(?:\s*=\s*(?!=|>)[\s\S]+)?$/);
     if (pm && pm[1] && pm[3]) {
       const rawFT = pm[3].trim();
@@ -2479,7 +2935,9 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
     }
     const initM = cleaned.match(/^([A-Za-z_$][\w$]*)\s*=\s*(.+)$/);
     if (initM && initM[1] && initM[2]) {
+      const savedDiagLen = diagnostics.length;
       const infT = inferType(initM[2].trim(), lineNum);
+      diagnostics.length = savedDiagLen;
       propMap.set(initM[1], { type: infT, rawType: infT, optional: false });
     }
   }
@@ -2540,10 +2998,14 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
       continue;
     }
 
-    const ifaceKwM = raw.match(/^(?:export\s+)?(?:declare\s+)?(?:abstract\s+)?(interface|class)\s+([A-Za-z_$][\w$]*)/);
-    if (ifaceKwM && ifaceKwM[2]) {
-      const isClass = ifaceKwM[1] === 'class';
-      const ifaceName = ifaceKwM[2];
+    const ifaceKwM = raw.match(/^(?:export\s+)?(?:declare\s+)?(abstract\s+)?(interface|class)\s+([A-Za-z_$][\w$]*)/);
+    if (ifaceKwM && ifaceKwM[3]) {
+      const isAbstract = Boolean(ifaceKwM[1]);
+      const isClass = ifaceKwM[2] === 'class';
+      const ifaceName = ifaceKwM[3];
+      if (isClass && isAbstract) {
+        abstractClasses.add(ifaceName);
+      }
       let pos = ifaceKwM[0].length;
       while (pos < raw.length && isWS(raw[pos])) pos++;
       let tParamStr = '';
@@ -2569,8 +3031,17 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
         const headerTail = afterTParams.slice(0, braceOpenIdx);
         const extM = headerTail.match(/\bextends\s+([A-Za-z_$][\w$]*)/);
         const parentName = extM ? extM[1] : null;
+        if (isClass) {
+          const implM = headerTail.match(/\bimplements\s+([^{]+)/);
+          if (implM && implM[1]) {
+            const implList = splitTopLevelDecl(implM[1].trim()).map(s => s.replace(/<[\s\S]*>$/, '').trim()).filter(Boolean);
+            if (implList.length > 0) {
+              classImplements.set(ifaceName, { interfaces: implList, line: lineNum });
+            }
+          }
+        }
         const rest = afterTParams.slice(braceOpenIdx + 1).trim();
-        const propMap = new Map<any, any>();
+        const propMap = new Map<string, PropShapeInfo>();
         interfaces.set(ifaceName, propMap);
         if (parentName) {
           classParents.set(ifaceName, parentName);
@@ -2599,7 +3070,37 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
 
     const enumMatch = raw.match(/^(?:export\s+)?(?:const\s+)?enum\s+([A-Za-z_$][\w$]*)\b/);
     if (enumMatch && enumMatch[1]) {
-      enumsSet.add(enumMatch[1]);
+      const enumName = enumMatch[1];
+      enumsSet.add(enumName);
+      const members = new Set<string>();
+      const valTypes = new Set<'number' | 'string'>();
+      let enumScan = raw.slice(raw.indexOf('{') >= 0 ? raw.indexOf('{') + 1 : enumMatch[0].length);
+      let scanIdx = i;
+      while (!enumScan.includes('}') && scanIdx + 1 < lines.length) {
+        scanIdx++;
+        enumScan += ' ' + stripInlineCommentSafe(lines[scanIdx]).trim();
+      }
+      const closeBrace = enumScan.indexOf('}');
+      const bodyStr = (closeBrace >= 0 ? enumScan.slice(0, closeBrace) : enumScan).trim();
+      splitTopLevelDecl(bodyStr).forEach(entry => {
+        const em = entry.trim().match(/^([A-Za-z_$][\w$]*)(?:\s*=\s*([\s\S]+))?$/);
+        if (em && em[1]) {
+          members.add(em[1]);
+          if (em[2]) {
+            const initTrim = em[2].trim();
+            if (/^(?:"[^"]*"|'[^']*'|`[^`]*`)$/.test(initTrim)) {
+              valTypes.add('string');
+            } else {
+              valTypes.add('number');
+            }
+          } else {
+            valTypes.add('number');
+          }
+        }
+      });
+      if (valTypes.size === 0) valTypes.add('number');
+      enumMembers.set(enumName, members);
+      enumValueTypes.set(enumName, valTypes);
       continue;
     }
 
@@ -2681,7 +3182,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
       }
     }
 
-    const fnMatch = raw.match(/^(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/);
+    const fnMatch = raw.match(/^(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)/);
     if (fnMatch && fnMatch[1] && raw.indexOf('(') >= 0) {
       const fnName = fnMatch[1];
       let headerStr = raw;
@@ -2716,7 +3217,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
         const afterClose = headerStr.slice(closeP + 1).trim();
         const retM = afterClose.match(/^:\s*([^{]+?)(?:\s*\{[\s\S]*)?$/);
         const rawRetType = (retM && retM[1]) ? retM[1].trim() : 'any';
-        const tempEnv = new Map<any, any>();
+        const tempEnv = new Map<string, string>();
         fnTParams.forEach(tp => tempEnv.set(tp.name, tp.name));
         const retType = retM ? resolveAlias(rawRetType, tempEnv) : 'any';
         const { params, minArgs } = parseParamList(paramStr, lineNum, true);
@@ -2736,30 +3237,47 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
 
   // Materialize non-generic object/mapped/utility type aliases into `interfaces` after all Pass 1 declarations are known
   typeAliases.forEach((rhs, aliasName) => {
-    const evaluated = evaluateType(rhs);
+    const evaluated = evaluateType(rhs, new Map(), 0, new Set([aliasName]));
     typeAliases.set(aliasName, evaluated);
     if (evaluated.startsWith('{') && evaluated.endsWith('}') && !interfaces.has(aliasName)) {
       interfaces.set(aliasName, parseObjectShapeLiteral(evaluated));
     }
   });
 
+  // Validate class `implements` contracts against target interfaces
+  classImplements.forEach(({ interfaces: implList, line: clsLine }, clsName) => {
+    const clsShape = getInterfaceShape(clsName);
+    implList.forEach(ifaceName => {
+      const targetShape = getInterfaceShape(ifaceName);
+      if (!targetShape) return;
+      targetShape.forEach((propInfo, propName) => {
+        if (propName.startsWith('__')) return;
+        const hasMember = (clsShape && clsShape.has(propName)) || Boolean(getClassMethodSig(clsName, propName));
+        if (!hasMember && !propInfo.optional) {
+          addDiag(clsLine, 'TS2420', `类 "${clsName}" 错误实现接口 "${ifaceName}": 缺少属性或方法 "${propName}"`);
+        } else if (clsShape && clsShape.has(propName)) {
+          const clsMember = clsShape.get(propName);
+          if (clsMember && clsMember.type !== 'any' && propInfo.type !== 'any' && !isTsAssignable(clsMember.type, propInfo.type)) {
+            addDiag(clsLine, 'TS2420', `类 "${clsName}" 错误实现接口 "${ifaceName}": 属性 "${propName}" 的类型 "${clsMember.type}" 不能分配给类型 "${propInfo.type}"`);
+          }
+        }
+      });
+    });
+  });
+
   // Pass 2: Check statements, declarations, reassignments, returns, and calls line-by-line
-  interface FnSigInfo {
-    name: string;
-    params: Array<{ name: string; type: string; rawType: string; optional: boolean }>;
-    minArgs: number;
-    returnType: string;
-    rawReturnType: string;
-    typeParams: Array<{ name: string; constraint: string | null; defaultType: string | null }>;
-    line: number;
-    hasValueReturn: boolean;
-  }
   let currentFn: FnSigInfo | null = null;
   const fnScopeStack: Array<{
     fn: FnSigInfo | null;
     startDepth: number;
-    prevEnv: Map<string, { type: string; isConst: boolean; line: number; declaredType?: string; literalType?: string | null }>;
+    prevEnv: Map<string, VarEnvInfo>;
     prevTypeParams: Map<string, string>;
+  }> = [];
+  const switchStack: Array<{
+    expr: string;
+    startDepth: number;
+    origInfo: VarEnvInfo;
+    remainingTypes: string[];
   }> = [];
   let currentClass: string | null = null;
   let classStartBraceDepth = 0;
@@ -2867,7 +3385,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
       const clsName = (classOpen ? classOpen[1] : (classExprOpen ? classExprOpen[2] : '')) || '';
       if (classExprOpen) {
         env.set(clsName, { type: clsName, isConst: classExprOpen[1] === 'const', line: lineNum, declaredType: clsName });
-        if (!interfaces.has(clsName)) interfaces.set(clsName, new Map<any, any>());
+        if (!interfaces.has(clsName)) interfaces.set(clsName, new Map<string, PropShapeInfo>());
       }
       const clsTParams = interfaceTypeParams.get(clsName) || [];
       clsTParams.forEach((tp: { name: string }) => activeTypeParams.set(tp.name, tp.name));
@@ -2920,18 +3438,20 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
     }
 
     // Skip function overload signature without body: `function add(a: number, b: number): number;`
-    if (/^(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+[A-Za-z_$][\w$]*[\s\S]*;\s*$/.test(trimmed) && !trimmed.includes('{')) {
+    if (/^(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*\*?\s*[A-Za-z_$][\w$]*[\s\S]*;\s*$/.test(trimmed) && !trimmed.includes('{')) {
       continue;
     }
 
-    const fnOpen = trimmed.match(/^(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*(?:<[\s\S]*>)?\s*\(/);
-    const arrowFnOpen = !fnOpen ? trimmed.match(/^(?:export\s+)?(const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:function(?:\s+[A-Za-z_$][\w$]*)?\s*)?(?:(<[\s\S]*>)\s*)?\(([^)]*)\)\s*(?::\s*([^=]+?))?\s*(?:=>\s*)?\{/) : null;
+    const fnOpen = trimmed.match(/^(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*(\*)?\s*([A-Za-z_$][\w$]*)\s*(?:<[\s\S]*>)?\s*\(/);
+    const arrowFnOpen = !fnOpen ? trimmed.match(/^(?:export\s+)?(const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:function\s*\*?(?:\s+[A-Za-z_$][\w$]*)?\s*)?(?:(<[\s\S]*>)\s*)?\(([^)]*)\)\s*(?::\s*([^=]+?))?\s*(?:=>\s*)?\{/) : null;
     let validMethodOpen: string[] | null = null;
     if (!fnOpen && !arrowFnOpen && currentClass && braceDepth === classStartBraceDepth + 1) {
-      const mHdr = trimmed.match(/^(?:(?:public|private|protected|static|async|readonly|get|set)\s+)*([A-Za-z_$][\w$]*)\s*(?:<[\s\S]*>)?\s*\(/);
-      if (mHdr && mHdr[1] && !RESERVED_WORDS.has(mHdr[1])) {
+      const mHdr = trimmed.match(/^(?:(?:public|private|protected|static|async|readonly|override)\s+)*(?:(get|set)\s+)?(\*\s*)?([A-Za-z_$][\w$]*)\s*(?:<[\s\S]*>)?\s*\(/);
+      if (mHdr && mHdr[3] && !RESERVED_WORDS.has(mHdr[3])) {
+        const accessorKind = mHdr[1] || '';
+        const mName = mHdr[3];
         let openP = -1, ad = 0;
-        for (let k = trimmed.indexOf(mHdr[1]) + mHdr[1].length; k < trimmed.length; k++) {
+        for (let k = trimmed.indexOf(mName) + mName.length; k < trimmed.length; k++) {
           if (trimmed[k] === '<') ad++;
           else if (trimmed[k] === '>' && trimmed[k - 1] !== '=') ad = Math.max(0, ad - 1);
           else if (trimmed[k] === '(' && ad === 0) { openP = k; break; }
@@ -2941,16 +3461,17 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
           const afterP = trimmed.slice(closeP + 1).trim();
           const retM = afterP.match(/^(?::\s*([^{]+?))?\s*\{/);
           if (retM) {
-            validMethodOpen = [trimmed, mHdr[1], trimmed.slice(openP + 1, closeP).trim(), retM[1] || ''];
+            validMethodOpen = [trimmed, mName, trimmed.slice(openP + 1, closeP).trim(), retM[1] || '', accessorKind];
           }
         }
       }
     }
     const callbackArrowOpen = (!fnOpen && !arrowFnOpen && !validMethodOpen)
       ? (trimmed.match(/(?:async\s*)?(?:(<[A-Za-z_$][\w$,\s=<>]*>)\s*)?\(([^()]*)\)\s*(?::\s*([^{=]+?))?\s*=>\s*\{$/) ||
-         trimmed.match(/(?:async\s*)?function(?:\s+[A-Za-z_$][\w$]*)?\s*(?:(<[A-Za-z_$][\w$,\s=<>]*>)\s*)?\(([^()]*)\)\s*(?::\s*([^{=]+?))?\s*\{$/))
+         trimmed.match(/(?:async\s*)?function\s*\*?(?:\s+[A-Za-z_$][\w$]*)?\s*(?:(<[A-Za-z_$][\w$,\s=<>]*>)\s*)?\(([^()]*)\)\s*(?::\s*([^{=]+?))?\s*\{$/))
       : null;
 
+    let bodyStartInRaw = 0;
     if (fnOpen || arrowFnOpen || validMethodOpen || callbackArrowOpen) {
       if (fnOpen) {
         while (findBalancedParen(trimmed, trimmed.lastIndexOf('(')) < 0 && i + 1 < lines.length) {
@@ -2975,11 +3496,21 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
         prevEnv: new Map(env),
         prevTypeParams: new Map(activeTypeParams),
       });
-      const existingFn: FnSigInfo | undefined = (fnOpen && fnOpen[1] ? fns.get(fnOpen[1]) : undefined) ||
-        (validMethodOpen && validMethodOpen[1] && currentClass ? fns.get(currentClass + '.' + validMethodOpen[1]) : undefined);
+      const methodKey = validMethodOpen && validMethodOpen[1] && currentClass
+        ? (validMethodOpen[4] === 'set'
+            ? `${currentClass}.set.${validMethodOpen[1]}`
+            : validMethodOpen[4] === 'get'
+              ? `${currentClass}.get.${validMethodOpen[1]}`
+              : `${currentClass}.${validMethodOpen[1]}`)
+        : '';
+      const existingFn: FnSigInfo | undefined = (fnOpen && fnOpen[2] ? fns.get(fnOpen[2]) : undefined) ||
+        (methodKey && validMethodOpen ? (fns.get(methodKey) || fns.get(`${currentClass}.${validMethodOpen[1]}`)) : undefined);
       let activeFn: FnSigInfo;
       if (existingFn) {
         activeFn = existingFn;
+        if (fnOpen && fnOpen[1] === '*') {
+          activeFn.hasValueReturn = true;
+        }
       } else if (callbackArrowOpen) {
         const cbTParams = callbackArrowOpen[1] ? parseTypeParams(callbackArrowOpen[1]) : [];
         const cbParamStr = (callbackArrowOpen[2] || '').trim();
@@ -2988,7 +3519,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
         const { params: cbParams, minArgs: cbMin } = parseParamList(cbParamStr, lineNum, false);
         activeFn = { name: '<callback>', params: cbParams, minArgs: cbMin, returnType: cbRet, rawReturnType: cbRawRet, typeParams: cbTParams, line: lineNum, hasValueReturn: false };
       } else {
-        const fName = (fnOpen ? fnOpen[1] : (arrowFnOpen ? arrowFnOpen[2] : (currentClass + '.' + (validMethodOpen ? validMethodOpen[1] : '')))) || '';
+        const fName = (fnOpen ? fnOpen[2] : (arrowFnOpen ? arrowFnOpen[2] : (methodKey || (currentClass + '.' + (validMethodOpen ? validMethodOpen[1] : ''))))) || '';
         let paramStr = '';
         let retType = 'any';
         let rawRetType = 'any';
@@ -3012,11 +3543,13 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
           retType = arrowFnOpen[5] ? resolveAlias(rawRetType) : 'any';
         } else if (validMethodOpen) {
           paramStr = (validMethodOpen[2] || '').trim();
-          rawRetType = validMethodOpen[1] === 'constructor' ? 'void' : (validMethodOpen[3] ? validMethodOpen[3].trim() : 'any');
-          retType = validMethodOpen[1] === 'constructor' ? 'void' : resolveAlias(rawRetType);
+          const isCtorOrSetter = validMethodOpen[1] === 'constructor' || validMethodOpen[4] === 'set';
+          rawRetType = isCtorOrSetter ? 'void' : (validMethodOpen[3] ? validMethodOpen[3].trim() : 'any');
+          retType = isCtorOrSetter ? 'void' : resolveAlias(rawRetType);
         }
         const { params, minArgs } = parseParamList(paramStr, lineNum, Boolean(fnOpen || validMethodOpen));
-        activeFn = { name: fName, params, minArgs, returnType: retType, rawReturnType: rawRetType, typeParams: fnTParams, line: lineNum, hasValueReturn: false };
+        const isGen = Boolean((fnOpen && fnOpen[1] === '*') || /^Generator<|^AsyncGenerator<|^IterableIterator<|^Iterator</.test(retType));
+        activeFn = { name: fName, params, minArgs, returnType: retType, rawReturnType: rawRetType, typeParams: fnTParams, line: lineNum, hasValueReturn: isGen };
         fns.set(fName, activeFn);
       }
       currentFn = activeFn;
@@ -3027,7 +3560,35 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
         env.set(p.name, { type: p.type, isConst: false, line: activeFn.line, declaredType: p.type });
       });
       fnStartBraceDepth = braceDepth;
-      const openBraceIdx = trimmed.indexOf('{');
+      // Locate the function body's opening `{` (skipping `{...}` inside generic constraints, parameters, or return types)
+      let openBraceIdx = -1;
+      if (trimmed.endsWith('{')) {
+        openBraceIdx = trimmed.lastIndexOf('{');
+        bodyStartInRaw = rawLine.lastIndexOf('{');
+      } else {
+        let searchFrom = 0;
+        const firstOpenP = trimmed.indexOf('(');
+        if (firstOpenP >= 0) {
+          const closeP = findBalancedParen(trimmed, firstOpenP);
+          if (closeP > firstOpenP) searchFrom = closeP + 1;
+        }
+        let td = 0;
+        for (let k = searchFrom; k < trimmed.length; k++) {
+          const ch = trimmed[k];
+          if (ch === '"' || ch === "'" || ch === '`') { k = skipString(trimmed, k) - 1; continue; }
+          if (ch === '<' || ch === '(' || ch === '[') td++;
+          else if ((ch === '>' && trimmed[k - 1] !== '=') || ch === ')' || ch === ']') td = Math.max(0, td - 1);
+          else if (ch === '{' && td === 0) {
+            openBraceIdx = k;
+            break;
+          }
+        }
+        if (openBraceIdx >= 0) {
+          const suffix = trimmed.slice(openBraceIdx);
+          const rawIdx = rawLine.lastIndexOf(suffix);
+          bodyStartInRaw = rawIdx >= 0 ? rawIdx : rawLine.indexOf('{');
+        }
+      }
       const closeBraceIdx = trimmed.lastIndexOf('}');
       const bodyAfterOpenBrace = openBraceIdx >= 0 ? trimmed.slice(openBraceIdx + 1) : '';
       const rm = bodyAfterOpenBrace.match(/\breturn\b([^;}\n]*)/);
@@ -3062,15 +3623,23 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
       }
     }
 
-    for (let k = 0; k < rawLine.length; k++) {
+    for (let k = Math.max(0, bodyStartInRaw); k < rawLine.length; k++) {
       const ch = rawLine[k];
       if (ch === '"' || ch === "'" || ch === '`') { k = skipString(rawLine, k) - 1; continue; }
       if (ch === '/' && rawLine[k + 1] === '/') break;
       if (ch === '{') braceDepth++;
       else if (ch === '}') {
         braceDepth = Math.max(0, braceDepth - 1);
+        const topSwitch = switchStack[switchStack.length - 1];
+        if (topSwitch && braceDepth <= topSwitch.startDepth) {
+          const sw = switchStack.pop();
+          if (sw && sw.origInfo) {
+            env.set(sw.expr, sw.origInfo);
+          }
+        }
         if (currentFn && braceDepth <= fnStartBraceDepth) {
-          if (currentFn.returnType !== 'any' && currentFn.returnType !== 'void' && currentFn.returnType !== 'Promise<void>' && currentFn.returnType !== 'unknown' && !currentFn.hasValueReturn) {
+          const isGenRet = /^Generator<|^AsyncGenerator<|^IterableIterator<|^Iterator</.test(currentFn.returnType);
+          if (currentFn.returnType !== 'any' && currentFn.returnType !== 'void' && currentFn.returnType !== 'Promise<void>' && currentFn.returnType !== 'unknown' && !isGenRet && !currentFn.hasValueReturn) {
             addDiag(currentFn.line, 'TS2355', `函数 "${currentFn.name}" 声明返回类型为 "${currentFn.returnType}"，但缺少 return 返回值语句`);
           }
           const prev = fnScopeStack.pop();
@@ -3107,8 +3676,8 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
       continue;
     }
 
-    // Pure structural braces / keywords: }, };, });, }, 20);, else {, try {, finally {, do {, default:
-    if (/^(?:\}[\s);,]*|\}\s*,\s*[\s\S]+\)\s*;?|\}\s*else\s*\{?|else\s*\{?|try\s*\{?|\}\s*finally\s*\{?|finally\s*\{?|do\s*\{?|default\s*:)$/.test(trimmed)) {
+    // Pure structural braces / keywords: }, };, });, }, 20);, else {, try {, finally {, do {
+    if (/^(?:\}[\s);,]*|\}\s*,\s*[\s\S]+\)\s*;?|\}\s*else\s*\{?|else\s*\{?|try\s*\{?|\}\s*finally\s*\{?|finally\s*\{?|do\s*\{?)$/.test(trimmed)) {
       continue;
     }
 
@@ -3144,7 +3713,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
       } else if (/^[A-Za-z_$][\w$]*$/.test(lhsRaw)) {
         if (!isKnownIdentifier(lhsRaw)) {
           addDiag(lineNum, 'TS2304', `找不到名称 "${lhsRaw}"（变量未声明，请使用 let 或 const 声明）`);
-        } else if (env.has(lhsRaw) && env.get(lhsRaw).isConst) {
+        } else if (env.has(lhsRaw) && env.get(lhsRaw)?.isConst) {
           addDiag(lineNum, 'TS2588', `无法分配到 "${lhsRaw}"，因为它是常数 (const)`);
         }
       }
@@ -3177,7 +3746,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
             inferType(am[2].trim(), lineNum);
             if (!isKnownIdentifier(am[1])) {
               addDiag(lineNum, 'TS2304', `找不到名称 "${am[1]}"（变量未声明，请使用 let 或 const 声明）`);
-            } else if (env.has(am[1]) && env.get(am[1]).isConst) {
+            } else if (env.has(am[1]) && env.get(am[1])?.isConst) {
               addDiag(lineNum, 'TS2588', `无法分配到 "${am[1]}"，因为它是常数 (const)`);
             }
           } else {
@@ -3191,7 +3760,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
         if (updVar && updVar[1]) {
           if (!isKnownIdentifier(updVar[1])) {
             addDiag(lineNum, 'TS2304', `找不到名称 "${updVar[1]}"（变量未声明，请使用 let 或 const 声明）`);
-          } else if (env.has(updVar[1]) && env.get(updVar[1]).isConst) {
+          } else if (env.has(updVar[1]) && env.get(updVar[1])?.isConst) {
             addDiag(lineNum, 'TS2588', `无法分配到 "${updVar[1]}"，因为它是常数 (const)`);
           }
         }
@@ -3264,7 +3833,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
             const narrowedPropKey = initExpr ? '__narrowed_prop_' + initExpr : '';
             let initT = initExpr ? inferType(initExpr, lineNum) : 'any';
             if (narrowedPropKey && env.has(narrowedPropKey)) {
-              initT = env.get(narrowedPropKey).type;
+              initT = (env.get(narrowedPropKey) || { type: 'any' }).type;
               env.delete(narrowedPropKey);
             }
 
@@ -3286,19 +3855,38 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
               literalType: litVal,
             });
           } else if (pTrim.startsWith('[') || pTrim.startsWith('{')) {
-            let eqIdx = -1, d = 0;
+            let eqIdx = -1, colonIdx = -1, patEndIdx = -1, d = 0;
             for (let k = 0; k < pTrim.length; k++) {
               const ch = pTrim[k];
               if (ch === '"' || ch === "'" || ch === '`') { k = skipString(pTrim, k) - 1; continue; }
               if (ch === '(' || ch === '[' || ch === '{') d++;
-              else if (ch === ')' || ch === ']' || ch === '}') d--;
-              else if (ch === '=' && d === 0 && pTrim[k + 1] !== '=' && pTrim[k + 1] !== '>') { eqIdx = k; break; }
+              else if (ch === ')' || ch === ']' || ch === '}') {
+                d--;
+                if (d === 0 && patEndIdx < 0) patEndIdx = k;
+              } else if (ch === ':' && d === 0 && patEndIdx > 0 && colonIdx < 0 && eqIdx < 0) {
+                colonIdx = k;
+              } else if (ch === '=' && d === 0 && pTrim[k + 1] !== '=' && pTrim[k + 1] !== '>') {
+                eqIdx = k;
+                break;
+              }
             }
             if (eqIdx > 0) {
-              inferType(pTrim.slice(eqIdx + 1).trim(), lineNum);
+              const rhsExpr = pTrim.slice(eqIdx + 1).trim();
+              const rhsT = inferType(rhsExpr, lineNum);
+              if (colonIdx > 0 && colonIdx < eqIdx) {
+                const declT = resolveAlias(pTrim.slice(colonIdx + 1, eqIdx).trim());
+                if (declT && declT !== 'any') {
+                  if (rhsExpr.startsWith('{') && getInterfaceShape(declT)) {
+                    checkObjectLiteralAgainstShape(rhsExpr, declT, lineNum, '解构声明');
+                  } else if (!isExpressionAssignable(rhsExpr, rhsT, declT, lineNum)) {
+                    addDiag(lineNum, 'TS2322', `不能将类型 "${rhsT}" 分配给类型 "${declT}" (解构声明)`);
+                  }
+                }
+              }
             }
-            const bound = new Set();
-            extractBindingNames(pTrim, bound);
+            const patOnly = colonIdx > 0 ? pTrim.slice(0, colonIdx) : (eqIdx > 0 ? pTrim.slice(0, eqIdx) : pTrim);
+            const bound = new Set<string>();
+            extractBindingNames(patOnly, bound);
             bound.forEach(vName => {
               env.set(vName, { type: 'any', isConst, line: lineNum, declaredType: 'any' });
             });
@@ -3318,13 +3906,20 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
         const expectedRet = currentFn.returnType;
         if (expectedRet && expectedRet !== 'any') {
           const promiseInnerM = expectedRet.match(/^Promise<([\s\S]+)>$/);
-          const unwrappedExpected = (promiseInnerM && promiseInnerM[1]) ? promiseInnerM[1] : expectedRet;
-          if (retExpr.startsWith('{') && getInterfaceShape(unwrappedExpected)) {
-            checkObjectLiteralAgainstShape(retExpr, unwrappedExpected, lineNum, `函数 "${currentFn.name}" 返回值`);
-          } else if (unwrappedExpected.endsWith('[]') && splitTopLevelUnion(unwrappedExpected).length <= 1 && retExpr.startsWith('[')) {
-            checkArrayElementsAgainst(retExpr, unwrappedExpected.slice(0, -2), lineNum, `函数 "${currentFn.name}" 返回数组中`);
-          } else if (!isExpressionAssignable(retExpr, retT, expectedRet, lineNum) && !isExpressionAssignable(retExpr, retT, unwrappedExpected, lineNum)) {
-            addDiag(lineNum, 'TS2322', `不能将返回值类型 "${retT}" 分配给函数 "${currentFn.name}" 声明的返回类型 "${expectedRet}"`);
+          const genInnerM = expectedRet.match(/^(?:Async)?Generator<([\s\S]+)>$/);
+          let unwrappedExpected = (promiseInnerM && promiseInnerM[1]) ? promiseInnerM[1] : expectedRet;
+          if (genInnerM && genInnerM[1]) {
+            const genArgs = splitTopLevelDecl(genInnerM[1]);
+            unwrappedExpected = genArgs[1] ? genArgs[1].trim() : 'any';
+          }
+          if (unwrappedExpected !== 'any') {
+            if (retExpr.startsWith('{') && getInterfaceShape(unwrappedExpected)) {
+              checkObjectLiteralAgainstShape(retExpr, unwrappedExpected, lineNum, `函数 "${currentFn.name}" 返回值`);
+            } else if (unwrappedExpected.endsWith('[]') && splitTopLevelUnion(unwrappedExpected).length <= 1 && retExpr.startsWith('[')) {
+              checkArrayElementsAgainst(retExpr, unwrappedExpected.slice(0, -2), lineNum, `函数 "${currentFn.name}" 返回数组中`);
+            } else if (!isExpressionAssignable(retExpr, retT, expectedRet, lineNum) && !isExpressionAssignable(retExpr, retT, unwrappedExpected, lineNum)) {
+              addDiag(lineNum, 'TS2322', `不能将返回值类型 "${retT}" 分配给函数 "${currentFn.name}" 声明的返回类型 "${expectedRet}"`);
+            }
           }
         }
       }
@@ -3338,17 +3933,102 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
       continue;
     }
 
-    // Switch / case statements
+    // Switch / case / default statements with exhaustiveness narrowing
     const switchM = trimmed.match(/^switch\s*\(([\s\S]+)\)\s*\{?$/);
     if (switchM && switchM[1]) {
-      inferType(switchM[1].trim(), lineNum);
+      const swExpr = switchM[1].trim();
+      inferType(swExpr, lineNum);
+      if (/^[A-Za-z_$][\w$]*$/.test(swExpr) && env.has(swExpr)) {
+        const origInfo = env.get(swExpr) || { type: 'any' };
+        const parts = splitTopLevelUnion(resolveAlias(origInfo.type)).map(p => p.trim()).filter(Boolean);
+        switchStack.push({
+          expr: swExpr,
+          startDepth: braceDepth - (trimmed.endsWith('{') ? 1 : 0),
+          origInfo: { ...origInfo },
+          remainingTypes: parts,
+        });
+      }
       continue;
     }
     const caseM = trimmed.match(/^case\s+([^:]+):(.*)$/);
     if (caseM && caseM[1]) {
-      inferType(caseM[1].trim(), lineNum);
+      const caseExpr = caseM[1].trim();
+      const caseT = inferType(caseExpr, lineNum);
+      const caseLit = inferLiteralType(caseExpr) || caseT;
+      const sw = switchStack[switchStack.length - 1];
+      if (sw) {
+        sw.remainingTypes = sw.remainingTypes.filter(t => t !== caseLit && t !== caseExpr);
+        if (env.has(sw.expr)) {
+          env.set(sw.expr, { ...sw.origInfo, type: caseLit });
+        }
+      }
+      const caseRest = (caseM[2] || '').trim();
+      if (caseRest) {
+        const inlineRet = caseRest.match(/^return(?:\s+([\s\S]+?))?;?$/);
+        if (inlineRet) {
+          const rExpr = inlineRet[1] ? inlineRet[1].trim() : '';
+          const rT = rExpr ? inferType(rExpr, lineNum) : 'void';
+          if (currentFn) {
+            if (rExpr) currentFn.hasValueReturn = true;
+            const expectedRet = currentFn.returnType;
+            if (expectedRet && expectedRet !== 'any' && !isExpressionAssignable(rExpr, rT, expectedRet, lineNum)) {
+              addDiag(lineNum, 'TS2322', `不能将返回值类型 "${rT}" 分配给函数 "${currentFn.name}" 声明的返回类型 "${expectedRet}"`);
+            }
+          }
+        }
+      }
       continue;
     }
+    const defaultM = trimmed.match(/^default\s*:(.*)$/);
+    if (defaultM) {
+      const sw = switchStack[switchStack.length - 1];
+      if (sw) {
+        const remT = sw.remainingTypes.length > 0 ? sw.remainingTypes.join('|') : 'never';
+        if (env.has(sw.expr)) {
+          env.set(sw.expr, { ...sw.origInfo, type: remT });
+        }
+      }
+      continue;
+    }
+
+    const applyClauseNarrowing = (clauseStr: string, forEarlyExit: boolean) => {
+      const c = clauseStr.trim();
+      // User-defined type predicate call: `isNum(x)` or `!isNum(x)`
+      const predCallM = c.match(/^(!)?\s*([A-Za-z_$][\w$]*)\s*\(\s*([A-Za-z_$][\w$]*)\s*\)$/);
+      if (predCallM && predCallM[2] && predCallM[3]) {
+        const isNegated = Boolean(predCallM[1]);
+        const fnName = predCallM[2];
+        const argVar = predCallM[3];
+        const sig = fns.get(fnName);
+        if (sig && sig.rawReturnType && env.has(argVar)) {
+          const pm = sig.rawReturnType.match(/^([A-Za-z_$][\w$]*)\s+is\s+([\s\S]+)$/);
+          if (pm && pm[2]) {
+            const targetT = resolveAlias(pm[2].trim());
+            const curInfo = env.get(argVar) || { type: 'any' };
+            if ((!forEarlyExit && !isNegated) || (forEarlyExit && isNegated)) {
+              env.set(argVar, { ...curInfo, type: targetT });
+            } else if ((forEarlyExit && !isNegated) || (!forEarlyExit && isNegated)) {
+              const rem = splitTopLevelUnion(resolveAlias(curInfo.type)).filter(u => u !== targetT);
+              if (rem.length > 0) env.set(argVar, { ...curInfo, type: rem.join('|') });
+            }
+          }
+        }
+      }
+      // `typeof x === "string"` / `typeof x !== "string"`
+      const typeofM = c.match(/^typeof\s+([A-Za-z_$][\w$]*)\s*(===|!==)\s*["'](string|number|boolean|bigint|symbol|undefined|object|function)["']$/);
+      if (typeofM && typeofM[1] && typeofM[2] && typeofM[3] && env.has(typeofM[1])) {
+        const varName = typeofM[1];
+        const op = typeofM[2];
+        const primT = typeofM[3];
+        const curInfo = env.get(varName) || { type: 'any' };
+        if ((!forEarlyExit && op === '===') || (forEarlyExit && op === '!==')) {
+          env.set(varName, { ...curInfo, type: primT });
+        } else if ((forEarlyExit && op === '===') || (!forEarlyExit && op === '!==')) {
+          const rem = splitTopLevelUnion(resolveAlias(curInfo.type)).filter(u => u !== primT);
+          if (rem.length > 0) env.set(varName, { ...curInfo, type: rem.join('|') });
+        }
+      }
+    };
 
     // Inline if (...) return / break / continue (with optional early-exit type narrowing)
     const inlineIfRet = trimmed.match(/^if\s*\((.+?)\)\s*(return(?:\s+([\s\S]+?))?|break|continue);?$/);
@@ -3358,11 +4038,11 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
       const retExpr = inlineIfRet[3] ? inlineIfRet[3].trim() : '';
       inferType(condStr, lineNum);
       if (actionKw.startsWith('return')) {
-        const savedInlineNarrow = new Map<any, any>();
+        const savedInlineNarrow = new Map<string, VarEnvInfo>();
         condStr.split('&&').forEach(clause => {
           const cm = clause.trim().match(/^([A-Za-z_$][\w$]*)\s*!==\s*(null|undefined)$/);
           if (cm && cm[1] && cm[2] && env.has(cm[1])) {
-            const curInfo = env.get(cm[1]);
+            const curInfo = env.get(cm[1]) || { type: 'any' };
             savedInlineNarrow.set(cm[1], curInfo);
             env.set(cm[1], { ...curInfo, type: stripNullableFromType(curInfo.type, cm[2]) });
           }
@@ -3384,11 +4064,12 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
         const negM = (!cm && !cmRev) ? clause.trim().match(/^!\s*([A-Za-z_$][\w$]*)$/) : null;
         const varName = cm ? cm[1] : (cmRev ? cmRev[2] : (negM ? negM[1] : null));
         if (varName && env.has(varName)) {
-          const curInfo = env.get(varName);
+          const curInfo = env.get(varName) || { type: 'any' };
           let nextT = stripNullableFromType(curInfo.type, 'null');
           nextT = stripNullableFromType(nextT, 'undefined');
           env.set(varName, { ...curInfo, type: nextT });
         }
+        applyClauseNarrowing(clause, true);
       });
       continue;
     }
@@ -3421,13 +4102,14 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
             }
           });
         }
-        // Narrow x !== null / x !== undefined inside while/if body
+        // Narrow x !== null / x !== undefined / type predicates / typeof inside while/if body
         condStr.split('&&').forEach(clause => {
           const cm = clause.trim().match(/^([A-Za-z_$][\w$]*)\s*!==\s*(null|undefined)$/);
           if (cm && cm[1] && cm[2] && env.has(cm[1])) {
-            const curInfo = env.get(cm[1]);
+            const curInfo = env.get(cm[1]) || { type: 'any' };
             env.set(cm[1], { ...curInfo, type: stripNullableFromType(curInfo.type, cm[2]) });
           }
+          applyClauseNarrowing(clause, false);
           // If condition checks x.prop !== null, verify if next line assigns const v = x.prop; and narrow it
           const propCm = clause.trim().match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+)\s*!==\s*(null|undefined)$/);
           if (propCm && propCm[1] && propCm[2] && i + 1 < lines.length) {
@@ -3445,9 +4127,10 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
           condStr.split('||').forEach(clause => {
             const cm = clause.trim().match(/^([A-Za-z_$][\w$]*)\s*===\s*(null|undefined)$/);
             if (cm && cm[1] && cm[2] && env.has(cm[1])) {
-              const curInfo = env.get(cm[1]);
+              const curInfo = env.get(cm[1]) || { type: 'any' };
               env.set(cm[1], { ...curInfo, type: stripNullableFromType(curInfo.type, cm[2]) });
             }
+            applyClauseNarrowing(clause, true);
           });
         }
         continue;
@@ -3464,7 +4147,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
           addDiag(lineNum, 'TS2322', `不能对类型 "${propT}" 的属性 "${vName}" 执行自增/自减运算`);
         }
       } else if (env.has(vName)) {
-        const info = env.get(vName);
+        const info = env.get(vName) || { type: 'any' };
         if (info.isConst) {
           addDiag(lineNum, 'TS2588', `无法分配到 "${vName}"，因为它是常数 (const)`);
         } else if (info.type !== 'any' && !isTsAssignable('number', info.type)) {
@@ -3487,7 +4170,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
       bound.forEach(vName => {
         if (!isKnownIdentifier(vName)) {
           addDiag(lineNum, 'TS2304', `找不到名称 "${vName}"（变量未声明，请使用 let 或 const 声明）`);
-        } else if (env.has(vName) && env.get(vName).isConst) {
+        } else if (env.has(vName) && env.get(vName)?.isConst) {
           addDiag(lineNum, 'TS2588', `无法分配到 "${vName}"，因为它是常数 (const)`);
         }
       });
@@ -3504,7 +4187,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
 
       if (/^[A-Za-z_$][\w$]*$/.test(lhs)) {
         if (env.has(lhs)) {
-          const info = env.get(lhs);
+          const info = env.get(lhs) || { type: 'any' };
           const checkTargetT = info.declaredType || info.type;
           if (info.isConst) {
             addDiag(lineNum, 'TS2588', `无法分配到 "${lhs}"，因为它是常数 (const)`);
@@ -3532,6 +4215,29 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
 
     // Standalone expression / call statement
     inferType(trimmed, lineNum);
+    // Assertion function narrowing: `assertStr(u);` where `assertStr` has `asserts val is T` or `asserts val`
+    const assertCallM = trimmed.match(/^([A-Za-z_$][\w$]*)\s*\(([^)]*)\)\s*;?$/);
+    if (assertCallM && assertCallM[1] && assertCallM[2] !== undefined) {
+      const sig = fns.get(assertCallM[1]);
+      if (sig && sig.rawReturnType && /^asserts\b/.test(sig.rawReturnType)) {
+        const am = sig.rawReturnType.match(/^asserts\s+([A-Za-z_$][\w$]*)(?:\s+is\s+([\s\S]+))?$/);
+        if (am && am[1]) {
+          const pIdx = sig.params.findIndex((p: { name: string }) => p.name === am[1]);
+          const callArgs = splitTopLevel(assertCallM[2]);
+          const argExpr = (pIdx >= 0 ? callArgs[pIdx] : callArgs[0])?.trim();
+          if (argExpr && /^[A-Za-z_$][\w$]*$/.test(argExpr) && env.has(argExpr)) {
+            const curInfo = env.get(argExpr) || { type: 'any' };
+            if (am[2]) {
+              env.set(argExpr, { ...curInfo, type: resolveAlias(am[2].trim()) });
+            } else {
+              let nextT = stripNullableFromType(curInfo.type, 'null');
+              nextT = stripNullableFromType(nextT, 'undefined');
+              env.set(argExpr, { ...curInfo, type: nextT });
+            }
+          }
+        }
+      }
+    }
   }
 
   // Merge cached diagnostics from the official TypeScript Web Worker if available for this exact source
@@ -3555,7 +4261,15 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
    3.6) Official TypeScript Compiler Web Worker Bridge (Plan B)
    Runs full `typescript` semantic checking off the main thread in the browser.
    ================================================================ */
-const _TS_WORKER_STATE: any = {
+const _TS_WORKER_STATE: {
+  worker: Worker | null;
+  failed: boolean;
+  reqId: number;
+  pendingSrc: string | null;
+  lastSrc: string | null;
+  lastDiags: Array<{ line: number; code: string; message?: string }> | null;
+  timer: ReturnType<typeof setTimeout> | null;
+} = {
   worker: null,
   failed: false,
   reqId: 0,
@@ -3577,9 +4291,10 @@ export function ensureTsWorker() {
       const data = ev && ev.data;
       if (!data || data.type !== 'checkResult') return;
       _TS_WORKER_STATE.lastSrc = data.src;
-      _TS_WORKER_STATE.lastDiags = Array.isArray(data.diagnostics) ? data.diagnostics : [];
+      const newDiags = Array.isArray(data.diagnostics) ? data.diagnostics : [];
+      _TS_WORKER_STATE.lastDiags = newDiags;
       // Invalidate synchronous cache if worker found additional diagnostics for current editor code
-      if (_TYPECHECK_CACHE.src === data.src && _TS_WORKER_STATE.lastDiags.length > 0) {
+      if (_TYPECHECK_CACHE.src === data.src && newDiags.length > 0) {
         _TYPECHECK_CACHE = { src: null, strict: null, diags: [] };
         if (typeof updateEditorChrome === 'function') {
           try { updateEditorChrome(); } catch (_) {}

@@ -64,7 +64,10 @@
     RUNTIME_ERROR_LINES: /* @__PURE__ */ new Set(),
     lastEditorCursorLine: -1,
     ENTRY_CALL_LINE: 0,
-    CURRENT_TS_META: { interfaces: /* @__PURE__ */ new Map(), varTypes: /* @__PURE__ */ new Map() },
+    CURRENT_TS_META: {
+      interfaces: /* @__PURE__ */ new Map(),
+      varTypes: /* @__PURE__ */ new Map()
+    },
     DEBUG_SESSION: {
       active: false,
       finished: false,
@@ -78,14 +81,15 @@
     }
   };
   function bindStateGlobals(target = globalThis) {
+    const stateRecord = appState;
     const keys = Object.keys(appState);
     for (const key of keys) {
       const desc = Object.getOwnPropertyDescriptor(target, key);
       if (desc && !desc.configurable) continue;
       Object.defineProperty(target, key, {
-        get: () => appState[key],
+        get: () => stateRecord[key],
         set: (v) => {
-          appState[key] = v;
+          stateRecord[key] = v;
         },
         configurable: true,
         enumerable: true
@@ -145,7 +149,7 @@
       appState
     });
   }
-  bindStateGlobals(globalThis);
+  bindStateGlobals();
 
   // src/samples/ts-samples.ts
   var ts_samples_exports = {};
@@ -430,7 +434,7 @@ runAsyncDemo()
     getPySamples: () => getPySamples
   });
   function getPyEngine() {
-    return globalThis.PY_ENGINE || null;
+    return typeof PY_ENGINE !== "undefined" ? PY_ENGINE : null;
   }
   function getPySamples() {
     const eng = getPyEngine();
@@ -797,13 +801,18 @@ runAsyncDemo()
   function looksLikeTypeText(text) {
     const t = text.trim();
     if (!t) return false;
+    if (/^\{/.test(t)) {
+      if (/\b(return|const|let|var|if|for|while|switch|break|continue|throw|try|catch|finally)\b/.test(t)) return false;
+      if (new RegExp("(?<![=!<>:])=(?![=>])").test(t)) return false;
+      return true;
+    }
     if (/^(number|string|boolean|void|any|unknown|never|object|symbol|bigint|undefined|null|true|false)\b/.test(t)) return true;
     if (/^(typeof|keyof|infer|asserts|readonly|unique)\b/.test(t)) return true;
+    if (/^(?:asserts\s+)?(?:[A-Za-z_$][\w$]*|this)\s+is\b/.test(t)) return true;
     if (/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/.test(t)) return true;
     if (/[<>\[\]|&]/.test(t)) return true;
     if (/\bextends\b/.test(t)) return true;
     if (/^[([]/.test(t)) return true;
-    if (/^\{/.test(t)) return true;
     if (/^["'`]/.test(t)) return true;
     if (/^-?\d/.test(t)) return true;
     return false;
@@ -855,6 +864,23 @@ runAsyncDemo()
     const rest = src.slice(j, j + 80);
     if (/^readonly\b/.test(rest) && !isIdentPart(src[j + 8] || "")) {
       return tryParseTypeAtom(src, j + 8);
+    }
+    if (/^unique\s+symbol\b/.test(rest)) {
+      const m = /^unique\s+symbol\b/.exec(rest);
+      return tryParseTypeSuffix(src, j + m[0].length);
+    }
+    if (/^asserts\b/.test(rest) && !isIdentPart(src[j + 7] || "")) {
+      let k2 = j + 7;
+      while (k2 < n && isWS(src[k2])) k2++;
+      const targetId = readIdent(src, k2);
+      if (!targetId) return -1;
+      let m = targetId.end;
+      while (m < n && (src[m] === " " || src[m] === "	")) m++;
+      if (src.startsWith("is", m) && !isIdentPart(src[m + 2] || "")) {
+        const predEnd = tryParseType(src, m + 2);
+        if (predEnd > m + 2) return predEnd;
+      }
+      return targetId.end;
     }
     if (/^(typeof|keyof)\b/.test(rest)) {
       const kw = rest.startsWith("typeof") ? 6 : 5;
@@ -953,6 +979,14 @@ runAsyncDemo()
     const id = readIdent(src, j);
     if (!id) return -1;
     j = id.end;
+    {
+      let m = j;
+      while (m < n && (src[m] === " " || src[m] === "	")) m++;
+      if (src.startsWith("is", m) && !isIdentPart(src[m + 2] || "")) {
+        const predEnd = tryParseType(src, m + 2);
+        if (predEnd > m + 2) return predEnd;
+      }
+    }
     while (j < n && src[j] === ".") {
       const nextId = readIdent(src, j + 1);
       if (!nextId) break;
@@ -1058,6 +1092,51 @@ runAsyncDemo()
     }
     while (p < n && isWS(src[p])) p++;
     if (src[p] === "=" && src[p + 1] === ">") return j;
+    return -1;
+  }
+  function tryStripAngleTypeAssertion(src, i, prevSigIdx) {
+    const n = src.length;
+    if (prevSigIdx >= 0) {
+      const prev = src[prevSigIdx] || "";
+      if (isIdentPart(prev)) {
+        let w = prevSigIdx;
+        while (w >= 0 && isIdentPart(src[w])) w--;
+        const word = src.slice(w + 1, prevSigIdx + 1);
+        if (!/^(return|yield|await|throw|case|typeof|void|delete|in|of|instanceof|new)$/.test(word)) {
+          return -1;
+        }
+      } else if (!/[=([,:;?!+\-*/%&|^~{<>]/.test(prev)) {
+        return -1;
+      }
+    }
+    let j = i + 1;
+    let depth = 1;
+    while (j < n && depth > 0) {
+      const ch = src[j];
+      if (ch === '"' || ch === "'" || ch === "`") {
+        j = skipString(src, j);
+        continue;
+      }
+      if (ch === "\n" || ch === "\r" || ch === ";") return -1;
+      if (ch === "<") depth++;
+      else if (ch === ">" && src[j - 1] !== "=") depth--;
+      j++;
+    }
+    if (depth !== 0) return -1;
+    const inner = src.slice(i + 1, j - 1).trim();
+    if (!inner || !looksLikeTypeText(inner)) return -1;
+    const parsedEnd = tryParseType(inner, 0);
+    if (parsedEnd < inner.length) {
+      let rem = parsedEnd;
+      while (rem < inner.length && isWS(inner[rem])) rem++;
+      if (rem < inner.length) return -1;
+    }
+    let k = j;
+    while (k < n && (src[k] === " " || src[k] === "	")) k++;
+    const nextCh = src[k] || "";
+    if (isIdentStart(nextCh) || nextCh >= "0" && nextCh <= "9" || nextCh === "(" || nextCh === "[" || nextCh === "{" || nextCh === '"' || nextCh === "'" || nextCh === "`" || nextCh === "!" || nextCh === "+" || nextCh === "-" || nextCh === "~") {
+      return j;
+    }
     return -1;
   }
   function buildEnumIIFE(name, body, line) {
@@ -1308,11 +1387,30 @@ runAsyncDemo()
     const props = [];
     for (const rawP of parts) {
       const p = rawP.trim();
-      const m = p.match(/^(?:(?:public|private|protected|readonly)\s+)+([A-Za-z_$][\w$]*)/);
+      const m = p.match(/^(?:(?:public|private|protected|readonly|override)\s+)+([A-Za-z_$][\w$]*)/);
       if (m && m[1]) props.push(m[1]);
     }
     return props;
   }
+  var NON_TYPED_KEYWORDS = /* @__PURE__ */ new Set([
+    "default",
+    "case",
+    "return",
+    "throw",
+    "else",
+    "do",
+    "try",
+    "finally",
+    "yield",
+    "await",
+    "typeof",
+    "void",
+    "delete",
+    "new",
+    "in",
+    "of",
+    "instanceof"
+  ]);
   var _STRIP_TYPES_CACHE = { src: null, out: "" };
   function stripTypes(rawSrc) {
     if (typeof rawSrc === "string" && _STRIP_TYPES_CACHE.src === rawSrc) {
@@ -1423,7 +1521,14 @@ runAsyncDemo()
       if (c === "<") {
         const genericEnd = tryStripGenericArrow(src, i);
         if (genericEnd > i) {
+          out += newlinesOf(src.slice(i, genericEnd));
           i = genericEnd;
+          continue;
+        }
+        const assertEnd = tryStripAngleTypeAssertion(src, i, lookBackSignificant(i));
+        if (assertEnd > i) {
+          out += newlinesOf(src.slice(i, assertEnd));
+          i = assertEnd;
           continue;
         }
       }
@@ -1496,6 +1601,13 @@ runAsyncDemo()
             i = j2 + 7;
             continue;
           }
+          if (src.startsWith("type", j2) && !isIdentPart(src[j2 + 4] || "")) {
+            let kt = j2 + 4;
+            while (kt < n && isWS(src[kt])) kt++;
+            if (src[kt] === "{" || src[kt] === "*") {
+              j2 = kt;
+            }
+          }
           if (src[j2] === "*") {
             while (j2 < n && src[j2] !== ";" && src[j2] !== "\n") j2++;
             if (src[j2] === ";") j2++;
@@ -1519,7 +1631,10 @@ runAsyncDemo()
               }
               j2++;
             }
-            while (j2 < n && isWS(src[j2])) j2++;
+            while (j2 < n && (src[j2] === " " || src[j2] === "	")) j2++;
+            if (src.startsWith("from", j2) && !isIdentPart(src[j2 + 4] || "")) {
+              while (j2 < n && src[j2] !== ";" && src[j2] !== "\n") j2++;
+            }
             if (src[j2] === ";") j2++;
             out += newlinesOf(src.slice(wordStart, j2));
             i = j2;
@@ -1730,7 +1845,7 @@ runAsyncDemo()
           }
           continue;
         }
-        if (/^(public|private|protected|readonly|namespace|implements)$/.test(word)) {
+        if (/^(public|private|protected|readonly|override|namespace|implements)$/.test(word)) {
           continue;
         }
         if (word === "function") {
@@ -1807,7 +1922,12 @@ runAsyncDemo()
         }
         if (word === "as" || word === "satisfies") {
           const end = tryParseType(src, i);
-          i = end > 0 ? end : id.end;
+          if (end > 0) {
+            out += newlinesOf(src.slice(i, end));
+            i = end;
+          } else {
+            i = id.end;
+          }
           continue;
         }
         out += word;
@@ -1851,7 +1971,7 @@ runAsyncDemo()
           const typeStart = j + 2;
           const typeEnd = tryParseType(src, typeStart);
           if (typeEnd > typeStart) {
-            out += src.slice(i, j);
+            out += src.slice(i, j) + newlinesOf(src.slice(j, typeEnd));
             i = typeEnd;
             continue;
           }
@@ -1861,7 +1981,7 @@ runAsyncDemo()
           i = j + 1;
           continue;
         }
-        if (src[j] === ":") {
+        if (src[j] === ":" && !NON_TYPED_KEYWORDS.has(word)) {
           if (isTernaryColonNow()) {
             ternaryStack.pop();
             out += src.slice(i, j + 1);
@@ -1874,7 +1994,7 @@ runAsyncDemo()
             const typeText = src.slice(typeStart, typeEnd);
             const inObject = braceStack.length > 0 && braceStack[braceStack.length - 1] === "object";
             if (!inObject && looksLikeTypeText(typeText)) {
-              out += src.slice(i, j);
+              out += src.slice(i, j) + newlinesOf(src.slice(j, typeEnd));
               i = typeEnd;
               continue;
             }
@@ -1907,11 +2027,26 @@ runAsyncDemo()
         }
         const k = lookBackSignificant(i);
         if (k >= 0 && (src[k] === ")" || src[k] === "]" || src[k] === "}")) {
+          const inObject = braceStack.length > 0 && braceStack[braceStack.length - 1] === "object";
           const typeStart = i + 1;
           const typeEnd = tryParseType(src, typeStart);
           if (typeEnd > typeStart && looksLikeTypeText(src.slice(typeStart, typeEnd))) {
-            i = typeEnd;
-            continue;
+            if (src[k] === ")") {
+              out += newlinesOf(src.slice(i, typeEnd));
+              i = typeEnd;
+              continue;
+            }
+            if (!inObject) {
+              let afterIdx = typeEnd;
+              while (afterIdx < n && (src[afterIdx] === " " || src[afterIdx] === "	")) afterIdx++;
+              const afterCh = src[afterIdx] || "";
+              const afterWord = readIdent(src, afterIdx)?.name || "";
+              if (afterCh === "=" || afterCh === "," || afterCh === ")" || afterWord === "of" || afterWord === "in") {
+                out += newlinesOf(src.slice(i, typeEnd));
+                i = typeEnd;
+                continue;
+              }
+            }
           }
         }
         out += c;
@@ -1923,14 +2058,26 @@ runAsyncDemo()
         let kind = "block";
         if (k >= 0) {
           const prev = src[k];
-          if (prev === "=" || prev === "(" || prev === "," || prev === "[" || prev === "!" || prev === "&" || prev === "|" || prev === "?" || prev === ":") kind = "object";
-          else if (prev === ">" && k >= 1 && src[k - 1] === "=") kind = "block";
-          else if (prev === ")") kind = "block";
-          else if (isIdentPart(prev)) {
+          if (prev === ":") {
+            const lineStart = src.lastIndexOf("\n", k) + 1;
+            const linePrefix = src.slice(lineStart, k + 1).trim();
+            const inObject = braceStack.length > 0 && braceStack[braceStack.length - 1] === "object";
+            if (!inObject && /^(?:default|case\b[\s\S]*):$/.test(linePrefix)) {
+              kind = "block";
+            } else {
+              kind = "object";
+            }
+          } else if (prev === "=" || prev === "(" || prev === "," || prev === "[" || prev === "!" || prev === "&" || prev === "|" || prev === "?") {
+            kind = "object";
+          } else if (prev === ">" && k >= 1 && src[k - 1] === "=") {
+            kind = "block";
+          } else if (prev === ")") {
+            kind = "block";
+          } else if (isIdentPart(prev)) {
             let w = k;
             while (w >= 0 && isIdentPart(src[w])) w--;
             const prevWord = src.slice(w + 1, k + 1);
-            if (prevWord === "return" || prevWord === "case" || prevWord === "default" || prevWord === "yield" || prevWord === "typeof" || prevWord === "const" || prevWord === "let" || prevWord === "var") {
+            if (prevWord === "return" || prevWord === "case" || prevWord === "yield" || prevWord === "typeof" || prevWord === "const" || prevWord === "let" || prevWord === "var") {
               kind = "object";
             } else {
               kind = "block";
@@ -1986,8 +2133,31 @@ runAsyncDemo()
     return out;
   }
   var transpileTS = stripTypes;
-  function detectUnsupportedSyntax(_src) {
-    return [];
+  function detectUnsupportedSyntax(src) {
+    if (typeof src !== "string" || !src.trim()) return [];
+    const results = [];
+    const cleaned = stripCommentsOnly(src);
+    const lines = cleaned.split("\n");
+    for (let idx = 0; idx < lines.length; idx++) {
+      const line = (lines[idx] ?? "").trim();
+      if (!line) continue;
+      const lineNo = idx + 1;
+      if (/^with\s*\(/.test(line)) {
+        results.push({
+          line: lineNo,
+          feature: "with \u8BED\u53E5",
+          hint: "\u4E25\u683C\u6A21\u5F0F\u4E0B\u4E0D\u652F\u6301 `with (...)` \u8BED\u53E5\uFF0C\u8BF7\u76F4\u63A5\u8BBF\u95EE\u5BF9\u8C61\u5C5E\u6027\u6216\u4F7F\u7528\u89E3\u6784\u8D4B\u503C\u3002"
+        });
+      }
+      if (/^import\s+[A-Za-z_$][\w$]*\s*=\s*require\s*\(/.test(line)) {
+        results.push({
+          line: lineNo,
+          feature: "import = require()",
+          hint: "\u6D4F\u89C8\u5668\u6C99\u7BB1\u4E0D\u652F\u6301 CommonJS `import x = require(...)`\uFF0C\u8BF7\u76F4\u63A5\u5B9A\u4E49\u6240\u9700\u6A21\u5757\u6216\u4F7F\u7528\u6807\u51C6 ES \u8BED\u6CD5\u3002"
+        });
+      }
+    }
+    return results;
   }
   var findSyntaxErrors = detectUnsupportedSyntax;
 
@@ -2255,6 +2425,10 @@ runAsyncDemo()
       }
       if (isIdentStart(ch)) {
         const id = readIdent(str, i);
+        if (!id) {
+          i++;
+          continue;
+        }
         if (id.name === "await") {
           let j = id.end;
           while (j < n && isWS(str[j])) j++;
@@ -2309,6 +2483,7 @@ runAsyncDemo()
       }
       if (isIdentStart(ch)) {
         const id = readIdent(raw, k);
+        if (!id) continue;
         if (id.name === "class") return k;
         k = id.end - 1;
       }
@@ -2350,7 +2525,7 @@ runAsyncDemo()
       const srcLine = (origLine != null ? origLine : t).trim();
       const note = srcLine.length > 72 ? srcLine.slice(0, 69) + "\u2026" : srcLine;
       const insideClass = braceStack.some((k) => k === "classbody");
-      const withThis = insideClass && !inClassBody;
+      const withThis = insideClass && !inClassBody && !/\bsuper\s*\(/.test(t);
       const callExpr = "__t(" + (i + 1) + ", " + JSON.stringify(note) + ", " + snapFnExpr(names) + (withThis ? ", this" : "") + ")";
       const canInjectHeader = parenDepth === 0 && !inObject && !inClassBody && !prevContinued && !prevUnbracedControl;
       let activeAsyncFn = null;
@@ -2542,6 +2717,7 @@ runAsyncDemo()
     splitTopLevelIntersection: () => splitTopLevelIntersection,
     splitTopLevelUnion: () => splitTopLevelUnion,
     stripNullableFromType: () => stripNullableFromType,
+    stripTupleElementLabel: () => stripTupleElementLabel,
     typeCheck: () => typeCheck,
     typeToStr: () => typeToStr,
     typecheckTS: () => typecheckTS
@@ -2827,7 +3003,7 @@ runAsyncDemo()
     if (sRect.width === 0 && sRect.height === 0) return;
     const chip = document.createElement("div");
     chip.className = "fly-chip";
-    chip.textContent = anim.val != null ? anim.val : anim.result;
+    chip.textContent = String(anim.val != null ? anim.val : anim.result);
     const sx = Math.round(sRect.left + sRect.width / 2 - 14);
     const sy = Math.round(sRect.top - 6);
     const dx = Math.round(dRect.left + dRect.width / 2 - 14);
@@ -2971,7 +3147,7 @@ runAsyncDemo()
     const h = (s) => hl(s, declared);
     const declPrefix = rawLine.match(/^\s*(?:(?:export\s+)?(?:const|let|var)\b\s*)/);
     const lhsSearchStart = declPrefix ? declPrefix[0].length : 0;
-    if (anim.type === "assign" && anim.from && anim.to) {
+    if (anim.type === "assign" && typeof anim.from === "string" && anim.from && typeof anim.to === "string" && anim.to) {
       const toIdx = findExprSpan(rawLine, anim.to, lhsSearchStart);
       if (toIdx >= 0) {
         const afterTo = toIdx + anim.to.length;
@@ -2995,8 +3171,9 @@ runAsyncDemo()
       if (lIdx >= 0) {
         if (anim.rhs) {
           const afterLhs2 = lIdx + anim.lhs.length;
-          const opIdx = anim.op ? rawLine.indexOf(anim.op, afterLhs2) : -1;
-          const rhsStart = opIdx >= 0 ? opIdx + anim.op.length : afterLhs2;
+          const opStr = anim.op || "";
+          const opIdx = opStr ? rawLine.indexOf(opStr, afterLhs2) : -1;
+          const rhsStart = opIdx >= 0 ? opIdx + opStr.length : afterLhs2;
           const rIdx = findExprSpan(rawLine, anim.rhs, rhsStart);
           if (rIdx >= afterLhs2) {
             const p1 = rawLine.slice(0, lIdx);
@@ -3022,14 +3199,15 @@ runAsyncDemo()
       }
     }
     if (anim.type === "call" && anim.fn) {
-      const toIdx = anim.to ? findExprSpan(rawLine, anim.to, lhsSearchStart) : -1;
-      const fnSearchStart = toIdx >= 0 ? toIdx + anim.to.length : lhsSearchStart;
+      const toStr = typeof anim.to === "string" && anim.to ? anim.to : "";
+      const toIdx = toStr ? findExprSpan(rawLine, toStr, lhsSearchStart) : -1;
+      const fnSearchStart = toIdx >= 0 ? toIdx + toStr.length : lhsSearchStart;
       const fnIdx = findExprSpan(rawLine, anim.fn, fnSearchStart);
       if (fnIdx >= 0) {
         if (toIdx >= 0 && fnIdx > toIdx) {
           const p12 = rawLine.slice(0, toIdx);
-          const p22 = rawLine.slice(toIdx, toIdx + anim.to.length);
-          const p3 = rawLine.slice(toIdx + anim.to.length, fnIdx);
+          const p22 = rawLine.slice(toIdx, toIdx + toStr.length);
+          const p3 = rawLine.slice(toIdx + toStr.length, fnIdx);
           const p4 = rawLine.slice(fnIdx, fnIdx + anim.fn.length);
           const p5 = rawLine.slice(fnIdx + anim.fn.length);
           return h(p12) + '<span class="tok-dst">' + h(p22) + "</span>" + h(p3) + '<span class="tok-fn">' + h(p4) + "</span>" + h(p5);
@@ -3666,17 +3844,17 @@ runAsyncDemo()
       (fid) => {
         if (unwindingPause) return;
         for (let k = liveCallStack.length - 1; k >= 1; k--) {
-          if (liveCallStack[k].id === fid) {
+          if (liveCallStack[k]?.id === fid) {
             const [removed] = liveCallStack.splice(k, 1);
-            suspendedFrames.set(fid, removed);
+            if (removed) suspendedFrames.set(fid, removed);
             break;
           }
         }
       },
       (fid) => {
         if (unwindingPause) return;
-        if (suspendedFrames.has(fid)) {
-          const frame = suspendedFrames.get(fid);
+        const frame = suspendedFrames.get(fid);
+        if (frame) {
           suspendedFrames.delete(fid);
           liveCallStack.push(frame);
         }
@@ -3686,6 +3864,7 @@ runAsyncDemo()
       evLoop.loop.used = true;
     }
     const __t = (line, note, snap, self) => {
+      const stepLine = line || curLineTracker || 1;
       if (line) curLineTracker = line;
       const idx = count++;
       if ((idx & 63) === 63 && Date.now() - t0 > MAX_EXEC_MS) {
@@ -3693,22 +3872,23 @@ runAsyncDemo()
       }
       const topFrame = liveCallStack[liveCallStack.length - 1];
       if (topFrame) {
-        topFrame.lastLine = line;
-        if (snap) topFrame.snapFn = snap;
+        topFrame.lastLine = stepLine;
+        if (typeof snap === "function") topFrame.snapFn = snap;
         if (self && typeof self === "object") topFrame.self = self;
       }
       if (idx < targetIdx) {
         return;
       }
       if (idx === targetIdx) {
-        const effectiveSnap = snap || topFrame && topFrame.snapFn || evLoop.loop.globalSnapFn;
-        const vRaw = (typeof effectiveSnap === "function" ? effectiveSnap() : effectiveSnap) || {};
+        const effectiveSnap = (typeof snap === "function" ? snap : null) || topFrame && topFrame.snapFn || evLoop.loop.globalSnapFn;
+        const vRaw = (typeof effectiveSnap === "function" ? effectiveSnap() : snap && typeof snap === "object" ? snap : {}) || {};
         if (self && typeof self === "object") {
           try {
             const selfCopy = {};
-            for (const k in self) {
+            const selfRec = self;
+            for (const k in selfRec) {
               try {
-                selfCopy[k] = self[k];
+                selfCopy[k] = selfRec[k];
               } catch (e) {
               }
             }
@@ -3726,12 +3906,12 @@ runAsyncDemo()
           const d = classifyValue(name, vRaw[name]);
           if (d) ds[name] = d;
         });
-        enrichFromNote(ds, vRaw, note);
+        enrichFromNote(ds, vRaw, note || "");
         const win = detectWindowRange(vRaw);
         const capturedStack = liveCallStack.map((fr, fIdx) => {
           const isTop = fIdx === liveCallStack.length - 1;
-          const fNote = isTop ? note : originalLines[(fr.lastLine || fr.line || 1) - 1] || "";
-          return buildFrameSnapshotFromClosure(fr, isTop ? line : fr.line, fNote);
+          const fNote = isTop ? note || "" : originalLines[(fr.lastLine || fr.line || 1) - 1] || "";
+          return buildFrameSnapshotFromClosure(fr, isTop ? stepLine : fr.line || 1, fNote);
         });
         pendingStepSnapFn = effectiveSnap;
         pendingEventLoopPhase = {
@@ -3739,9 +3919,9 @@ runAsyncDemo()
           activeTaskLabel: evLoop.loop.activeTaskLabel,
           virtualTime: evLoop.loop.virtualTime
         };
-        pendingStep = {
-          line,
-          note,
+        const stepToCommit = {
+          line: stepLine,
+          note: note || "",
           v,
           vRaw,
           ds,
@@ -3751,9 +3931,10 @@ runAsyncDemo()
           error: null
         };
         if (win) {
-          pendingStep.l = win[0];
-          pendingStep.r = win[1];
+          stepToCommit.l = win[0];
+          stepToCommit.r = win[1];
         }
+        pendingStep = stepToCommit;
         activeRecording = true;
         return;
       }
@@ -3761,7 +3942,8 @@ runAsyncDemo()
         activeRecording = false;
         unwindingPause = true;
         const sameScopeRaw = typeof pendingStepSnapFn === "function" ? pendingStepSnapFn() : null;
-        nextVRaw = sameScopeRaw || (typeof snap === "function" ? snap() : snap) || {};
+        const fallbackRaw = typeof snap === "function" ? snap() : snap && typeof snap === "object" ? snap : {};
+        nextVRaw = sameScopeRaw || fallbackRaw || {};
         throw PAUSE_SIGNAL;
       }
     };
@@ -3793,7 +3975,7 @@ runAsyncDemo()
       if (unwindingPause) return;
       suspendedFrames.delete(fid);
       for (let k = liveCallStack.length - 1; k >= 1; k--) {
-        if (liveCallStack[k].id === fid) {
+        if (liveCallStack[k]?.id === fid) {
           liveCallStack.splice(k, 1);
           break;
         }
@@ -3809,7 +3991,8 @@ runAsyncDemo()
       if (activeRecording) {
         activeRecording = false;
         const sameScopeRaw = typeof pendingStepSnapFn === "function" ? pendingStepSnapFn() : null;
-        nextVRaw = sameScopeRaw || (typeof snap === "function" ? snap() : snap) || {};
+        const fallbackRaw = typeof snap === "function" ? snap() : snap && typeof snap === "object" ? snap : {};
+        nextVRaw = sameScopeRaw || fallbackRaw || {};
       }
     };
     const customConsole = {
@@ -3865,86 +4048,93 @@ runAsyncDemo()
       }
       if (targetIdx === 0 && CURRENT_TS_META.interfaces && CURRENT_TS_META.interfaces.size > 0) {
         const firstIface = [...CURRENT_TS_META.interfaces.values()][0];
-        const schemaDs = {};
-        populateInterfaceSchemas(schemaDs);
-        const schemaStep = {
-          line: firstIface.line || 1,
-          note: `interface ${firstIface.name} { ${firstIface.fields.map((f) => f.k + (f.optional ? "?" : "") + ": " + f.declaredType).join("; ")} }`,
-          v: {},
-          ds: schemaDs,
-          callStack: [{ id: 0, fn: "global", label: "global", line: firstIface.line || 1, v: {}, ds: schemaDs }],
-          anim: null,
-          isCheckpoint: false,
-          error: null,
-          isFinalReturn: true
-        };
-        TRACE.steps.push(schemaStep);
-        DEBUG_SESSION.finished = true;
-        DEBUG_SESSION.returnValue = retVal;
-        return true;
+        if (firstIface) {
+          const schemaDs = {};
+          populateInterfaceSchemas(schemaDs);
+          const schemaStep = {
+            line: firstIface.line || 1,
+            note: `interface ${firstIface.name} { ${firstIface.fields.map((f) => f.k + (f.optional ? "?" : "") + ": " + f.declaredType).join("; ")} }`,
+            v: {},
+            ds: schemaDs,
+            callStack: [{ id: 0, fn: "global", label: "global", line: firstIface.line || 1, v: {}, ds: schemaDs }],
+            anim: null,
+            isCheckpoint: false,
+            error: null,
+            isFinalReturn: true
+          };
+          TRACE.steps.push(schemaStep);
+          DEBUG_SESSION.finished = true;
+          DEBUG_SESSION.returnValue = retVal;
+          return true;
+        }
       }
       DEBUG_SESSION.finished = true;
       DEBUG_SESSION.returnValue = retVal;
       return false;
     }
-    const rawLine = originalLines[pendingStep.line - 1] || pendingStep.note || "";
-    const nextContext = Object.assign({}, nextVRaw || pendingStep.vRaw);
-    if (pendingStep.checkpointVals) {
-      nextContext.__ckptVals = pendingStep.checkpointVals;
+    const stepObj = pendingStep;
+    const rawLine = originalLines[stepObj.line - 1] || stepObj.note || "";
+    const nextContext = Object.assign({}, nextVRaw || stepObj.vRaw);
+    if (stepObj.checkpointVals) {
+      nextContext["__ckptVals"] = stepObj.checkpointVals;
     }
     if (nextVRaw) {
-      Object.keys(nextVRaw).forEach((name) => {
-        const nv = nextVRaw[name];
-        if (nv && nv.__isVirtualPromise) {
-          pendingStep.v[name] = cloneDeepBounded(nv, 2);
+      const rawMap = nextVRaw;
+      Object.keys(rawMap).forEach((name) => {
+        const nv = rawMap[name];
+        if (nv && typeof nv === "object" && "__isVirtualPromise" in nv) {
+          stepObj.v[name] = cloneDeepBounded(nv, 2);
         }
-        if (pendingStep.vRaw[name] === void 0 && nv !== void 0 && !pendingStep.ds[name]) {
+        if (stepObj.vRaw && stepObj.vRaw[name] === void 0 && nv !== void 0 && !stepObj.ds[name]) {
           const d = classifyValue(name, nv);
-          if (d) pendingStep.ds[name] = d;
+          if (d) stepObj.ds[name] = d;
         }
       });
     }
-    populateInterfaceSchemas(pendingStep.ds);
-    enrichFromNote(pendingStep.ds, nextVRaw || pendingStep.vRaw, rawLine);
+    populateInterfaceSchemas(stepObj.ds);
+    enrichFromNote(stepObj.ds, nextVRaw || stepObj.vRaw || {}, rawLine);
     if (evLoop.loop.used) {
       const elSnap = evLoop.toVizSnapshot();
-      if (pendingEventLoopPhase) {
-        elSnap.phase = pendingEventLoopPhase.phase;
-        elSnap.activeTaskLabel = pendingEventLoopPhase.activeTaskLabel;
-        elSnap.virtualTime = pendingEventLoopPhase.virtualTime;
+      const phaseInfo = pendingEventLoopPhase;
+      if (phaseInfo) {
+        elSnap.phase = phaseInfo.phase;
+        elSnap.activeTaskLabel = phaseInfo.activeTaskLabel;
+        elSnap.virtualTime = phaseInfo.virtualTime;
       }
-      pendingStep.ds["eventLoop"] = elSnap;
+      stepObj.ds["eventLoop"] = elSnap;
     }
-    if (pendingStep.callStack && pendingStep.callStack.length > 0) {
-      const topF = pendingStep.callStack[pendingStep.callStack.length - 1];
-      topF.line = pendingStep.line;
-      topF.v = pendingStep.v;
-      topF.ds = pendingStep.ds;
+    if (stepObj.callStack && stepObj.callStack.length > 0) {
+      const topF = stepObj.callStack[stepObj.callStack.length - 1];
+      if (topF) {
+        topF.line = stepObj.line;
+        topF.v = stepObj.v;
+        topF.ds = stepObj.ds;
+      }
     }
-    const derived = deriveAnimAndNote(rawLine, pendingStep.vRaw, nextContext);
-    delete pendingStep.vRaw;
-    pendingStep.anim = derived.anim;
-    pendingStep.rawNote = pendingStep.note;
-    pendingStep.note = derived.note || pendingStep.note;
+    const derived = deriveAnimAndNote(rawLine, stepObj.vRaw || {}, nextContext);
+    delete stepObj.vRaw;
+    stepObj.anim = derived.anim;
+    stepObj.rawNote = stepObj.note;
+    stepObj.note = derived.note || stepObj.note;
     if (derived.isCheckpoint) {
-      pendingStep.isCheckpoint = true;
+      stepObj.isCheckpoint = true;
     }
     if (runtimeErr) {
       const errMsg = runtimeErr instanceof Error && runtimeErr.message ? runtimeErr.message : runtimeErr && typeof runtimeErr === "object" && "message" in runtimeErr && typeof runtimeErr.message === "string" ? runtimeErr.message : String(runtimeErr);
-      pendingStep.error = errMsg;
-      pendingStep.note = `${rawLine.trim()}  \u2192  \u2717 \u8FD0\u884C\u65F6\u9519\u8BEF: ${errMsg}`;
-      RUNTIME_ERROR_LINES.add(pendingStep.line);
+      stepObj.error = errMsg;
+      stepObj.note = `${rawLine.trim()}  \u2192  \u2717 \u8FD0\u884C\u65F6\u9519\u8BEF: ${errMsg}`;
+      RUNTIME_ERROR_LINES.add(stepObj.line);
       DEBUG_SESSION.finished = true;
       DEBUG_SESSION.crashed = true;
       DEBUG_SESSION.error = errMsg;
-      DEBUG_SESSION.errorLine = pendingStep.line;
+      DEBUG_SESSION.errorLine = stepObj.line;
     } else if (!paused) {
       DEBUG_SESSION.finished = true;
       DEBUG_SESSION.returnValue = retVal;
-      pendingStep.isFinalReturn = true;
-      pendingStep.returnValue = retVal;
+      stepObj.isFinalReturn = true;
+      stepObj.returnValue = retVal;
     }
-    TRACE.steps.push(pendingStep);
+    TRACE.steps.push(stepObj);
     discoverVars().forEach((s) => {
       if (!SEEN_VARS_EVER.has(s.id)) {
         SEEN_VARS_EVER.add(s.id);
@@ -3954,7 +4144,7 @@ runAsyncDemo()
       }
     });
     if (runtimeErr) {
-      say("\u2717 \u8FD0\u884C\u65F6\u9519\u8BEF [\u7B2C " + pendingStep.line + " \u884C]: " + pendingStep.error + "\uFF08\u5DF2\u8FD0\u884C\u5230\u62A5\u9519\u4E3A\u6B62\uFF09", "err");
+      say("\u2717 \u8FD0\u884C\u65F6\u9519\u8BEF [\u7B2C " + stepObj.line + " \u884C]: " + stepObj.error + "\uFF08\u5DF2\u8FD0\u884C\u5230\u62A5\u9519\u4E3A\u6B62\uFF09", "err");
     } else if (!paused && !opts.silent) {
       say("\u2713 \u8C03\u8BD5\u8FD0\u884C\u5B8C\u6210  \u2192  " + safeJSONStringify(retVal), "ok");
     }
@@ -4236,11 +4426,13 @@ runAsyncDemo()
     if (kind === "tree" && d.nodes && d.nodes.length) {
       let layout2 = function(idx, depth, xMin, xMax) {
         if (idx == null || !nodes[idx] || coords.has(idx) || depth > 4) return;
+        const node = nodes[idx];
+        if (!node) return;
         const nx = (xMin + xMax) / 2;
         const ny = by + 16 + depth * 32;
-        coords.set(idx, { x: nx, y: ny, val: nodes[idx].val, left: nodes[idx].left, right: nodes[idx].right });
-        layout2(nodes[idx].left, depth + 1, xMin, nx);
-        layout2(nodes[idx].right, depth + 1, nx, xMax);
+        coords.set(idx, { x: nx, y: ny, val: node.val, left: node.left, right: node.right });
+        layout2(node.left, depth + 1, xMin, nx);
+        layout2(node.right, depth + 1, nx, xMax);
       };
       var layout = layout2;
       const nodes = d.nodes;
@@ -4286,14 +4478,16 @@ runAsyncDemo()
         byId.set(n.id ?? idx, {
           id: n.id ?? idx,
           label: n.label ?? (n.id ?? idx),
-          x: bx + n.x * scaleX,
-          y: by + n.y * scaleY
+          x: bx + (n.x ?? 0) * scaleX,
+          y: by + (n.y ?? 0) * scaleY
         });
       });
       ctx.strokeStyle = "#334155";
       ctx.lineWidth = 1.5;
       (d.edges || []).forEach((e) => {
-        const a = byId.get(e[0]), b = byId.get(e[1]);
+        const e0 = Array.isArray(e) ? e[0] : e.from ?? 0;
+        const e1 = Array.isArray(e) ? e[1] : e.to ?? 0;
+        const a = byId.get(e0), b = byId.get(e1);
         if (a && b) {
           ctx.beginPath();
           ctx.moveTo(a.x, a.y);
@@ -4325,7 +4519,7 @@ runAsyncDemo()
         for (let c = 0; c < cols; c++) {
           const gx = bx + c * (cellS + 3);
           const gy = by + r * (cellS + 3);
-          const isCellHot = d.mark && d.mark[0] === r && d.mark[1] === c;
+          const isCellHot = Array.isArray(d.mark) && d.mark[0] === r && d.mark[1] === c;
           roundRectPath(ctx, gx, gy, cellS, cellS, 4);
           ctx.fillStyle = isCellHot ? "rgba(255,180,84,0.24)" : "#121823";
           ctx.fill();
@@ -4333,14 +4527,14 @@ runAsyncDemo()
           ctx.stroke();
           ctx.font = '600 11px "Cascadia Code", Consolas, monospace';
           ctx.fillStyle = isCellHot ? "#ffb454" : "#cbd5e1";
-          const vStr = String(d.cells[r][c] ?? "\xB7");
+          const vStr = String(d.cells[r]?.[c] ?? "\xB7");
           ctx.fillText(vStr, gx + (cellS - ctx.measureText(vStr).width) / 2, gy + cellS / 2 + 4);
         }
       }
       return;
     }
     if (kind === "interface" || kind === "object") {
-      const fields = d.fields || (d.entries ? d.entries.map((e) => ({ k: e.k, v: e.v, declaredType: typeof e.v })) : []);
+      const fields = d.fields || (d.entries ? d.entries.map((e) => ({ k: String(e.k), v: e.v, declaredType: typeof e.v })) : []);
       const rowH = 22;
       fields.slice(0, 5).forEach((f, idx) => {
         const ry = by + idx * (rowH + 4);
@@ -5130,7 +5324,7 @@ runAsyncDemo()
     }
     const targetKey = SAMPLES[key] ? key : "showcase";
     if ($("sampleSel")) $("sampleSel").value = targetKey;
-    editor.value = SAMPLES[targetKey];
+    editor.value = SAMPLES[targetKey] || "";
     setFileName(targetKey + ".ts");
     lastEditorCursorLine = -1;
     clearLog("\u5DF2\u52A0\u8F7D\u6837\u4F8B \xB7 \u81EA\u52A8\u5F00\u542F Debug \u8C03\u8BD5\u6A21\u5F0F\uFF08\u53EF\u6309 \u2190 / \u2192 \u9010\u6B65\u5F53\u573A\u8BA1\u7B97\uFF0C\u6216\u70B9\u51FB\u5DE6\u4E0B\u300C\u8FD0\u884C\u5230\u4E0B\u4E00\u4E2A\u68C0\u67E5\u70B9\u300D\uFF09");
@@ -5187,7 +5381,7 @@ runAsyncDemo()
     } catch {
     }
     if ($("sampleSel")) $("sampleSel").value = sampleKey;
-    editor.value = SAMPLES[sampleKey] || SAMPLES.showcase;
+    editor.value = SAMPLES[sampleKey] || SAMPLES.showcase || "";
     setFileName(sampleKey + ".ts");
     updateEditorChrome();
     const initialStep = customStep !== null ? customStep : SAMPLE_DEFAULT_STEP[sampleKey] || 0;
@@ -5397,7 +5591,7 @@ runAsyncDemo()
     let fnCloseIdx = lines.length - 1;
     let depth = 0;
     for (let i = 0; i < lines.length; i++) {
-      const raw = lines[i];
+      const raw = lines[i] || "";
       if (fnOpenIdx < 0 && /^\s*(?:export\s+)?(?:default\s+)?function\b/.test(raw)) {
         fnOpenIdx = i;
       }
@@ -5495,9 +5689,10 @@ runAsyncDemo()
   }
   if (gutterEl) {
     gutterEl.addEventListener("click", (e) => {
-      const g2 = e.target.closest(".gline");
-      if (!g2 || !g2.dataset.line) return;
-      addCheckpointFunction(parseInt(g2.dataset.line, 10));
+      const target = e.target;
+      const g = target && target.closest ? target.closest(".gline") : null;
+      if (!g || !g.dataset.line) return;
+      addCheckpointFunction(parseInt(g.dataset.line, 10));
     });
   }
   $("auto").onclick = async () => {
@@ -5575,7 +5770,8 @@ runAsyncDemo()
   }
   if (videoSpeedGroup) {
     videoSpeedGroup.addEventListener("click", (e) => {
-      const btn = e.target.closest ? e.target.closest(".speed-opt") : null;
+      const target = e.target;
+      const btn = target && target.closest ? target.closest(".speed-opt") : null;
       if (!btn || !btn.dataset.speed) return;
       e.stopPropagation();
       setVideoExportSpeed(parseFloat(btn.dataset.speed));
@@ -5674,8 +5870,9 @@ runAsyncDemo()
   }
   $("sampleSel").onchange = () => loadSample($("sampleSel").value);
   pickEl.addEventListener("click", (e) => {
-    const el = e.target.closest(".chip-pick");
-    if (!el) return;
+    const target = e.target;
+    const el = target && target.closest ? target.closest(".chip-pick") : null;
+    if (!el || !el.dataset.id) return;
     const id = el.dataset.id;
     if (watched.has(id)) watched.delete(id);
     else watched.add(id);
@@ -5683,7 +5880,8 @@ runAsyncDemo()
   });
   if (callStackBarEl) {
     callStackBarEl.addEventListener("click", (e) => {
-      const btn = e.target.closest(".cs-crumb");
+      const target = e.target;
+      const btn = target && target.closest ? target.closest(".cs-crumb") : null;
       if (!btn || btn.dataset.frameIdx === void 0) return;
       selectStackFrame(parseInt(btn.dataset.frameIdx, 10));
     });
@@ -5836,7 +6034,8 @@ runAsyncDemo()
   }
   if (sidePanelEl && sidePanelEl.addEventListener) {
     sidePanelEl.addEventListener("mousemove", (e) => {
-      const card = e && e.target && e.target.closest ? e.target.closest("[data-var]") : null;
+      const target = e && e.target;
+      const card = target && target.closest ? target.closest("[data-var]") : null;
       if (!card || !card.getAttribute) {
         hideHoverTip();
         return;
@@ -5848,13 +6047,14 @@ runAsyncDemo()
   addEventListener("resize", () => positionStepViz());
   addEventListener("keydown", (e) => {
     if (isEditorFocused()) return;
+    const target = e.target;
     if (e.key === "ArrowRight" || e.key === " ") {
-      if (e.target.closest && e.target.closest("button,select,input,textarea")) return;
+      if (target && target.closest && target.closest("button,select,input,textarea")) return;
       e.preventDefault();
       stepNext();
     }
     if (e.key === "ArrowLeft") {
-      if (e.target.closest && e.target.closest("button,select,input,textarea")) return;
+      if (target && target.closest && target.closest("button,select,input,textarea")) return;
       e.preventDefault();
       stepPrev();
     }
@@ -5918,7 +6118,8 @@ runAsyncDemo()
   }
   if (logEl && logEl.addEventListener) {
     logEl.addEventListener("click", (e) => {
-      const target = e && e.target && e.target.closest ? e.target.closest(".diag") : null;
+      const el = e && e.target;
+      const target = el && el.closest ? el.closest(".diag") : null;
       if (!target || !target.getAttribute) return;
       revealErrorLine(parseInt(target.getAttribute("data-line") || "0", 10), true);
     });
@@ -5984,7 +6185,7 @@ runAsyncDemo()
     const clean = blankStrings(src);
     return /\b(?:async|await|Promise|setTimeout|queueMicrotask|sleep)\b/.test(clean);
   }
-  function createVirtualEventLoop(__t, getCurLine, onSuspendFrame, onResumeFrame) {
+  function createVirtualEventLoop(__t, getCurLine = () => 1, onSuspendFrame, onResumeFrame) {
     let promiseSeq = 0;
     let microSeq = 0;
     let macroSeq = 0;
@@ -6022,6 +6223,16 @@ runAsyncDemo()
       return task;
     }
     class VirtualPromise {
+      __isVirtualPromise;
+      id;
+      label;
+      state;
+      value;
+      reason;
+      line;
+      _handlers;
+      _internal;
+      reactions;
       constructor(executor, label) {
         loop.used = true;
         this.__isVirtualPromise = true;
@@ -6568,7 +6779,7 @@ runAsyncDemo()
     return out;
   }
   function normalizeList(value) {
-    const pyMeta = value && typeof value === "object" && "__py_meta__" in value ? value.__py_meta__ : null;
+    const pyMeta = value && typeof value === "object" && "__py_meta__" in value ? value.__py_meta__ || null : null;
     if (Array.isArray(value)) {
       const total = pyMeta && typeof pyMeta.total === "number" ? pyMeta.total : value.length;
       const out2 = { kind: "list", items: value.slice(0, 30).map((x) => cloneDeepBounded(x, 1)), total };
@@ -6610,13 +6821,16 @@ runAsyncDemo()
         const y = n && typeof n.y === "number" ? n.y : Math.round(68 + 48 * Math.sin(angle));
         return { id, label: String(label), x, y };
       });
-      const edges = value.edges.slice(0, 32).map((e) => Array.isArray(e) ? [e[0], e[1]] : [e.from, e.to]);
+      const edges = value.edges.slice(0, 32).map(
+        (e) => Array.isArray(e) ? [e[0], e[1]] : [e.from ?? 0, e.to ?? 0]
+      );
       return { kind: "graph", nodes, edges, totalNodes: value.nodes.length, totalEdges: value.edges.length };
     }
     return { kind: "graph", nodes: [], edges: [] };
   }
   function snapshot(kind, value, extra) {
-    const pyMeta = value && typeof value === "object" && value.__py_meta__ ? value.__py_meta__ : null;
+    const recVal = value && typeof value === "object" ? value : null;
+    const pyMeta = recVal && recVal.__py_meta__ ? recVal.__py_meta__ : null;
     if (kind === "stack") {
       const arr = Array.isArray(value) ? value : [];
       const total = pyMeta && typeof pyMeta.total === "number" ? pyMeta.total : arr.length;
@@ -6667,20 +6881,21 @@ runAsyncDemo()
       const entries = [];
       let total = 0;
       if (isMapLike(value)) {
-        total = pyMeta && typeof pyMeta.total === "number" ? pyMeta.total : value.size;
-        for (const [k, v] of value) {
+        const mapVal = value;
+        total = pyMeta && typeof pyMeta.total === "number" ? pyMeta.total : mapVal.size;
+        for (const [k, v] of mapVal) {
           if (entries.length >= 40) break;
           entries.push({ k: cloneDeepBounded(k, 1), v: cloneDeepBounded(v, 1) });
         }
-      } else if (value && typeof value.forEach === "function") {
-        value.forEach((v, k) => {
+      } else if (recVal && typeof recVal.forEach === "function") {
+        recVal.forEach((v, k) => {
           total++;
           if (entries.length < 40) entries.push({ k: cloneDeepBounded(k, 1), v: cloneDeepBounded(v, 1) });
         });
-      } else if (value && typeof value === "object") {
-        const keys = Object.keys(value);
+      } else if (recVal) {
+        const keys = Object.keys(recVal);
         total = keys.length;
-        keys.slice(0, 40).forEach((k) => entries.push({ k, v: cloneDeepBounded(value[k], 1) }));
+        keys.slice(0, 40).forEach((k) => entries.push({ k, v: cloneDeepBounded(recVal[k], 1) }));
       }
       const out = Object.assign({ kind, entries, total }, extra || {});
       if (total > 20) defineHidden(out, "__raw", value);
@@ -6690,13 +6905,14 @@ runAsyncDemo()
       const items = [];
       let total = 0;
       if (isSetLike(value)) {
-        total = pyMeta && typeof pyMeta.total === "number" ? pyMeta.total : value.size;
-        for (const v of value) {
+        const setVal = value;
+        total = pyMeta && typeof pyMeta.total === "number" ? pyMeta.total : setVal.size;
+        for (const v of setVal) {
           if (items.length >= 40) break;
           items.push(cloneDeepBounded(v, 1));
         }
-      } else if (value && typeof value.forEach === "function") {
-        value.forEach((v) => {
+      } else if (recVal && typeof recVal.forEach === "function") {
+        recVal.forEach((v) => {
           total++;
           if (items.length < 40) items.push(cloneDeepBounded(v, 1));
         });
@@ -6811,9 +7027,10 @@ runAsyncDemo()
         });
       }
       const fields = iface.fields.map((f) => {
-        const instField = boundInstance && boundInstance.fields ? boundInstance.fields.find((x) => x.k === f.k) : null;
+        const key = f.k || f.name || "";
+        const instField = boundInstance && boundInstance.fields ? boundInstance.fields.find((x) => x.k === key) : null;
         return {
-          k: f.k,
+          k: key,
           declaredType: f.declaredType,
           optional: Boolean(f.optional),
           v: instField ? instField.v : void 0
@@ -6834,8 +7051,10 @@ runAsyncDemo()
     if (!v) return null;
     const pairs = [["l", "r"], ["left", "right"], ["lo", "hi"], ["start", "end"]];
     for (const [lk, rk] of pairs) {
-      if (typeof v[lk] === "number" && typeof v[rk] === "number" && v[lk] >= 0 && v[rk] >= v[lk]) {
-        return [v[lk], v[rk]];
+      const lv = v[lk];
+      const rv = v[rk];
+      if (typeof lv === "number" && typeof rv === "number" && lv >= 0 && rv >= lv) {
+        return [lv, rv];
       }
     }
     return null;
@@ -6936,10 +7155,14 @@ runAsyncDemo()
       const t = String(expr || "").trim();
       if (!t) return void 0;
       if (/^\d+$/.test(t)) return +t;
-      if (t in safeV && typeof safeV[t] === "number" && Number.isInteger(safeV[t])) return safeV[t];
+      const directVal = safeV[t];
+      if (t in safeV && typeof directVal === "number" && Number.isInteger(directVal)) return directVal;
       const m = t.match(/^([A-Za-z_$][\w$]*)\s*([+-])\s*(\d+)$/);
-      if (m && m[1] && m[3] !== void 0 && typeof safeV[m[1]] === "number" && Number.isInteger(safeV[m[1]])) {
-        return m[2] === "+" ? safeV[m[1]] + +m[3] : safeV[m[1]] - +m[3];
+      if (m && m[1] && m[3] !== void 0) {
+        const baseVal = safeV[m[1]];
+        if (typeof baseVal === "number" && Number.isInteger(baseVal)) {
+          return m[2] === "+" ? baseVal + +m[3] : baseVal - +m[3];
+        }
       }
       const evaluated = safeEvalExpr(t, safeV);
       return typeof evaluated === "number" && Number.isInteger(evaluated) ? evaluated : void 0;
@@ -6947,8 +7170,9 @@ runAsyncDemo()
     const win = detectWindowRange(safeV);
     if (win) {
       Object.keys(ds).forEach((k) => {
-        if (ds[k] && (ds[k].kind === "array" || ds[k].kind === "string")) {
-          ds[k].win = win;
+        const item = ds[k];
+        if (item && (item.kind === "array" || item.kind === "string")) {
+          item.win = win;
         }
       });
     }
@@ -6958,21 +7182,23 @@ runAsyncDemo()
       while (pm = propRe.exec(text)) {
         const rawObj = pm[1] || "", propName = pm[2];
         const objName = rawObj === "self" && !ds.self && ds.this ? "this" : rawObj;
-        if (ds[objName] && (ds[objName].kind === "interface" || ds[objName].kind === "object")) {
-          ds[objName].hot = propName;
-          const ifaceName = ds[objName].interfaceName;
-          if (ifaceName && ds[ifaceName] && ds[ifaceName].kind === "interface") {
-            ds[ifaceName].hot = propName;
+        const objItem = ds[objName];
+        if (objItem && (objItem.kind === "interface" || objItem.kind === "object")) {
+          objItem.hot = propName;
+          const ifaceName = objItem.interfaceName;
+          const ifaceItem = ifaceName ? ds[ifaceName] : void 0;
+          if (ifaceItem && ifaceItem.kind === "interface") {
+            ifaceItem.hot = propName;
           }
         }
       }
-      const g2 = text.match(/\b([A-Za-z_$][\w$]*)\s*\[\s*([^[\]]+?)\s*\]\s*\[\s*([^[\]]+?)\s*\]/);
-      if (g2 && g2[1] && ds[g2[1]] && ds[g2[1]].kind === "grid") {
-        const gName = g2[1];
-        const row = evalIdx(g2[2]);
-        const col = evalIdx(g2[3]);
+      const g = text.match(/\b([A-Za-z_$][\w$]*)\s*\[\s*([^[\]]+?)\s*\]\s*\[\s*([^[\]]+?)\s*\]/);
+      const gItem = g && g[1] ? ds[g[1]] : void 0;
+      if (g && g[1] && gItem && gItem.kind === "grid") {
+        const row = evalIdx(g[2]);
+        const col = evalIdx(g[3]);
         if (typeof row === "number" && typeof col === "number") {
-          ds[gName].mark = [row, col];
+          gItem.mark = [row, col];
         }
         const deps = [];
         const re = /\b[A-Za-z_$][\w$]*\s*\[\s*([^[\]]+?)\s*\]\s*\[\s*([^[\]]+?)\s*\]/g;
@@ -6981,12 +7207,13 @@ runAsyncDemo()
           const r = evalIdx(m[1]);
           const c = evalIdx(m[2]);
           if (typeof r === "number" && typeof c === "number") {
-            if (!(ds[gName].mark && ds[gName].mark[0] === r && ds[gName].mark[1] === c)) {
+            const curMark = gItem.mark;
+            if (!(Array.isArray(curMark) && curMark[0] === r && curMark[1] === c)) {
               deps.push([r, c]);
             }
           }
         }
-        ds[gName].deps = deps;
+        gItem.deps = deps;
       }
       const subRe = /\b([A-Za-z_$][\w$]*)\s*\[\s*([^[\]]+?)\s*\](?!\s*\[)/g;
       let sm;
@@ -7002,13 +7229,14 @@ runAsyncDemo()
             d.hot = idx;
           } else {
             if (!d.__extraFocal) defineHidden(d, "__extraFocal", []);
-            d.__extraFocal.push(idx);
+            if (d.__extraFocal) d.__extraFocal.push(idx);
           }
         }
       }
       const p = text.match(/\b([A-Za-z_$][\w$]*)\s*\.\s*(push|set|add|pop|shift|unshift|get|has)\s*\(\s*([^,)]*)/);
-      if (p && p[1] && ds[p[1]]) {
-        const d = ds[p[1]];
+      const pItem = p && p[1] ? ds[p[1]] : void 0;
+      if (p && p[1] && pItem) {
+        const d = pItem;
         const method = p[2];
         const firstArg = p[3] ? p[3].trim() : "";
         if (method === "get" || method === "has" || method === "set" || method === "add") {
@@ -7024,7 +7252,10 @@ runAsyncDemo()
             const total = typeof d.total === "number" ? d.total : d.items ? d.items.length : 0;
             if (total > 0) d.hot = method === "unshift" ? 0 : total - 1;
           } else if (d.kind === "map" && d.hot === void 0) {
-            if (d.entries && d.entries.length) d.hot = d.entries[d.entries.length - 1].k;
+            if (d.entries && d.entries.length) {
+              const lastEntry = d.entries[d.entries.length - 1];
+              if (lastEntry) d.hot = lastEntry.k;
+            }
           } else if (d.kind === "set" && d.hot === void 0) {
             if (d.items && d.items.length) d.hot = d.items[d.items.length - 1];
           }
@@ -7052,18 +7283,19 @@ runAsyncDemo()
           if (ref && typeof ref === "object") {
             const idx = d.__rawNodes.indexOf(ref);
             if (idx >= 0) {
-              if (!nodePtrs[idx]) nodePtrs[idx] = [];
-              if (!nodePtrs[idx].includes(pName)) nodePtrs[idx].push(pName);
+              const ptrArr = nodePtrs[idx] || (nodePtrs[idx] = []);
+              if (!ptrArr.includes(pName)) ptrArr.push(pName);
               if (d.hot === void 0) d.hot = idx;
               focal.push(idx);
             }
           }
         }
         if (Object.keys(nodePtrs).length) d.pointers = nodePtrs;
-        const total = d.total || d.__rawVals.length;
+        const rawVals = d.__rawVals || [];
+        const total = d.total || rawVals.length;
         if (total > 20) {
           if (typeof d.hot === "number") focal.unshift(d.hot);
-          d.windowed = build1DFocalSlice(total, (idx) => cloneDeepBounded(d.__rawVals[idx], 1), focal);
+          d.windowed = build1DFocalSlice(total, (idx) => cloneDeepBounded(rawVals[idx], 1), focal);
         }
       }
       if (d.kind === "array" || d.kind === "queue" || d.kind === "heap" || d.kind === "uf" || d.kind === "string" || d.kind === "list" && !d.__rawNodes) {
@@ -7085,8 +7317,8 @@ runAsyncDemo()
           for (const pName of POINTER_VAR_NAMES) {
             const val = safeV[pName];
             if (typeof val === "number" && Number.isInteger(val) && val >= 0 && val < total) {
-              if (!ptrs[val]) ptrs[val] = [];
-              if (!ptrs[val].includes(pName)) ptrs[val].push(pName);
+              const pArr = ptrs[val] || (ptrs[val] = []);
+              if (!pArr.includes(pName)) pArr.push(pName);
               focal.push(val);
             }
           }
@@ -7115,15 +7347,19 @@ runAsyncDemo()
         }
       }
       if (d.kind === "map" && d.hot !== void 0 && d.__raw && isMapLike(d.__raw)) {
-        const exists = (d.entries || []).some((e) => e.k === d.hot);
-        if (!exists && d.__raw.has(d.hot)) {
-          d.entries.push({ k: cloneDeepBounded(d.hot, 1), v: cloneDeepBounded(d.__raw.get(d.hot), 1) });
+        const rawMap = d.__raw;
+        const entries = d.entries || (d.entries = []);
+        const exists = entries.some((e) => e.k === d.hot);
+        if (!exists && rawMap.has(d.hot)) {
+          entries.push({ k: cloneDeepBounded(d.hot, 1), v: cloneDeepBounded(rawMap.get(d.hot), 1) });
         }
       }
       if (d.kind === "set" && d.hot !== void 0 && d.__raw && isSetLike(d.__raw)) {
-        const exists = (d.items || []).some((x) => x === d.hot);
-        if (!exists && d.__raw.has(d.hot)) {
-          d.items.push(cloneDeepBounded(d.hot, 1));
+        const rawSet = d.__raw;
+        const items = d.items || (d.items = []);
+        const exists = items.some((x) => x === d.hot);
+        if (!exists && rawSet.has(d.hot)) {
+          items.push(cloneDeepBounded(d.hot, 1));
         }
       }
       if (d.kind === "grid") {
@@ -7136,14 +7372,16 @@ runAsyncDemo()
             d.colIndices = pyMeta.colIndices;
             d.viewCells = pyMeta.viewCells;
           } else {
-            let focusR = d.mark ? d.mark[0] : d.deps && d.deps[0] ? d.deps[0][0] : void 0;
-            let focusC = d.mark ? d.mark[1] : d.deps && d.deps[0] ? d.deps[0][1] : void 0;
+            let focusR = Array.isArray(d.mark) ? d.mark[0] : d.deps && d.deps[0] ? d.deps[0][0] : void 0;
+            let focusC = Array.isArray(d.mark) ? d.mark[1] : d.deps && d.deps[0] ? d.deps[0][1] : void 0;
             if (focusR === void 0 || focusC === void 0) {
               const coordPairs = [["i", "j"], ["r", "c"], ["row", "col"], ["x", "y"]];
               for (const [rk, ck] of coordPairs) {
-                if (typeof safeV[rk] === "number" && typeof safeV[ck] === "number") {
-                  focusR = safeV[rk];
-                  focusC = safeV[ck];
+                const rv = safeV[rk];
+                const cv = safeV[ck];
+                if (typeof rv === "number" && typeof cv === "number") {
+                  focusR = rv;
+                  focusC = cv;
                   break;
                 }
               }
@@ -7297,7 +7535,8 @@ runAsyncDemo()
     if (ckptCall && ckptCall[1] !== void 0) {
       const fnName = clean.startsWith("\u65AD\u70B9") ? "\u65AD\u70B9" : "checkpoint";
       const args = splitTopLevel(ckptCall[1]).map((s) => s.trim()).filter(Boolean);
-      const argVals = Array.isArray(nextV && nextV.__ckptVals) && nextV.__ckptVals.length === args.length ? nextV.__ckptVals : args.map((a) => formatShortVal(safeEvalExpr(a, v)));
+      const ckptVals = nextV && Array.isArray(nextV.__ckptVals) ? nextV.__ckptVals : null;
+      const argVals = ckptVals && ckptVals.length === args.length ? ckptVals : args.map((a) => formatShortVal(safeEvalExpr(a, v)));
       const anim = { type: "checkpoint", fn: fnName, args, argVals };
       const detail = args.length ? args.map((a, idx) => argVals[idx] !== void 0 && argVals[idx] !== a ? `${a}=${argVals[idx]}` : a).join(", ") : "\u5DF2\u547D\u4E2D\u65AD\u70B9";
       return { anim, note: `\u25C9 ${fnName}(${detail})`, isCheckpoint: true };
@@ -7427,7 +7666,7 @@ runAsyncDemo()
           const tip = entry.from != null && entry.to != null ? ` title="\u7701\u7565\u4E0B\u6807 ${entry.from}..${entry.to}\uFF08\u5171 ${entry.count} \u9879\uFF09"` : "";
           return '<div class="vmore"' + tip + '>\u2026<span class="vmore-cnt">+' + entry.count + "</span></div>";
         }
-        return render(entry.val, entry.idx);
+        return render(entry.val, entry.idx ?? 0);
       }).join("");
     }
     const MAX = 20, HEAD = 10, TAIL = 5;
@@ -7547,8 +7786,10 @@ runAsyncDemo()
       const cIdxs = d.colIndices;
       const colTracks = [];
       for (let ci = 0; ci < cIdxs.length; ci++) {
-        if (ci > 0 && cIdxs[ci] > cIdxs[ci - 1] + 1) colTracks.push({ gap: true });
-        colTracks.push({ gap: false, c: cIdxs[ci], ci });
+        const curC = cIdxs[ci] ?? 0;
+        const prevC = cIdxs[ci - 1] ?? 0;
+        if (ci > 0 && curC > prevC + 1) colTracks.push({ gap: true });
+        colTracks.push({ gap: false, c: curC, ci });
       }
       const gridCols = colTracks.length + 1;
       let html2 = '<div class="ghead">r\\c</div>';
@@ -7556,19 +7797,19 @@ runAsyncDemo()
         if (ct.gap) {
           html2 += '<div class="ggap">\u22EF</div>';
         } else {
-          const isFocusCol = d.mark && d.mark[1] === ct.c;
+          const isFocusCol = Array.isArray(d.mark) && d.mark[1] === ct.c;
           html2 += '<div class="ghead' + (isFocusCol ? " focus" : "") + '">' + ct.c + "</div>";
         }
       }
       for (let ri = 0; ri < rIdxs.length; ri++) {
         const realR = rIdxs[ri];
-        if (ri > 0 && realR > rIdxs[ri - 1] + 1) {
+        if (ri > 0 && realR !== void 0 && realR > (rIdxs[ri - 1] ?? 0) + 1) {
           html2 += '<div class="ggap">\u22EE</div>';
           for (let gi = 0; gi < colTracks.length; gi++) {
             html2 += '<div class="ggap">' + (colTracks[gi]?.gap ? "\u22F1" : "\u22EE") + "</div>";
           }
         }
-        const isFocusRow = d.mark && d.mark[0] === realR;
+        const isFocusRow = Array.isArray(d.mark) && d.mark[0] === realR;
         html2 += '<div class="ghead' + (isFocusRow ? " focus" : "") + '">' + realR + "</div>";
         const rowVals = d.viewCells[ri] || [];
         for (const ct of colTracks) {
@@ -7577,7 +7818,7 @@ runAsyncDemo()
           } else {
             const realC = ct.c;
             let cls = "gcell";
-            if (d.mark && d.mark[0] === realR && d.mark[1] === realC) cls += " hot";
+            if (Array.isArray(d.mark) && d.mark[0] === realR && d.mark[1] === realC) cls += " hot";
             else if (depSet.has(realR + "," + realC)) cls += " dep";
             const val = rowVals[ct.ci];
             html2 += '<div class="' + cls + '" title="[' + realR + "][" + realC + ']">' + (val === void 0 || val === null ? "\xB7" : esc(val)) + "</div>";
@@ -7586,14 +7827,14 @@ runAsyncDemo()
       }
       return '<div class="viz"><div class="vgrid-wrap"><div class="vgrid" style="grid-template-columns:repeat(' + gridCols + ',auto)">' + html2 + "</div></div></div>";
     }
-    const cols = d.cells[0].length;
+    const cols = d.cells[0]?.length ?? 0;
     let html = "";
     for (let r = 0; r < d.cells.length; r++) {
       for (let c = 0; c < cols; c++) {
         let cls = "gcell";
-        if (d.mark && d.mark[0] === r && d.mark[1] === c) cls += " hot";
+        if (Array.isArray(d.mark) && d.mark[0] === r && d.mark[1] === c) cls += " hot";
         else if (depSet.has(r + "," + c)) cls += " dep";
-        const val = d.cells[r][c];
+        const val = d.cells[r]?.[c];
         html += '<div class="' + cls + '">' + (val === void 0 || val === null ? "\xB7" : esc(val)) + "</div>";
       }
     }
@@ -7616,12 +7857,14 @@ runAsyncDemo()
     let maxDepth = 0;
     function layout(idx, depth, xMin, xMax) {
       if (idx == null || !nodes[idx] || coords.has(idx) || depth > 5) return;
+      const node = nodes[idx];
+      if (!node) return;
       maxDepth = Math.max(maxDepth, depth);
       const x = (xMin + xMax) / 2;
       const y = 20 + depth * 36;
-      coords.set(idx, { x, y, val: nodes[idx].val, left: nodes[idx].left, right: nodes[idx].right });
-      layout(nodes[idx].left, depth + 1, xMin, x);
-      layout(nodes[idx].right, depth + 1, x, xMax);
+      coords.set(idx, { x, y, val: node.val, left: node.left, right: node.right });
+      layout(node.left, depth + 1, xMin, x);
+      layout(node.right, depth + 1, x, xMax);
     }
     layout(root, 0, 14, 226);
     const h = Math.max(60, (maxDepth + 1) * 36 + 10);
@@ -7644,7 +7887,9 @@ runAsyncDemo()
     d.nodes.forEach((n, idx) => byId.set(n.id ?? idx, n));
     let edgesSvg = "", nodesSvg = "";
     (d.edges || []).forEach((e) => {
-      const a = byId.get(e[0]), b = byId.get(e[1]);
+      const e0 = Array.isArray(e) ? e[0] : e.from ?? 0;
+      const e1 = Array.isArray(e) ? e[1] : e.to ?? 0;
+      const a = byId.get(e0), b = byId.get(e1);
       if (a && b) {
         edgesSvg += `<line class="vsvg-edge" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"/>`;
       }
@@ -7658,7 +7903,7 @@ runAsyncDemo()
   }
   function vizInterface(d) {
     if (!d) return null;
-    const fields = d.fields || (d.entries ? d.entries.map((e) => ({ k: e.k, v: e.v, declaredType: typeof e.v })) : []);
+    const fields = d.fields || (d.entries ? d.entries.map((e) => ({ k: String(e.k), v: e.v, declaredType: typeof e.v })) : []);
     if (!fields.length && !d.isClass) return null;
     const ifaceTitle = d.interfaceName && d.interfaceName !== "object" ? d.interfaceName : "Object";
     const kwTxt = d.isClass ? "class" : "interface";
@@ -7681,7 +7926,7 @@ runAsyncDemo()
       microtask: { label: "Microtask \xB7 \u5FAE\u4EFB\u52A1\u51FA\u961F", cls: "micro" },
       macrotask: { label: "Macrotask \xB7 \u5B8F\u4EFB\u52A1\u89E6\u53D1", cls: "macro" }
     };
-    const ph = phaseMap[d.phase] || { label: d.phase || "Event Loop", cls: "sync" };
+    const ph = (d.phase ? phaseMap[d.phase] : void 0) || { label: d.phase || "Event Loop", cls: "sync" };
     const nowMs = typeof d.now === "number" ? d.now : 0;
     const coroutines = Array.isArray(d.coroutines) ? d.coroutines : [];
     const coroHtml = coroutines.length ? coroutines.map((c) => {
@@ -7692,7 +7937,7 @@ runAsyncDemo()
     }).join("") : '<span class="vel-empty">\u65E0\u6D3B\u8DC3\u534F\u7A0B</span>';
     const microtasks = Array.isArray(d.microtasks) ? d.microtasks : [];
     const microHtml = microtasks.length ? microtasks.map(
-      (m, idx) => `<div class="vel-qitem micro${idx === 0 ? " head" : ""}"><span class="vel-qidx">#${idx + 1}</span><span class="vel-qlabel">${esc(m.label)}</span>` + (m.line > 0 ? `<span class="vel-qmeta">@L${m.line}</span>` : "") + `</div>`
+      (m, idx) => `<div class="vel-qitem micro${idx === 0 ? " head" : ""}"><span class="vel-qidx">#${idx + 1}</span><span class="vel-qlabel">${esc(m.label)}</span>` + ((m.line ?? 0) > 0 ? `<span class="vel-qmeta">@L${m.line}</span>` : "") + `</div>`
     ).join("") : '<span class="vel-empty">\u961F\u5217\u4E3A\u7A7A (0)</span>';
     const macrotasks = Array.isArray(d.macrotasks) ? d.macrotasks : [];
     const macroHtml = macrotasks.length ? macrotasks.map(
@@ -7702,7 +7947,8 @@ runAsyncDemo()
     const promHtml = promises.length ? promises.map((p) => {
       const st = p.state || "pending";
       const icon = st === "fulfilled" ? "\u2713" : st === "rejected" ? "\u2717" : "\u23F3";
-      const valPart = st === "pending" ? p.reactions > 0 ? `<span class="vel-pval dim">${p.reactions} waiter${p.reactions > 1 ? "s" : ""}</span>` : '<span class="vel-pval dim">pending</span>' : `<span class="vel-pval">${esc(p.value)}</span>`;
+      const reactions = p.reactions ?? 0;
+      const valPart = st === "pending" ? reactions > 0 ? `<span class="vel-pval dim">${reactions} waiter${reactions > 1 ? "s" : ""}</span>` : '<span class="vel-pval dim">pending</span>' : `<span class="vel-pval">${esc(p.value)}</span>`;
       return `<div class="vel-pcard ${esc(st)}"><span class="vel-phead"><span class="vel-picon">${icon}</span><span class="vel-pname">P#${p.id} \xB7 ${esc(p.label)}</span></span>` + valPart + `</div>`;
     }).join("") : '<span class="vel-empty">\u6682\u65E0 Promise \u5B9E\u4F8B</span>';
     return `<div class="viz"><div class="veventloop"><div class="vel-header"><span class="vel-phase ${ph.cls}">${esc(ph.label)}</span>` + (d.activeTask ? `<span class="vel-active">${esc(d.activeTask)}</span>` : "") + `<span class="vel-clock">\u23F1 \u865A\u62DF\u65F6\u949F ${nowMs}ms</span></div><div class="vel-grid"><div class="vel-lane"><div class="vel-lane-title">Async \u534F\u7A0B\u72B6\u6001</div><div class="vel-lane-body">` + coroHtml + '</div></div><div class="vel-lane"><div class="vel-lane-title">Microtask \u5FAE\u4EFB\u52A1\u961F\u5217 (FIFO)</div><div class="vel-lane-body">' + microHtml + '</div></div><div class="vel-lane"><div class="vel-lane-title">Macrotask \u5B8F\u4EFB\u52A1 / \u5B9A\u65F6\u5668</div><div class="vel-lane-body">' + macroHtml + '</div></div><div class="vel-lane"><div class="vel-lane-title">Promise \u72B6\u6001\u8868</div><div class="vel-lane-body vel-pgrid">' + promHtml + "</div></div></div></div></div>";
@@ -7796,7 +8042,12 @@ runAsyncDemo()
     }
     return meta;
   }
-  var _DISCOVER_CACHE = { traceRef: null, scannedSteps: 0, map: /* @__PURE__ */ new Map(), list: [] };
+  var _DISCOVER_CACHE = {
+    traceRef: null,
+    scannedSteps: 0,
+    map: /* @__PURE__ */ new Map(),
+    list: []
+  };
   function discoverVars() {
     const steps = TRACE && TRACE.steps || [];
     if (_DISCOVER_CACHE.traceRef !== TRACE || steps.length < _DISCOVER_CACHE.scannedSteps) {
@@ -7810,8 +8061,9 @@ runAsyncDemo()
         const keys = Object.keys(ds);
         for (let k = 0; k < keys.length; k++) {
           const name = keys[k];
-          if (name && !_DISCOVER_CACHE.map.has(name)) {
-            _DISCOVER_CACHE.map.set(name, { id: name, name, kind: ds[name].kind || name });
+          const item = name ? ds[name] : void 0;
+          if (name && item && !_DISCOVER_CACHE.map.has(name)) {
+            _DISCOVER_CACHE.map.set(name, { id: name, name, kind: item.kind || name });
             changed = true;
           }
         }
@@ -7834,8 +8086,9 @@ runAsyncDemo()
     renderSlots();
   }
   function renderSlots() {
-    const st = TRACE.steps[cur] || {};
-    const activeFrame = TRACE.steps[cur] ? getActiveFrame(st) : null;
+    const stepAtCur = TRACE.steps[cur];
+    const st = stepAtCur || {};
+    const activeFrame = stepAtCur ? getActiveFrame(stepAtCur) : null;
     const ds = Object.assign({}, activeFrame && activeFrame.ds || st.ds || {});
     if (st.ds && st.ds.eventLoop && !ds.eventLoop) ds.eventLoop = st.ds.eventLoop;
     const vars = discoverVars().filter((s) => watched.has(s.id) && ds[s.id] !== void 0);
@@ -8152,10 +8405,13 @@ runAsyncDemo()
     const declaredVarT = name ? varTypes.get(name) : void 0;
     if (declaredVarT) {
       const cleanT = declaredVarT.replace(/\[\]$/, "").trim();
-      if (interfaces.has(cleanT)) return interfaces.get(cleanT);
+      if (interfaces.has(cleanT)) return interfaces.get(cleanT) || null;
     }
-    if (value && typeof value === "object" && value.__py_cls__ && interfaces.has(value.__py_cls__)) {
-      return interfaces.get(value.__py_cls__);
+    if (value && typeof value === "object") {
+      const pyCls = typeof value.__py_cls__ === "string" ? value.__py_cls__ : "";
+      if (pyCls && interfaces.has(pyCls)) {
+        return interfaces.get(pyCls) || null;
+      }
     }
     if (!value || typeof value !== "object") return null;
     const valKeys = Object.keys(value);
@@ -8197,7 +8453,7 @@ runAsyncDemo()
         while (i < src.length && /\s/.test(src[i] || "")) i++;
         const prev = t[t.length - 1] || "";
         const next = src[i] || "";
-        if (/[A-Za-z0-9_$?]/.test(prev) && /[A-Za-z0-9_$]/.test(next)) {
+        if (/[A-Za-z0-9_$?]/.test(prev) && /[A-Za-z0-9_$"`']/.test(next)) {
           t += " ";
         }
         continue;
@@ -8224,7 +8480,20 @@ runAsyncDemo()
     if (t.startsWith("readonly ")) {
       t = t.slice("readonly ".length).trim();
     }
+    if (t === "unique symbol") {
+      return "symbol";
+    }
     return t;
+  }
+  function stripTupleElementLabel(elemStr) {
+    const s = elemStr.trim();
+    const m = s.match(/^(\.\.\.)?(?:readonly\s+)?[A-Za-z_$][\w$]*(\?)?\s*:\s*([\s\S]+)$/);
+    if (m && m[3]) {
+      const prefix = m[1] || "";
+      const optSuffix = m[2] ? "?" : "";
+      return `${prefix}${m[3].trim()}${optSuffix}`;
+    }
+    return s.replace(/^readonly\s+/, "").trim();
   }
   function splitTopLevelUnion(typeStr) {
     const parts = [];
@@ -8342,28 +8611,32 @@ runAsyncDemo()
       return null;
     }
   }
-  function isTsAssignable(actual, expected) {
+  function isTsAssignable(actual, expected, knownNominalTypes) {
     if (!actual || !expected) return true;
     const a = normalizeTsType(actual);
     const e = normalizeTsType(expected);
-    if (a === e || a === "any" || a === "unknown" || e === "any" || e === "unknown" || a === "never") return true;
+    if (a === e || a === "any" || e === "any" || e === "unknown" || a === "never") return true;
+    if (a === "undefined" && e === "void") return true;
+    if (a === "unknown") return false;
     if (e === "never") return a === "never";
     if (isLiteralOfPrimitive(a, e)) return true;
     if (e.startsWith("`") && e.endsWith("`") && a.startsWith('"') && a.endsWith('"')) {
       if (matchTemplateLiteralType(a, e) !== null) return true;
     }
-    if (/^[A-Z]\d*$/.test(a) || /^[A-Z]\d*$/.test(e)) return true;
+    const aIsUnboundTypeParam = /^[A-Z]\d*$/.test(a) && (!knownNominalTypes || !knownNominalTypes.has(a));
+    const eIsUnboundTypeParam = /^[A-Z]\d*$/.test(e) && (!knownNominalTypes || !knownNominalTypes.has(e));
+    if (aIsUnboundTypeParam || eIsUnboundTypeParam) return true;
     const eParts = splitTopLevelUnion(e);
     if (eParts.length > 1) {
       const aPartsForUnion = splitTopLevelUnion(a);
       if (aPartsForUnion.length > 1) {
-        return aPartsForUnion.every((ap) => eParts.some((ep) => isTsAssignable(ap, ep)));
+        return aPartsForUnion.every((ap) => eParts.some((ep) => isTsAssignable(ap, ep, knownNominalTypes)));
       }
-      return eParts.some((part) => isTsAssignable(a, part));
+      return eParts.some((part) => isTsAssignable(a, part, knownNominalTypes));
     }
     const aParts = splitTopLevelUnion(a);
     if (aParts.length > 1) {
-      return aParts.every((part) => isTsAssignable(part, e));
+      return aParts.every((part) => isTsAssignable(part, e, knownNominalTypes));
     }
     if (a === "any[]" && e.endsWith("[]")) return true;
     if (a === "any[][]" && e.endsWith("[][]")) return true;
@@ -8372,24 +8645,24 @@ runAsyncDemo()
     if ((aParenArr || a.endsWith("[]")) && (eParenArr || e.endsWith("[]"))) {
       const elemA = aParenArr ? aParenArr[1] : a.slice(0, -2);
       const elemE = eParenArr ? eParenArr[1] : e.slice(0, -2);
-      return isTsAssignable(elemA, elemE);
+      return isTsAssignable(elemA, elemE, knownNominalTypes);
     }
     if (a.startsWith("[") && a.endsWith("]") && e.startsWith("[") && e.endsWith("]")) {
-      const aPartsTup = a.slice(1, -1).split(",").map((s) => s.trim()).filter(Boolean);
-      const ePartsTup = e.slice(1, -1).split(",").map((s) => s.trim()).filter(Boolean);
-      if (aPartsTup.length === ePartsTup.length && aPartsTup.every((ap, idx) => isTsAssignable(ap, ePartsTup[idx]))) {
+      const aPartsTup = a.slice(1, -1).split(",").map((s) => stripTupleElementLabel(s)).filter(Boolean);
+      const ePartsTup = e.slice(1, -1).split(",").map((s) => stripTupleElementLabel(s)).filter(Boolean);
+      if (aPartsTup.length === ePartsTup.length && aPartsTup.every((ap, idx) => isTsAssignable(ap, ePartsTup[idx], knownNominalTypes))) {
         return true;
       }
     }
     if (a.startsWith("[") && a.endsWith("]") && e.endsWith("[]")) {
       const elemE = eParenArr ? eParenArr[1] : e.slice(0, -2);
-      const aPartsTup = a.slice(1, -1).split(",").map((s) => s.trim()).filter(Boolean);
-      if (aPartsTup.every((ap) => isTsAssignable(ap, elemE))) return true;
+      const aPartsTup = a.slice(1, -1).split(",").map((s) => stripTupleElementLabel(s)).filter(Boolean);
+      if (aPartsTup.every((ap) => isTsAssignable(ap, elemE, knownNominalTypes))) return true;
     }
     if (a.endsWith("[]") && e.startsWith("[") && e.endsWith("]")) {
       const elemA = aParenArr ? aParenArr[1] : a.slice(0, -2);
-      const tupleParts = e.slice(1, -1).split(",").map((s) => s.trim()).filter(Boolean);
-      if (tupleParts.length > 0 && tupleParts.every((tp) => isTsAssignable(elemA, tp))) {
+      const tupleParts = e.slice(1, -1).split(",").map((s) => stripTupleElementLabel(s)).filter(Boolean);
+      if (tupleParts.length > 0 && tupleParts.every((tp) => isTsAssignable(elemA, tp, knownNominalTypes))) {
         return true;
       }
     }
@@ -8399,14 +8672,14 @@ runAsyncDemo()
       const aArrowIdx = a.lastIndexOf("=>");
       if (aArrowIdx > 0 && a.startsWith("(")) {
         const actualRet = a.slice(aArrowIdx + 2).trim();
-        return isTsAssignable(actualRet, expectedRet);
+        return isTsAssignable(actualRet, expectedRet, knownNominalTypes);
       }
-      if (a === "function" || isTsAssignable(a, expectedRet)) return true;
+      if (a === "function" || isTsAssignable(a, expectedRet, knownNominalTypes)) return true;
     }
     const aGenM = a.match(/^([A-Za-z_$][\w$]*)<(.+)>$/);
     const eGenM = e.match(/^([A-Za-z_$][\w$]*)<(.+)>$/);
     if (aGenM && eGenM && aGenM[1] === eGenM[1]) {
-      return isTsAssignable(aGenM[2], eGenM[2]);
+      return isTsAssignable(aGenM[2], eGenM[2], knownNominalTypes);
     }
     return false;
   }
@@ -8425,7 +8698,11 @@ runAsyncDemo()
     const interfaceTypeParams = /* @__PURE__ */ new Map();
     const interfaces = /* @__PURE__ */ new Map();
     const classParents = /* @__PURE__ */ new Map();
+    const classImplements = /* @__PURE__ */ new Map();
+    const abstractClasses = /* @__PURE__ */ new Set();
     const enumsSet = /* @__PURE__ */ new Set();
+    const enumMembers = /* @__PURE__ */ new Map();
+    const enumValueTypes = /* @__PURE__ */ new Map();
     const env = /* @__PURE__ */ new Map();
     const activeTypeParams = /* @__PURE__ */ new Map();
     const BUILTIN_TS_GLOBALS = /* @__PURE__ */ new Set([
@@ -8456,6 +8733,12 @@ runAsyncDemo()
       "Intl",
       "Reflect",
       "Proxy",
+      "Generator",
+      "AsyncGenerator",
+      "Iterator",
+      "AsyncIterator",
+      "Iterable",
+      "AsyncIterable",
       "ArrayBuffer",
       "SharedArrayBuffer",
       "DataView",
@@ -8509,6 +8792,14 @@ runAsyncDemo()
       "checkpoint",
       "\u65AD\u70B9"
     ]);
+    function getKnownNominalTypes() {
+      const s = /* @__PURE__ */ new Set();
+      enumsSet.forEach((k) => s.add(k));
+      interfaces.forEach((_, k) => s.add(k));
+      typeAliases.forEach((_, k) => s.add(k));
+      activeTypeParams.forEach((_, k) => s.delete(k));
+      return s;
+    }
     function isKnownIdentifier(name) {
       if (!name || !/^[A-Za-z_$][\w$]*$/.test(name)) return true;
       return env.has(name) || fns.has(name) || interfaces.has(name) || typeAliases.has(name) || genericTypeAliases.has(name) || activeTypeParams.has(name) || enumsSet.has(name) || BUILTIN_TS_GLOBALS.has(name) || RESERVED_WORDS.has(name);
@@ -8694,7 +8985,7 @@ runAsyncDemo()
       const cNorm = evaluateType(checkT, typeEnv, depth + 1);
       const eSubst = substituteTypeParamsInStr(normalizeTsType(extT), typeEnv);
       const directInfer = eSubst.match(/^infer\s+([A-Za-z_$][\w$]*)(?:\s+extends\s+([\s\S]+))?$/);
-      if (directInfer) {
+      if (directInfer && directInfer[1]) {
         const varName = directInfer[1];
         if (directInfer[2]) {
           const constraintT = evaluateType(directInfer[2], typeEnv, depth + 1);
@@ -8705,7 +8996,7 @@ runAsyncDemo()
       }
       const arrInferM = eSubst.match(/^(?:\(\s*infer\s+([A-Za-z_$][\w$]*)\s*\)\[\]|infer\s+([A-Za-z_$][\w$]*)\[\]|(?:Readonly)?Array<\s*infer\s+([A-Za-z_$][\w$]*)\s*>)$/);
       if (arrInferM) {
-        const varName = arrInferM[1] || arrInferM[2] || arrInferM[3];
+        const varName = arrInferM[1] || arrInferM[2] || arrInferM[3] || "";
         if (cNorm.endsWith("[]") && splitTopLevelUnion(cNorm).length === 1) {
           let elem = cNorm.slice(0, -2);
           if (elem.startsWith("(") && elem.endsWith(")") && findBalancedParen(elem, 0) === elem.length - 1) {
@@ -8715,7 +9006,7 @@ runAsyncDemo()
           return { matched: true, inferred };
         }
         if (cNorm.startsWith("[") && cNorm.endsWith("]")) {
-          const parts = splitTopLevelDecl(cNorm.slice(1, -1)).map((s) => s.trim()).filter(Boolean);
+          const parts = splitTopLevelDecl(cNorm.slice(1, -1)).map((s) => stripTupleElementLabel(s)).filter(Boolean);
           const unique = Array.from(new Set(parts));
           inferred.set(varName, unique.length ? unique.join("|") : "never");
           return { matched: true, inferred };
@@ -8736,7 +9027,7 @@ runAsyncDemo()
               if (!retMatch.matched) return { matched: false, inferred };
               retMatch.inferred.forEach((v, k) => inferred.set(k, v));
               const restInferM = eParamStr.match(/^\.\.\.[A-Za-z_$][\w$]*\s*:\s*infer\s+([A-Za-z_$][\w$]*)$/);
-              if (restInferM) {
+              if (restInferM && restInferM[1]) {
                 const pList = cParamStr ? splitTopLevelDecl(cParamStr).map((p) => {
                   const colon = p.indexOf(":");
                   return colon >= 0 ? evaluateType(p.slice(colon + 1).trim(), typeEnv, depth + 1) : "any";
@@ -8783,8 +9074,8 @@ runAsyncDemo()
       }
       if (eSubst.startsWith("[") && eSubst.endsWith("]")) {
         if (!cNorm.startsWith("[") || !cNorm.endsWith("]")) return { matched: false, inferred };
-        const eItems = splitTopLevelDecl(eSubst.slice(1, -1)).map((s) => s.trim()).filter(Boolean);
-        const cItems = splitTopLevelDecl(cNorm.slice(1, -1)).map((s) => s.trim()).filter(Boolean);
+        const eItems = splitTopLevelDecl(eSubst.slice(1, -1)).map((s) => stripTupleElementLabel(s)).filter(Boolean);
+        const cItems = splitTopLevelDecl(cNorm.slice(1, -1)).map((s) => stripTupleElementLabel(s)).filter(Boolean);
         for (let idx = 0; idx < eItems.length; idx++) {
           const ei = eItems[idx] || "";
           const restInfer = ei.match(/^\.\.\.(?:infer\s+([A-Za-z_$][\w$]*)|([A-Za-z_$][\w$]*))$/);
@@ -8856,7 +9147,7 @@ runAsyncDemo()
         return objT.slice(0, -2);
       }
       if (objT.startsWith("[") && objT.endsWith("]")) {
-        const elems = splitTopLevelDecl(objT.slice(1, -1)).map((s) => s.trim()).filter(Boolean);
+        const elems = splitTopLevelDecl(objT.slice(1, -1)).map((s) => stripTupleElementLabel(s)).filter(Boolean);
         if (keyT === "number") {
           return Array.from(new Set(elems)).join("|") || "never";
         }
@@ -8871,10 +9162,13 @@ runAsyncDemo()
         if (shape.has(cleanKey)) {
           return (shape.get(cleanKey) || { type: "any" }).type;
         }
+        if (shape.has("__index__")) {
+          return (shape.get("__index__") || { type: "any" }).type;
+        }
         if (keyT === "keyof " + objT) {
           const vals = [];
-          shape.forEach((v) => {
-            if (!vals.includes(v.type)) vals.push(v.type);
+          shape.forEach((v, k) => {
+            if (k !== "__index__" && !vals.includes(v.type)) vals.push(v.type);
           });
           return vals.join("|") || "any";
         }
@@ -8884,12 +9178,14 @@ runAsyncDemo()
       }
       return "any";
     }
-    function evaluateType(rawType, typeEnv = /* @__PURE__ */ new Map(), depth = 0) {
+    function evaluateType(rawType, typeEnv = /* @__PURE__ */ new Map(), depth = 0, expanding = /* @__PURE__ */ new Set()) {
       if (!rawType || depth > 24) return "any";
       let t = normalizeTsType(rawType);
       if (!t || t === "any" || t === "unknown" || t === "never" || t === "void" || t === "number" || t === "string" || t === "boolean" || t === "null" || t === "undefined" || t === "object" || t === "symbol" || t === "bigint") {
         return t || "any";
       }
+      if (/^asserts\s+/.test(t)) return "void";
+      if (/^(?:[A-Za-z_$][\w$]*|this)\s+is\s+/.test(t)) return "boolean";
       if (typeEnv && typeEnv.has(t)) {
         return typeEnv.get(t) || "any";
       }
@@ -8897,7 +9193,7 @@ runAsyncDemo()
       if (cond) {
         const rawCheck = cond.checkType.trim();
         const isNakedTypeParam = /^[A-Za-z_$][\w$]*$/.test(rawCheck) && typeEnv && typeEnv.has(rawCheck);
-        const resolvedCheck = evaluateType(rawCheck, typeEnv, depth + 1);
+        const resolvedCheck = evaluateType(rawCheck, typeEnv, depth + 1, expanding);
         if (isNakedTypeParam && resolvedCheck === "never") {
           return "never";
         }
@@ -8910,14 +9206,14 @@ runAsyncDemo()
             const m2 = matchConditionalExtends(member, cond.extendsType, memberEnv, depth + 1);
             if (m2.matched) {
               m2.inferred.forEach((v, k) => memberEnv.set(k, v));
-              const branchT = evaluateType(cond.trueType, memberEnv, depth + 1);
+              const branchT = evaluateType(cond.trueType, memberEnv, depth + 1, expanding);
               if (branchT !== "never") {
                 splitTopLevelUnion(branchT).forEach((u) => {
                   if (!results.includes(u)) results.push(u);
                 });
               }
             } else {
-              const branchF = evaluateType(cond.falseType, memberEnv, depth + 1);
+              const branchF = evaluateType(cond.falseType, memberEnv, depth + 1, expanding);
               if (branchF !== "never") {
                 splitTopLevelUnion(branchF).forEach((u) => {
                   if (!results.includes(u)) results.push(u);
@@ -8931,16 +9227,16 @@ runAsyncDemo()
         if (m.matched) {
           const trueEnv = new Map(typeEnv);
           m.inferred.forEach((v, k) => trueEnv.set(k, v));
-          return evaluateType(cond.trueType, trueEnv, depth + 1);
+          return evaluateType(cond.trueType, trueEnv, depth + 1, expanding);
         } else {
-          return evaluateType(cond.falseType, typeEnv, depth + 1);
+          return evaluateType(cond.falseType, typeEnv, depth + 1, expanding);
         }
       }
       const unionParts = splitTopLevelUnion(t);
       if (unionParts.length > 1) {
         const evaled = [];
         unionParts.forEach((part) => {
-          const r = evaluateType(part, typeEnv, depth + 1);
+          const r = evaluateType(part, typeEnv, depth + 1, expanding);
           splitTopLevelUnion(r).forEach((u) => {
             if (u !== "never" && !evaled.includes(u)) evaled.push(u);
           });
@@ -8949,14 +9245,25 @@ runAsyncDemo()
       }
       const interParts = splitTopLevelIntersection(t);
       if (interParts.length > 1) {
-        const evaled = interParts.map((p) => evaluateType(p, typeEnv, depth + 1));
+        const evaled = interParts.map((p) => evaluateType(p, typeEnv, depth + 1, expanding));
         if (evaled.includes("never")) return "never";
         if (evaled.length === 2 && evaled[1] === "{}") {
           return stripNullableFromType(stripNullableFromType(evaled[0], "null"), "undefined");
         }
+        const simplified = evaled.filter(
+          (p, idx) => !evaled.some((q, qIdx) => {
+            if (qIdx === idx) return false;
+            if (p === q) return qIdx < idx;
+            const qUnion = splitTopLevelUnion(q);
+            return qUnion.length > 0 && qUnion.every((qm) => isLiteralOfPrimitive(qm, p));
+          })
+        );
+        if (simplified.length === 1 && simplified[0]) {
+          return simplified[0];
+        }
         const mergedProps = /* @__PURE__ */ new Map();
         let allShapes = true;
-        for (const ep of evaled) {
+        for (const ep of simplified) {
           const sh = getInterfaceShape(ep);
           if (!sh) {
             allShapes = false;
@@ -8966,30 +9273,35 @@ runAsyncDemo()
         }
         if (allShapes && mergedProps.size > 0) {
           const propStrs = [];
-          mergedProps.forEach((v, k) => propStrs.push(`${k}${v.optional ? "?" : ""}:${v.type}`));
+          mergedProps.forEach((v, k) => {
+            if (k === "__index__") propStrs.push(`[k: string]:${v.type}`);
+            else propStrs.push(`${k}${v.optional ? "?" : ""}:${v.type}`);
+          });
           return `{${propStrs.join(";")}}`;
         }
-        return evaled.join("&");
+        return simplified.join("&");
       }
       if (t.startsWith("keyof ")) {
-        const target = evaluateType(t.slice(6).trim(), typeEnv, depth + 1);
+        const target = evaluateType(t.slice(6).trim(), typeEnv, depth + 1, expanding);
         if (target === "any") return "string|number|symbol";
         const shape = getInterfaceShape(target);
         if (shape) {
-          const keys = Array.from(shape.keys()).map((k) => `"${k}"`);
-          return keys.length ? keys.join("|") : "never";
+          const keys = Array.from(shape.keys()).filter((k) => k !== "__index__" && !k.startsWith("[")).map((k) => `"${k}"`);
+          if (keys.length) return keys.join("|");
+          if (shape.has("__index__")) return "string";
+          return "never";
         }
         if (target.startsWith("Record<")) {
           const recArgs = splitTopLevelDecl(target.slice(7, -1));
-          if (recArgs.length >= 1) return evaluateType(recArgs[0], typeEnv, depth + 1);
+          if (recArgs.length >= 1) return evaluateType(recArgs[0], typeEnv, depth + 1, expanding);
         }
         return "string";
       }
       if (t.startsWith("typeof ")) {
         const exprName = t.slice(7).trim();
-        if (env.has(exprName)) return env.get(exprName).type;
-        if (fns.has(exprName)) {
-          const sig = fns.get(exprName);
+        if (env.has(exprName)) return (env.get(exprName) || { type: "any" }).type;
+        const sig = fns.get(exprName);
+        if (sig) {
           const pStr = sig.params.map((p) => `${p.name}${p.optional ? "?" : ""}:${p.type}`).join(",");
           return `(${pStr})=>${sig.returnType}`;
         }
@@ -8997,7 +9309,7 @@ runAsyncDemo()
       }
       if (t.startsWith("{") && t.endsWith("}")) {
         const inner = t.slice(1, -1).trim().replace(/;$/, "").trim();
-        const mappedM = inner.match(/^(?:(?:\+|-)?readonly\s+)?\[\s*([A-Za-z_$][\w$]*)\s+in\s+([\s\S]+?)\s*\]([+\-]?)\?\s*:\s*([\s\S]+)$/) || inner.match(/^(?:(?:\+|-)?readonly\s+)?\[\s*([A-Za-z_$][\w$]*)\s+in\s+([\s\S]+?)\s*\]\s*:\s*([\s\S]+)$/);
+        const mappedM = inner.match(/^(?:(?:\+|-)?readonly\s*)?\[\s*([A-Za-z_$][\w$]*)\s+in\s+([\s\S]+?)\s*\]([+\-]?)\?\s*:\s*([\s\S]+)$/) || inner.match(/^(?:(?:\+|-)?readonly\s*)?\[\s*([A-Za-z_$][\w$]*)\s+in\s+([\s\S]+?)\s*\]\s*:\s*([\s\S]+)$/);
         if (mappedM && mappedM[1] && mappedM[2]) {
           const kVar = mappedM[1];
           let inClause = mappedM[2].trim();
@@ -9021,19 +9333,22 @@ runAsyncDemo()
             else if (ch === ")" || ch === "]" || ch === "}") d = Math.max(0, d - 1);
             else if (ch === "<") ad++;
             else if (ch === ">" && inClause[i - 1] !== "=") ad = Math.max(0, ad - 1);
-            else if (d === 0 && ad === 0 && inClause.slice(i).startsWith(" as ")) {
-              asClause = inClause.slice(i + 4).trim();
-              inClause = inClause.slice(0, i).trim();
-              break;
+            else if (d === 0 && ad === 0) {
+              const asM = inClause.slice(i).match(/^\s+as(?:\s+|(?=[`"']))/);
+              if (asM) {
+                asClause = inClause.slice(i + asM[0].length).trim();
+                inClause = inClause.slice(0, i).trim();
+                break;
+              }
             }
           }
           let sourceObjShape = null;
           const keyofM = inClause.match(/^keyof\s+([\s\S]+)$/);
           if (keyofM && keyofM[1]) {
-            const srcT = evaluateType(keyofM[1].trim(), typeEnv, depth + 1);
+            const srcT = evaluateType(keyofM[1].trim(), typeEnv, depth + 1, expanding);
             sourceObjShape = getInterfaceShape(srcT);
           }
-          const keysUnion = evaluateType(inClause, typeEnv, depth + 1);
+          const keysUnion = evaluateType(inClause, typeEnv, depth + 1, expanding);
           const keyItems = splitTopLevelUnion(keysUnion).filter((k) => k !== "never");
           const outProps = [];
           for (const rawKey of keyItems) {
@@ -9043,11 +9358,11 @@ runAsyncDemo()
             mapEnv.set(kVar, litKey);
             let finalKeyName = litKey.slice(1, -1);
             if (asClause) {
-              const remapped = evaluateType(asClause, mapEnv, depth + 1);
+              const remapped = evaluateType(asClause, mapEnv, depth + 1, expanding);
               if (remapped === "never") continue;
               finalKeyName = remapped.replace(/^["']|["']$/g, "");
             }
-            const propValType = evaluateType(valTemplate, mapEnv, depth + 1);
+            const propValType = evaluateType(valTemplate, mapEnv, depth + 1, expanding);
             let isOpt = false;
             const srcProp = sourceObjShape ? sourceObjShape.get(litKey.slice(1, -1)) : void 0;
             if (srcProp) {
@@ -9073,7 +9388,7 @@ runAsyncDemo()
             const end = body.indexOf("}", i + 2);
             if (end > i) {
               const innerExpr = body.slice(i + 2, end).trim();
-              const ev = evaluateType(innerExpr, typeEnv, depth + 1);
+              const ev = evaluateType(innerExpr, typeEnv, depth + 1, expanding);
               if (ev.startsWith('"') && ev.endsWith('"')) {
                 out += ev.slice(1, -1);
               } else {
@@ -9089,14 +9404,21 @@ runAsyncDemo()
       }
       if (t.endsWith("[]")) {
         const elemRaw = t.slice(0, -2);
-        const elemEval = evaluateType(elemRaw, typeEnv, depth + 1);
+        const elemEval = evaluateType(elemRaw, typeEnv, depth + 1, expanding);
         if (elemEval.includes("|") || elemEval.includes("&") || elemEval.includes("=>")) {
           return `(${elemEval})[]`;
         }
         return `${elemEval}[]`;
       }
       if (t.startsWith("[") && t.endsWith("]")) {
-        const elems = splitTopLevelDecl(t.slice(1, -1)).map((e) => evaluateType(e.trim(), typeEnv, depth + 1));
+        const elems = splitTopLevelDecl(t.slice(1, -1)).map((rawE) => {
+          const stripped = stripTupleElementLabel(rawE);
+          const isRest = stripped.startsWith("...");
+          const isOpt = !isRest && stripped.endsWith("?");
+          const core = isRest ? stripped.slice(3).trim() : isOpt ? stripped.slice(0, -1).trim() : stripped;
+          const ev = evaluateType(core, typeEnv, depth + 1, expanding);
+          return `${isRest ? "..." : ""}${ev}${isOpt ? "?" : ""}`;
+        });
         return `[${elems.join(",")}]`;
       }
       if (t.endsWith("]") && !t.startsWith("[")) {
@@ -9115,8 +9437,8 @@ runAsyncDemo()
           const objPart = t.slice(0, openB).trim();
           const keyPart = t.slice(openB + 1, -1).trim();
           if (keyPart) {
-            const objEval = evaluateType(objPart, typeEnv, depth + 1);
-            const keyEval = evaluateType(keyPart, typeEnv, depth + 1);
+            const objEval = evaluateType(objPart, typeEnv, depth + 1, expanding);
+            const keyEval = evaluateType(keyPart, typeEnv, depth + 1, expanding);
             return resolveIndexedAccess(objEval, keyEval, typeEnv, depth + 1);
           }
         }
@@ -9124,7 +9446,7 @@ runAsyncDemo()
       const genM = t.match(/^([A-Za-z_$][\w$]*)<([\s\S]+)>$/);
       if (genM && genM[1] && genM[2]) {
         const baseName = genM[1];
-        const rawArgs = splitTopLevelDecl(genM[2]).map((a) => evaluateType(a.trim(), typeEnv, depth + 1));
+        const rawArgs = splitTopLevelDecl(genM[2]).map((a) => evaluateType(a.trim(), typeEnv, depth + 1, expanding));
         const arg0 = rawArgs[0] || "any";
         const arg1 = rawArgs[1] || "any";
         if (baseName === "Array" || baseName === "ReadonlyArray") {
@@ -9135,7 +9457,10 @@ runAsyncDemo()
           const shape = getInterfaceShape(arg0);
           if (shape) {
             const props = [];
-            shape.forEach((v, k) => props.push(`${k}?:${v.type}`));
+            shape.forEach((v, k) => {
+              if (k === "__index__") props.push(`[k: string]:${v.type}`);
+              else props.push(`${k}?:${v.type}`);
+            });
             return `{${props.join(";")}}`;
           }
         }
@@ -9143,7 +9468,10 @@ runAsyncDemo()
           const shape = getInterfaceShape(arg0);
           if (shape) {
             const props = [];
-            shape.forEach((v, k) => props.push(`${k}:${v.type}`));
+            shape.forEach((v, k) => {
+              if (k === "__index__") props.push(`[k: string]:${v.type}`);
+              else props.push(`${k}:${v.type}`);
+            });
             return `{${props.join(";")}}`;
           }
         }
@@ -9152,7 +9480,10 @@ runAsyncDemo()
           const shape = getInterfaceShape(arg0);
           if (shape) {
             const props = [];
-            shape.forEach((v, k) => props.push(`${k}${v.optional ? "?" : ""}:${v.type}`));
+            shape.forEach((v, k) => {
+              if (k === "__index__") props.push(`[k: string]:${v.type}`);
+              else props.push(`${k}${v.optional ? "?" : ""}:${v.type}`);
+            });
             return `{${props.join(";")}}`;
           }
           return arg0;
@@ -9174,7 +9505,7 @@ runAsyncDemo()
             const omitKeys = new Set(splitTopLevelUnion(arg1).map((k) => k.replace(/^["']|["']$/g, "")));
             const props = [];
             shape.forEach((v, k) => {
-              if (!omitKeys.has(k)) props.push(`${k}${v.optional ? "?" : ""}:${v.type}`);
+              if (!omitKeys.has(k) && k !== "__index__") props.push(`${k}${v.optional ? "?" : ""}:${v.type}`);
             });
             return `{${props.join(";")}}`;
           }
@@ -9208,7 +9539,7 @@ runAsyncDemo()
         if (baseName === "ReturnType" && rawArgs.length === 1) {
           const fnT = arg0;
           const arrowIdx = fnT.lastIndexOf("=>");
-          if (arrowIdx > 0) return evaluateType(fnT.slice(arrowIdx + 2).trim(), typeEnv, depth + 1);
+          if (arrowIdx > 0) return evaluateType(fnT.slice(arrowIdx + 2).trim(), typeEnv, depth + 1, expanding);
           return "any";
         }
         if (baseName === "Parameters" && rawArgs.length === 1) {
@@ -9219,7 +9550,7 @@ runAsyncDemo()
               const pInner = fnT.slice(1, closeP).trim();
               const pTypes = pInner ? splitTopLevelDecl(pInner).map((p) => {
                 const colon = p.indexOf(":");
-                return colon >= 0 ? evaluateType(p.slice(colon + 1).trim(), typeEnv, depth + 1) : "any";
+                return colon >= 0 ? evaluateType(p.slice(colon + 1).trim(), typeEnv, depth + 1, expanding) : "any";
               }) : [];
               return `[${pTypes.join(",")}]`;
             }
@@ -9231,7 +9562,7 @@ runAsyncDemo()
           let guard = 0;
           while (guard++ < 8) {
             const pm = cur2.match(/^Promise<(.+)>$/);
-            if (pm && pm[1]) cur2 = evaluateType(pm[1], typeEnv, depth + 1);
+            if (pm && pm[1]) cur2 = evaluateType(pm[1], typeEnv, depth + 1, expanding);
             else break;
           }
           return cur2;
@@ -9248,18 +9579,26 @@ runAsyncDemo()
           return "string";
         }
         if (genericTypeAliases.has(baseName)) {
+          if (expanding.has(baseName)) return `${baseName}<${rawArgs.join(",")}>`;
           const info = genericTypeAliases.get(baseName);
-          const subEnv = new Map(typeEnv);
-          info.typeParams.forEach((tp, idx) => {
-            const argVal = rawArgs[idx] ?? (tp.defaultType ? evaluateType(tp.defaultType, subEnv, depth + 1) : "any");
-            subEnv.set(tp.name, argVal);
-          });
-          return evaluateType(info.body, subEnv, depth + 1);
+          if (info) {
+            const subEnv = new Map(typeEnv);
+            const nextExp = new Set(expanding);
+            nextExp.add(baseName);
+            info.typeParams.forEach((tp, idx) => {
+              const argVal = rawArgs[idx] ?? (tp.defaultType ? evaluateType(tp.defaultType, subEnv, depth + 1, nextExp) : "any");
+              subEnv.set(tp.name, argVal);
+            });
+            return evaluateType(info.body, subEnv, depth + 1, nextExp);
+          }
         }
         return `${baseName}<${rawArgs.join(",")}>`;
       }
       if (typeAliases.has(t)) {
-        return evaluateType(typeAliases.get(t), typeEnv, depth + 1);
+        if (expanding.has(t)) return t;
+        const nextExp = new Set(expanding);
+        nextExp.add(t);
+        return evaluateType(typeAliases.get(t), typeEnv, depth + 1, nextExp);
       }
       if (t.startsWith("(") && t.includes("=>") && typeEnv && typeEnv.size > 0) {
         return normalizeTsType(substituteTypeParamsInStr(t, typeEnv));
@@ -9297,6 +9636,26 @@ runAsyncDemo()
       if (cur2.trim()) members.push(cur2.trim());
       members.forEach((mem) => {
         const cleaned = mem.replace(/^(?:readonly|public|private|protected|static)\s+/, "");
+        const idxM = cleaned.match(/^\[\s*[A-Za-z_$][\w$]*\s*:\s*(?:string|number|symbol|any)\s*\]\s*:\s*([\s\S]+)$/);
+        if (idxM && idxM[1]) {
+          const rawT = idxM[1].trim();
+          propMap.set("__index__", { type: evaluateType(rawT, typeEnv), rawType: rawT, optional: true });
+          return;
+        }
+        const compM = cleaned.match(/^\[\s*([A-Za-z_$][\w$]*)\s*\](\?)?\s*:\s*([\s\S]+)$/);
+        if (compM && compM[1] && compM[3]) {
+          const rawT = compM[3].trim();
+          propMap.set(`[${compM[1]}]`, { type: evaluateType(rawT, typeEnv), rawType: rawT, optional: Boolean(compM[2]) });
+          propMap.set("__index__", { type: evaluateType(rawT, typeEnv), rawType: rawT, optional: true });
+          return;
+        }
+        const methM = cleaned.match(/^([A-Za-z_$][\w$]*)(\?)?\s*\(([^)]*)\)\s*:\s*([\s\S]+)$/);
+        if (methM && methM[1] && methM[4]) {
+          const rawRet = methM[4].trim();
+          const fnT = `(${(methM[3] || "").trim()})=>${evaluateType(rawRet, typeEnv)}`;
+          propMap.set(methM[1], { type: fnT, rawType: fnT, optional: Boolean(methM[2]) });
+          return;
+        }
         const m = cleaned.match(/^([A-Za-z_$][\w$]*)(\?)?\s*:\s*([\s\S]+)$/);
         if (m && m[1] && m[3]) {
           const rawT = m[3].trim();
@@ -9316,7 +9675,7 @@ runAsyncDemo()
       const typeArgs = genM && genM[2] ? splitTopLevelDecl(genM[2]).map((a) => evaluateType(a.trim(), activeTypeParams)) : [];
       const direct = interfaces.get(resolved) || interfaces.get(baseName);
       if (direct) {
-        let merged = /* @__PURE__ */ new Map();
+        const merged = /* @__PURE__ */ new Map();
         if (classParents.has(resolved) || classParents.has(baseName)) {
           let p = classParents.get(resolved) || classParents.get(baseName);
           const visited = /* @__PURE__ */ new Set([resolved, baseName]);
@@ -9365,8 +9724,8 @@ runAsyncDemo()
       while (cur2 && !visited.has(cur2)) {
         visited.add(cur2);
         const key = cur2 + "." + methodName;
-        if (fns.has(key)) {
-          const rawSig = fns.get(key);
+        const rawSig = fns.get(key);
+        if (rawSig) {
           if (classEnv.size === 0) return rawSig;
           return {
             ...rawSig,
@@ -9393,25 +9752,63 @@ runAsyncDemo()
       if (s === "true" || s === "false") return s;
       return null;
     }
-    function isTypeCompatible(actualType, expectedType) {
+    function isTypeCompatible(actualType, expectedType, seenPairs = /* @__PURE__ */ new Set()) {
       if (!actualType || !expectedType) return true;
       const a = evaluateType(actualType, activeTypeParams);
       const e = evaluateType(expectedType, activeTypeParams);
-      if (isTsAssignable(a, e)) return true;
+      const pairKey = `${a}==>${e}`;
+      if (seenPairs.has(pairKey)) return true;
+      const nextSeen = new Set(seenPairs);
+      nextSeen.add(pairKey);
+      const knownNominals = getKnownNominalTypes();
+      if (isTsAssignable(a, e, knownNominals)) return true;
+      if (e === "object") {
+        if (a.startsWith("{") && a.endsWith("}") || a.endsWith("[]") || a.startsWith("[") && a.endsWith("]") || a.includes("=>") || interfaces.has(a) || a.startsWith("Record<") || a.startsWith("Map<") || a.startsWith("Set<")) {
+          return true;
+        }
+        return false;
+      }
+      if (enumsSet.has(e)) {
+        if (a === e || a.startsWith(e + ".")) return true;
+        const vTypes = enumValueTypes.get(e);
+        if (vTypes && vTypes.has("number") && !vTypes.has("string")) {
+          if (a === "number" || /^[+-]?\d+(?:\.\d+)?$/.test(a)) return true;
+        }
+        return false;
+      }
+      const eParts = splitTopLevelUnion(e);
+      if (eParts.length > 1) {
+        const aParts2 = splitTopLevelUnion(a);
+        if (aParts2.length > 1) {
+          return aParts2.every((ap) => eParts.some((ep) => isTypeCompatible(ap, ep, nextSeen)));
+        }
+        return eParts.some((ep) => isTypeCompatible(a, ep, nextSeen));
+      }
+      const aParts = splitTopLevelUnion(a);
+      if (aParts.length > 1) {
+        return aParts.every((ap) => isTypeCompatible(ap, e, nextSeen));
+      }
+      const aParenArr = a.match(/^\((.+)\)\[\]$/);
+      const eParenArr = e.match(/^\((.+)\)\[\]$/);
+      if ((aParenArr || a.endsWith("[]")) && (eParenArr || e.endsWith("[]"))) {
+        const elemA = aParenArr ? aParenArr[1] : a.slice(0, -2);
+        const elemE = eParenArr ? eParenArr[1] : e.slice(0, -2);
+        return isTypeCompatible(elemA, elemE, nextSeen);
+      }
       const recM = e.match(/^Record<([^,]+),([\s\S]+)>$/);
       if (recM && recM[2]) {
         const valExpected = recM[2].trim();
         const aShape = getInterfaceShape(a);
         if (aShape) {
           for (const [, propInfo] of aShape.entries()) {
-            if (!isTypeCompatible(propInfo.type, valExpected)) return false;
+            if (!isTypeCompatible(propInfo.type, valExpected, nextSeen)) return false;
           }
           return true;
         }
       }
       const eShape = getInterfaceShape(e);
       if (eShape) {
-        if (e === "object" || e === "{}") return !["number", "string", "boolean", "null", "undefined", "void"].includes(a);
+        if (e === "object" || e === "{}") return !["number", "string", "boolean", "null", "undefined", "void", "unknown"].includes(a);
         if (a === "string" || a.startsWith('"')) {
           if (eShape.size === 1 && eShape.has("length") && (eShape.get("length") || { type: "" }).type === "number") return true;
         }
@@ -9420,12 +9817,22 @@ runAsyncDemo()
         }
         const aShape = getInterfaceShape(a);
         if (aShape) {
+          const indexExpected = eShape.has("__index__") ? (eShape.get("__index__") || { type: "any" }).type : null;
           for (const [propName, propInfo] of eShape.entries()) {
+            if (propName === "__index__") continue;
             if (!aShape.has(propName)) {
               if (!propInfo.optional) return false;
             } else {
               const actualPropT = (aShape.get(propName) || { type: "any" }).type;
-              if (!isTypeCompatible(actualPropT, propInfo.type)) return false;
+              if (!isTypeCompatible(actualPropT, propInfo.type, nextSeen)) return false;
+            }
+          }
+          if (indexExpected) {
+            for (const [aPropName, aPropInfo] of aShape.entries()) {
+              if (aPropName === "__index__") continue;
+              if (!eShape.has(aPropName) && !isTypeCompatible(aPropInfo.type, indexExpected, nextSeen)) {
+                return false;
+              }
             }
           }
           return true;
@@ -9444,11 +9851,56 @@ runAsyncDemo()
         const eParts = splitTopLevelUnion(e);
         for (const ep of eParts) {
           if (ep.startsWith("[") && ep.endsWith("]")) {
-            const tupleTypes = splitTopLevelDecl(ep.slice(1, -1)).map((s) => s.trim()).filter(Boolean);
+            const tupleTypes = splitTopLevelDecl(ep.slice(1, -1)).map((s) => stripTupleElementLabel(s)).filter(Boolean);
             const elemExprs = splitTopLevel(trimmedExpr.slice(1, -1)).map((s) => s.trim()).filter(Boolean);
-            if (tupleTypes.length === elemExprs.length && elemExprs.every((el, idx) => isExpressionAssignable(el, inferType(el, lineNum), tupleTypes[idx] || "any", lineNum))) {
+            const restIdx = tupleTypes.findIndex((t) => t.startsWith("..."));
+            const minRequired = tupleTypes.filter((t) => !t.startsWith("...") && !t.endsWith("?")).length;
+            const maxAllowed = restIdx >= 0 ? Infinity : tupleTypes.length;
+            if (elemExprs.length >= minRequired && elemExprs.length <= maxAllowed) {
+              const allMatch = elemExprs.every((el, idx) => {
+                let targetT = "any";
+                const restElem = restIdx >= 0 ? tupleTypes[restIdx] : void 0;
+                if (restIdx >= 0 && idx >= restIdx && restElem) {
+                  const rawRest = restElem.slice(3).trim();
+                  targetT = rawRest.endsWith("[]") ? rawRest.slice(0, -2) : rawRest;
+                } else if (idx < tupleTypes.length) {
+                  const rawElem = tupleTypes[idx] || "any";
+                  targetT = rawElem.endsWith("?") ? rawElem.slice(0, -1).trim() : rawElem;
+                }
+                return isExpressionAssignable(el, inferType(el, lineNum), targetT, lineNum);
+              });
+              if (allMatch) return true;
+            }
+          } else if (ep.endsWith("[]")) {
+            const elemExpected = ep.slice(0, -2).replace(/^\((.+)\)$/, "$1");
+            const elemExprs = splitTopLevel(trimmedExpr.slice(1, -1)).map((s) => s.trim()).filter(Boolean);
+            if (elemExprs.every((el) => isExpressionAssignable(el, inferType(el, lineNum), elemExpected, lineNum))) {
               return true;
             }
+          }
+        }
+      }
+      if (trimmedExpr.startsWith("{") && trimmedExpr.endsWith("}")) {
+        const eParts = splitTopLevelUnion(e);
+        for (const ep of eParts) {
+          const shape = getInterfaceShape(ep);
+          const entries = parseObjectLiteralEntries(trimmedExpr);
+          if (shape && entries) {
+            let ok = true;
+            shape.forEach((propInfo, propName) => {
+              if (propName !== "__index__" && !propInfo.optional && !entries.has(propName)) ok = false;
+            });
+            if (ok) {
+              entries.forEach((valExpr, propName) => {
+                const expPropT = shape.has(propName) ? (shape.get(propName) || { type: "any" }).type : shape.has("__index__") ? (shape.get("__index__") || { type: "any" }).type : null;
+                if (!expPropT && !propName.startsWith("[")) {
+                  ok = false;
+                } else if (expPropT && !isExpressionAssignable(valExpr, inferType(valExpr, lineNum), expPropT, lineNum)) {
+                  ok = false;
+                }
+              });
+            }
+            if (ok) return true;
           }
         }
       }
@@ -9464,6 +9916,17 @@ runAsyncDemo()
       parts.forEach((part) => {
         const p = part.trim();
         if (!p) return;
+        const getterLitM = p.match(/^get\s+([A-Za-z_$][\w$]*)\s*\(\s*\)\s*(?::\s*([^{]+?))?\s*\{([\s\S]*)\}$/);
+        if (getterLitM && getterLitM[1]) {
+          const gRet = getterLitM[2] ? getterLitM[2].trim() : "0";
+          entries.set(getterLitM[1], `undefined as ${gRet}`);
+          return;
+        }
+        const methodLitM = p.match(/^(?:async\s+)?([A-Za-z_$][\w$]*)\s*\(([^)]*)\)\s*(?::\s*([^{]+?))?\s*\{([\s\S]*)\}$/);
+        if (methodLitM && methodLitM[1]) {
+          entries.set(methodLitM[1], `(${methodLitM[2] || ""}) => undefined`);
+          return;
+        }
         let colonIdx = -1, d = 0;
         for (let i = 0; i < p.length; i++) {
           const ch = p[i];
@@ -9471,6 +9934,7 @@ runAsyncDemo()
             i = skipString(p, i) - 1;
             continue;
           }
+          if (ch === "(" && d === 0) break;
           if (ch === "(" || ch === "[" || ch === "{") d++;
           else if (ch === ")" || ch === "]" || ch === "}") d--;
           else if (d === 0 && ch === ":") {
@@ -9489,22 +9953,44 @@ runAsyncDemo()
       return entries;
     }
     function checkObjectLiteralAgainstShape(objExpr, expectedType, lineNum, contextDesc) {
-      const shape = getInterfaceShape(expectedType);
+      const nonNullExpected = stripNullableFromType(stripNullableFromType(evaluateType(expectedType, activeTypeParams), "null"), "undefined");
+      const shape = getInterfaceShape(nonNullExpected) || getInterfaceShape(expectedType);
       const entries = parseObjectLiteralEntries(objExpr);
       if (!shape || !entries) return false;
+      const indexProp = shape.get("__index__");
       shape.forEach((propInfo, propName) => {
+        if (propName === "__index__" || propName.startsWith("[")) return;
         if (!propInfo.optional && !entries.has(propName)) {
           addDiag(lineNum, "TS2741", `\u7C7B\u578B\u4E2D\u7F3A\u5C11\u5C5E\u6027 "${propName}"\uFF0C\u4F46\u7C7B\u578B "${expectedType}" \u4E2D\u9700\u8981\u8BE5\u5C5E\u6027 (${contextDesc})`);
         }
       });
       entries.forEach((valExpr, propName) => {
         const valT = inferType(valExpr, lineNum);
+        if (propName.startsWith("[") && propName.endsWith("]")) {
+          const keyExpr = propName.slice(1, -1).trim();
+          inferType(keyExpr, lineNum);
+          const targetProp = shape.get(propName) || indexProp;
+          if (targetProp && valT !== "any" && !isExpressionAssignable(valExpr, valT, targetProp.type, lineNum)) {
+            addDiag(lineNum, "TS2322", `\u5C5E\u6027 "${propName}" \u7684\u7C7B\u578B "${valT}" \u4E0D\u80FD\u5206\u914D\u7ED9\u7C7B\u578B "${targetProp.type}" (${contextDesc})`);
+          }
+          return;
+        }
         if (!shape.has(propName)) {
-          addDiag(lineNum, "TS2353", `\u5BF9\u8C61\u5B57\u9762\u91CF\u53EA\u80FD\u6307\u5B9A\u5DF2\u77E5\u5C5E\u6027\uFF0C\u5E76\u4E14 "${propName}" \u4E0D\u5B58\u5728\u4E8E\u7C7B\u578B "${expectedType}" \u4E2D (${contextDesc})`);
+          if (indexProp) {
+            const expectedPropT = indexProp.type;
+            if (valExpr.trim().startsWith("{") && getInterfaceShape(expectedPropT)) {
+              checkObjectLiteralAgainstShape(valExpr, expectedPropT, lineNum, `\u5C5E\u6027 "${propName}"`);
+            } else if (valT !== "any" && !isExpressionAssignable(valExpr, valT, expectedPropT, lineNum)) {
+              addDiag(lineNum, "TS2322", `\u5C5E\u6027 "${propName}" \u7684\u7C7B\u578B "${valT}" \u4E0D\u80FD\u5206\u914D\u7ED9\u7D22\u5F15\u7B7E\u540D\u7C7B\u578B "${expectedPropT}" (${contextDesc})`);
+            }
+          } else {
+            addDiag(lineNum, "TS2353", `\u5BF9\u8C61\u5B57\u9762\u91CF\u53EA\u80FD\u6307\u5B9A\u5DF2\u77E5\u5C5E\u6027\uFF0C\u5E76\u4E14 "${propName}" \u4E0D\u5B58\u5728\u4E8E\u7C7B\u578B "${expectedType}" \u4E2D (${contextDesc})`);
+          }
         } else {
           const expectedPropT = (shape.get(propName) || { type: "any" }).type;
-          if (valExpr.trim().startsWith("{") && getInterfaceShape(expectedPropT)) {
-            checkObjectLiteralAgainstShape(valExpr, expectedPropT, lineNum, `\u5C5E\u6027 "${propName}"`);
+          const nonNullPropT = stripNullableFromType(stripNullableFromType(evaluateType(expectedPropT, activeTypeParams), "null"), "undefined");
+          if (valExpr.trim().startsWith("{") && (getInterfaceShape(expectedPropT) || getInterfaceShape(nonNullPropT))) {
+            checkObjectLiteralAgainstShape(valExpr, nonNullPropT || expectedPropT, lineNum, `\u5C5E\u6027 "${propName}"`);
           } else if (valT !== "any" && !isExpressionAssignable(valExpr, valT, expectedPropT, lineNum)) {
             addDiag(lineNum, "TS2322", `\u5C5E\u6027 "${propName}" \u7684\u7C7B\u578B "${valT}" \u4E0D\u80FD\u5206\u914D\u7ED9\u7C7B\u578B "${expectedPropT}" (${contextDesc})`);
           }
@@ -9536,6 +10022,32 @@ runAsyncDemo()
       while (s.startsWith("(") && findBalancedParen(s, 0) === s.length - 1) {
         s = s.slice(1, -1).trim();
       }
+      const yieldM = s.match(/^yield\s*(\*)?\s*([\s\S]*)$/);
+      if (yieldM) {
+        if (yieldM[2]?.trim()) inferType(yieldM[2].trim(), lineNum);
+        return "any";
+      }
+      if (s.startsWith("<") && !s.includes("=>")) {
+        let ad = 1, k = 1;
+        while (k < s.length && ad > 0) {
+          const ch = s[k];
+          if (ch === '"' || ch === "'" || ch === "`") {
+            k = skipString(s, k);
+            continue;
+          }
+          if (ch === "<") ad++;
+          else if (ch === ">" && s[k - 1] !== "=") ad--;
+          k++;
+        }
+        if (ad === 0 && k < s.length) {
+          const castT = s.slice(1, k - 1).trim();
+          const restExpr = s.slice(k).trim();
+          if (castT && restExpr) {
+            inferType(restExpr, lineNum);
+            return resolveAlias(castT);
+          }
+        }
+      }
       const hadTrailingBang = s.endsWith("!") && !s.endsWith("!=");
       while (s.endsWith("!") && !s.endsWith("!=")) {
         s = s.slice(0, -1).trim();
@@ -9545,7 +10057,7 @@ runAsyncDemo()
         return stripNullableFromType(stripNullableFromType(innerT, "null"), "undefined");
       }
       {
-        let d = 0, castType = null;
+        let d = 0, castPos = -1, castKw = "", castTarget = "";
         for (let i = 0; i < s.length; i++) {
           const ch = s[i];
           if (ch === '"' || ch === "'" || ch === "`") {
@@ -9555,14 +10067,32 @@ runAsyncDemo()
           if (ch === "(" || ch === "[" || ch === "{") d++;
           else if (ch === ")" || ch === "]" || ch === "}") d--;
           else if (d === 0 && isWS(ch)) {
-            const m = s.slice(i).match(/^\s+(?:as|satisfies)\s+([A-Za-z_$][\w$<>[\]\s|()]*)$/);
-            if (m && m[1] && !/[()]/.test(m[1].replace(/\([^()]*\)\[\]/g, ""))) {
-              castType = resolveAlias(m[1]);
+            const m = s.slice(i).match(/^\s+(as|satisfies)\s+([A-Za-z_$][\w$<>[\]\s|(){}:;,?"']*)$/);
+            if (m && m[1] && m[2]) {
+              castPos = i;
+              castKw = m[1];
+              castTarget = m[2].trim();
               break;
             }
           }
         }
-        if (castType) return castType;
+        if (castPos > 0 && castTarget) {
+          const lhsExpr = s.slice(0, castPos).trim();
+          const lhsT = inferType(lhsExpr, lineNum);
+          if (castKw === "as" && castTarget === "const") {
+            return lhsT;
+          }
+          const resolvedCast = resolveAlias(castTarget);
+          if (castKw === "satisfies") {
+            if (lhsExpr.startsWith("{") && getInterfaceShape(resolvedCast)) {
+              checkObjectLiteralAgainstShape(lhsExpr, resolvedCast, lineNum, `satisfies "${resolvedCast}"`);
+            } else if (!isExpressionAssignable(lhsExpr, lhsT, resolvedCast, lineNum)) {
+              addDiag(lineNum, "TS1360", `\u7C7B\u578B "${lhsT}" \u4E0D\u6EE1\u8DB3\u9884\u671F\u7C7B\u578B "${resolvedCast}"`);
+            }
+            return lhsT;
+          }
+          return resolvedCast;
+        }
       }
       if (/^(true|false)$/.test(s)) return "boolean";
       if (s === "null") return "null";
@@ -9613,6 +10143,9 @@ runAsyncDemo()
         const idInfo = readIdent(afterNew, 0);
         if (idInfo) {
           const clsName = idInfo.name;
+          if (abstractClasses.has(clsName)) {
+            addDiag(lineNum, "TS2511", `\u65E0\u6CD5\u521B\u5EFA\u62BD\u8C61\u7C7B "${clsName}" \u7684\u5B9E\u4F8B`);
+          }
           let pIdx = idInfo.end;
           while (pIdx < afterNew.length && isWS(afterNew[pIdx])) pIdx++;
           let explicitTypeArgs = [];
@@ -9664,7 +10197,7 @@ runAsyncDemo()
             }
             if (clsTParams.length > 0) {
               const instArgs = clsTParams.map((tp, idx) => {
-                if (callEnv.has(tp.name)) return callEnv.get(tp.name);
+                if (callEnv.has(tp.name)) return callEnv.get(tp.name) || "any";
                 if (idx < explicitTypeArgs.length) return evaluateType(explicitTypeArgs[idx]);
                 return tp.defaultType ? evaluateType(tp.defaultType) : "any";
               });
@@ -9679,6 +10212,9 @@ runAsyncDemo()
         const openIdx = s.indexOf("(");
         const closeIdx = findBalancedParen(s, openIdx);
         if (closeIdx === s.length - 1) {
+          if (abstractClasses.has(newClassPrefixM[1])) {
+            addDiag(lineNum, "TS2511", `\u65E0\u6CD5\u521B\u5EFA\u62BD\u8C61\u7C7B "${newClassPrefixM[1]}" \u7684\u5B9E\u4F8B`);
+          }
           return resolveAlias(newClassPrefixM[1]);
         }
       }
@@ -9718,7 +10254,7 @@ runAsyncDemo()
         splitTopLevelDecl(rawParamStr || "").forEach((p) => {
           const cleanP = p.trim().replace(/^\.\.\./, "");
           const pm = cleanP.match(/^([A-Za-z_$][\w$]*)(\?)?(?:\s*:\s*([^=]+))?/);
-          if (pm) {
+          if (pm && pm[1]) {
             const pName = pm[1];
             const pType = pm[3] ? resolveAlias(pm[3].trim()) : "any";
             boundNames.add(pName);
@@ -9887,6 +10423,9 @@ runAsyncDemo()
             if (!lhs || !rhs || /[+\-*/%&|^<>?:=(,]$/.test(lhs)) continue;
             const lt = inferType(lhs, lineNum);
             const rt = inferType(rhs, lineNum);
+            if (lt === "unknown" || rt === "unknown") {
+              addDiag(lineNum, "TS18046", `\u5BF9\u8C61\u7684\u7C7B\u578B\u4E3A "unknown"`);
+            }
             if (ch === "+") {
               if (lt === "string" || rt === "string") return "string";
               if (lt === "number" && rt === "number") return "number";
@@ -9926,7 +10465,7 @@ runAsyncDemo()
         }
         return "any";
       }
-      const callPrefixM = s.match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*(?:<([\s\S]+)>)?\s*\(/);
+      const callPrefixM = s.match(/^([A-Za-z_$][\w$!]*(?:(?:\?\.|\.)[A-Za-z_$][\w$!]*)*)\s*(?:<([\s\S]+)>)?\s*\(/);
       if (callPrefixM && callPrefixM[1]) {
         const callee = callPrefixM[1];
         let scanPos = callee.length;
@@ -9968,6 +10507,7 @@ runAsyncDemo()
           if (callee === "Number" || callee === "parseInt" || callee === "parseFloat") return "number";
           if (callee === "String" || callee === "JSON.stringify") return "string";
           if (callee === "Boolean" || callee === "Array.isArray") return "boolean";
+          if (callee === "Symbol") return "symbol";
           if (callee === "Promise.resolve") {
             const t0 = explicitTypeArgs[0] ? evaluateType(explicitTypeArgs[0]) : argTypes[0] || "void";
             return `Promise<${t0}>`;
@@ -9993,9 +10533,23 @@ runAsyncDemo()
           }
           const dotIdx = callee.lastIndexOf(".");
           if (dotIdx > 0) {
-            const objName = callee.slice(0, dotIdx);
-            const method = callee.slice(dotIdx + 1);
-            const objType = inferType(objName, lineNum);
+            const isOptChain = callee[dotIdx - 1] === "?";
+            const objName = callee.slice(0, isOptChain ? dotIdx - 1 : dotIdx);
+            const method = callee.slice(dotIdx + 1).replace(/!+$/, "");
+            const rawObjType = inferType(objName, lineNum);
+            if (rawObjType === "unknown") {
+              addDiag(lineNum, "TS18046", `"${objName}" \u7684\u7C7B\u578B\u4E3A "unknown"`);
+              return "any";
+            }
+            if (!isOptChain && !objName.endsWith("!")) {
+              const uParts = splitTopLevelUnion(rawObjType);
+              if (uParts.includes("undefined")) {
+                addDiag(lineNum, "TS18048", `"${objName}" \u53EF\u80FD\u4E3A "undefined"`);
+              } else if (uParts.includes("null")) {
+                addDiag(lineNum, "TS18047", `"${objName}" \u53EF\u80FD\u4E3A "null"`);
+              }
+            }
+            const objType = stripNullableFromType(stripNullableFromType(rawObjType, "null"), "undefined");
             const mapM = objType.match(/^Map<([^,]+),(.+)>$/);
             if (mapM && mapM[1] && mapM[2]) {
               const kt = mapM[1], vt = mapM[2];
@@ -10058,8 +10612,8 @@ runAsyncDemo()
               }
             }
           }
-          if (fns.has(callee)) {
-            const sig = fns.get(callee);
+          const sig = fns.get(callee);
+          if (sig) {
             return instantiateAndCheckCall(sig, explicitTypeArgs, args, argTypes, `\u51FD\u6570 "${callee}"`, lineNum);
           }
           if (dotIdx < 0 && !isKnownIdentifier(callee)) {
@@ -10071,7 +10625,19 @@ runAsyncDemo()
       const bracketOpen = s.indexOf("[");
       if (bracketOpen > 0 && s.endsWith("]")) {
         let curBase = s.slice(0, bracketOpen).trim();
+        const isOptBracket = curBase.endsWith("?.");
+        if (isOptBracket) curBase = curBase.slice(0, -2).trim();
         let curType = inferType(curBase, lineNum);
+        if (curType === "unknown") {
+          addDiag(lineNum, "TS18046", `"${curBase}" \u7684\u7C7B\u578B\u4E3A "unknown"`);
+          return "any";
+        }
+        if (!isOptBracket && !curBase.endsWith("!")) {
+          const uParts = splitTopLevelUnion(curType);
+          if (uParts.includes("undefined")) addDiag(lineNum, "TS18048", `"${curBase}" \u53EF\u80FD\u4E3A "undefined"`);
+          else if (uParts.includes("null")) addDiag(lineNum, "TS18047", `"${curBase}" \u53EF\u80FD\u4E3A "null"`);
+        }
+        curType = stripNullableFromType(stripNullableFromType(curType, "null"), "undefined");
         let pos = bracketOpen;
         while (pos < s.length && s[pos] === "[") {
           const closeB = findBalancedParen(s, pos);
@@ -10084,12 +10650,19 @@ runAsyncDemo()
               addDiag(lineNum, "TS2538", `\u6570\u7EC4\u6216\u5B57\u7B26\u4E32\u7684\u7D22\u5F15\u7C7B\u578B\u5FC5\u987B\u4E3A "number"\uFF0C\u4E0D\u80FD\u4F7F\u7528\u7C7B\u578B "${idxType}"`);
             }
           }
+          const shape = getInterfaceShape(curType);
           if (curType.endsWith("[]")) {
             curType = curType.slice(0, -2);
+          } else if (curType.startsWith("[") && curType.endsWith("]") && litIdx && /^\d+$/.test(litIdx)) {
+            curType = resolveIndexedAccess(curType, litIdx, /* @__PURE__ */ new Map(), 0);
           } else if (curType === "string") {
             curType = "string";
-          } else if (litIdx && getInterfaceShape(curType)) {
+          } else if (litIdx && shape) {
             curType = resolveIndexedAccess(curType, litIdx, /* @__PURE__ */ new Map(), 0);
+          } else if (shape && shape.has(`[${idxExpr}]`)) {
+            curType = (shape.get(`[${idxExpr}]`) || { type: "any" }).type;
+          } else if (shape && shape.has("__index__")) {
+            curType = (shape.get("__index__") || { type: "any" }).type;
           } else if (activeTypeParams.has(curType) && activeTypeParams.has(idxType)) {
             curType = `${curType}[${idxType}]`;
           } else {
@@ -10099,57 +10672,102 @@ runAsyncDemo()
         }
         if (pos === s.length) return curType;
       }
-      if (/^[A-Za-z_$][\w$]*!*(?:\.[A-Za-z_$][\w$]*!*)+$/.test(s)) {
-        if (env.has(s)) return env.get(s).type;
-        const rawParts = s.split(".");
-        const firstPart = rawParts[0] || "";
-        const firstBase = firstPart.replace(/!+$/, "");
-        if (!isKnownIdentifier(firstBase)) {
-          addDiag(lineNum, "TS2304", `\u627E\u4E0D\u5230\u540D\u79F0 "${firstBase}"\uFF08\u53D8\u91CF\u672A\u58F0\u660E\uFF0C\u8BF7\u4F7F\u7528 let \u6216 const \u58F0\u660E\uFF09`);
-          return "any";
+      if (/^[A-Za-z_$][\w$]*!*(?:(?:\?\.|\.)[A-Za-z_$][\w$]*!*)+$/.test(s)) {
+        if (env.has(s)) return (env.get(s) || { type: "any" }).type;
+        const tokens = [];
+        let rem = s;
+        let nextOpt = false;
+        while (rem.length > 0) {
+          const m = rem.match(/^([A-Za-z_$][\w$]*)(!*)(\?\.|\.)?/);
+          if (!m || !m[1]) break;
+          tokens.push({ name: m[1], hasBang: Boolean(m[2]), optChainBefore: nextOpt });
+          nextOpt = m[3] === "?.";
+          rem = rem.slice(m[0].length);
         }
-        let curType = env.has(firstBase) ? env.get(firstBase).type : interfaces.has(firstBase) ? firstBase : "any";
-        if (firstPart.endsWith("!")) {
-          curType = stripNullableFromType(stripNullableFromType(curType, "null"), "undefined");
-        }
-        for (let pIdx = 1; pIdx < rawParts.length; pIdx++) {
-          const rawProp = rawParts[pIdx] || "";
-          const hasBang = rawProp.endsWith("!");
-          const prop = rawProp.replace(/!+$/, "");
-          const lookupType = stripNullableFromType(stripNullableFromType(curType, "null"), "undefined");
-          if (prop === "length" && (lookupType.endsWith("[]") || lookupType === "string")) {
-            curType = "number";
-            continue;
+        const firstTok = tokens[0];
+        if (tokens.length >= 2 && firstTok) {
+          const firstBase = firstTok.name;
+          if (!isKnownIdentifier(firstBase)) {
+            addDiag(lineNum, "TS2304", `\u627E\u4E0D\u5230\u540D\u79F0 "${firstBase}"\uFF08\u53D8\u91CF\u672A\u58F0\u660E\uFF0C\u8BF7\u4F7F\u7528 let \u6216 const \u58F0\u660E\uFF09`);
+            return "any";
           }
-          if (prop === "size" && (lookupType.startsWith("Map<") || lookupType.startsWith("Set<"))) {
-            curType = "number";
-            continue;
-          }
-          const shape = getInterfaceShape(lookupType);
-          if (shape) {
-            if (!shape.has(prop)) {
-              addDiag(lineNum, "TS2339", `\u7C7B\u578B "${lookupType}" \u4E0A\u4E0D\u5B58\u5728\u5C5E\u6027 "${prop}"`);
-              return "any";
+          if (enumsSet.has(firstBase)) {
+            const secondTok = tokens[1];
+            const memberProp = secondTok ? secondTok.name : "";
+            const memSet = enumMembers.get(firstBase);
+            if (memSet && memSet.size > 0 && !memSet.has(memberProp)) {
+              addDiag(lineNum, "TS2339", `\u7C7B\u578B "typeof ${firstBase}" \u4E0A\u4E0D\u5B58\u5728\u5C5E\u6027 "${memberProp}"`);
             }
-            curType = (shape.get(prop) || { type: "any" }).type;
-          } else {
-            if (prop === "length" || prop === "size" || prop === "val") curType = "number";
-            else curType = "any";
+            return firstBase;
           }
-          if (hasBang) {
+          let curType = env.has(firstBase) ? (env.get(firstBase) || { type: "any" }).type : interfaces.has(firstBase) ? firstBase : "any";
+          if (firstTok.hasBang) {
             curType = stripNullableFromType(stripNullableFromType(curType, "null"), "undefined");
           }
+          let hadOptChain = false;
+          for (let pIdx = 1; pIdx < tokens.length; pIdx++) {
+            const tok = tokens[pIdx];
+            if (!tok) continue;
+            const prop = tok.name;
+            const prefixLabel = tokens.slice(0, pIdx).map((t) => t.name).join(".");
+            if (curType === "unknown") {
+              addDiag(lineNum, "TS18046", `"${prefixLabel}" \u7684\u7C7B\u578B\u4E3A "unknown"`);
+              return "any";
+            }
+            if (tok.optChainBefore) {
+              hadOptChain = true;
+            } else if (!tokens[pIdx - 1]?.hasBang) {
+              const cParts = splitTopLevelUnion(curType);
+              if (cParts.includes("undefined")) {
+                addDiag(lineNum, "TS18048", `"${prefixLabel}" \u53EF\u80FD\u4E3A "undefined"`);
+              } else if (cParts.includes("null")) {
+                addDiag(lineNum, "TS18047", `"${prefixLabel}" \u53EF\u80FD\u4E3A "null"`);
+              }
+            }
+            const lookupType = stripNullableFromType(stripNullableFromType(curType, "null"), "undefined");
+            if (prop === "length" && (lookupType.endsWith("[]") || lookupType.startsWith("[") || lookupType === "string")) {
+              curType = "number";
+              continue;
+            }
+            if (prop === "size" && (lookupType.startsWith("Map<") || lookupType.startsWith("Set<"))) {
+              curType = "number";
+              continue;
+            }
+            const shape = getInterfaceShape(lookupType);
+            if (shape) {
+              if (shape.has(prop)) {
+                curType = (shape.get(prop) || { type: "any" }).type;
+              } else if (getClassMethodSig(lookupType, prop)) {
+                curType = "function";
+              } else if (shape.has("__index__")) {
+                curType = (shape.get("__index__") || { type: "any" }).type;
+              } else {
+                addDiag(lineNum, "TS2339", `\u7C7B\u578B "${lookupType}" \u4E0A\u4E0D\u5B58\u5728\u5C5E\u6027 "${prop}"`);
+                return "any";
+              }
+            } else {
+              if (prop === "length" || prop === "size" || prop === "val") curType = "number";
+              else curType = "any";
+            }
+            if (tok.hasBang) {
+              curType = stripNullableFromType(stripNullableFromType(curType, "null"), "undefined");
+              hadOptChain = false;
+            }
+          }
+          if (hadOptChain && curType !== "any" && !splitTopLevelUnion(curType).includes("undefined")) {
+            curType = `${curType}|undefined`;
+          }
+          return curType;
         }
-        return curType;
       }
       const exprIncM = s.match(/^(?:(\+\+|--)\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)|([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*(\+\+|--))$/);
       if (exprIncM) {
-        const target = exprIncM[2] || exprIncM[3];
+        const target = exprIncM[2] || exprIncM[3] || "";
         inferType(target, lineNum);
         return "number";
       }
       if (/^[A-Za-z_$][\w$]*$/.test(s)) {
-        if (env.has(s)) return env.get(s).type;
+        if (env.has(s)) return (env.get(s) || { type: "any" }).type;
         if (!isKnownIdentifier(s)) {
           addDiag(lineNum, "TS2304", `\u627E\u4E0D\u5230\u540D\u79F0 "${s}"\uFF08\u53D8\u91CF\u672A\u58F0\u660E\uFF0C\u8BF7\u4F7F\u7528 let \u6216 const \u58F0\u660E\uFF09`);
         }
@@ -10157,7 +10775,8 @@ runAsyncDemo()
       return "any";
     }
     function instantiateAndCheckCall(sig, explicitTypeArgs, args, argTypes, calleeLabel, lineNum, outEnv = null) {
-      if (args.length < sig.minArgs || args.length > sig.params.length) {
+      const hasRest = sig.params.some((p) => p.isRest);
+      if (args.length < sig.minArgs || !hasRest && args.length > sig.params.length) {
         addDiag(lineNum, "TS2554", `${calleeLabel} \u5E94\u6709 ${sig.minArgs === sig.params.length ? sig.params.length : sig.minArgs + "-" + sig.params.length} \u4E2A\u53C2\u6570\uFF0C\u4F46\u83B7\u5F97 ${args.length} \u4E2A`);
         return sig.returnType || "any";
       }
@@ -10227,10 +10846,14 @@ runAsyncDemo()
           }
         });
       }
+      const lastParam = sig.params[sig.params.length - 1];
       for (let idx = 0; idx < args.length; idx++) {
-        const p = sig.params[idx];
+        const p = idx < sig.params.length ? sig.params[idx] : lastParam?.isRest ? lastParam : void 0;
         if (!p) continue;
-        const expectedPT = tParams.length > 0 ? evaluateType(p.rawType || p.type, callEnv) : p.type;
+        let expectedPT = tParams.length > 0 ? evaluateType(p.rawType || p.type, callEnv) : p.type;
+        if (p.isRest && expectedPT.endsWith("[]")) {
+          expectedPT = expectedPT.slice(0, -2);
+        }
         const at = argTypes[idx] || "any";
         const rawArg = (args[idx] || "").trim();
         if (expectedPT && expectedPT !== "any") {
@@ -10266,25 +10889,26 @@ runAsyncDemo()
       const params = [];
       let minArgs = 0;
       rawParams.forEach((pRaw) => {
-        const p = pRaw.trim().replace(/^(?:public|private|protected|readonly)\s+/, "");
+        const p = pRaw.trim().replace(/^(?:(?:public|private|protected|readonly|override)\s+)+/, "");
         if (!p) return;
-        const pm = p.match(/^(?:\.\.\.)?([A-Za-z_$][\w$]*)(\?)?(?:\s*:\s*((?:[^=]|=>)+?))?(?:\s*=\s*(?!=|>)([\s\S]+))?$/);
-        if (pm && pm[1]) {
-          const pName = pm[1];
-          const isOpt = Boolean(pm[2] || pm[4]);
-          const rawType = pm[3] ? pm[3].trim() : null;
+        const pm = p.match(/^(\.\.\.)?([A-Za-z_$][\w$]*)(\?)?(?:\s*:\s*((?:[^=]|=>)+?))?(?:\s*=\s*(?!=|>)([\s\S]+))?$/);
+        if (pm && pm[2]) {
+          const isRest = Boolean(pm[1]);
+          const pName = pm[2];
+          const isOpt = Boolean(pm[3] || pm[5] || isRest);
+          const rawType = pm[4] ? pm[4].trim() : null;
           let pType = rawType ? resolveAlias(rawType) : null;
-          if (!pType && pm[4]) {
-            pType = inferType(pm[4].trim(), lineNum);
+          if (!pType && pm[5]) {
+            pType = inferType(pm[5].trim(), lineNum);
           }
           if (!pType) {
             if (checkImplicitAny) {
               addDiag(lineNum, "TS7006", `\u53C2\u6570 "${pName}" \u9690\u5F0F\u5177\u6709 "any" \u7C7B\u578B\uFF08\u4E25\u683C\u6A21\u5F0F\u4E0B\u8BF7\u663E\u5F0F\u6DFB\u52A0\u7C7B\u578B\u6CE8\u89E3\uFF0C\u5982 ${pName}: number\uFF09`);
             }
-            pType = "any";
+            pType = isRest ? "any[]" : "any";
           }
           if (!isOpt) minArgs++;
-          params.push({ name: pName, type: pType, rawType: rawType || pType, optional: isOpt });
+          params.push({ name: pName, type: pType, rawType: rawType || pType, optional: isOpt, isRest });
         }
       });
       return { params, minArgs };
@@ -10292,14 +10916,58 @@ runAsyncDemo()
     function parseClassTopMember(mem, propMap, clsName, lineNum) {
       const s = mem.trim();
       if (!s) return;
-      const getterM = s.match(/^(?:(?:public|private|protected|static|readonly)\s+)*get\s+([A-Za-z_$][\w$]*)\s*\(\s*\)\s*(?::\s*([^{]+))?/);
+      const getterM = s.match(/^(?:(?:public|private|protected|static|readonly|override)\s+)*get\s+([A-Za-z_$][\w$]*)\s*\(\s*\)\s*(?::\s*([^{]+))?/);
       if (getterM && getterM[1]) {
         const rawGT = getterM[2] ? getterM[2].trim() : "any";
         const gType = resolveAlias(rawGT);
         propMap.set(getterM[1], { type: gType, rawType: rawGT, optional: false });
+        fns.set(clsName + ".get." + getterM[1], {
+          name: clsName + "." + getterM[1],
+          params: [],
+          minArgs: 0,
+          returnType: gType,
+          rawReturnType: rawGT,
+          typeParams: [],
+          line: lineNum,
+          hasValueReturn: /\breturn\s+[^;}\s]/.test(s)
+        });
         return;
       }
-      const methodHdrM = s.match(/^(?:(?:public|private|protected|static|async|readonly|abstract)\s+)*([A-Za-z_$][\w$]*)\s*(<[\s\S]*>)?\s*\(/);
+      const setterM = s.match(/^(?:(?:public|private|protected|static|readonly|override)\s+)*set\s+([A-Za-z_$][\w$]*)\s*\(([^)]*)\)/);
+      if (setterM && setterM[1]) {
+        const sName = setterM[1];
+        const { params, minArgs } = parseParamList((setterM[2] || "").trim(), lineNum, true);
+        const sType = params[0]?.type || "any";
+        const sRaw = params[0]?.rawType || sType;
+        if (!propMap.has(sName)) {
+          propMap.set(sName, { type: sType, rawType: sRaw, optional: false });
+        }
+        fns.set(clsName + ".set." + sName, {
+          name: clsName + "." + sName,
+          params,
+          minArgs,
+          returnType: "void",
+          rawReturnType: "void",
+          typeParams: [],
+          line: lineNum,
+          hasValueReturn: true
+        });
+        return;
+      }
+      const idxM = s.match(/^(?:readonly\s+)?\[\s*[A-Za-z_$][\w$]*\s*:\s*(?:string|number|symbol|any)\s*\]\s*:\s*([^;=]+)$/);
+      if (idxM && idxM[1]) {
+        const rawT = idxM[1].trim();
+        propMap.set("__index__", { type: resolveAlias(rawT), rawType: rawT, optional: true });
+        return;
+      }
+      const compM = s.match(/^(?:(?:readonly|public|private|protected|static)\s+)*\[\s*([A-Za-z_$][\w$]*)\s*\](\?)?\s*:\s*([^;=]+)(?:\s*=\s*[\s\S]+)?$/);
+      if (compM && compM[1] && compM[3]) {
+        const rawT = compM[3].trim();
+        propMap.set(`[${compM[1]}]`, { type: resolveAlias(rawT), rawType: rawT, optional: Boolean(compM[2]) });
+        propMap.set("__index__", { type: resolveAlias(rawT), rawType: rawT, optional: true });
+        return;
+      }
+      const methodHdrM = s.match(/^(?:(?:public|private|protected|static|async|readonly|abstract|override)\s+)*\*?\s*([A-Za-z_$][\w$]*)\s*(<[\s\S]*>)?\s*\(/);
       if (methodHdrM && methodHdrM[1] && !RESERVED_WORDS.has(methodHdrM[1])) {
         const mName = methodHdrM[1];
         let openP = -1, ad = 0;
@@ -10325,12 +10993,17 @@ runAsyncDemo()
             splitTopLevelDecl(paramStr).forEach((rawP, idx) => {
               const pTrim = rawP.trim();
               const pInfo = params[idx];
-              if (/^(?:(?:public|private|protected|readonly)\s+)+/.test(pTrim) && pInfo) {
+              if (/^(?:(?:public|private|protected|readonly|override)\s+)+/.test(pTrim) && pInfo) {
                 propMap.set(pInfo.name, { type: pInfo.type, rawType: pInfo.rawType || pInfo.type, optional: Boolean(pInfo.optional) });
               }
             });
+          } else {
+            const fnShapeStr = `(${params.map((p) => `${p.name}${p.optional ? "?" : ""}:${p.type}`).join(",")})=>${retType}`;
+            if (!propMap.has(mName)) {
+              propMap.set(mName, { type: fnShapeStr, rawType: fnShapeStr, optional: false });
+            }
           }
-          const isAbstractOrOverload = /^\s*(?:(?:public|private|protected|static|async|readonly)\s+)*abstract\b/.test(s) || /;\s*$/.test(afterClose);
+          const isAbstractOrOverload = /^\s*(?:(?:public|private|protected|static|async|readonly|override)\s+)*abstract\b/.test(s) || /;\s*$/.test(afterClose);
           const hasValRet = isAbstractOrOverload || /\breturn\s+[^;}\s]/.test(s);
           fns.set(clsName + "." + mName, {
             name: clsName + "." + mName,
@@ -10346,7 +11019,7 @@ runAsyncDemo()
         }
       }
       if (s.includes("(") && !s.includes("=>") && (!s.includes("=") || s.indexOf("(") < s.indexOf("="))) return;
-      const cleaned = s.replace(/^(?:(?:readonly|public|private|protected|static|abstract)\s+)+/, "");
+      const cleaned = s.replace(/^(?:(?:readonly|public|private|protected|static|abstract|override)\s+)+/, "");
       const pm = cleaned.match(/^([A-Za-z_$][\w$]*)(\?)?\s*:\s*((?:[^=]|=>)+?)(?:\s*=\s*(?!=|>)[\s\S]+)?$/);
       if (pm && pm[1] && pm[3]) {
         const rawFT = pm[3].trim();
@@ -10355,7 +11028,9 @@ runAsyncDemo()
       }
       const initM = cleaned.match(/^([A-Za-z_$][\w$]*)\s*=\s*(.+)$/);
       if (initM && initM[1] && initM[2]) {
+        const savedDiagLen = diagnostics.length;
         const infT = inferType(initM[2].trim(), lineNum);
+        diagnostics.length = savedDiagLen;
         propMap.set(initM[1], { type: infT, rawType: infT, optional: false });
       }
     }
@@ -10413,10 +11088,14 @@ runAsyncDemo()
         enumsSet.add(nsKwM[1]);
         continue;
       }
-      const ifaceKwM = raw.match(/^(?:export\s+)?(?:declare\s+)?(?:abstract\s+)?(interface|class)\s+([A-Za-z_$][\w$]*)/);
-      if (ifaceKwM && ifaceKwM[2]) {
-        const isClass = ifaceKwM[1] === "class";
-        const ifaceName = ifaceKwM[2];
+      const ifaceKwM = raw.match(/^(?:export\s+)?(?:declare\s+)?(abstract\s+)?(interface|class)\s+([A-Za-z_$][\w$]*)/);
+      if (ifaceKwM && ifaceKwM[3]) {
+        const isAbstract = Boolean(ifaceKwM[1]);
+        const isClass = ifaceKwM[2] === "class";
+        const ifaceName = ifaceKwM[3];
+        if (isClass && isAbstract) {
+          abstractClasses.add(ifaceName);
+        }
         let pos = ifaceKwM[0].length;
         while (pos < raw.length && isWS(raw[pos])) pos++;
         let tParamStr = "";
@@ -10445,6 +11124,15 @@ runAsyncDemo()
           const headerTail = afterTParams.slice(0, braceOpenIdx);
           const extM = headerTail.match(/\bextends\s+([A-Za-z_$][\w$]*)/);
           const parentName = extM ? extM[1] : null;
+          if (isClass) {
+            const implM = headerTail.match(/\bimplements\s+([^{]+)/);
+            if (implM && implM[1]) {
+              const implList = splitTopLevelDecl(implM[1].trim()).map((s) => s.replace(/<[\s\S]*>$/, "").trim()).filter(Boolean);
+              if (implList.length > 0) {
+                classImplements.set(ifaceName, { interfaces: implList, line: lineNum });
+              }
+            }
+          }
           const rest = afterTParams.slice(braceOpenIdx + 1).trim();
           const propMap = /* @__PURE__ */ new Map();
           interfaces.set(ifaceName, propMap);
@@ -10477,7 +11165,37 @@ runAsyncDemo()
       }
       const enumMatch = raw.match(/^(?:export\s+)?(?:const\s+)?enum\s+([A-Za-z_$][\w$]*)\b/);
       if (enumMatch && enumMatch[1]) {
-        enumsSet.add(enumMatch[1]);
+        const enumName = enumMatch[1];
+        enumsSet.add(enumName);
+        const members = /* @__PURE__ */ new Set();
+        const valTypes = /* @__PURE__ */ new Set();
+        let enumScan = raw.slice(raw.indexOf("{") >= 0 ? raw.indexOf("{") + 1 : enumMatch[0].length);
+        let scanIdx = i;
+        while (!enumScan.includes("}") && scanIdx + 1 < lines.length) {
+          scanIdx++;
+          enumScan += " " + stripInlineCommentSafe(lines[scanIdx]).trim();
+        }
+        const closeBrace = enumScan.indexOf("}");
+        const bodyStr = (closeBrace >= 0 ? enumScan.slice(0, closeBrace) : enumScan).trim();
+        splitTopLevelDecl(bodyStr).forEach((entry) => {
+          const em = entry.trim().match(/^([A-Za-z_$][\w$]*)(?:\s*=\s*([\s\S]+))?$/);
+          if (em && em[1]) {
+            members.add(em[1]);
+            if (em[2]) {
+              const initTrim = em[2].trim();
+              if (/^(?:"[^"]*"|'[^']*'|`[^`]*`)$/.test(initTrim)) {
+                valTypes.add("string");
+              } else {
+                valTypes.add("number");
+              }
+            } else {
+              valTypes.add("number");
+            }
+          }
+        });
+        if (valTypes.size === 0) valTypes.add("number");
+        enumMembers.set(enumName, members);
+        enumValueTypes.set(enumName, valTypes);
         continue;
       }
       const typeHdrM = raw.match(/^(?:export\s+)?type\s+([A-Za-z_$][\w$]*)/);
@@ -10562,7 +11280,7 @@ runAsyncDemo()
           continue;
         }
       }
-      const fnMatch = raw.match(/^(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/);
+      const fnMatch = raw.match(/^(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)/);
       if (fnMatch && fnMatch[1] && raw.indexOf("(") >= 0) {
         const fnName = fnMatch[1];
         let headerStr = raw;
@@ -10618,14 +11336,34 @@ runAsyncDemo()
       }
     }
     typeAliases.forEach((rhs, aliasName) => {
-      const evaluated = evaluateType(rhs);
+      const evaluated = evaluateType(rhs, /* @__PURE__ */ new Map(), 0, /* @__PURE__ */ new Set([aliasName]));
       typeAliases.set(aliasName, evaluated);
       if (evaluated.startsWith("{") && evaluated.endsWith("}") && !interfaces.has(aliasName)) {
         interfaces.set(aliasName, parseObjectShapeLiteral(evaluated));
       }
     });
+    classImplements.forEach(({ interfaces: implList, line: clsLine }, clsName) => {
+      const clsShape = getInterfaceShape(clsName);
+      implList.forEach((ifaceName) => {
+        const targetShape = getInterfaceShape(ifaceName);
+        if (!targetShape) return;
+        targetShape.forEach((propInfo, propName) => {
+          if (propName.startsWith("__")) return;
+          const hasMember = clsShape && clsShape.has(propName) || Boolean(getClassMethodSig(clsName, propName));
+          if (!hasMember && !propInfo.optional) {
+            addDiag(clsLine, "TS2420", `\u7C7B "${clsName}" \u9519\u8BEF\u5B9E\u73B0\u63A5\u53E3 "${ifaceName}": \u7F3A\u5C11\u5C5E\u6027\u6216\u65B9\u6CD5 "${propName}"`);
+          } else if (clsShape && clsShape.has(propName)) {
+            const clsMember = clsShape.get(propName);
+            if (clsMember && clsMember.type !== "any" && propInfo.type !== "any" && !isTsAssignable(clsMember.type, propInfo.type)) {
+              addDiag(clsLine, "TS2420", `\u7C7B "${clsName}" \u9519\u8BEF\u5B9E\u73B0\u63A5\u53E3 "${ifaceName}": \u5C5E\u6027 "${propName}" \u7684\u7C7B\u578B "${clsMember.type}" \u4E0D\u80FD\u5206\u914D\u7ED9\u7C7B\u578B "${propInfo.type}"`);
+            }
+          }
+        });
+      });
+    });
     let currentFn = null;
     const fnScopeStack = [];
+    const switchStack = [];
     let currentClass = null;
     let classStartBraceDepth = 0;
     let braceDepth = 0;
@@ -10778,17 +11516,19 @@ runAsyncDemo()
           }
         }
       }
-      if (/^(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+[A-Za-z_$][\w$]*[\s\S]*;\s*$/.test(trimmed) && !trimmed.includes("{")) {
+      if (/^(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*\*?\s*[A-Za-z_$][\w$]*[\s\S]*;\s*$/.test(trimmed) && !trimmed.includes("{")) {
         continue;
       }
-      const fnOpen = trimmed.match(/^(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*(?:<[\s\S]*>)?\s*\(/);
-      const arrowFnOpen = !fnOpen ? trimmed.match(/^(?:export\s+)?(const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:function(?:\s+[A-Za-z_$][\w$]*)?\s*)?(?:(<[\s\S]*>)\s*)?\(([^)]*)\)\s*(?::\s*([^=]+?))?\s*(?:=>\s*)?\{/) : null;
+      const fnOpen = trimmed.match(/^(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*(\*)?\s*([A-Za-z_$][\w$]*)\s*(?:<[\s\S]*>)?\s*\(/);
+      const arrowFnOpen = !fnOpen ? trimmed.match(/^(?:export\s+)?(const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:function\s*\*?(?:\s+[A-Za-z_$][\w$]*)?\s*)?(?:(<[\s\S]*>)\s*)?\(([^)]*)\)\s*(?::\s*([^=]+?))?\s*(?:=>\s*)?\{/) : null;
       let validMethodOpen = null;
       if (!fnOpen && !arrowFnOpen && currentClass && braceDepth === classStartBraceDepth + 1) {
-        const mHdr = trimmed.match(/^(?:(?:public|private|protected|static|async|readonly|get|set)\s+)*([A-Za-z_$][\w$]*)\s*(?:<[\s\S]*>)?\s*\(/);
-        if (mHdr && mHdr[1] && !RESERVED_WORDS.has(mHdr[1])) {
+        const mHdr = trimmed.match(/^(?:(?:public|private|protected|static|async|readonly|override)\s+)*(?:(get|set)\s+)?(\*\s*)?([A-Za-z_$][\w$]*)\s*(?:<[\s\S]*>)?\s*\(/);
+        if (mHdr && mHdr[3] && !RESERVED_WORDS.has(mHdr[3])) {
+          const accessorKind = mHdr[1] || "";
+          const mName = mHdr[3];
           let openP = -1, ad = 0;
-          for (let k = trimmed.indexOf(mHdr[1]) + mHdr[1].length; k < trimmed.length; k++) {
+          for (let k = trimmed.indexOf(mName) + mName.length; k < trimmed.length; k++) {
             if (trimmed[k] === "<") ad++;
             else if (trimmed[k] === ">" && trimmed[k - 1] !== "=") ad = Math.max(0, ad - 1);
             else if (trimmed[k] === "(" && ad === 0) {
@@ -10801,12 +11541,13 @@ runAsyncDemo()
             const afterP = trimmed.slice(closeP + 1).trim();
             const retM2 = afterP.match(/^(?::\s*([^{]+?))?\s*\{/);
             if (retM2) {
-              validMethodOpen = [trimmed, mHdr[1], trimmed.slice(openP + 1, closeP).trim(), retM2[1] || ""];
+              validMethodOpen = [trimmed, mName, trimmed.slice(openP + 1, closeP).trim(), retM2[1] || "", accessorKind];
             }
           }
         }
       }
-      const callbackArrowOpen = !fnOpen && !arrowFnOpen && !validMethodOpen ? trimmed.match(/(?:async\s*)?(?:(<[A-Za-z_$][\w$,\s=<>]*>)\s*)?\(([^()]*)\)\s*(?::\s*([^{=]+?))?\s*=>\s*\{$/) || trimmed.match(/(?:async\s*)?function(?:\s+[A-Za-z_$][\w$]*)?\s*(?:(<[A-Za-z_$][\w$,\s=<>]*>)\s*)?\(([^()]*)\)\s*(?::\s*([^{=]+?))?\s*\{$/) : null;
+      const callbackArrowOpen = !fnOpen && !arrowFnOpen && !validMethodOpen ? trimmed.match(/(?:async\s*)?(?:(<[A-Za-z_$][\w$,\s=<>]*>)\s*)?\(([^()]*)\)\s*(?::\s*([^{=]+?))?\s*=>\s*\{$/) || trimmed.match(/(?:async\s*)?function\s*\*?(?:\s+[A-Za-z_$][\w$]*)?\s*(?:(<[A-Za-z_$][\w$,\s=<>]*>)\s*)?\(([^()]*)\)\s*(?::\s*([^{=]+?))?\s*\{$/) : null;
+      let bodyStartInRaw = 0;
       if (fnOpen || arrowFnOpen || validMethodOpen || callbackArrowOpen) {
         if (fnOpen) {
           while (findBalancedParen(trimmed, trimmed.lastIndexOf("(")) < 0 && i + 1 < lines.length) {
@@ -10829,10 +11570,14 @@ runAsyncDemo()
           prevEnv: new Map(env),
           prevTypeParams: new Map(activeTypeParams)
         });
-        const existingFn = (fnOpen && fnOpen[1] ? fns.get(fnOpen[1]) : void 0) || (validMethodOpen && validMethodOpen[1] && currentClass ? fns.get(currentClass + "." + validMethodOpen[1]) : void 0);
+        const methodKey = validMethodOpen && validMethodOpen[1] && currentClass ? validMethodOpen[4] === "set" ? `${currentClass}.set.${validMethodOpen[1]}` : validMethodOpen[4] === "get" ? `${currentClass}.get.${validMethodOpen[1]}` : `${currentClass}.${validMethodOpen[1]}` : "";
+        const existingFn = (fnOpen && fnOpen[2] ? fns.get(fnOpen[2]) : void 0) || (methodKey && validMethodOpen ? fns.get(methodKey) || fns.get(`${currentClass}.${validMethodOpen[1]}`) : void 0);
         let activeFn;
         if (existingFn) {
           activeFn = existingFn;
+          if (fnOpen && fnOpen[1] === "*") {
+            activeFn.hasValueReturn = true;
+          }
         } else if (callbackArrowOpen) {
           const cbTParams = callbackArrowOpen[1] ? parseTypeParams(callbackArrowOpen[1]) : [];
           const cbParamStr = (callbackArrowOpen[2] || "").trim();
@@ -10841,7 +11586,7 @@ runAsyncDemo()
           const { params: cbParams, minArgs: cbMin } = parseParamList(cbParamStr, lineNum, false);
           activeFn = { name: "<callback>", params: cbParams, minArgs: cbMin, returnType: cbRet, rawReturnType: cbRawRet, typeParams: cbTParams, line: lineNum, hasValueReturn: false };
         } else {
-          const fName = (fnOpen ? fnOpen[1] : arrowFnOpen ? arrowFnOpen[2] : currentClass + "." + (validMethodOpen ? validMethodOpen[1] : "")) || "";
+          const fName = (fnOpen ? fnOpen[2] : arrowFnOpen ? arrowFnOpen[2] : methodKey || currentClass + "." + (validMethodOpen ? validMethodOpen[1] : "")) || "";
           let paramStr = "";
           let retType = "any";
           let rawRetType = "any";
@@ -10865,11 +11610,13 @@ runAsyncDemo()
             retType = arrowFnOpen[5] ? resolveAlias(rawRetType) : "any";
           } else if (validMethodOpen) {
             paramStr = (validMethodOpen[2] || "").trim();
-            rawRetType = validMethodOpen[1] === "constructor" ? "void" : validMethodOpen[3] ? validMethodOpen[3].trim() : "any";
-            retType = validMethodOpen[1] === "constructor" ? "void" : resolveAlias(rawRetType);
+            const isCtorOrSetter = validMethodOpen[1] === "constructor" || validMethodOpen[4] === "set";
+            rawRetType = isCtorOrSetter ? "void" : validMethodOpen[3] ? validMethodOpen[3].trim() : "any";
+            retType = isCtorOrSetter ? "void" : resolveAlias(rawRetType);
           }
           const { params, minArgs } = parseParamList(paramStr, lineNum, Boolean(fnOpen || validMethodOpen));
-          activeFn = { name: fName, params, minArgs, returnType: retType, rawReturnType: rawRetType, typeParams: fnTParams, line: lineNum, hasValueReturn: false };
+          const isGen = Boolean(fnOpen && fnOpen[1] === "*" || /^Generator<|^AsyncGenerator<|^IterableIterator<|^Iterator</.test(retType));
+          activeFn = { name: fName, params, minArgs, returnType: retType, rawReturnType: rawRetType, typeParams: fnTParams, line: lineNum, hasValueReturn: isGen };
           fns.set(fName, activeFn);
         }
         currentFn = activeFn;
@@ -10880,7 +11627,37 @@ runAsyncDemo()
           env.set(p.name, { type: p.type, isConst: false, line: activeFn.line, declaredType: p.type });
         });
         fnStartBraceDepth = braceDepth;
-        const openBraceIdx = trimmed.indexOf("{");
+        let openBraceIdx = -1;
+        if (trimmed.endsWith("{")) {
+          openBraceIdx = trimmed.lastIndexOf("{");
+          bodyStartInRaw = rawLine.lastIndexOf("{");
+        } else {
+          let searchFrom = 0;
+          const firstOpenP = trimmed.indexOf("(");
+          if (firstOpenP >= 0) {
+            const closeP = findBalancedParen(trimmed, firstOpenP);
+            if (closeP > firstOpenP) searchFrom = closeP + 1;
+          }
+          let td = 0;
+          for (let k = searchFrom; k < trimmed.length; k++) {
+            const ch = trimmed[k];
+            if (ch === '"' || ch === "'" || ch === "`") {
+              k = skipString(trimmed, k) - 1;
+              continue;
+            }
+            if (ch === "<" || ch === "(" || ch === "[") td++;
+            else if (ch === ">" && trimmed[k - 1] !== "=" || ch === ")" || ch === "]") td = Math.max(0, td - 1);
+            else if (ch === "{" && td === 0) {
+              openBraceIdx = k;
+              break;
+            }
+          }
+          if (openBraceIdx >= 0) {
+            const suffix = trimmed.slice(openBraceIdx);
+            const rawIdx = rawLine.lastIndexOf(suffix);
+            bodyStartInRaw = rawIdx >= 0 ? rawIdx : rawLine.indexOf("{");
+          }
+        }
         const closeBraceIdx = trimmed.lastIndexOf("}");
         const bodyAfterOpenBrace = openBraceIdx >= 0 ? trimmed.slice(openBraceIdx + 1) : "";
         const rm = bodyAfterOpenBrace.match(/\breturn\b([^;}\n]*)/);
@@ -10914,7 +11691,7 @@ runAsyncDemo()
           });
         }
       }
-      for (let k = 0; k < rawLine.length; k++) {
+      for (let k = Math.max(0, bodyStartInRaw); k < rawLine.length; k++) {
         const ch = rawLine[k];
         if (ch === '"' || ch === "'" || ch === "`") {
           k = skipString(rawLine, k) - 1;
@@ -10924,8 +11701,16 @@ runAsyncDemo()
         if (ch === "{") braceDepth++;
         else if (ch === "}") {
           braceDepth = Math.max(0, braceDepth - 1);
+          const topSwitch = switchStack[switchStack.length - 1];
+          if (topSwitch && braceDepth <= topSwitch.startDepth) {
+            const sw = switchStack.pop();
+            if (sw && sw.origInfo) {
+              env.set(sw.expr, sw.origInfo);
+            }
+          }
           if (currentFn && braceDepth <= fnStartBraceDepth) {
-            if (currentFn.returnType !== "any" && currentFn.returnType !== "void" && currentFn.returnType !== "Promise<void>" && currentFn.returnType !== "unknown" && !currentFn.hasValueReturn) {
+            const isGenRet = /^Generator<|^AsyncGenerator<|^IterableIterator<|^Iterator</.test(currentFn.returnType);
+            if (currentFn.returnType !== "any" && currentFn.returnType !== "void" && currentFn.returnType !== "Promise<void>" && currentFn.returnType !== "unknown" && !isGenRet && !currentFn.hasValueReturn) {
               addDiag(currentFn.line, "TS2355", `\u51FD\u6570 "${currentFn.name}" \u58F0\u660E\u8FD4\u56DE\u7C7B\u578B\u4E3A "${currentFn.returnType}"\uFF0C\u4F46\u7F3A\u5C11 return \u8FD4\u56DE\u503C\u8BED\u53E5`);
             }
             const prev = fnScopeStack.pop();
@@ -10959,7 +11744,7 @@ runAsyncDemo()
         env.set(catchM[1], { type: "any", isConst: false, line: lineNum, declaredType: "any" });
         continue;
       }
-      if (/^(?:\}[\s);,]*|\}\s*,\s*[\s\S]+\)\s*;?|\}\s*else\s*\{?|else\s*\{?|try\s*\{?|\}\s*finally\s*\{?|finally\s*\{?|do\s*\{?|default\s*:)$/.test(trimmed)) {
+      if (/^(?:\}[\s);,]*|\}\s*,\s*[\s\S]+\)\s*;?|\}\s*else\s*\{?|else\s*\{?|try\s*\{?|\}\s*finally\s*\{?|finally\s*\{?|do\s*\{?)$/.test(trimmed)) {
         continue;
       }
       const forOfInM = trimmed.match(/^for\s*\(\s*(?:(const|let|var)\s+)?(.+?)\s+(of|in)\s+([\s\S]+?)\)\s*\{?$/);
@@ -10993,7 +11778,7 @@ runAsyncDemo()
         } else if (/^[A-Za-z_$][\w$]*$/.test(lhsRaw)) {
           if (!isKnownIdentifier(lhsRaw)) {
             addDiag(lineNum, "TS2304", `\u627E\u4E0D\u5230\u540D\u79F0 "${lhsRaw}"\uFF08\u53D8\u91CF\u672A\u58F0\u660E\uFF0C\u8BF7\u4F7F\u7528 let \u6216 const \u58F0\u660E\uFF09`);
-          } else if (env.has(lhsRaw) && env.get(lhsRaw).isConst) {
+          } else if (env.has(lhsRaw) && env.get(lhsRaw)?.isConst) {
             addDiag(lineNum, "TS2588", `\u65E0\u6CD5\u5206\u914D\u5230 "${lhsRaw}"\uFF0C\u56E0\u4E3A\u5B83\u662F\u5E38\u6570 (const)`);
           }
         }
@@ -11024,7 +11809,7 @@ runAsyncDemo()
               inferType(am[2].trim(), lineNum);
               if (!isKnownIdentifier(am[1])) {
                 addDiag(lineNum, "TS2304", `\u627E\u4E0D\u5230\u540D\u79F0 "${am[1]}"\uFF08\u53D8\u91CF\u672A\u58F0\u660E\uFF0C\u8BF7\u4F7F\u7528 let \u6216 const \u58F0\u660E\uFF09`);
-              } else if (env.has(am[1]) && env.get(am[1]).isConst) {
+              } else if (env.has(am[1]) && env.get(am[1])?.isConst) {
                 addDiag(lineNum, "TS2588", `\u65E0\u6CD5\u5206\u914D\u5230 "${am[1]}"\uFF0C\u56E0\u4E3A\u5B83\u662F\u5E38\u6570 (const)`);
               }
             } else {
@@ -11038,7 +11823,7 @@ runAsyncDemo()
           if (updVar && updVar[1]) {
             if (!isKnownIdentifier(updVar[1])) {
               addDiag(lineNum, "TS2304", `\u627E\u4E0D\u5230\u540D\u79F0 "${updVar[1]}"\uFF08\u53D8\u91CF\u672A\u58F0\u660E\uFF0C\u8BF7\u4F7F\u7528 let \u6216 const \u58F0\u660E\uFF09`);
-            } else if (env.has(updVar[1]) && env.get(updVar[1]).isConst) {
+            } else if (env.has(updVar[1]) && env.get(updVar[1])?.isConst) {
               addDiag(lineNum, "TS2588", `\u65E0\u6CD5\u5206\u914D\u5230 "${updVar[1]}"\uFF0C\u56E0\u4E3A\u5B83\u662F\u5E38\u6570 (const)`);
             }
           }
@@ -11114,7 +11899,7 @@ runAsyncDemo()
               const narrowedPropKey = initExpr ? "__narrowed_prop_" + initExpr : "";
               let initT = initExpr ? inferType(initExpr, lineNum) : "any";
               if (narrowedPropKey && env.has(narrowedPropKey)) {
-                initT = env.get(narrowedPropKey).type;
+                initT = (env.get(narrowedPropKey) || { type: "any" }).type;
                 env.delete(narrowedPropKey);
               }
               if (declT && initExpr) {
@@ -11135,7 +11920,7 @@ runAsyncDemo()
                 literalType: litVal
               });
             } else if (pTrim.startsWith("[") || pTrim.startsWith("{")) {
-              let eqIdx = -1, d = 0;
+              let eqIdx = -1, colonIdx = -1, patEndIdx = -1, d = 0;
               for (let k = 0; k < pTrim.length; k++) {
                 const ch = pTrim[k];
                 if (ch === '"' || ch === "'" || ch === "`") {
@@ -11143,17 +11928,33 @@ runAsyncDemo()
                   continue;
                 }
                 if (ch === "(" || ch === "[" || ch === "{") d++;
-                else if (ch === ")" || ch === "]" || ch === "}") d--;
-                else if (ch === "=" && d === 0 && pTrim[k + 1] !== "=" && pTrim[k + 1] !== ">") {
+                else if (ch === ")" || ch === "]" || ch === "}") {
+                  d--;
+                  if (d === 0 && patEndIdx < 0) patEndIdx = k;
+                } else if (ch === ":" && d === 0 && patEndIdx > 0 && colonIdx < 0 && eqIdx < 0) {
+                  colonIdx = k;
+                } else if (ch === "=" && d === 0 && pTrim[k + 1] !== "=" && pTrim[k + 1] !== ">") {
                   eqIdx = k;
                   break;
                 }
               }
               if (eqIdx > 0) {
-                inferType(pTrim.slice(eqIdx + 1).trim(), lineNum);
+                const rhsExpr = pTrim.slice(eqIdx + 1).trim();
+                const rhsT = inferType(rhsExpr, lineNum);
+                if (colonIdx > 0 && colonIdx < eqIdx) {
+                  const declT = resolveAlias(pTrim.slice(colonIdx + 1, eqIdx).trim());
+                  if (declT && declT !== "any") {
+                    if (rhsExpr.startsWith("{") && getInterfaceShape(declT)) {
+                      checkObjectLiteralAgainstShape(rhsExpr, declT, lineNum, "\u89E3\u6784\u58F0\u660E");
+                    } else if (!isExpressionAssignable(rhsExpr, rhsT, declT, lineNum)) {
+                      addDiag(lineNum, "TS2322", `\u4E0D\u80FD\u5C06\u7C7B\u578B "${rhsT}" \u5206\u914D\u7ED9\u7C7B\u578B "${declT}" (\u89E3\u6784\u58F0\u660E)`);
+                    }
+                  }
+                }
               }
+              const patOnly = colonIdx > 0 ? pTrim.slice(0, colonIdx) : eqIdx > 0 ? pTrim.slice(0, eqIdx) : pTrim;
               const bound = /* @__PURE__ */ new Set();
-              extractBindingNames(pTrim, bound);
+              extractBindingNames(patOnly, bound);
               bound.forEach((vName) => {
                 env.set(vName, { type: "any", isConst, line: lineNum, declaredType: "any" });
               });
@@ -11171,13 +11972,20 @@ runAsyncDemo()
           const expectedRet = currentFn.returnType;
           if (expectedRet && expectedRet !== "any") {
             const promiseInnerM = expectedRet.match(/^Promise<([\s\S]+)>$/);
-            const unwrappedExpected = promiseInnerM && promiseInnerM[1] ? promiseInnerM[1] : expectedRet;
-            if (retExpr.startsWith("{") && getInterfaceShape(unwrappedExpected)) {
-              checkObjectLiteralAgainstShape(retExpr, unwrappedExpected, lineNum, `\u51FD\u6570 "${currentFn.name}" \u8FD4\u56DE\u503C`);
-            } else if (unwrappedExpected.endsWith("[]") && splitTopLevelUnion(unwrappedExpected).length <= 1 && retExpr.startsWith("[")) {
-              checkArrayElementsAgainst(retExpr, unwrappedExpected.slice(0, -2), lineNum, `\u51FD\u6570 "${currentFn.name}" \u8FD4\u56DE\u6570\u7EC4\u4E2D`);
-            } else if (!isExpressionAssignable(retExpr, retT, expectedRet, lineNum) && !isExpressionAssignable(retExpr, retT, unwrappedExpected, lineNum)) {
-              addDiag(lineNum, "TS2322", `\u4E0D\u80FD\u5C06\u8FD4\u56DE\u503C\u7C7B\u578B "${retT}" \u5206\u914D\u7ED9\u51FD\u6570 "${currentFn.name}" \u58F0\u660E\u7684\u8FD4\u56DE\u7C7B\u578B "${expectedRet}"`);
+            const genInnerM = expectedRet.match(/^(?:Async)?Generator<([\s\S]+)>$/);
+            let unwrappedExpected = promiseInnerM && promiseInnerM[1] ? promiseInnerM[1] : expectedRet;
+            if (genInnerM && genInnerM[1]) {
+              const genArgs = splitTopLevelDecl(genInnerM[1]);
+              unwrappedExpected = genArgs[1] ? genArgs[1].trim() : "any";
+            }
+            if (unwrappedExpected !== "any") {
+              if (retExpr.startsWith("{") && getInterfaceShape(unwrappedExpected)) {
+                checkObjectLiteralAgainstShape(retExpr, unwrappedExpected, lineNum, `\u51FD\u6570 "${currentFn.name}" \u8FD4\u56DE\u503C`);
+              } else if (unwrappedExpected.endsWith("[]") && splitTopLevelUnion(unwrappedExpected).length <= 1 && retExpr.startsWith("[")) {
+                checkArrayElementsAgainst(retExpr, unwrappedExpected.slice(0, -2), lineNum, `\u51FD\u6570 "${currentFn.name}" \u8FD4\u56DE\u6570\u7EC4\u4E2D`);
+              } else if (!isExpressionAssignable(retExpr, retT, expectedRet, lineNum) && !isExpressionAssignable(retExpr, retT, unwrappedExpected, lineNum)) {
+                addDiag(lineNum, "TS2322", `\u4E0D\u80FD\u5C06\u8FD4\u56DE\u503C\u7C7B\u578B "${retT}" \u5206\u914D\u7ED9\u51FD\u6570 "${currentFn.name}" \u58F0\u660E\u7684\u8FD4\u56DE\u7C7B\u578B "${expectedRet}"`);
+              }
             }
           }
         }
@@ -11190,14 +11998,96 @@ runAsyncDemo()
       }
       const switchM = trimmed.match(/^switch\s*\(([\s\S]+)\)\s*\{?$/);
       if (switchM && switchM[1]) {
-        inferType(switchM[1].trim(), lineNum);
+        const swExpr = switchM[1].trim();
+        inferType(swExpr, lineNum);
+        if (/^[A-Za-z_$][\w$]*$/.test(swExpr) && env.has(swExpr)) {
+          const origInfo = env.get(swExpr) || { type: "any" };
+          const parts = splitTopLevelUnion(resolveAlias(origInfo.type)).map((p) => p.trim()).filter(Boolean);
+          switchStack.push({
+            expr: swExpr,
+            startDepth: braceDepth - (trimmed.endsWith("{") ? 1 : 0),
+            origInfo: { ...origInfo },
+            remainingTypes: parts
+          });
+        }
         continue;
       }
       const caseM = trimmed.match(/^case\s+([^:]+):(.*)$/);
       if (caseM && caseM[1]) {
-        inferType(caseM[1].trim(), lineNum);
+        const caseExpr = caseM[1].trim();
+        const caseT = inferType(caseExpr, lineNum);
+        const caseLit = inferLiteralType(caseExpr) || caseT;
+        const sw = switchStack[switchStack.length - 1];
+        if (sw) {
+          sw.remainingTypes = sw.remainingTypes.filter((t) => t !== caseLit && t !== caseExpr);
+          if (env.has(sw.expr)) {
+            env.set(sw.expr, { ...sw.origInfo, type: caseLit });
+          }
+        }
+        const caseRest = (caseM[2] || "").trim();
+        if (caseRest) {
+          const inlineRet = caseRest.match(/^return(?:\s+([\s\S]+?))?;?$/);
+          if (inlineRet) {
+            const rExpr = inlineRet[1] ? inlineRet[1].trim() : "";
+            const rT = rExpr ? inferType(rExpr, lineNum) : "void";
+            if (currentFn) {
+              if (rExpr) currentFn.hasValueReturn = true;
+              const expectedRet = currentFn.returnType;
+              if (expectedRet && expectedRet !== "any" && !isExpressionAssignable(rExpr, rT, expectedRet, lineNum)) {
+                addDiag(lineNum, "TS2322", `\u4E0D\u80FD\u5C06\u8FD4\u56DE\u503C\u7C7B\u578B "${rT}" \u5206\u914D\u7ED9\u51FD\u6570 "${currentFn.name}" \u58F0\u660E\u7684\u8FD4\u56DE\u7C7B\u578B "${expectedRet}"`);
+              }
+            }
+          }
+        }
         continue;
       }
+      const defaultM = trimmed.match(/^default\s*:(.*)$/);
+      if (defaultM) {
+        const sw = switchStack[switchStack.length - 1];
+        if (sw) {
+          const remT = sw.remainingTypes.length > 0 ? sw.remainingTypes.join("|") : "never";
+          if (env.has(sw.expr)) {
+            env.set(sw.expr, { ...sw.origInfo, type: remT });
+          }
+        }
+        continue;
+      }
+      const applyClauseNarrowing = (clauseStr, forEarlyExit) => {
+        const c = clauseStr.trim();
+        const predCallM = c.match(/^(!)?\s*([A-Za-z_$][\w$]*)\s*\(\s*([A-Za-z_$][\w$]*)\s*\)$/);
+        if (predCallM && predCallM[2] && predCallM[3]) {
+          const isNegated = Boolean(predCallM[1]);
+          const fnName = predCallM[2];
+          const argVar = predCallM[3];
+          const sig = fns.get(fnName);
+          if (sig && sig.rawReturnType && env.has(argVar)) {
+            const pm = sig.rawReturnType.match(/^([A-Za-z_$][\w$]*)\s+is\s+([\s\S]+)$/);
+            if (pm && pm[2]) {
+              const targetT = resolveAlias(pm[2].trim());
+              const curInfo = env.get(argVar) || { type: "any" };
+              if (!forEarlyExit && !isNegated || forEarlyExit && isNegated) {
+                env.set(argVar, { ...curInfo, type: targetT });
+              } else if (forEarlyExit && !isNegated || !forEarlyExit && isNegated) {
+                const rem = splitTopLevelUnion(resolveAlias(curInfo.type)).filter((u) => u !== targetT);
+                if (rem.length > 0) env.set(argVar, { ...curInfo, type: rem.join("|") });
+              }
+            }
+          }
+        }
+        const typeofM = c.match(/^typeof\s+([A-Za-z_$][\w$]*)\s*(===|!==)\s*["'](string|number|boolean|bigint|symbol|undefined|object|function)["']$/);
+        if (typeofM && typeofM[1] && typeofM[2] && typeofM[3] && env.has(typeofM[1])) {
+          const varName = typeofM[1];
+          const op = typeofM[2];
+          const primT = typeofM[3];
+          const curInfo = env.get(varName) || { type: "any" };
+          if (!forEarlyExit && op === "===" || forEarlyExit && op === "!==") {
+            env.set(varName, { ...curInfo, type: primT });
+          } else if (forEarlyExit && op === "===" || !forEarlyExit && op === "!==") {
+            const rem = splitTopLevelUnion(resolveAlias(curInfo.type)).filter((u) => u !== primT);
+            if (rem.length > 0) env.set(varName, { ...curInfo, type: rem.join("|") });
+          }
+        }
+      };
       const inlineIfRet = trimmed.match(/^if\s*\((.+?)\)\s*(return(?:\s+([\s\S]+?))?|break|continue);?$/);
       if (inlineIfRet && inlineIfRet[1] && inlineIfRet[2]) {
         const condStr = inlineIfRet[1].trim();
@@ -11209,7 +12099,7 @@ runAsyncDemo()
           condStr.split("&&").forEach((clause) => {
             const cm = clause.trim().match(/^([A-Za-z_$][\w$]*)\s*!==\s*(null|undefined)$/);
             if (cm && cm[1] && cm[2] && env.has(cm[1])) {
-              const curInfo = env.get(cm[1]);
+              const curInfo = env.get(cm[1]) || { type: "any" };
               savedInlineNarrow.set(cm[1], curInfo);
               env.set(cm[1], { ...curInfo, type: stripNullableFromType(curInfo.type, cm[2]) });
             }
@@ -11230,11 +12120,12 @@ runAsyncDemo()
           const negM = !cm && !cmRev ? clause.trim().match(/^!\s*([A-Za-z_$][\w$]*)$/) : null;
           const varName = cm ? cm[1] : cmRev ? cmRev[2] : negM ? negM[1] : null;
           if (varName && env.has(varName)) {
-            const curInfo = env.get(varName);
+            const curInfo = env.get(varName) || { type: "any" };
             let nextT = stripNullableFromType(curInfo.type, "null");
             nextT = stripNullableFromType(nextT, "undefined");
             env.set(varName, { ...curInfo, type: nextT });
           }
+          applyClauseNarrowing(clause, true);
         });
         continue;
       }
@@ -11268,9 +12159,10 @@ runAsyncDemo()
           condStr.split("&&").forEach((clause) => {
             const cm = clause.trim().match(/^([A-Za-z_$][\w$]*)\s*!==\s*(null|undefined)$/);
             if (cm && cm[1] && cm[2] && env.has(cm[1])) {
-              const curInfo = env.get(cm[1]);
+              const curInfo = env.get(cm[1]) || { type: "any" };
               env.set(cm[1], { ...curInfo, type: stripNullableFromType(curInfo.type, cm[2]) });
             }
+            applyClauseNarrowing(clause, false);
             const propCm = clause.trim().match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+)\s*!==\s*(null|undefined)$/);
             if (propCm && propCm[1] && propCm[2] && i + 1 < lines.length) {
               const propExpr = propCm[1];
@@ -11286,9 +12178,10 @@ runAsyncDemo()
             condStr.split("||").forEach((clause) => {
               const cm = clause.trim().match(/^([A-Za-z_$][\w$]*)\s*===\s*(null|undefined)$/);
               if (cm && cm[1] && cm[2] && env.has(cm[1])) {
-                const curInfo = env.get(cm[1]);
+                const curInfo = env.get(cm[1]) || { type: "any" };
                 env.set(cm[1], { ...curInfo, type: stripNullableFromType(curInfo.type, cm[2]) });
               }
+              applyClauseNarrowing(clause, true);
             });
           }
           continue;
@@ -11303,7 +12196,7 @@ runAsyncDemo()
             addDiag(lineNum, "TS2322", `\u4E0D\u80FD\u5BF9\u7C7B\u578B "${propT}" \u7684\u5C5E\u6027 "${vName}" \u6267\u884C\u81EA\u589E/\u81EA\u51CF\u8FD0\u7B97`);
           }
         } else if (env.has(vName)) {
-          const info = env.get(vName);
+          const info = env.get(vName) || { type: "any" };
           if (info.isConst) {
             addDiag(lineNum, "TS2588", `\u65E0\u6CD5\u5206\u914D\u5230 "${vName}"\uFF0C\u56E0\u4E3A\u5B83\u662F\u5E38\u6570 (const)`);
           } else if (info.type !== "any" && !isTsAssignable("number", info.type)) {
@@ -11324,7 +12217,7 @@ runAsyncDemo()
         bound.forEach((vName) => {
           if (!isKnownIdentifier(vName)) {
             addDiag(lineNum, "TS2304", `\u627E\u4E0D\u5230\u540D\u79F0 "${vName}"\uFF08\u53D8\u91CF\u672A\u58F0\u660E\uFF0C\u8BF7\u4F7F\u7528 let \u6216 const \u58F0\u660E\uFF09`);
-          } else if (env.has(vName) && env.get(vName).isConst) {
+          } else if (env.has(vName) && env.get(vName)?.isConst) {
             addDiag(lineNum, "TS2588", `\u65E0\u6CD5\u5206\u914D\u5230 "${vName}"\uFF0C\u56E0\u4E3A\u5B83\u662F\u5E38\u6570 (const)`);
           }
         });
@@ -11338,7 +12231,7 @@ runAsyncDemo()
         const rhsT = inferType(rhs, lineNum);
         if (/^[A-Za-z_$][\w$]*$/.test(lhs)) {
           if (env.has(lhs)) {
-            const info = env.get(lhs);
+            const info = env.get(lhs) || { type: "any" };
             const checkTargetT = info.declaredType || info.type;
             if (info.isConst) {
               addDiag(lineNum, "TS2588", `\u65E0\u6CD5\u5206\u914D\u5230 "${lhs}"\uFF0C\u56E0\u4E3A\u5B83\u662F\u5E38\u6570 (const)`);
@@ -11364,6 +12257,28 @@ runAsyncDemo()
         continue;
       }
       inferType(trimmed, lineNum);
+      const assertCallM = trimmed.match(/^([A-Za-z_$][\w$]*)\s*\(([^)]*)\)\s*;?$/);
+      if (assertCallM && assertCallM[1] && assertCallM[2] !== void 0) {
+        const sig = fns.get(assertCallM[1]);
+        if (sig && sig.rawReturnType && /^asserts\b/.test(sig.rawReturnType)) {
+          const am = sig.rawReturnType.match(/^asserts\s+([A-Za-z_$][\w$]*)(?:\s+is\s+([\s\S]+))?$/);
+          if (am && am[1]) {
+            const pIdx = sig.params.findIndex((p) => p.name === am[1]);
+            const callArgs = splitTopLevel(assertCallM[2]);
+            const argExpr = (pIdx >= 0 ? callArgs[pIdx] : callArgs[0])?.trim();
+            if (argExpr && /^[A-Za-z_$][\w$]*$/.test(argExpr) && env.has(argExpr)) {
+              const curInfo = env.get(argExpr) || { type: "any" };
+              if (am[2]) {
+                env.set(argExpr, { ...curInfo, type: resolveAlias(am[2].trim()) });
+              } else {
+                let nextT = stripNullableFromType(curInfo.type, "null");
+                nextT = stripNullableFromType(nextT, "undefined");
+                env.set(argExpr, { ...curInfo, type: nextT });
+              }
+            }
+          }
+        }
+      }
     }
     if (_TS_WORKER_STATE.lastSrc === src && Array.isArray(_TS_WORKER_STATE.lastDiags)) {
       _TS_WORKER_STATE.lastDiags.forEach((wd) => {
@@ -11400,8 +12315,9 @@ runAsyncDemo()
         const data = ev && ev.data;
         if (!data || data.type !== "checkResult") return;
         _TS_WORKER_STATE.lastSrc = data.src;
-        _TS_WORKER_STATE.lastDiags = Array.isArray(data.diagnostics) ? data.diagnostics : [];
-        if (_TYPECHECK_CACHE.src === data.src && _TS_WORKER_STATE.lastDiags.length > 0) {
+        const newDiags = Array.isArray(data.diagnostics) ? data.diagnostics : [];
+        _TS_WORKER_STATE.lastDiags = newDiags;
+        if (_TYPECHECK_CACHE.src === data.src && newDiags.length > 0) {
           _TYPECHECK_CACHE = { src: null, strict: null, diags: [] };
           if (typeof updateEditorChrome === "function") {
             try {
@@ -11790,9 +12706,9 @@ runAsyncDemo()
     if (!rawCell.trim()) return [];
     const { preambleLines, combinedTs } = buildTsTypecheckContext(doc, cell);
     const allDiags = typecheckTS(combinedTs, STRICT_TS) || [];
-    return allDiags.filter((d) => d && typeof d.line === "number" && d.line > preambleLines).map((d) => ({
+    return allDiags.filter((d) => Boolean(d && typeof d.line === "number" && d.line > preambleLines)).map((d) => ({
       line: d.line - preambleLines,
-      code: d.code || "TS",
+      code: String(d.code || "TS"),
       message: d.message || "\u7C7B\u578B\u9519\u8BEF"
     }));
   }
@@ -11945,7 +12861,7 @@ runAsyncDemo()
         return !payload.error;
       } catch (err) {
         cell.status = "error";
-        cell.output = { logs: [], returnValue: null, error: err && err.message || String(err) };
+        cell.output = { logs: [], returnValue: null, error: err instanceof Error && err.message || String(err) };
         renderNotebookUI();
         return false;
       }
@@ -12055,7 +12971,7 @@ runAsyncDemo()
       renderNotebookUI();
       return true;
     } catch (err) {
-      const msg = err && err.message ? err.message : String(err);
+      const msg = err instanceof Error && err.message ? err.message : String(err);
       cell.status = "error";
       cell.output = {
         logs,
@@ -12153,7 +13069,7 @@ runAsyncDemo()
         renderNotebookUI();
         say(`\u2713 [Cell ${cell.executionCount}] \u5DF2\u8FDB\u5165\u5355\u6B65\u8C03\u8BD5\u6A21\u5F0F\uFF08\u5171 ${steps.length} \u6B65\uFF0C\u53EF\u4F7F\u7528\u5E95\u90E8\u63A7\u5236\u680F\u9010\u6B65\u89C2\u5BDF\uFF09`, "ok");
         return true;
-      } catch (err) {
+      } catch (_err) {
         cell.status = "error";
         doc.debuggingCellId = null;
         renderNotebookUI();
@@ -12217,7 +13133,7 @@ runAsyncDemo()
       cell.output = {
         logs: [],
         returnValue: null,
-        error: "\u7F16\u8BD1\u5931\u8D25: " + (e && e.message ? e.message : String(e))
+        error: "\u7F16\u8BD1\u5931\u8D25: " + (e instanceof Error && e.message ? e.message : String(e))
       };
       renderNotebookUI();
       return false;
@@ -12493,19 +13409,21 @@ runAsyncDemo()
       if (!data || !Array.isArray(data.cells)) return false;
       const lang = LANG === "python" ? "python" : "ts";
       const store = ensureLangNotebooks(lang);
-      const cells = data.cells.map((rawCell) => {
-        const type = rawCell.cell_type === "markdown" ? "markdown" : "code";
-        const src = Array.isArray(rawCell.source) ? rawCell.source.join("") : String(rawCell.source || "");
-        return {
-          id: nextCellId(),
-          type,
-          source: src.replace(/\r\n?/g, "\n"),
-          executionCount: typeof rawCell.execution_count === "number" ? rawCell.execution_count : null,
-          status: "idle",
-          output: null,
-          markdownRendered: type === "markdown"
-        };
-      });
+      const cells = data.cells.map(
+        (rawCell) => {
+          const type = rawCell.cell_type === "markdown" ? "markdown" : "code";
+          const src = Array.isArray(rawCell.source) ? rawCell.source.join("") : String(rawCell.source || "");
+          return {
+            id: nextCellId(),
+            type,
+            source: src.replace(/\r\n?/g, "\n"),
+            executionCount: typeof rawCell.execution_count === "number" ? rawCell.execution_count : null,
+            status: "idle",
+            output: null,
+            markdownRendered: type === "markdown"
+          };
+        }
+      );
       if (!cells.length) {
         cells.push({
           id: nextCellId(),
@@ -12749,7 +13667,7 @@ runAsyncDemo()
     { key: "classes", label: "classes.py \xB7 \u7C7B\u4E0E\u5B9E\u4F8B", desc: "Counter \u7C7B\u6784\u9020\u4E0E\u5B9E\u4F8B\u5C5E\u6027\u8FFD\u8E2A" }
   ];
   function getPySamplesDict() {
-    const eng = globalThis.PY_ENGINE;
+    const eng = typeof PY_ENGINE !== "undefined" ? PY_ENGINE : null;
     return eng && eng.samples ? eng.samples : {};
   }
   function ensureVfsInitialized() {
@@ -13035,8 +13953,8 @@ runAsyncDemo()
     }
     const tsMatch = path.match(/^examples\/ts\/([A-Za-z0-9_]+)\.ts$/);
     if (tsMatch && tsMatch[1]) {
-      if (LANG === "python" && globalThis.PY_ENGINE) {
-        globalThis.PY_ENGINE.setLang("ts");
+      if (LANG === "python" && typeof PY_ENGINE !== "undefined" && PY_ENGINE.setLang) {
+        PY_ENGINE.setLang("ts");
       }
       setViewMode("script");
       loadSample(tsMatch[1]);
@@ -13044,18 +13962,18 @@ runAsyncDemo()
     }
     const pyMatch = path.match(/^examples\/python\/([A-Za-z0-9_]+)\.py$/);
     if (pyMatch && pyMatch[1]) {
-      if (LANG !== "python" && globalThis.PY_ENGINE) {
-        globalThis.PY_ENGINE.setLang("python");
+      if (LANG !== "python" && typeof PY_ENGINE !== "undefined" && PY_ENGINE.setLang) {
+        PY_ENGINE.setLang("python");
       }
       setViewMode("script");
       loadSample(pyMatch[1]);
       return;
     }
     const isPyFile = node.name.endsWith(".py");
-    if (isPyFile && LANG !== "python" && globalThis.PY_ENGINE) {
-      globalThis.PY_ENGINE.setLang("python");
-    } else if (node.name.endsWith(".ts") && LANG === "python" && globalThis.PY_ENGINE) {
-      globalThis.PY_ENGINE.setLang("ts");
+    if (isPyFile && LANG !== "python" && typeof PY_ENGINE !== "undefined" && PY_ENGINE.setLang) {
+      PY_ENGINE.setLang("python");
+    } else if (node.name.endsWith(".ts") && LANG === "python" && typeof PY_ENGINE !== "undefined" && PY_ENGINE.setLang) {
+      PY_ENGINE.setLang("ts");
     }
     setViewMode("script");
     const lang = LANG === "python" ? "python" : "ts";
@@ -13152,9 +14070,10 @@ runAsyncDemo()
     const modeSwitch = $("modeSwitch");
     if (modeSwitch && modeSwitch.addEventListener) {
       modeSwitch.addEventListener("click", (e) => {
-        const btn = e.target && e.target.closest ? e.target.closest(".mode-tab") : null;
+        const target = e.target;
+        const btn = target && target.closest ? target.closest(".mode-tab") : null;
         if (!btn || !btn.dataset.mode) return;
-        setViewMode(btn.dataset.mode);
+        setViewMode(btn.dataset.mode === "notebook" ? "notebook" : "script");
       });
     }
     const importMenuWrap = $("importMenuWrap");
@@ -13185,7 +14104,8 @@ runAsyncDemo()
     }
     if (importSampleList && importSampleList.addEventListener) {
       importSampleList.addEventListener("click", (e) => {
-        const btn = e.target && e.target.closest ? e.target.closest(".import-sample-item") : null;
+        const target = e.target;
+        const btn = target && target.closest ? target.closest(".import-sample-item") : null;
         if (!btn) return;
         if (importMenuWrap && importMenuWrap.classList) importMenuWrap.classList.remove("open");
         const nbFile = btn.getAttribute("data-import-sample-notebook");
@@ -13223,9 +14143,11 @@ runAsyncDemo()
     const scriptTabsEl = $("scriptTabsList");
     if (scriptTabsEl && scriptTabsEl.addEventListener) {
       scriptTabsEl.addEventListener("click", (e) => {
+        const target = e.target;
+        if (!target) return;
         const lang = LANG === "python" ? "python" : "ts";
         const store = ensureScriptTabsForLang(lang);
-        const closeBtn = e.target.closest ? e.target.closest("[data-close-script-tab]") : null;
+        const closeBtn = target.closest ? target.closest("[data-close-script-tab]") : null;
         if (closeBtn) {
           e.stopPropagation();
           const closeId = closeBtn.getAttribute("data-close-script-tab");
@@ -13249,7 +14171,7 @@ runAsyncDemo()
           }
           return;
         }
-        const newBtn = e.target.closest ? e.target.closest("#scriptBtnNewTab") : null;
+        const newBtn = target.closest ? target.closest("#scriptBtnNewTab") : null;
         if (newBtn) {
           syncActiveScriptTabSource(editor ? editor.value : "");
           const ext = lang === "python" ? ".py" : ".ts";
@@ -13282,7 +14204,7 @@ runAsyncDemo()
           if (editor && typeof editor.focus === "function") editor.focus();
           return;
         }
-        const tabEl = e.target.closest ? e.target.closest("[data-script-tab-id]") : null;
+        const tabEl = target.closest ? target.closest("[data-script-tab-id]") : null;
         if (tabEl) {
           const tabId = tabEl.getAttribute("data-script-tab-id");
           if (tabId && store.activeTabId !== tabId) {
@@ -13301,7 +14223,8 @@ runAsyncDemo()
         }
       });
       scriptTabsEl.addEventListener("dblclick", (e) => {
-        const tabEl = e.target.closest ? e.target.closest("[data-script-tab-id]") : null;
+        const target = e.target;
+        const tabEl = target && target.closest ? target.closest("[data-script-tab-id]") : null;
         if (!tabEl) return;
         const tabId = tabEl.getAttribute("data-script-tab-id");
         const lang = LANG === "python" ? "python" : "ts";
@@ -13427,7 +14350,9 @@ runAsyncDemo()
     const vfsTreeList = $("vfsTreeList");
     if (vfsTreeList && vfsTreeList.addEventListener) {
       vfsTreeList.addEventListener("click", (e) => {
-        const delBtn = e.target.closest ? e.target.closest("[data-vfs-del]") : null;
+        const target = e.target;
+        if (!target) return;
+        const delBtn = target.closest ? target.closest("[data-vfs-del]") : null;
         if (delBtn) {
           e.stopPropagation();
           const delPath = delBtn.getAttribute("data-vfs-del");
@@ -13439,7 +14364,7 @@ runAsyncDemo()
           }
           return;
         }
-        const folderRow = e.target.closest ? e.target.closest("[data-vfs-folder]") : null;
+        const folderRow = target.closest ? target.closest("[data-vfs-folder]") : null;
         if (folderRow) {
           const folderPath = folderRow.getAttribute("data-vfs-folder");
           if (folderPath) {
@@ -13449,7 +14374,7 @@ runAsyncDemo()
           }
           return;
         }
-        const fileRow = e.target.closest ? e.target.closest("[data-vfs-file]") : null;
+        const fileRow = target.closest ? target.closest("[data-vfs-file]") : null;
         if (fileRow) {
           const filePath = fileRow.getAttribute("data-vfs-file");
           if (filePath) {
@@ -13461,7 +14386,8 @@ runAsyncDemo()
         }
       });
       vfsTreeList.addEventListener("dblclick", (e) => {
-        const row = e.target.closest ? e.target.closest("[data-vfs-file], [data-vfs-folder]") : null;
+        const target = e.target;
+        const row = target && target.closest ? target.closest("[data-vfs-file], [data-vfs-folder]") : null;
         if (!row) return;
         const oldPath = row.getAttribute("data-vfs-file") || row.getAttribute("data-vfs-folder");
         if (!oldPath || oldPath.startsWith("examples/")) return;
@@ -13525,7 +14451,9 @@ runAsyncDemo()
     const tabsEl = $("nbTabsList");
     if (tabsEl && tabsEl.addEventListener) {
       tabsEl.addEventListener("click", (e) => {
-        const closeBtn = e.target.closest ? e.target.closest("[data-close-doc]") : null;
+        const target = e.target;
+        if (!target) return;
+        const closeBtn = target.closest ? target.closest("[data-close-doc]") : null;
         const lang = LANG === "python" ? "python" : "ts";
         const store = ensureLangNotebooks(lang);
         if (closeBtn) {
@@ -13545,7 +14473,7 @@ runAsyncDemo()
           }
           return;
         }
-        const newBtn = e.target.closest ? e.target.closest("#nbBtnNewTab") : null;
+        const newBtn = target.closest ? target.closest("#nbBtnNewTab") : null;
         if (newBtn) {
           const cId = nextCellId();
           const newDoc = {
@@ -13576,7 +14504,7 @@ runAsyncDemo()
           renderVfsTreeUI();
           return;
         }
-        const tab = e.target.closest ? e.target.closest(".nb-tab") : null;
+        const tab = target.closest ? target.closest(".nb-tab") : null;
         if (tab && tab.dataset.docId) {
           if (store.activeDocId !== tab.dataset.docId) {
             store.activeDocId = tab.dataset.docId;
@@ -13587,7 +14515,8 @@ runAsyncDemo()
         }
       });
       tabsEl.addEventListener("dblclick", (e) => {
-        const tab = e.target.closest ? e.target.closest(".nb-tab") : null;
+        const target = e.target;
+        const tab = target && target.closest ? target.closest(".nb-tab") : null;
         if (!tab || !tab.dataset.docId) return;
         const lang = LANG === "python" ? "python" : "ts";
         const store = ensureLangNotebooks(lang);
@@ -13665,19 +14594,21 @@ runAsyncDemo()
     const cellsList = $("nbCellsList");
     if (cellsList && cellsList.addEventListener) {
       cellsList.addEventListener("click", (e) => {
-        if (e.target.closest && e.target.closest("#nbBottomAddCode")) {
+        const target = e.target;
+        if (!target) return;
+        if (target.closest && target.closest("#nbBottomAddCode")) {
           const doc = getActiveNotebook();
           const last = doc.cells[doc.cells.length - 1];
           insertNotebookCell("below", last ? last.id : void 0, "code");
           return;
         }
-        if (e.target.closest && e.target.closest("#nbBottomAddMd")) {
+        if (target.closest && target.closest("#nbBottomAddMd")) {
           const doc = getActiveNotebook();
           const last = doc.cells[doc.cells.length - 1];
           insertNotebookCell("below", last ? last.id : void 0, "markdown");
           return;
         }
-        const gline = e.target.closest ? e.target.closest(".nb-gline") : null;
+        const gline = target.closest ? target.closest(".nb-gline") : null;
         if (gline && gline.dataset.line) {
           const cellEl = gline.closest(".nb-cell");
           if (cellEl && cellEl.dataset.cellId) {
@@ -13685,7 +14616,7 @@ runAsyncDemo()
             return;
           }
         }
-        const actEl = e.target.closest ? e.target.closest("[data-cell-act]") : null;
+        const actEl = target.closest ? target.closest("[data-cell-act]") : null;
         if (actEl) {
           const act = actEl.getAttribute("data-cell-act");
           const cid = actEl.getAttribute("data-cell-id");
@@ -13734,7 +14665,7 @@ runAsyncDemo()
             return;
           }
         }
-        const cellBox = e.target.closest ? e.target.closest(".nb-cell") : null;
+        const cellBox = target.closest ? target.closest(".nb-cell") : null;
         if (cellBox && cellBox.dataset.cellId) {
           const doc = getActiveNotebook();
           if (doc.activeCellId !== cellBox.dataset.cellId) {
@@ -13751,7 +14682,8 @@ runAsyncDemo()
         }
       });
       cellsList.addEventListener("dblclick", (e) => {
-        const mdPrev = e.target.closest ? e.target.closest('[data-cell-act="edit-md"]') : null;
+        const target = e.target;
+        const mdPrev = target && target.closest ? target.closest('[data-cell-act="edit-md"]') : null;
         if (mdPrev) {
           const cid = mdPrev.getAttribute("data-cell-id");
           const doc = getActiveNotebook();
@@ -13839,7 +14771,7 @@ runAsyncDemo()
   }
 
   // src/main.ts
-  bindStateGlobals(globalThis);
+  bindStateGlobals();
   var allExports = {
     ...ts_samples_exports,
     ...py_samples_exports,
@@ -13857,15 +14789,14 @@ runAsyncDemo()
     ...notebook_exports
   };
   Object.assign(globalThis, allExports);
-  var g = globalThis;
-  if (typeof g.syncGutterAndHighlight !== "function") {
-    g.syncGutterAndHighlight = updateEditorChrome;
+  if (typeof globalThis.syncGutterAndHighlight !== "function") {
+    globalThis.syncGutterAndHighlight = updateEditorChrome;
   }
-  if (typeof g.updateCursorPos !== "function") {
-    g.updateCursorPos = recordEditorCursorLine;
+  if (typeof globalThis.updateCursorPos !== "function") {
+    globalThis.updateCursorPos = recordEditorCursorLine;
   }
-  if (!g.breakpoints) {
-    g.breakpoints = /* @__PURE__ */ new Set();
+  if (!globalThis.breakpoints) {
+    globalThis.breakpoints = /* @__PURE__ */ new Set();
   }
   initNotebookUI();
   boot();

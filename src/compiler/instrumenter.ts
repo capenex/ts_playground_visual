@@ -26,7 +26,7 @@ export function isTraceableLine(t: string): boolean {
   return true;
 }
 
-export function extractBindingNames(lhs: string, names: Set<any>): void {
+export function extractBindingNames(lhs: string, names: Set<string>): void {
   let s = lhs.trim();
   if (!s) return;
   let eqIdx = -1, depth = 0;
@@ -274,7 +274,8 @@ function rewriteAwaitExpressions(str: string, fidExpr: string, lineNum: number):
       break;
     }
     if (isIdentStart(ch)) {
-      const id = readIdent(str, i)!;
+      const id = readIdent(str, i);
+      if (!id) { i++; continue; }
       if (id.name === 'await') {
         let j = id.end;
         while (j < n && isWS(str[j])) j++;
@@ -324,7 +325,8 @@ function classKeywordIndex(raw: string): number {
       continue;
     }
     if (isIdentStart(ch)) {
-      const id = readIdent(raw, k)!;
+      const id = readIdent(raw, k);
+      if (!id) continue;
       if (id.name === 'class') return k;
       k = id.end - 1;
     }
@@ -363,7 +365,7 @@ export function instrument(js: string, originalLines: string[], names: string[])
     const srcLine = (origLine != null ? origLine : t).trim();
     const note = srcLine.length > 72 ? srcLine.slice(0, 69) + '…' : srcLine;
     const insideClass = braceStack.some(k => k === 'classbody');
-    const withThis = insideClass && !inClassBody;
+    const withThis = insideClass && !inClassBody && !/\bsuper\s*\(/.test(t);
     const callExpr = '__t(' + (i + 1) + ', ' + JSON.stringify(note) + ', ' + snapFnExpr(names) + (withThis ? ', this' : '') + ')';
 
     const canInjectHeader =
@@ -549,7 +551,7 @@ export function resolveEntry(src: string, js: string): { expr: string; index: nu
   return { expr: 'undefined', index: -1, line: 0, legacy: false };
 }
 
-export function formatVal(v: any): string {
+export function formatVal(v: unknown): string {
   if (v === undefined) return 'undefined';
   if (v === null) return 'null';
   try {
@@ -559,6 +561,6 @@ export function formatVal(v: any): string {
   }
 }
 
-export function __describeHeapVal(v: any): any {
+export function __describeHeapVal(v: unknown): unknown {
   return v;
 }

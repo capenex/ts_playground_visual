@@ -1,10 +1,18 @@
 /* ================================================================
    Centralized runtime & UI state management (src/state.ts)
    ================================================================ */
-import type { DebugSession, Diag, LangBuffer, TraceData } from './types';
+import type {
+  DebugSession,
+  Diag,
+  InterfaceSchemaMeta,
+  LangBuffer,
+  PlaygroundElement,
+  TraceData,
+  TsMeta,
+} from './types';
 
-export const $ = (id: string): any =>
-  typeof document !== 'undefined' ? document.getElementById(id) : null;
+export const $ = (id: string): PlaygroundElement =>
+  (typeof document !== 'undefined' ? document.getElementById(id) : null) as unknown as PlaygroundElement;
 
 export const editor = $('editor');
 export const logEl = $('log');
@@ -38,7 +46,7 @@ export const VIDEO_FPS = 60;
 export const VIDEO_SPEED_OPTIONS = [0.75, 1, 1.5, 2, 3];
 export const PAUSE_SIGNAL = { __debugPause: true };
 
-export function esc(t: any): string {
+export function esc(t: unknown): string {
   return String(t)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -57,7 +65,7 @@ export const appState = {
   IS_EXPORTING_VIDEO: false,
   TRACE: { title: 'TypeScript Playground · Debug', code: [], steps: [] } as TraceData,
   cur: 0,
-  timer: null as any,
+  timer: null as ReturnType<typeof setInterval> | null,
   watched: new Set<string>(),
   layoutSpan: Object.create(null) as Record<string, number>,
   SELECTED_FRAME_IDX: null as number | null,
@@ -69,7 +77,10 @@ export const appState = {
   RUNTIME_ERROR_LINES: new Set<number>(),
   lastEditorCursorLine: -1,
   ENTRY_CALL_LINE: 0,
-  CURRENT_TS_META: { interfaces: new Map<string, any>(), varTypes: new Map<string, string>() } as any,
+  CURRENT_TS_META: {
+    interfaces: new Map<string, InterfaceSchemaMeta>(),
+    varTypes: new Map<string, string>(),
+  } as TsMeta,
   DEBUG_SESSION: {
     active: false,
     finished: false,
@@ -83,15 +94,16 @@ export const appState = {
   } as DebugSession,
 };
 
-export function bindStateGlobals(target: any = globalThis): void {
-  const keys = Object.keys(appState) as Array<keyof typeof appState>;
+export function bindStateGlobals(target: Record<string, unknown> = globalThis as unknown as Record<string, unknown>): void {
+  const stateRecord = appState as unknown as Record<string, unknown>;
+  const keys = Object.keys(appState);
   for (const key of keys) {
     const desc = Object.getOwnPropertyDescriptor(target, key);
     if (desc && !desc.configurable) continue;
     Object.defineProperty(target, key, {
-      get: () => appState[key],
-      set: (v) => {
-        (appState as any)[key] = v;
+      get: () => stateRecord[key],
+      set: (v: unknown) => {
+        stateRecord[key] = v;
       },
       configurable: true,
       enumerable: true,
@@ -101,7 +113,7 @@ export function bindStateGlobals(target: any = globalThis): void {
   if (!Object.getOwnPropertyDescriptor(target, 'steps')) {
     Object.defineProperty(target, 'steps', {
       get: () => appState.TRACE?.steps || [],
-      set: (v) => {
+      set: (v: TraceData['steps']) => {
         if (appState.TRACE) appState.TRACE.steps = v;
       },
       configurable: true,
@@ -110,7 +122,7 @@ export function bindStateGlobals(target: any = globalThis): void {
   if (!Object.getOwnPropertyDescriptor(target, 'idx')) {
     Object.defineProperty(target, 'idx', {
       get: () => appState.cur,
-      set: (v) => {
+      set: (v: unknown) => {
         appState.cur = Number(v) || 0;
       },
       configurable: true,
@@ -153,5 +165,4 @@ export function bindStateGlobals(target: any = globalThis): void {
   });
 }
 
-bindStateGlobals(globalThis);
-
+bindStateGlobals();

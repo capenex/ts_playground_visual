@@ -247,7 +247,7 @@ export function playStepAnimation(st: StepSnapshot | null | undefined) {
 
   const chip = document.createElement('div');
   chip.className = 'fly-chip';
-  chip.textContent = anim.val != null ? anim.val : anim.result;
+  chip.textContent = String(anim.val != null ? anim.val : anim.result);
   const sx = Math.round(sRect.left + sRect.width / 2 - 14);
   const sy = Math.round(sRect.top - 6);
   const dx = Math.round(dRect.left + dRect.width / 2 - 14);

@@ -17,7 +17,7 @@ import * as controlsMod from './ui/controls';
 import * as shareMod from './ui/share';
 import * as notebookMod from './ui/notebook';
 
-stateMod.bindStateGlobals(globalThis);
+stateMod.bindStateGlobals();
 
 const allExports = {
   ...tsSamplesMod,
@@ -39,17 +39,15 @@ const allExports = {
 Object.assign(globalThis, allExports);
 
 // Additional bridge helpers from REFACTOR_PLAN.md
-const g = globalThis as any;
-if (typeof g.syncGutterAndHighlight !== 'function') {
-  g.syncGutterAndHighlight = highlightMod.updateEditorChrome;
+if (typeof globalThis.syncGutterAndHighlight !== 'function') {
+  globalThis.syncGutterAndHighlight = highlightMod.updateEditorChrome;
 }
-if (typeof g.updateCursorPos !== 'function') {
-  g.updateCursorPos = controlsMod.recordEditorCursorLine;
+if (typeof globalThis.updateCursorPos !== 'function') {
+  globalThis.updateCursorPos = controlsMod.recordEditorCursorLine;
 }
-if (!g.breakpoints) {
-  g.breakpoints = new Set<number>();
+if (!globalThis.breakpoints) {
+  globalThis.breakpoints = new Set<number>();
 }
 
 notebookMod.initNotebookUI();
 shareMod.boot();
-
