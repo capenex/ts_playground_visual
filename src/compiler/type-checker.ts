@@ -69,7 +69,7 @@ export function extractTsInterfaceMetadata(src: string | null | undefined) {
       const cleaned = mem.replace(/^(?:(?:readonly|public|private|protected|static)\s+)+/, '');
       if (/^(?:constructor|get\s+|set\s+|async\s+|[A-Za-z_$][\w$]*\s*\()/.test(cleaned)) return;
       const m = cleaned.match(/^([A-Za-z_$][\w$]*)(\?)?\s*:\s*([^=]+?)(?:\s*=[\s\S]+)?$/);
-      if (m && !seen.has(m[1])) {
+      if (m && m[1] && m[3] && !seen.has(m[1])) {
         seen.add(m[1]);
         fields.push({
           k: m[1],
@@ -80,7 +80,7 @@ export function extractTsInterfaceMetadata(src: string | null | undefined) {
       }
       if (isClass) {
         const initOnly = cleaned.match(/^([A-Za-z_$][\w$]*)\s*=\s*(.+)$/);
-        if (initOnly && !seen.has(initOnly[1])) {
+        if (initOnly && initOnly[1] && initOnly[2] && !seen.has(initOnly[1])) {
           const rhs = initOnly[2].trim();
           let inferred = 'any';
           if (/^[+-]?\d+(?:\.\d+)?$/.test(rhs)) inferred = 'number';
@@ -98,11 +98,11 @@ export function extractTsInterfaceMetadata(src: string | null | undefined) {
     });
     if (isClass) {
       const ctorM = inner.match(/\bconstructor\s*\(([^)]*)\)/);
-      if (ctorM && ctorM[1].trim()) {
+      if (ctorM && ctorM[1]?.trim()) {
         splitTopLevel(ctorM[1]).forEach(rawP => {
           const p = rawP.trim();
           const pm = p.match(/^(?:(?:public|private|protected|readonly)\s+)+([A-Za-z_$][\w$]*)(\?)?(?:\s*:\s*([^=]+?))?(?:\s*=\s*([\s\S]+))?$/);
-          if (pm && !seen.has(pm[1])) {
+          if (pm && pm[1] && !seen.has(pm[1])) {
             seen.add(pm[1]);
             let pType = pm[3] ? pm[3].trim() : 'any';
             if (pType === 'any' && pm[4]) {
@@ -118,7 +118,7 @@ export function extractTsInterfaceMetadata(src: string | null | undefined) {
       const thisAssignRe = /\bthis\.([A-Za-z_$][\w$]*)\s*=/g;
       let tm;
       while ((tm = thisAssignRe.exec(inner))) {
-        if (!seen.has(tm[1])) {
+        if (tm[1] && !seen.has(tm[1])) {
           seen.add(tm[1]);
           fields.push({ k: tm[1], declaredType: 'any', optional: false });
         }
@@ -156,10 +156,10 @@ export function extractTsInterfaceMetadata(src: string | null | undefined) {
     }
 
     const ifaceM = trimmed.match(/^(?:export\s+)?(?:abstract\s+)?(interface|class)\s+([A-Za-z_$][\w$]*)(?:\s*<[^>]*>)?(?:\s+extends\s+[^{]+)?(?:\s+implements\s+[^{]+)?\s*\{(.*)$/);
-    if (ifaceM) {
+    if (ifaceM && ifaceM[2]) {
       const isClass = ifaceM[1] === 'class';
       const name = ifaceM[2];
-      const rest = '{' + ifaceM[3];
+      const rest = '{' + (ifaceM[3] || '');
       let d = 0;
       for (const ch of rest) {
         if (ch === '{') d++;
@@ -187,7 +187,7 @@ export function extractTsInterfaceMetadata(src: string | null | undefined) {
     }
 
     const typeObjM = trimmed.match(/^(?:export\s+)?type\s+([A-Za-z_$][\w$]*)\s*=\s*(\{[\s\S]*\});?$/);
-    if (typeObjM) {
+    if (typeObjM && typeObjM[1] && typeObjM[2]) {
       interfaces.set(typeObjM[1], {
         name: typeObjM[1],
         line: i + 1,
@@ -198,19 +198,19 @@ export function extractTsInterfaceMetadata(src: string | null | undefined) {
     }
 
     const fnM = trimmed.match(/^(?:export\s+)?(?:default\s+)?function\s+[A-Za-z_$][\w$]*\s*\(([^)]*)\)/);
-    if (fnM && fnM[1].trim()) {
+    if (fnM && fnM[1]?.trim()) {
       splitTopLevel(fnM[1]).forEach(p => {
         const pm = p.trim().match(/^([A-Za-z_$][\w$]*)\??\s*:\s*(.+)$/);
-        if (pm) varTypes.set(pm[1], pm[2].trim());
+        if (pm && pm[1] && pm[2]) varTypes.set(pm[1], pm[2].trim());
       });
     }
 
     const varM = trimmed.match(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*:\s*([^=]+?)(?:\s*=|$)/);
-    if (varM) {
+    if (varM && varM[1] && varM[2]) {
       varTypes.set(varM[1], varM[2].trim());
     } else {
       const varNewM = trimmed.match(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*new\s+([A-Za-z_$][\w$]*)\s*(?:<[^>]*>)?\s*\(/);
-      if (varNewM && !/^(Map|Set|Array)$/.test(varNewM[2])) {
+      if (varNewM && varNewM[1] && varNewM[2] && !/^(Map|Set|Array)$/.test(varNewM[2])) {
         varTypes.set(varNewM[1], varNewM[2]);
       }
     }
@@ -261,7 +261,7 @@ export function normalizeTsType(rawType: string | null | undefined): string {
   let t = '';
   let i = 0;
   while (i < src.length) {
-    const ch = src[i];
+    const ch = src[i] || '';
     if (ch === '"' || ch === "'" || ch === '`') {
       const end = skipString(src, i);
       let lit = src.slice(i, end);
@@ -273,7 +273,7 @@ export function normalizeTsType(rawType: string | null | undefined): string {
       continue;
     }
     if (/\s/.test(ch)) {
-      while (i < src.length && /\s/.test(src[i])) i++;
+      while (i < src.length && /\s/.test(src[i] || '')) i++;
       const prev = t[t.length - 1] || '';
       const next = src[i] || '';
       if (/[A-Za-z0-9_$?]/.test(prev) && /[A-Za-z0-9_$]/.test(next)) {
@@ -288,11 +288,11 @@ export function normalizeTsType(rawType: string | null | undefined): string {
     t = t.slice(1, -1).trim();
   }
   const parenArr = t.match(/^\(([^()]+)\)\[\]$/);
-  if (parenArr && !/\binfer\s+/.test(parenArr[1]) && !parenArr[1].includes('|') && !parenArr[1].includes('&') && !parenArr[1].includes('=>')) {
+  if (parenArr && parenArr[1] && !/\binfer\s+/.test(parenArr[1]) && !parenArr[1].includes('|') && !parenArr[1].includes('&') && !parenArr[1].includes('=>')) {
     t = normalizeTsType(parenArr[1]) + '[]';
   }
   const arrGeneric = t.match(/^(?:Readonly)?Array<(.+)>$/);
-  if (arrGeneric && splitTopLevelUnion(arrGeneric[1]).length === 1) {
+  if (arrGeneric && arrGeneric[1] && splitTopLevelUnion(arrGeneric[1]).length === 1) {
     const inner = normalizeTsType(arrGeneric[1]);
     if (/\binfer\s+/.test(inner) || inner.includes('|') || inner.includes('&') || inner.includes('=>')) {
       t = `(${inner})[]`;
@@ -382,7 +382,7 @@ export function matchTemplateLiteralType(actualStr: string, patternTpl: string):
       if (end < 0) return null;
       const expr = body.slice(i + 2, end).trim();
       const inferM = expr.match(/^infer\s+([A-Za-z_$][\w$]*)(?:\s+extends\s+(.+))?$/);
-      if (inferM) {
+      if (inferM && inferM[1]) {
         inferNames.push({ name: inferM[1], constraint: inferM[2] ? normalizeTsType(inferM[2]) : null });
         const hasMoreText = end + 1 < body.length;
         regexStr += hasMoreText ? '(.+?)' : '(.*)';
@@ -398,7 +398,7 @@ export function matchTemplateLiteralType(actualStr: string, patternTpl: string):
       }
       i = end + 1;
     } else {
-      regexStr += body[i].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      regexStr += (body[i] || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       i++;
     }
   }
@@ -408,8 +408,9 @@ export function matchTemplateLiteralType(actualStr: string, patternTpl: string):
     if (!m) return null;
     const bindings = new Map<any, any>();
     for (let k = 0; k < inferNames.length; k++) {
-      const captured = m[k + 1];
+      const captured = m[k + 1] ?? '';
       const info = inferNames[k];
+      if (!info) continue;
       if (info.constraint === 'number') {
         if (!/^[+-]?\d+(?:\.\d+)?$/.test(captured)) return null;
         bindings.set(info.name, captured);
@@ -616,7 +617,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
         s = s.slice(0, eqIdx).trim();
       }
       const extM = s.match(/^([A-Za-z_$][\w$]*)(?:\s+extends\s+([\s\S]+))?$/);
-      if (extM) {
+      if (extM && extM[1]) {
         out.push({
           name: extM[1],
           constraint: extM[2] ? extM[2].trim() : null,
@@ -666,7 +667,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
           continue;
         }
         const word = id.name;
-        const prevCh = i > 0 ? typeStr[i - 1] : '';
+        const prevCh = i > 0 ? (typeStr[i - 1] || '') : '';
         let afterIdx = id.end;
         while (afterIdx < typeStr.length && isWS(typeStr[afterIdx])) afterIdx++;
         const isPropKey = (typeStr[afterIdx] === ':' || (typeStr[afterIdx] === '?' && typeStr[afterIdx + 1] === ':')) &&
@@ -698,7 +699,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
       else if (ch === '<') ad++;
       else if (ch === '>' && typeStr[i - 1] !== '=') ad = Math.max(0, ad - 1);
       else if (d === 0 && ad === 0) {
-        if (extPos < 0 && (i === 0 || /[\s>)\]]/.test(typeStr[i - 1]))) {
+        if (extPos < 0 && (i === 0 || /[\s>)\]]/.test(typeStr[i - 1] || ''))) {
           const extM = typeStr.slice(i).match(/^extends(?:\s+|(?=[(\[{"'`]))/);
           if (extM) {
             extPos = i;
@@ -796,7 +797,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
             const eParams = eParamStr ? splitTopLevelDecl(eParamStr) : [];
             const cParams = cParamStr ? splitTopLevelDecl(cParamStr) : [];
             for (let idx = 0; idx < eParams.length; idx++) {
-              const ep = eParams[idx].trim();
+              const ep = (eParams[idx] || '').trim();
               if (ep.startsWith('...')) {
                 const eColon = ep.indexOf(':');
                 const restType = eColon >= 0 ? ep.slice(eColon + 1).trim() : 'any[]';
@@ -805,7 +806,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
                 }
                 const elemRest = restType.endsWith('[]') ? restType.slice(0, -2) : restType;
                 for (let cIdx = idx; cIdx < cParams.length; cIdx++) {
-                  const cp = cParams[cIdx];
+                  const cp = cParams[cIdx] || '';
                   const cColon = cp.indexOf(':');
                   const cpType = cColon >= 0 ? cp.slice(cColon + 1).trim() : cp.trim();
                   const pm = matchConditionalExtends(cpType, elemRest, typeEnv, depth + 1);
@@ -837,7 +838,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
       const eItems = splitTopLevelDecl(eSubst.slice(1, -1)).map(s => s.trim()).filter(Boolean);
       const cItems = splitTopLevelDecl(cNorm.slice(1, -1)).map(s => s.trim()).filter(Boolean);
       for (let idx = 0; idx < eItems.length; idx++) {
-        const ei = eItems[idx];
+        const ei = eItems[idx] || '';
         const restInfer = ei.match(/^\.\.\.(?:infer\s+([A-Za-z_$][\w$]*)|([A-Za-z_$][\w$]*))$/);
         if (restInfer) {
           const restVar = restInfer[1];
@@ -846,7 +847,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
           return { matched: true, inferred };
         }
         if (idx >= cItems.length) return { matched: false, inferred };
-        const subM = matchConditionalExtends(cItems[idx], ei, typeEnv, depth + 1);
+        const subM = matchConditionalExtends(cItems[idx] || 'any', ei, typeEnv, depth + 1);
         if (!subM.matched) return { matched: false, inferred };
         subM.inferred.forEach((v, k) => inferred.set(k, v));
       }
@@ -855,14 +856,14 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
 
     // 5. Generic wrapper pattern: `Promise<infer U>`, `Box<infer T>`, `Map<infer K, infer V>`
     const eGenM = eSubst.match(/^([A-Za-z_$][\w$]*)<(.+)>$/);
-    if (eGenM && /\binfer\s+/.test(eGenM[2])) {
+    if (eGenM && eGenM[2] && /\binfer\s+/.test(eGenM[2])) {
       const cGenM = cNorm.match(/^([A-Za-z_$][\w$]*)<(.+)>$/);
-      if (!cGenM || cGenM[1] !== eGenM[1]) return { matched: false, inferred };
+      if (!cGenM || !cGenM[2] || cGenM[1] !== eGenM[1]) return { matched: false, inferred };
       const eArgs = splitTopLevelDecl(eGenM[2]).map(s => s.trim());
       const cArgs = splitTopLevelDecl(cGenM[2]).map(s => s.trim());
       if (eArgs.length !== cArgs.length) return { matched: false, inferred };
       for (let idx = 0; idx < eArgs.length; idx++) {
-        const subM = matchConditionalExtends(cArgs[idx], eArgs[idx], typeEnv, depth + 1);
+        const subM = matchConditionalExtends(cArgs[idx] || 'any', eArgs[idx] || 'any', typeEnv, depth + 1);
         if (!subM.matched) return { matched: false, inferred };
         subM.inferred.forEach((v, k) => inferred.set(k, v));
       }
@@ -920,7 +921,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
       }
       if (/^\d+$/.test(keyT)) {
         const idx = Number(keyT);
-        return idx < elems.length ? elems[idx] : 'undefined';
+        return idx < elems.length ? (elems[idx] || 'undefined') : 'undefined';
       }
     }
     const shape = getInterfaceShape(objT);
@@ -1065,16 +1066,16 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
       const inner = t.slice(1, -1).trim().replace(/;$/, '').trim();
       const mappedM = inner.match(/^(?:(?:\+|-)?readonly\s+)?\[\s*([A-Za-z_$][\w$]*)\s+in\s+([\s\S]+?)\s*\]([+\-]?)\?\s*:\s*([\s\S]+)$/) ||
                       inner.match(/^(?:(?:\+|-)?readonly\s+)?\[\s*([A-Za-z_$][\w$]*)\s+in\s+([\s\S]+?)\s*\]\s*:\s*([\s\S]+)$/);
-      if (mappedM) {
+      if (mappedM && mappedM[1] && mappedM[2]) {
         const kVar = mappedM[1];
         let inClause = mappedM[2].trim();
         let optMod: 'add' | 'remove' | null = null;
         let valTemplate = '';
         if (mappedM.length === 5) {
           optMod = mappedM[3] === '-' ? 'remove' : 'add';
-          valTemplate = mappedM[4].trim();
+          valTemplate = (mappedM[4] || '').trim();
         } else {
-          valTemplate = mappedM[3].trim();
+          valTemplate = (mappedM[3] || '').trim();
         }
         let asClause: string | null = null;
         let d = 0, ad = 0;
@@ -1093,7 +1094,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
         }
         let sourceObjShape: Map<string, { type: string; rawType: string; optional: boolean }> | null = null;
         const keyofM = inClause.match(/^keyof\s+([\s\S]+)$/);
-        if (keyofM) {
+        if (keyofM && keyofM[1]) {
           const srcT = evaluateType(keyofM[1].trim(), typeEnv, depth + 1);
           sourceObjShape = getInterfaceShape(srcT);
         }
@@ -1194,16 +1195,18 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
 
     // 12. Generic instantiation: `Name<Arg1, Arg2>` (Built-in utility types + user generic type aliases + generic interfaces/classes)
     const genM = t.match(/^([A-Za-z_$][\w$]*)<([\s\S]+)>$/);
-    if (genM) {
+    if (genM && genM[1] && genM[2]) {
       const baseName = genM[1];
       const rawArgs = splitTopLevelDecl(genM[2]).map(a => evaluateType(a.trim(), typeEnv, depth + 1));
+      const arg0 = rawArgs[0] || 'any';
+      const arg1 = rawArgs[1] || 'any';
 
       if (baseName === 'Array' || baseName === 'ReadonlyArray') {
-        const elem = rawArgs[0] || 'any';
+        const elem = arg0;
         return elem.includes('|') ? `(${elem})[]` : `${elem}[]`;
       }
       if (baseName === 'Partial' && rawArgs.length === 1) {
-        const shape = getInterfaceShape(rawArgs[0]);
+        const shape = getInterfaceShape(arg0);
         if (shape) {
           const props: string[] = [];
           shape.forEach((v, k) => props.push(`${k}?:${v.type}`));
@@ -1211,7 +1214,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
         }
       }
       if (baseName === 'Required' && rawArgs.length === 1) {
-        const shape = getInterfaceShape(rawArgs[0]);
+        const shape = getInterfaceShape(arg0);
         if (shape) {
           const props: string[] = [];
           shape.forEach((v, k) => props.push(`${k}:${v.type}`));
@@ -1219,19 +1222,19 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
         }
       }
       if (baseName === 'Readonly' && rawArgs.length === 1) {
-        if (rawArgs[0].endsWith('[]')) return rawArgs[0];
-        const shape = getInterfaceShape(rawArgs[0]);
+        if (arg0.endsWith('[]')) return arg0;
+        const shape = getInterfaceShape(arg0);
         if (shape) {
           const props: string[] = [];
           shape.forEach((v, k) => props.push(`${k}${v.optional ? '?' : ''}:${v.type}`));
           return `{${props.join(';')}}`;
         }
-        return rawArgs[0];
+        return arg0;
       }
       if (baseName === 'Pick' && rawArgs.length === 2) {
-        const shape = getInterfaceShape(rawArgs[0]);
+        const shape = getInterfaceShape(arg0);
         if (shape) {
-          const keys = new Set(splitTopLevelUnion(rawArgs[1]).map(k => k.replace(/^["']|["']$/g, '')));
+          const keys = new Set(splitTopLevelUnion(arg1).map(k => k.replace(/^["']|["']$/g, '')));
           const props: string[] = [];
           shape.forEach((v, k) => {
             if (keys.has(k)) props.push(`${k}${v.optional ? '?' : ''}:${v.type}`);
@@ -1240,9 +1243,9 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
         }
       }
       if (baseName === 'Omit' && rawArgs.length === 2) {
-        const shape = getInterfaceShape(rawArgs[0]);
+        const shape = getInterfaceShape(arg0);
         if (shape) {
-          const omitKeys = new Set(splitTopLevelUnion(rawArgs[1]).map(k => k.replace(/^["']|["']$/g, '')));
+          const omitKeys = new Set(splitTopLevelUnion(arg1).map(k => k.replace(/^["']|["']$/g, '')));
           const props: string[] = [];
           shape.forEach((v, k) => {
             if (!omitKeys.has(k)) props.push(`${k}${v.optional ? '?' : ''}:${v.type}`);
@@ -1251,39 +1254,39 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
         }
       }
       if (baseName === 'Record' && rawArgs.length === 2) {
-        const keyParts = splitTopLevelUnion(rawArgs[0]);
-        const valT = rawArgs[1];
+        const keyParts = splitTopLevelUnion(arg0);
+        const valT = arg1;
         const allLiteralKeys = keyParts.length > 0 && keyParts.every(k => (k.startsWith('"') && k.endsWith('"')) || /^[A-Za-z_$][\w$]*$/.test(k) && k !== 'string' && k !== 'number' && k !== 'symbol');
         if (allLiteralKeys) {
           const props = keyParts.map(k => `${k.replace(/^["']|["']$/g, '')}:${valT}`);
           return `{${props.join(';')}}`;
         }
-        return `Record<${rawArgs[0]},${valT}>`;
+        return `Record<${arg0},${valT}>`;
       }
       if (baseName === 'Exclude' && rawArgs.length === 2) {
-        const uParts = splitTopLevelUnion(rawArgs[0]);
-        const excl = rawArgs[1];
+        const uParts = splitTopLevelUnion(arg0);
+        const excl = arg1;
         const kept = uParts.filter(p => !isTypeCompatible(p, excl));
         return kept.length ? kept.join('|') : 'never';
       }
       if (baseName === 'Extract' && rawArgs.length === 2) {
-        const uParts = splitTopLevelUnion(rawArgs[0]);
-        const target = rawArgs[1];
+        const uParts = splitTopLevelUnion(arg0);
+        const target = arg1;
         const kept = uParts.filter(p => isTypeCompatible(p, target));
         return kept.length ? kept.join('|') : 'never';
       }
       if (baseName === 'NonNullable' && rawArgs.length === 1) {
-        const uParts = splitTopLevelUnion(rawArgs[0]).filter(p => p !== 'null' && p !== 'undefined' && p !== 'void');
+        const uParts = splitTopLevelUnion(arg0).filter(p => p !== 'null' && p !== 'undefined' && p !== 'void');
         return uParts.length ? uParts.join('|') : 'never';
       }
       if (baseName === 'ReturnType' && rawArgs.length === 1) {
-        const fnT = rawArgs[0];
+        const fnT = arg0;
         const arrowIdx = fnT.lastIndexOf('=>');
         if (arrowIdx > 0) return evaluateType(fnT.slice(arrowIdx + 2).trim(), typeEnv, depth + 1);
         return 'any';
       }
       if (baseName === 'Parameters' && rawArgs.length === 1) {
-        const fnT = rawArgs[0];
+        const fnT = arg0;
         if (fnT.startsWith('(')) {
           const closeP = findBalancedParen(fnT, 0);
           if (closeP > 0) {
@@ -1298,17 +1301,17 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
         return 'any[]';
       }
       if (baseName === 'Awaited' && rawArgs.length === 1) {
-        let cur = rawArgs[0];
+        let cur = arg0;
         let guard = 0;
         while (guard++ < 8) {
           const pm = cur.match(/^Promise<(.+)>$/);
-          if (pm) cur = evaluateType(pm[1], typeEnv, depth + 1);
+          if (pm && pm[1]) cur = evaluateType(pm[1], typeEnv, depth + 1);
           else break;
         }
         return cur;
       }
       if ((baseName === 'Uppercase' || baseName === 'Lowercase' || baseName === 'Capitalize' || baseName === 'Uncapitalize') && rawArgs.length === 1) {
-        const sArg = rawArgs[0];
+        const sArg = arg0;
         if (sArg.startsWith('"') && sArg.endsWith('"')) {
           const inner = sArg.slice(1, -1);
           if (baseName === 'Uppercase') return `"${inner.toUpperCase()}"`;
@@ -1323,7 +1326,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
         const info = genericTypeAliases.get(baseName);
         const subEnv = new Map(typeEnv);
         info.typeParams.forEach((tp: { name: string; defaultType?: string | null }, idx: number) => {
-          const argVal = idx < rawArgs.length ? rawArgs[idx] : (tp.defaultType ? evaluateType(tp.defaultType, subEnv, depth + 1) : 'any');
+          const argVal = rawArgs[idx] ?? (tp.defaultType ? evaluateType(tp.defaultType, subEnv, depth + 1) : 'any');
           subEnv.set(tp.name, argVal);
         });
         return evaluateType(info.body, subEnv, depth + 1);
@@ -1378,7 +1381,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
     members.forEach(mem => {
       const cleaned = mem.replace(/^(?:readonly|public|private|protected|static)\s+/, '');
       const m = cleaned.match(/^([A-Za-z_$][\w$]*)(\?)?\s*:\s*([\s\S]+)$/);
-      if (m) {
+      if (m && m[1] && m[3]) {
         const rawT = m[3].trim();
         propMap.set(m[1], { type: evaluateType(rawT, typeEnv), rawType: rawT, optional: Boolean(m[2]) });
       }
@@ -1393,8 +1396,8 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
       return parseObjectShapeLiteral(resolved);
     }
     const genM = resolved.match(/^([A-Za-z_$][\w$]*)<([\s\S]+)>$/);
-    const baseName = genM ? genM[1] : resolved;
-    const typeArgs = genM ? splitTopLevelDecl(genM[2]).map(a => evaluateType(a.trim(), activeTypeParams)) : [];
+    const baseName = (genM && genM[1]) ? genM[1] : resolved;
+    const typeArgs = (genM && genM[2]) ? splitTopLevelDecl(genM[2]).map(a => evaluateType(a.trim(), activeTypeParams)) : [];
     const direct = interfaces.get(resolved) || interfaces.get(baseName);
     if (direct) {
       let merged = new Map<any, any>();
@@ -1413,7 +1416,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
       if (tParams && tParams.length > 0 && typeArgs.length > 0) {
         const subEnv = new Map(activeTypeParams);
         tParams.forEach((tp: { name: string; defaultType?: string | null }, idx: number) => {
-          subEnv.set(tp.name, idx < typeArgs.length ? typeArgs[idx] : (tp.defaultType ? evaluateType(tp.defaultType, subEnv) : 'any'));
+          subEnv.set(tp.name, typeArgs[idx] ?? (tp.defaultType ? evaluateType(tp.defaultType, subEnv) : 'any'));
         });
         const instantiated = new Map<any, any>();
         merged.forEach((v, k) => {
@@ -1432,13 +1435,13 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
   function getClassMethodSig(className: string, methodName: string): FnSigInfo | null {
     const resolved = evaluateType(className, activeTypeParams);
     const genM = resolved.match(/^([A-Za-z_$][\w$]*)<([\s\S]+)>$/);
-    let cur = genM ? genM[1] : resolved;
-    const typeArgs = genM ? splitTopLevelDecl(genM[2]).map(a => evaluateType(a.trim(), activeTypeParams)) : [];
+    let cur = (genM && genM[1]) ? genM[1] : resolved;
+    const typeArgs = (genM && genM[2]) ? splitTopLevelDecl(genM[2]).map(a => evaluateType(a.trim(), activeTypeParams)) : [];
     const tParams = interfaceTypeParams.get(cur);
     const classEnv = new Map(activeTypeParams);
     if (tParams && tParams.length > 0 && typeArgs.length > 0) {
       tParams.forEach((tp: { name: string; defaultType?: string | null }, idx: number) => {
-        classEnv.set(tp.name, idx < typeArgs.length ? typeArgs[idx] : (tp.defaultType ? evaluateType(tp.defaultType, classEnv) : 'any'));
+        classEnv.set(tp.name, typeArgs[idx] ?? (tp.defaultType ? evaluateType(tp.defaultType, classEnv) : 'any'));
       });
     }
     const visited = new Set();
@@ -1481,7 +1484,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
     const e = evaluateType(expectedType, activeTypeParams);
     if (isTsAssignable(a, e)) return true;
     const recM = e.match(/^Record<([^,]+),([\s\S]+)>$/);
-    if (recM) {
+    if (recM && recM[2]) {
       const valExpected = recM[2].trim();
       const aShape = getInterfaceShape(a);
       if (aShape) {
@@ -1530,7 +1533,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
           const tupleTypes = splitTopLevelDecl(ep.slice(1, -1)).map(s => s.trim()).filter(Boolean);
           const elemExprs = splitTopLevel(trimmedExpr.slice(1, -1)).map(s => s.trim()).filter(Boolean);
           if (tupleTypes.length === elemExprs.length &&
-              elemExprs.every((el, idx) => isExpressionAssignable(el, inferType(el, lineNum), tupleTypes[idx], lineNum))) {
+              elemExprs.every((el, idx) => isExpressionAssignable(el, inferType(el, lineNum), tupleTypes[idx] || 'any', lineNum))) {
             return true;
           }
         }
@@ -1640,7 +1643,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
         else if (ch === ')' || ch === ']' || ch === '}') d--;
         else if (d === 0 && isWS(ch)) {
           const m = s.slice(i).match(/^\s+(?:as|satisfies)\s+([A-Za-z_$][\w$<>[\]\s|()]*)$/);
-          if (m && !/[()]/.test(m[1].replace(/\([^()]*\)\[\]/g, ''))) {
+          if (m && m[1] && !/[()]/.test(m[1].replace(/\([^()]*\)\[\]/g, ''))) {
             castType = resolveAlias(m[1]);
             break;
           }
@@ -1696,7 +1699,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
       return explicitT + '[]';
     }
     const newClassM = s.match(/^new\s+([A-Za-z_$][\w$]*)\s*(?:<([\s\S]*)>)?\s*\(([\s\S]*)\)$/);
-    if (newClassM && !/^(Map|Set|Array|Promise)$/.test(newClassM[1]) && findBalancedParen(s, s.lastIndexOf('(')) === s.length - 1) {
+    if (newClassM && newClassM[1] && !/^(Map|Set|Array|Promise)$/.test(newClassM[1]) && findBalancedParen(s, s.lastIndexOf('(')) === s.length - 1) {
       // Properly extract class name, optional <...>, and (...)
       const afterNew = s.replace(/^new\s+/, '');
       const idInfo = readIdent(afterNew, 0);
@@ -1761,7 +1764,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
       }
     }
     const newClassPrefixM = s.match(/^new\s+([A-Za-z_$][\w$]*)\s*(?:<[^>]*>)?\s*\(/);
-    if (newClassPrefixM && !/^(Map|Set|Array)$/.test(newClassPrefixM[1])) {
+    if (newClassPrefixM && newClassPrefixM[1] && !/^(Map|Set|Array)$/.test(newClassPrefixM[1])) {
       const openIdx = s.indexOf('(');
       const closeIdx = findBalancedParen(s, openIdx);
       if (closeIdx === s.length - 1) {
@@ -1800,7 +1803,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
 
     // Inline arrow function expression: (a, b) => expr or x => expr
     const arrowExprM = s.match(/^(?:async\s+)?(?:<[^>]*>\s*)?(?:\(([^)]*)\)|([A-Za-z_$][\w$]*))\s*(?::\s*[^=]+?)?\s*=>\s*([\s\S]+)$/);
-    if (arrowExprM) {
+    if (arrowExprM && arrowExprM[3]) {
       const rawParamStr = arrowExprM[1] !== undefined ? arrowExprM[1] : arrowExprM[2];
       const bodyStr = arrowExprM[3].trim();
       const saved = new Map<any, any>();
@@ -1871,10 +1874,10 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
           else env.delete(savedNarrow.key);
           savedNarrow = null;
         };
-        if (eqNullM && eqNullM[2] === '!==') applyNarrow(eqNullM[1], eqNullM[3]);
+        if (eqNullM && eqNullM[1] && eqNullM[3] && eqNullM[2] === '!==') applyNarrow(eqNullM[1], eqNullM[3]);
         const t1 = inferType(s.slice(qIdx + 1, cIdx), lineNum);
         if (eqNullM && eqNullM[2] === '!==') restoreNarrow();
-        if (eqNullM && eqNullM[2] === '===') applyNarrow(eqNullM[1], eqNullM[3]);
+        if (eqNullM && eqNullM[1] && eqNullM[3] && eqNullM[2] === '===') applyNarrow(eqNullM[1], eqNullM[3]);
         const t2 = inferType(s.slice(cIdx + 1), lineNum);
         if (eqNullM && eqNullM[2] === '===') restoreNarrow();
         if (t1 === t2) return t1;
@@ -1937,7 +1940,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
           }
           const rest = s.slice(i);
           const m = rest.match(/^(===|!==|<=|>=|==|!=|<|>)(?!=)/);
-          if (m && i > 0) {
+          if (m && m[1] && i > 0) {
             const op = m[1];
             const lhs = s.slice(0, i).trim();
             const rhs = s.slice(i + op.length).trim();
@@ -2009,7 +2012,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
 
     // Method call on `new ClassName(...).method(...)`
     const newChainCallM = s.match(/^(new\s+[A-Za-z_$][\w$]*\s*(?:<[^>]*>)?\s*\([^)]*\))\.([A-Za-z_$][\w$]*)\s*\(([\s\S]*)\)$/);
-    if (newChainCallM && findBalancedParen(s, s.lastIndexOf('(')) === s.length - 1) {
+    if (newChainCallM && newChainCallM[1] && newChainCallM[2] && newChainCallM[3] !== undefined && findBalancedParen(s, s.lastIndexOf('(')) === s.length - 1) {
       const objType = inferType(newChainCallM[1], lineNum);
       const method = newChainCallM[2];
       const argsRaw = newChainCallM[3].trim();
@@ -2024,7 +2027,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
 
     // Function or method call: callee(args) or callee<T1, T2>(args)
     const callPrefixM = s.match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*(?:<([\s\S]+)>)?\s*\(/);
-    if (callPrefixM) {
+    if (callPrefixM && callPrefixM[1]) {
       const callee = callPrefixM[1];
       let scanPos = callee.length;
       while (scanPos < s.length && isWS(s[scanPos])) scanPos++;
@@ -2094,7 +2097,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
           const objType = inferType(objName, lineNum);
 
           const mapM = objType.match(/^Map<([^,]+),(.+)>$/);
-          if (mapM) {
+          if (mapM && mapM[1] && mapM[2]) {
             const kt = mapM[1], vt = mapM[2];
             if (method === 'get' || method === 'has' || method === 'delete') {
               if (argTypes[0] && !isExpressionAssignable(args[0], argTypes[0], kt, lineNum)) {
@@ -2114,7 +2117,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
           }
 
           const setM = objType.match(/^Set<(.+)>$/);
-          if (setM) {
+          if (setM && setM[1]) {
             const vt = setM[1];
             if (method === 'add' || method === 'has' || method === 'delete') {
               if (argTypes[0] && !isExpressionAssignable(args[0], argTypes[0], vt, lineNum)) {
@@ -2210,17 +2213,18 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
     if (/^[A-Za-z_$][\w$]*!*(?:\.[A-Za-z_$][\w$]*!*)+$/.test(s)) {
       if (env.has(s)) return env.get(s).type;
       const rawParts = s.split('.');
-      const firstBase = rawParts[0].replace(/!+$/, '');
+      const firstPart = rawParts[0] || '';
+      const firstBase = firstPart.replace(/!+$/, '');
       if (!isKnownIdentifier(firstBase)) {
         addDiag(lineNum, 'TS2304', `找不到名称 "${firstBase}"（变量未声明，请使用 let 或 const 声明）`);
         return 'any';
       }
       let curType = env.has(firstBase) ? env.get(firstBase).type : (interfaces.has(firstBase) ? firstBase : 'any');
-      if (rawParts[0].endsWith('!')) {
+      if (firstPart.endsWith('!')) {
         curType = stripNullableFromType(stripNullableFromType(curType, 'null'), 'undefined');
       }
       for (let pIdx = 1; pIdx < rawParts.length; pIdx++) {
-        const rawProp = rawParts[pIdx];
+        const rawProp = rawParts[pIdx] || '';
         const hasBang = rawProp.endsWith('!');
         const prop = rawProp.replace(/!+$/, '');
         const lookupType = stripNullableFromType(stripNullableFromType(curType, 'null'), 'undefined');
@@ -2289,6 +2293,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
       // Infer remaining type parameters from arguments
       for (let idx = 0; idx < args.length && idx < sig.params.length; idx++) {
         const p = sig.params[idx];
+        if (!p) continue;
         const rawPT = normalizeTsType(p.rawType || p.type || 'any');
         const actT = argTypes[idx];
         const litT = inferLiteralType(args[idx]);
@@ -2349,8 +2354,8 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
       const p = sig.params[idx];
       if (!p) continue;
       const expectedPT = tParams.length > 0 ? evaluateType(p.rawType || p.type, callEnv) : p.type;
-      const at = argTypes[idx];
-      const rawArg = args[idx] ? args[idx].trim() : '';
+      const at = argTypes[idx] || 'any';
+      const rawArg = (args[idx] || '').trim();
       if (expectedPT && expectedPT !== 'any') {
         if (rawArg.startsWith('{') && getInterfaceShape(expectedPT)) {
           checkObjectLiteralAgainstShape(rawArg, expectedPT, lineNum, `${calleeLabel} 的参数 "${p.name}"`);
@@ -2390,7 +2395,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
       const p = pRaw.trim().replace(/^(?:public|private|protected|readonly)\s+/, '');
       if (!p) return;
       const pm = p.match(/^(?:\.\.\.)?([A-Za-z_$][\w$]*)(\?)?(?:\s*:\s*((?:[^=]|=>)+?))?(?:\s*=\s*(?!=|>)([\s\S]+))?$/);
-      if (pm) {
+      if (pm && pm[1]) {
         const pName = pm[1];
         const isOpt = Boolean(pm[2] || pm[4]);
         const rawType = pm[3] ? pm[3].trim() : null;
@@ -2415,14 +2420,14 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
     const s = mem.trim();
     if (!s) return;
     const getterM = s.match(/^(?:(?:public|private|protected|static|readonly)\s+)*get\s+([A-Za-z_$][\w$]*)\s*\(\s*\)\s*(?::\s*([^{]+))?/);
-    if (getterM) {
+    if (getterM && getterM[1]) {
       const rawGT = getterM[2] ? getterM[2].trim() : 'any';
       const gType = resolveAlias(rawGT);
       propMap.set(getterM[1], { type: gType, rawType: rawGT, optional: false });
       return;
     }
       const methodHdrM = s.match(/^(?:(?:public|private|protected|static|async|readonly|abstract)\s+)*([A-Za-z_$][\w$]*)\s*(<[\s\S]*>)?\s*\(/);
-    if (methodHdrM && !RESERVED_WORDS.has(methodHdrM[1])) {
+    if (methodHdrM && methodHdrM[1] && !RESERVED_WORDS.has(methodHdrM[1])) {
       const mName = methodHdrM[1];
       let openP = -1, ad = 0;
       for (let k = s.indexOf(mName) + mName.length; k < s.length; k++) {
@@ -2437,14 +2442,14 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
         const paramStr = s.slice(openP + 1, closeP).trim();
         const afterClose = s.slice(closeP + 1).trim();
         const retM = afterClose.match(/^:\s*([^{;]+?)(?:\s*(?:\{[\s\S]*|;))?$/);
-        const rawRetType = mName === 'constructor' ? 'void' : (retM ? retM[1].trim() : 'any');
+        const rawRetType = mName === 'constructor' ? 'void' : (retM && retM[1] ? retM[1].trim() : 'any');
         const retType = mName === 'constructor' ? 'void' : resolveAlias(rawRetType);
         const { params, minArgs } = parseParamList(paramStr, lineNum, true);
         if (mName === 'constructor') {
           splitTopLevelDecl(paramStr).forEach((rawP, idx) => {
             const pTrim = rawP.trim();
-            if (/^(?:(?:public|private|protected|readonly)\s+)+/.test(pTrim) && params[idx]) {
-              const pInfo = params[idx];
+            const pInfo = params[idx];
+            if (/^(?:(?:public|private|protected|readonly)\s+)+/.test(pTrim) && pInfo) {
               propMap.set(pInfo.name, { type: pInfo.type, rawType: pInfo.rawType || pInfo.type, optional: Boolean(pInfo.optional) });
             }
           });
@@ -2467,13 +2472,13 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
     if (s.includes('(') && !s.includes('=>') && (!s.includes('=') || s.indexOf('(') < s.indexOf('='))) return;
     const cleaned = s.replace(/^(?:(?:readonly|public|private|protected|static|abstract)\s+)+/, '');
     const pm = cleaned.match(/^([A-Za-z_$][\w$]*)(\?)?\s*:\s*((?:[^=]|=>)+?)(?:\s*=\s*(?!=|>)[\s\S]+)?$/);
-    if (pm) {
+    if (pm && pm[1] && pm[3]) {
       const rawFT = pm[3].trim();
       propMap.set(pm[1], { type: resolveAlias(rawFT), rawType: rawFT, optional: Boolean(pm[2]) });
       return;
     }
     const initM = cleaned.match(/^([A-Za-z_$][\w$]*)\s*=\s*(.+)$/);
-    if (initM) {
+    if (initM && initM[1] && initM[2]) {
       const infT = inferType(initM[2].trim(), lineNum);
       propMap.set(initM[1], { type: infT, rawType: infT, optional: false });
     }
@@ -2515,7 +2520,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
         const thisAssignRe = /\bthis\.([A-Za-z_$][\w$]*)\s*=\s*(?!=)/g;
         let tm;
         while ((tm = thisAssignRe.exec(raw))) {
-          if (!activeInterface.has(tm[1])) {
+          if (tm[1] && !activeInterface.has(tm[1])) {
             activeInterface.set(tm[1], { type: 'any', rawType: 'any', optional: false });
           }
         }
@@ -2530,13 +2535,13 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
     }
 
     const nsKwM = raw.match(/^(?:export\s+)?(?:declare\s+)?(?:namespace|module)\s+([A-Za-z_$][\w$]*)/);
-    if (nsKwM) {
+    if (nsKwM && nsKwM[1]) {
       enumsSet.add(nsKwM[1]);
       continue;
     }
 
     const ifaceKwM = raw.match(/^(?:export\s+)?(?:declare\s+)?(?:abstract\s+)?(interface|class)\s+([A-Za-z_$][\w$]*)/);
-    if (ifaceKwM) {
+    if (ifaceKwM && ifaceKwM[2]) {
       const isClass = ifaceKwM[1] === 'class';
       const ifaceName = ifaceKwM[2];
       let pos = ifaceKwM[0].length;
@@ -2593,14 +2598,14 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
     }
 
     const enumMatch = raw.match(/^(?:export\s+)?(?:const\s+)?enum\s+([A-Za-z_$][\w$]*)\b/);
-    if (enumMatch) {
+    if (enumMatch && enumMatch[1]) {
       enumsSet.add(enumMatch[1]);
       continue;
     }
 
     // Match `type Name = ...` or `type Name<T extends ..., U = ...> = ...` (single-line or multi-line)
     const typeHdrM = raw.match(/^(?:export\s+)?type\s+([A-Za-z_$][\w$]*)/);
-    if (typeHdrM) {
+    if (typeHdrM && typeHdrM[1]) {
       const aliasName = typeHdrM[1];
       let fullTypeDecl = raw;
       let scanIdx = i;
@@ -2677,7 +2682,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
     }
 
     const fnMatch = raw.match(/^(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/);
-    if (fnMatch && raw.indexOf('(') >= 0) {
+    if (fnMatch && fnMatch[1] && raw.indexOf('(') >= 0) {
       const fnName = fnMatch[1];
       let headerStr = raw;
       let scanLine = i;
@@ -2710,7 +2715,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
         const paramStr = headerStr.slice(openP + 1, closeP).trim();
         const afterClose = headerStr.slice(closeP + 1).trim();
         const retM = afterClose.match(/^:\s*([^{]+?)(?:\s*\{[\s\S]*)?$/);
-        const rawRetType = retM ? retM[1].trim() : 'any';
+        const rawRetType = (retM && retM[1]) ? retM[1].trim() : 'any';
         const tempEnv = new Map<any, any>();
         fnTParams.forEach(tp => tempEnv.set(tp.name, tp.name));
         const retType = retM ? resolveAlias(rawRetType, tempEnv) : 'any';
@@ -2766,11 +2771,11 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
 
   for (let i = 0; i < lines.length; i++) {
     const lineNum = i + 1;
-    let rawLine = lines[i];
+    let rawLine = lines[i] ?? '';
     const rawTrimmed = rawLine.trim();
 
     const callComment = rawTrimmed.match(/^\/\/\s*调用[:：]\s*(.+)$/);
-    if (callComment) {
+    if (callComment && callComment[1]) {
       inferType(callComment[1].trim(), lineNum);
       continue;
     }
@@ -2781,7 +2786,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
     // Handle `declare const/let/var/function/class/namespace`
     if (/^declare\b/.test(trimmed)) {
       const declVarM = trimmed.match(/^declare\s+(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::\s*([^=;]+))?/);
-      if (declVarM) {
+      if (declVarM && declVarM[1]) {
         const dType = declVarM[2] ? resolveAlias(declVarM[2].trim()) : 'any';
         env.set(declVarM[1], { type: dType, isConst: true, line: lineNum, declaredType: dType });
       }
@@ -2790,7 +2795,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
 
     // Handle `namespace Name {`
     const nsOpenM = trimmed.match(/^(?:export\s+)?(?:namespace|module)\s+([A-Za-z_$][\w$]*)\s*\{/);
-    if (nsOpenM) {
+    if (nsOpenM && nsOpenM[1]) {
       env.set(nsOpenM[1], { type: 'any', isConst: true, line: lineNum, declaredType: 'any' });
       for (let k = 0; k < rawLine.length; k++) {
         const ch = rawLine[k];
@@ -2859,7 +2864,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
     const classOpen = trimmed.match(/^(?:export\s+)?(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)(?:\s*<[\s\S]*>)?(?:\s+extends\s+[^{]+)?(?:\s+implements\s+[^{]+)?\s*\{/);
     const classExprOpen = !classOpen ? trimmed.match(/^(?:export\s+)?(const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*class\b(?:\s+[A-Za-z_$][\w$]*)?\s*\{/) : null;
     if (classOpen || classExprOpen) {
-      const clsName = classOpen ? classOpen[1] : (classExprOpen ? classExprOpen[2] : '');
+      const clsName = (classOpen ? classOpen[1] : (classExprOpen ? classExprOpen[2] : '')) || '';
       if (classExprOpen) {
         env.set(clsName, { type: clsName, isConst: classExprOpen[1] === 'const', line: lineNum, declaredType: clsName });
         if (!interfaces.has(clsName)) interfaces.set(clsName, new Map<any, any>());
@@ -2924,7 +2929,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
     let validMethodOpen: string[] | null = null;
     if (!fnOpen && !arrowFnOpen && currentClass && braceDepth === classStartBraceDepth + 1) {
       const mHdr = trimmed.match(/^(?:(?:public|private|protected|static|async|readonly|get|set)\s+)*([A-Za-z_$][\w$]*)\s*(?:<[\s\S]*>)?\s*\(/);
-      if (mHdr && !RESERVED_WORDS.has(mHdr[1])) {
+      if (mHdr && mHdr[1] && !RESERVED_WORDS.has(mHdr[1])) {
         let openP = -1, ad = 0;
         for (let k = trimmed.indexOf(mHdr[1]) + mHdr[1].length; k < trimmed.length; k++) {
           if (trimmed[k] === '<') ad++;
@@ -2954,7 +2959,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
           trimmed += ' ' + stripInlineCommentSafe(lines[i]).trim();
         }
       }
-      if (arrowFnOpen) {
+      if (arrowFnOpen && arrowFnOpen[2]) {
         const fnVarName = arrowFnOpen[2];
         const isConstFn = arrowFnOpen[1] === 'const';
         env.set(fnVarName, { type: 'function', isConst: isConstFn, line: lineNum, declaredType: 'function' });
@@ -2970,8 +2975,8 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
         prevEnv: new Map(env),
         prevTypeParams: new Map(activeTypeParams),
       });
-      const existingFn: FnSigInfo | undefined = (fnOpen && fns.get(fnOpen[1])) ||
-        (validMethodOpen && currentClass ? fns.get(currentClass + '.' + validMethodOpen[1]) : undefined);
+      const existingFn: FnSigInfo | undefined = (fnOpen && fnOpen[1] ? fns.get(fnOpen[1]) : undefined) ||
+        (validMethodOpen && validMethodOpen[1] && currentClass ? fns.get(currentClass + '.' + validMethodOpen[1]) : undefined);
       let activeFn: FnSigInfo;
       if (existingFn) {
         activeFn = existingFn;
@@ -2983,7 +2988,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
         const { params: cbParams, minArgs: cbMin } = parseParamList(cbParamStr, lineNum, false);
         activeFn = { name: '<callback>', params: cbParams, minArgs: cbMin, returnType: cbRet, rawReturnType: cbRawRet, typeParams: cbTParams, line: lineNum, hasValueReturn: false };
       } else {
-        const fName = fnOpen ? fnOpen[1] : (arrowFnOpen ? arrowFnOpen[2] : (currentClass + '.' + (validMethodOpen ? validMethodOpen[1] : '')));
+        const fName = (fnOpen ? fnOpen[1] : (arrowFnOpen ? arrowFnOpen[2] : (currentClass + '.' + (validMethodOpen ? validMethodOpen[1] : '')))) || '';
         let paramStr = '';
         let retType = 'any';
         let rawRetType = 'any';
@@ -2995,7 +3000,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
             paramStr = trimmed.slice(openP + 1, closeP).trim();
             const afterClose = trimmed.slice(closeP + 1).trim();
             const retM = afterClose.match(/^:\s*([^{]+?)(?:\s*\{[\s\S]*)?$/);
-            if (retM) {
+            if (retM && retM[1]) {
               rawRetType = retM[1].trim();
               retType = resolveAlias(rawRetType);
             }
@@ -3026,7 +3031,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
       const closeBraceIdx = trimmed.lastIndexOf('}');
       const bodyAfterOpenBrace = openBraceIdx >= 0 ? trimmed.slice(openBraceIdx + 1) : '';
       const rm = bodyAfterOpenBrace.match(/\breturn\b([^;}\n]*)/);
-      if (rm && rm[1].trim()) {
+      if (rm && rm[1]?.trim()) {
         activeFn.hasValueReturn = true;
         const inlineRetExpr = rm[1].trim();
         const inlineRetT = inferType(inlineRetExpr, lineNum);
@@ -3040,7 +3045,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
         const inlineBody = trimmed.slice(openBraceIdx + 1, closeBraceIdx).trim();
         inlineBody.split(';').map(s => s.trim()).filter(Boolean).forEach(stmt => {
           const inlineAssign = stmt.match(/^([A-Za-z_$][\w$!]*(?:\.[A-Za-z_$][\w$!]*|\s*\[[^\]]+\])*)\s*(\+=|-=|\*=|\/=|=(?!=))\s*([\s\S]+)$/);
-          if (inlineAssign) {
+          if (inlineAssign && inlineAssign[1] && inlineAssign[3]) {
             const lhs = inlineAssign[1].trim();
             const rhsExpr = inlineAssign[3].trim();
             const rhsT = inferType(rhsExpr, lineNum);
@@ -3097,7 +3102,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
 
     // Catch clause: catch (e) {
     const catchM = trimmed.match(/^(?:}\s*)?catch\s*\(\s*([A-Za-z_$][\w$]*)(?:\s*:\s*[^)]+)?\s*\)/);
-    if (catchM) {
+    if (catchM && catchM[1]) {
       env.set(catchM[1], { type: 'any', isConst: false, line: lineNum, declaredType: 'any' });
       continue;
     }
@@ -3109,7 +3114,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
 
     // For-of / For-in loop header: for (const/let/var x of/in expr)
     const forOfInM = trimmed.match(/^for\s*\(\s*(?:(const|let|var)\s+)?(.+?)\s+(of|in)\s+([\s\S]+?)\)\s*\{?$/);
-    if (forOfInM) {
+    if (forOfInM && forOfInM[2] && forOfInM[4]) {
       const kind = forOfInM[1] || null;
       const lhsRaw = forOfInM[2].trim();
       const mode = forOfInM[3];
@@ -3125,12 +3130,12 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
       }
       if (kind) {
         const simpleVar = lhsRaw.match(/^([A-Za-z_$][\w$]*)(?:\s*:\s*([^=]+))?$/);
-        if (simpleVar) {
+        if (simpleVar && simpleVar[1]) {
           const vName = simpleVar[1];
           const declT = simpleVar[2] ? resolveAlias(simpleVar[2].trim()) : elemT;
           env.set(vName, { type: declT, isConst: kind === 'const', line: lineNum, declaredType: declT });
         } else {
-          const bound = new Set();
+          const bound = new Set<string>();
           extractBindingNames(lhsRaw, bound);
           bound.forEach(vName => {
             env.set(vName, { type: 'any', isConst: kind === 'const', line: lineNum, declaredType: 'any' });
@@ -3148,14 +3153,14 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
 
     // For-loop header: for (let i = 0; i < n; i++) or for (i = 0; i < n; i++)
     const forM = trimmed.match(/^for\s*\(\s*(?:(const|let|var)\s+)?([^;]*);([^;]*);([^)]*)\)/);
-    if (forM) {
+    if (forM && forM[2] !== undefined && forM[3] !== undefined && forM[4] !== undefined) {
       const kind = forM[1] || null;
       const initPart = forM[2].trim();
       if (kind && initPart) {
         const decls = splitTopLevel(initPart);
         decls.forEach(d => {
           const dm = d.trim().match(/^([A-Za-z_$][\w$]*)(?:\s*:\s*([^=]+))?\s*=\s*(.+)$/);
-          if (dm) {
+          if (dm && dm[1] && dm[3]) {
             const vName = dm[1];
             const declT = dm[2] ? resolveAlias(dm[2].trim()) : null;
             const initT = inferType(dm[3].trim(), lineNum);
@@ -3168,7 +3173,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
       } else if (initPart) {
         splitTopLevel(initPart).forEach(d => {
           const am = d.trim().match(/^([A-Za-z_$][\w$]*)\s*=\s*(.+)$/);
-          if (am) {
+          if (am && am[1] && am[2]) {
             inferType(am[2].trim(), lineNum);
             if (!isKnownIdentifier(am[1])) {
               addDiag(lineNum, 'TS2304', `找不到名称 "${am[1]}"（变量未声明，请使用 let 或 const 声明）`);
@@ -3183,7 +3188,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
       if (forM[3].trim()) inferType(forM[3].trim(), lineNum);
       if (forM[4].trim()) {
         const updVar = forM[4].trim().match(/^([A-Za-z_$][\w$]*)\s*(?:\+\+|--|\+=|-=|=)/);
-        if (updVar) {
+        if (updVar && updVar[1]) {
           if (!isKnownIdentifier(updVar[1])) {
             addDiag(lineNum, 'TS2304', `找不到名称 "${updVar[1]}"（变量未声明，请使用 let 或 const 声明）`);
           } else if (env.has(updVar[1]) && env.get(updVar[1]).isConst) {
@@ -3198,7 +3203,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
     const varM = trimmed.match(/^(?:export\s+)?(const|let|var)\s+([\s\S]+?);?$/);
     if (varM) {
       const isConst = varM[1] === 'const';
-      let rest = varM[2];
+      let rest = varM[2] || '';
       const countOpenBrackets = (str: string) => {
         let b = 0;
         for (let cIdx = 0; cIdx < str.length; cIdx++) {
@@ -3211,7 +3216,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
       };
       let openB = countOpenBrackets(rest);
       while ((openB > 0 || /[=.,+\-*/|&(\[]$/.test(rest.trim())) && i + 1 < lines.length) {
-        const nextLineRaw = lines[i + 1];
+        const nextLineRaw = lines[i + 1] ?? '';
         const nextLineClean = stripInlineCommentSafe(nextLineRaw).trim();
         for (let k = 0; k < nextLineRaw.length; k++) {
           const ch = nextLineRaw[k];
@@ -3231,14 +3236,14 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
         parts.forEach(part => {
           const pTrim = part.trim();
           const pm = pTrim.match(/^([A-Za-z_$][\w$]*)(?:\s*:\s*((?:[^=]|=>)+?))?(?:\s*=\s*(?!=|>)([\s\S]+))?$/);
-          if (pm) {
+          if (pm && pm[1]) {
             const vName = pm[1];
             const declT = pm[2] ? resolveAlias(pm[2].trim()) : null;
             const initExpr = pm[3] ? pm[3].trim() : null;
             // Register inline generic or typed arrow function in `fns`
             if (initExpr) {
               const inlineArrowM = initExpr.match(/^(?:async\s+)?(?:(<[\s\S]*?>)\s*)?\(([^)]*)\)\s*(?::\s*((?:[^=]|=>)+?))?\s*=>\s*([\s\S]+)$/);
-              if (inlineArrowM) {
+              if (inlineArrowM && inlineArrowM[2] !== undefined) {
                 const arrowTParams = inlineArrowM[1] ? parseTypeParams(inlineArrowM[1]) : [];
                 const arrowParamStr = inlineArrowM[2].trim();
                 const arrowRawRet = inlineArrowM[3] ? inlineArrowM[3].trim() : null;
@@ -3313,7 +3318,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
         const expectedRet = currentFn.returnType;
         if (expectedRet && expectedRet !== 'any') {
           const promiseInnerM = expectedRet.match(/^Promise<([\s\S]+)>$/);
-          const unwrappedExpected = promiseInnerM ? promiseInnerM[1] : expectedRet;
+          const unwrappedExpected = (promiseInnerM && promiseInnerM[1]) ? promiseInnerM[1] : expectedRet;
           if (retExpr.startsWith('{') && getInterfaceShape(unwrappedExpected)) {
             checkObjectLiteralAgainstShape(retExpr, unwrappedExpected, lineNum, `函数 "${currentFn.name}" 返回值`);
           } else if (unwrappedExpected.endsWith('[]') && splitTopLevelUnion(unwrappedExpected).length <= 1 && retExpr.startsWith('[')) {
@@ -3328,26 +3333,26 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
 
     // Throw statement
     const throwM = trimmed.match(/^throw\s+([\s\S]+?);?$/);
-    if (throwM) {
+    if (throwM && throwM[1]) {
       inferType(throwM[1].trim(), lineNum);
       continue;
     }
 
     // Switch / case statements
     const switchM = trimmed.match(/^switch\s*\(([\s\S]+)\)\s*\{?$/);
-    if (switchM) {
+    if (switchM && switchM[1]) {
       inferType(switchM[1].trim(), lineNum);
       continue;
     }
     const caseM = trimmed.match(/^case\s+([^:]+):(.*)$/);
-    if (caseM) {
+    if (caseM && caseM[1]) {
       inferType(caseM[1].trim(), lineNum);
       continue;
     }
 
     // Inline if (...) return / break / continue (with optional early-exit type narrowing)
     const inlineIfRet = trimmed.match(/^if\s*\((.+?)\)\s*(return(?:\s+([\s\S]+?))?|break|continue);?$/);
-    if (inlineIfRet) {
+    if (inlineIfRet && inlineIfRet[1] && inlineIfRet[2]) {
       const condStr = inlineIfRet[1].trim();
       const actionKw = inlineIfRet[2];
       const retExpr = inlineIfRet[3] ? inlineIfRet[3].trim() : '';
@@ -3356,7 +3361,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
         const savedInlineNarrow = new Map<any, any>();
         condStr.split('&&').forEach(clause => {
           const cm = clause.trim().match(/^([A-Za-z_$][\w$]*)\s*!==\s*(null|undefined)$/);
-          if (cm && env.has(cm[1])) {
+          if (cm && cm[1] && cm[2] && env.has(cm[1])) {
             const curInfo = env.get(cm[1]);
             savedInlineNarrow.set(cm[1], curInfo);
             env.set(cm[1], { ...curInfo, type: stripNullableFromType(curInfo.type, cm[2]) });
@@ -3401,7 +3406,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
           const bodyInner = (tail.startsWith('{') && tail.endsWith('}')) ? tail.slice(1, -1).trim() : tail;
           bodyInner.split(';').map(s => s.trim()).filter(Boolean).forEach(stmt => {
             const inlineAssign = stmt.match(/^([A-Za-z_$][\w$!]*(?:\.[A-Za-z_$][\w$!]*|\s*\[[^\]]+\])*)\s*(\+=|-=|\*=|\/=|=(?!=))\s*([\s\S]+)$/);
-            if (inlineAssign) {
+            if (inlineAssign && inlineAssign[1] && inlineAssign[3]) {
               const lhs = inlineAssign[1].trim();
               const rhsExpr = inlineAssign[3].trim();
               const rhsT = inferType(rhsExpr, lineNum);
@@ -3419,13 +3424,13 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
         // Narrow x !== null / x !== undefined inside while/if body
         condStr.split('&&').forEach(clause => {
           const cm = clause.trim().match(/^([A-Za-z_$][\w$]*)\s*!==\s*(null|undefined)$/);
-          if (cm && env.has(cm[1])) {
+          if (cm && cm[1] && cm[2] && env.has(cm[1])) {
             const curInfo = env.get(cm[1]);
             env.set(cm[1], { ...curInfo, type: stripNullableFromType(curInfo.type, cm[2]) });
           }
           // If condition checks x.prop !== null, verify if next line assigns const v = x.prop; and narrow it
           const propCm = clause.trim().match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+)\s*!==\s*(null|undefined)$/);
-          if (propCm && i + 1 < lines.length) {
+          if (propCm && propCm[1] && propCm[2] && i + 1 < lines.length) {
             const propExpr = propCm[1];
             const nextTrim = stripInlineCommentSafe(lines[i + 1]).trim();
             const nextDecl = nextTrim.match(/^(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+)\s*;?$/);
@@ -3436,10 +3441,10 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
           }
         });
         // Check if an upcoming line right after if (...) is a return/break/continue statement for early-exit narrowing
-        if (/^if\s*\(/.test(trimmed) && i + 1 < lines.length && /^\s*(?:return|break|continue)\b/.test(lines[i + 1])) {
+        if (/^if\s*\(/.test(trimmed) && i + 1 < lines.length && /^\s*(?:return|break|continue)\b/.test(lines[i + 1] ?? '')) {
           condStr.split('||').forEach(clause => {
             const cm = clause.trim().match(/^([A-Za-z_$][\w$]*)\s*===\s*(null|undefined)$/);
-            if (cm && env.has(cm[1])) {
+            if (cm && cm[1] && cm[2] && env.has(cm[1])) {
               const curInfo = env.get(cm[1]);
               env.set(cm[1], { ...curInfo, type: stripNullableFromType(curInfo.type, cm[2]) });
             }
@@ -3452,7 +3457,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
     // Unary ++ / -- statement
     const incM = trimmed.match(/^(?:(\+\+|--)\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)|([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*(\+\+|--));?$/);
     if (incM) {
-      const vName = incM[2] || incM[3];
+      const vName = incM[2] || incM[3] || '';
       if (vName.includes('.')) {
         const propT = inferType(vName, lineNum);
         if (propT !== 'any' && !isTsAssignable('number', propT)) {
@@ -3491,7 +3496,7 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
 
     // Assignment or compound assignment: lhs = rhs / lhs += rhs (including property assignment u.age = "20")
     const assignM = trimmed.match(/^([A-Za-z_$][\w$!]*(?:\.[A-Za-z_$][\w$!]*|\s*\[[^\]]+\])*)\s*(\+=|-=|\*=|\/=|=(?!=))\s*([\s\S]+?);?$/);
-    if (assignM) {
+    if (assignM && assignM[1] && assignM[2] && assignM[3]) {
       const lhs = assignM[1].trim();
       const op = assignM[2];
       const rhs = assignM[3].trim();
@@ -3615,7 +3620,7 @@ export function reportTypeErrors(diags: Array<{ line: number; code?: string | nu
   diags.forEach(d => {
     say(`  • ${d.code} [第 ${d.line} 行]: ${d.message}`, 'err', d.line);
   });
-  if (diags.length && diags[0].line) revealErrorLine(diags[0].line);
+  if (diags[0]?.line) revealErrorLine(diags[0].line);
 }
 
 

@@ -48,15 +48,15 @@ export function newlinesOf(s: string): string {
   return m ? m.map(() => '\n').join('') : '';
 }
 
-export function isIdentStart(c: string): boolean {
-  return /[A-Za-z_$]/.test(c);
+export function isIdentStart(c: string | undefined): c is string {
+  return Boolean(c && /[A-Za-z_$]/.test(c));
 }
 
-export function isIdentPart(c: string): boolean {
-  return /[\w$]/.test(c);
+export function isIdentPart(c: string | undefined): c is string {
+  return Boolean(c && /[\w$]/.test(c));
 }
 
-export function isWS(c: string): boolean {
+export function isWS(c: string | undefined): boolean {
   return c === ' ' || c === '\t' || c === '\n' || c === '\r';
 }
 
@@ -82,7 +82,7 @@ export function skipRegex(src: string, i: number): number {
     else if (ch === '/' && !inClass) { j++; break; }
     j++;
   }
-  while (j < n && /[gimsuy]/.test(src[j])) j++;
+  while (j < n && /[gimsuy]/.test(src[j] || '')) j++;
   return j;
 }
 
@@ -90,7 +90,7 @@ export function regexAllowedBefore(src: string, i: number): boolean {
   let k = i - 1;
   while (k >= 0 && isWS(src[k])) k--;
   if (k < 0) return true;
-  const c = src[k];
+  const c = src[k] || '';
   if (/[(=,:;!?&|{}[\]]/.test(c)) return true;
   if (isIdentPart(c)) {
     let w = k;
@@ -126,7 +126,8 @@ export function stripCommentsOnly(s: string): string {
 
 export const stripComments = stripCommentsOnly;
 
-export function stripInlineCommentSafe(line: string): string {
+export function stripInlineCommentSafe(line: string | undefined): string {
+  if (!line) return '';
   let out = '';
   for (let i = 0; i < line.length; i++) {
     const ch = line[i];

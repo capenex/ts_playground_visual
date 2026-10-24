@@ -380,7 +380,7 @@ export function populateInterfaceSchemas(ds: StepAnim) {
 
 export function detectWindowRange(v: StepAnim | null | undefined) {
   if (!v) return null;
-  const pairs = [['l', 'r'], ['left', 'right'], ['lo', 'hi'], ['start', 'end']];
+  const pairs: Array<[string, string]> = [['l', 'r'], ['left', 'right'], ['lo', 'hi'], ['start', 'end']];
   for (const [lk, rk] of pairs) {
     if (typeof v[lk] === 'number' && typeof v[rk] === 'number' && v[lk] >= 0 && v[rk] >= v[lk]) {
       return [v[lk], v[rk]];
@@ -406,7 +406,7 @@ export function build1DFocalSlice(total: number, getAt: (idx: number) => unknown
   });
   const activeCenters = centers.slice(0, 4);
   const radius = activeCenters.length <= 1 ? 3 : (activeCenters.length === 2 ? 2 : 1);
-  const intervals = [
+  const intervals: Array<[number, number]> = [
     [0, Math.min(total - 1, 2)],
     [Math.max(0, total - 3), total - 1],
   ];
@@ -416,15 +416,13 @@ export function build1DFocalSlice(total: number, getAt: (idx: number) => unknown
   intervals.sort((a, b) => a[0] - b[0]);
   const merged: Array<[number, number]> = [];
   for (const iv of intervals) {
-    if (!merged.length) {
+    const prev = merged[merged.length - 1];
+    if (!prev) {
       merged.push([iv[0], iv[1]]);
+    } else if (iv[0] <= prev[1] + 2) {
+      prev[1] = Math.max(prev[1], iv[1]);
     } else {
-      const prev = merged[merged.length - 1];
-      if (iv[0] <= prev[1] + 2) {
-        prev[1] = Math.max(prev[1], iv[1]);
-      } else {
-        merged.push([iv[0], iv[1]]);
-      }
+      merged.push([iv[0], iv[1]]);
     }
   }
   const out: Array<
@@ -432,9 +430,12 @@ export function build1DFocalSlice(total: number, getAt: (idx: number) => unknown
     | { gap?: false; idx: number; val: unknown }
   > = [];
   for (let s = 0; s < merged.length; s++) {
-    const [start, end] = merged[s];
-    if (s > 0) {
-      const prevEnd = merged[s - 1][1];
+    const curIv = merged[s];
+    if (!curIv) continue;
+    const [start, end] = curIv;
+    const prevIv = s > 0 ? merged[s - 1] : undefined;
+    if (prevIv) {
+      const prevEnd = prevIv[1];
       const gapCount = start - prevEnd - 1;
       if (gapCount > 0) {
         out.push({ gap: true, count: gapCount, from: prevEnd + 1, to: start - 1 });
@@ -474,7 +475,7 @@ export function enrichFromNote(ds: StepAnim | null | undefined, v: StepAnim | nu
     if (/^\d+$/.test(t)) return +t;
     if (t in safeV && typeof safeV[t] === 'number' && Number.isInteger(safeV[t])) return safeV[t];
     const m = t.match(/^([A-Za-z_$][\w$]*)\s*([+-])\s*(\d+)$/);
-    if (m && typeof safeV[m[1]] === 'number' && Number.isInteger(safeV[m[1]])) {
+    if (m && m[1] && m[3] !== undefined && typeof safeV[m[1]] === 'number' && Number.isInteger(safeV[m[1]])) {
       return m[2] === '+' ? safeV[m[1]] + (+m[3]) : safeV[m[1]] - (+m[3]);
     }
     const evaluated = safeEvalExpr(t, safeV);
@@ -495,7 +496,7 @@ export function enrichFromNote(ds: StepAnim | null | undefined, v: StepAnim | nu
     const propRe = /\b([A-Za-z_$][\w$]*)\s*\.\s*([A-Za-z_$][\w$]*)\b/g;
     let pm;
     while ((pm = propRe.exec(text))) {
-      const rawObj = pm[1], propName = pm[2];
+      const rawObj = pm[1] || '', propName = pm[2];
       const objName: string = (rawObj === 'self' && !ds.self && ds.this) ? 'this' : rawObj;
       if (ds[objName] && (ds[objName].kind === 'interface' || ds[objName].kind === 'object')) {
         ds[objName].hot = propName;
@@ -508,11 +509,12 @@ export function enrichFromNote(ds: StepAnim | null | undefined, v: StepAnim | nu
 
     // 2D Grid subscript access: dp[i][j]
     const g = text.match(/\b([A-Za-z_$][\w$]*)\s*\[\s*([^[\]]+?)\s*\]\s*\[\s*([^[\]]+?)\s*\]/);
-    if (g && ds[g[1]] && ds[g[1]].kind === 'grid') {
+    if (g && g[1] && ds[g[1]] && ds[g[1]].kind === 'grid') {
+      const gName = g[1];
       const row = evalIdx(g[2]);
       const col = evalIdx(g[3]);
       if (typeof row === 'number' && typeof col === 'number') {
-        ds[g[1]].mark = [row, col];
+        ds[gName].mark = [row, col];
       }
       const deps: Array<[number, number]> = [];
       const re = /\b[A-Za-z_$][\w$]*\s*\[\s*([^[\]]+?)\s*\]\s*\[\s*([^[\]]+?)\s*\]/g;
@@ -521,19 +523,19 @@ export function enrichFromNote(ds: StepAnim | null | undefined, v: StepAnim | nu
         const r = evalIdx(m[1]);
         const c = evalIdx(m[2]);
         if (typeof r === 'number' && typeof c === 'number') {
-          if (!(ds[g[1]].mark && ds[g[1]].mark[0] === r && ds[g[1]].mark[1] === c)) {
+          if (!(ds[gName].mark && ds[gName].mark[0] === r && ds[gName].mark[1] === c)) {
             deps.push([r, c]);
           }
         }
       }
-      ds[g[1]].deps = deps;
+      ds[gName].deps = deps;
     }
 
     // 1D subscript access: nums[mid], s[i], etc. (match all occurrences on the line)
     const subRe = /\b([A-Za-z_$][\w$]*)\s*\[\s*([^[\]]+?)\s*\](?!\s*\[)/g;
     let sm;
     while ((sm = subRe.exec(text))) {
-      const varName = sm[1];
+      const varName = sm[1] || '';
       const d = ds[varName];
       if (!d || d.kind === 'grid') continue;
       let idx = evalIdx(sm[2]);
@@ -551,7 +553,7 @@ export function enrichFromNote(ds: StepAnim | null | undefined, v: StepAnim | nu
 
     // Container mutation / lookup methods: push, set, add, pop, shift, unshift, get, has
     const p = text.match(/\b([A-Za-z_$][\w$]*)\s*\.\s*(push|set|add|pop|shift|unshift|get|has)\s*\(\s*([^,)]*)/);
-    if (p && ds[p[1]]) {
+    if (p && p[1] && ds[p[1]]) {
       const d = ds[p[1]];
       const method = p[2];
       const firstArg = p[3] ? p[3].trim() : '';
@@ -698,7 +700,7 @@ export function enrichFromNote(ds: StepAnim | null | undefined, v: StepAnim | nu
           let focusR = d.mark ? d.mark[0] : (d.deps && d.deps[0] ? d.deps[0][0] : undefined);
           let focusC = d.mark ? d.mark[1] : (d.deps && d.deps[0] ? d.deps[0][1] : undefined);
           if (focusR === undefined || focusC === undefined) {
-            const coordPairs = [['i', 'j'], ['r', 'c'], ['row', 'col'], ['x', 'y']];
+            const coordPairs: Array<[string, string]> = [['i', 'j'], ['r', 'c'], ['row', 'col'], ['x', 'y']];
             for (const [rk, ck] of coordPairs) {
               if (typeof safeV[rk] === 'number' && typeof safeV[ck] === 'number') {
                 focusR = safeV[rk];
@@ -791,13 +793,13 @@ export function deriveAnimAndNote(rawLine: any, v?: any, nextV?: any): any {
 
   let condExpr: string | null = null;
   const condMatch = clean.match(/^(?:}\s*)?(?:if|while|else\s+if)\s*\(([\s\S]+)\)\s*\{?$/);
-  if (condMatch) {
+  if (condMatch && condMatch[1]) {
     condExpr = condMatch[1].trim();
   } else {
     const forMatch = clean.match(/^for\s*\(([\s\S]+)\)\s*\{?$/);
-    if (forMatch) {
+    if (forMatch && forMatch[1] !== undefined) {
       const semiParts = splitTopLevelSemicolons(forMatch[1]);
-      if (semiParts.length === 3 && semiParts[1].trim()) {
+      if (semiParts.length === 3 && semiParts[1]?.trim()) {
         condExpr = semiParts[1].trim();
       }
     }
@@ -810,6 +812,7 @@ export function deriveAnimAndNote(rawLine: any, v?: any, nextV?: any): any {
 
     for (let i = 0; i < clauses.length; i++) {
       const c = clauses[i];
+      if (!c) continue;
       activeClause = c.expr;
       const cVal = safeEvalExpr(c.expr, v);
       if (typeof cVal === 'boolean') {
@@ -820,7 +823,7 @@ export function deriveAnimAndNote(rawLine: any, v?: any, nextV?: any): any {
     }
 
     const cmp = activeClause.match(/^(.+?)\s*(===|!==|<=|>=|==|!=|<|>)\s*(.+)$/);
-    if (cmp) {
+    if (cmp && cmp[1] && cmp[2] && cmp[3]) {
       const lhs = cmp[1].trim(), op = cmp[2], rhs = cmp[3].trim();
       const lhsVal = safeEvalExpr(lhs, v);
       const rhsVal = safeEvalExpr(rhs, v);
@@ -849,7 +852,7 @@ export function deriveAnimAndNote(rawLine: any, v?: any, nextV?: any): any {
   }
 
   const ckptCall = clean.match(/^(?:checkpoint|断点)\s*\(([\s\S]*)\)$/);
-  if (ckptCall) {
+  if (ckptCall && ckptCall[1] !== undefined) {
     const fnName = clean.startsWith('断点') ? '断点' : 'checkpoint';
     const args = splitTopLevel(ckptCall[1]).map(s => s.trim()).filter(Boolean);
     const argVals = Array.isArray(nextV && nextV.__ckptVals) && nextV.__ckptVals.length === args.length
@@ -863,7 +866,7 @@ export function deriveAnimAndNote(rawLine: any, v?: any, nextV?: any): any {
   }
 
   const callOnly = clean.match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\((.*)\)$/);
-  if (callOnly) {
+  if (callOnly && callOnly[1] && callOnly[2] !== undefined) {
     const fnName = callOnly[1];
     const args = splitTopLevel(callOnly[2]).map(s => s.trim()).filter(Boolean);
     const argVals = args.map(a => formatShortVal(safeEvalExpr(a, v)));
@@ -872,7 +875,7 @@ export function deriveAnimAndNote(rawLine: any, v?: any, nextV?: any): any {
   }
 
   const compoundAssign = clean.match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\s*\[[^\]]+\])*)\s*(\+=|-=|\*=|\/=)\s*(.+)$/);
-  if (compoundAssign) {
+  if (compoundAssign && compoundAssign[1] && compoundAssign[2] && compoundAssign[3]) {
     const to = compoundAssign[1].trim();
     const op = compoundAssign[2][0];
     const rhs = compoundAssign[3].trim();
@@ -886,7 +889,7 @@ export function deriveAnimAndNote(rawLine: any, v?: any, nextV?: any): any {
   }
 
   const assignMatch = clean.match(/^(?:(?:const|let|var)\s+)?([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\s*\[[^\]]+\])*)\s*=\s*(?!=)(.+)$/);
-  if (assignMatch) {
+  if (assignMatch && assignMatch[1] && assignMatch[2]) {
     const to = assignMatch[1].trim();
     const from = assignMatch[2].trim();
     const isSingleDecl = splitTopLevel(clean.replace(/^(?:const|let|var)\s+/, '')).length === 1;
@@ -898,7 +901,7 @@ export function deriveAnimAndNote(rawLine: any, v?: any, nextV?: any): any {
       const valStr = val !== undefined ? formatShortVal(val) : null;
 
       const rhsCall = from.match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\((.*)\)$/);
-      if (rhsCall && valStr !== null) {
+      if (rhsCall && rhsCall[1] && rhsCall[2] !== undefined && valStr !== null) {
         const fnName = rhsCall[1];
         const args = splitTopLevel(rhsCall[2]).map(s => s.trim()).filter(Boolean);
         const argVals = args.map(a => formatShortVal(safeEvalExpr(a, v)));
@@ -914,7 +917,7 @@ export function deriveAnimAndNote(rawLine: any, v?: any, nextV?: any): any {
   }
 
   const retMatch = clean.match(/^return\s+(.+)$/);
-  if (retMatch) {
+  if (retMatch && retMatch[1]) {
     const expr = retMatch[1].trim();
     const val = safeEvalExpr(expr, v);
     if (val !== undefined) {
@@ -1159,7 +1162,7 @@ export function vizGrid(d: Frame | null | undefined) {
       if (ri > 0 && realR > rIdxs[ri - 1] + 1) {
         html += '<div class="ggap">⋮</div>';
         for (let gi = 0; gi < colTracks.length; gi++) {
-          html += '<div class="ggap">' + (colTracks[gi].gap ? '⋱' : '⋮') + '</div>';
+          html += '<div class="ggap">' + (colTracks[gi]?.gap ? '⋱' : '⋮') + '</div>';
         }
       }
       const isFocusRow = d.mark && d.mark[0] === realR;
@@ -1408,11 +1411,11 @@ export function pressure(d: Frame | null | undefined) {
   }
 }
 const SPAN_UP = 0.45, SPAN_DOWN = 0.28;
-export function decideSpan(id: string, p: number) {
+export function decideSpan(id: string, p: number): number {
   const curSpan = layoutSpan[id] || 1;
   if (curSpan < 2 && p >= SPAN_UP) layoutSpan[id] = 2;
   else if (curSpan > 1 && p <= SPAN_DOWN) layoutSpan[id] = 1;
-  return layoutSpan[id];
+  return layoutSpan[id] || 1;
 }
 
 export interface DiscoveredVar {
@@ -1434,12 +1437,15 @@ export function allocateSlotSpans(vars: DiscoveredVar[], ds: StepAnim) {
   const oneColItems = meta.filter(m => m.span === 1);
   if (oneColItems.length % 2 === 1) {
     let promote = oneColItems[0];
-    for (let i = 1; i < oneColItems.length; i++) {
-      if (oneColItems[i].p >= promote.p) {
-        promote = oneColItems[i];
+    if (promote) {
+      for (let i = 1; i < oneColItems.length; i++) {
+        const candidate = oneColItems[i];
+        if (candidate && candidate.p >= promote.p) {
+          promote = candidate;
+        }
       }
+      promote.span = 2;
     }
-    promote.span = 2;
   }
 
   return meta;
@@ -1460,7 +1466,7 @@ export function discoverVars(): DiscoveredVar[] {
       const keys = Object.keys(ds);
       for (let k = 0; k < keys.length; k++) {
         const name = keys[k];
-        if (!_DISCOVER_CACHE.map.has(name)) {
+        if (name && !_DISCOVER_CACHE.map.has(name)) {
           _DISCOVER_CACHE.map.set(name, { id: name, name, kind: ds[name].kind || name });
           changed = true;
         }

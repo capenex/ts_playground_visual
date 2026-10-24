@@ -35,7 +35,7 @@ function nextDocId(): string {
 }
 
 /* ── Default Built-In Notebooks (Matches Reference Screenshot & Visual Demo) ── */
-function createDefaultNotebooks(lang: "ts" | "python"): NotebookDocument[] {
+function createDefaultNotebooks(lang: "ts" | "python"): [NotebookDocument, ...NotebookDocument[]] {
   const isPy = lang === "python";
   const c1Id = nextCellId();
   const c2Id = nextCellId();
@@ -212,21 +212,20 @@ function ensureLangNotebooks(lang: "ts" | "python") {
 export function getActiveNotebook(): NotebookDocument {
   const lang = LANG === "python" ? "python" : "ts";
   const store = ensureLangNotebooks(lang);
-  let doc = store.docs.find((d) => d.id === store.activeDocId);
+  let doc = store.docs.find((d) => d.id === store.activeDocId) ?? store.docs[0];
   if (!doc) {
-    doc = store.docs[0];
-    store.activeDocId = doc.id;
+    doc = createDefaultNotebooks(lang)[0];
+    store.docs.push(doc);
   }
+  store.activeDocId = doc.id;
   return doc;
 }
 
 export function getActiveCell(doc = getActiveNotebook()): NotebookCell | null {
   if (!doc || !doc.cells.length) return null;
-  let cell = doc.cells.find((c) => c.id === doc.activeCellId);
-  if (!cell) {
-    cell = doc.cells[0];
-    doc.activeCellId = cell.id;
-  }
+  const cell = doc.cells.find((c) => c.id === doc.activeCellId) ?? doc.cells[0];
+  if (!cell) return null;
+  doc.activeCellId = cell.id;
   return cell;
 }
 
@@ -251,7 +250,7 @@ export function renderMarkdownHtml(md: string): string {
   };
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+    const line = lines[i] ?? "";
     if (/^\s*```/.test(line)) {
       if (inList) {
         out.push("</ul>");
@@ -271,7 +270,7 @@ export function renderMarkdownHtml(md: string): string {
       continue;
     }
     const hMatch = line.match(/^(#{1,4})\s+(.+)$/);
-    if (hMatch) {
+    if (hMatch && hMatch[1] && hMatch[2] !== undefined) {
       if (inList) {
         out.push("</ul>");
         inList = false;
@@ -281,7 +280,7 @@ export function renderMarkdownHtml(md: string): string {
       continue;
     }
     const liMatch = line.match(/^\s*[-*]\s+(.+)$/);
-    if (liMatch) {
+    if (liMatch && liMatch[1] !== undefined) {
       if (!inList) {
         out.push('<ul class="nb-md-ul">');
         inList = true;
@@ -556,7 +555,7 @@ export async function runNotebookCell(cellId?: string, advanceToNext = false): P
       logs: [],
       returnValue: null,
       error: errText,
-      errorLine: cellDiags[0].line,
+      errorLine: cellDiags[0]?.line ?? 1,
     };
     say(`✗ [Notebook] TypeScript 严格类型检查未通过 (共 ${cellDiags.length} 处错误)：`, "err");
     cellDiags.forEach((d) => {
@@ -808,7 +807,7 @@ export async function debugNotebookCell(cellId?: string): Promise<boolean> {
       logs: [],
       returnValue: null,
       error: errText,
-      errorLine: cellDiags[0].line,
+      errorLine: cellDiags[0]?.line ?? 1,
     };
     say(`✗ [Notebook] TypeScript 严格类型检查未通过 (共 ${cellDiags.length} 处错误)：`, "err");
     cellDiags.forEach((d) => {
@@ -966,8 +965,9 @@ export async function runAllNotebookCells(): Promise<void> {
 function moveFocusToNextCell(doc: NotebookDocument, currentCellId: string, createIfLast = false) {
   const idx = doc.cells.findIndex((c) => c.id === currentCellId);
   if (idx < 0) return;
-  if (idx + 1 < doc.cells.length) {
-    doc.activeCellId = doc.cells[idx + 1].id;
+  const nextCell = doc.cells[idx + 1];
+  if (nextCell) {
+    doc.activeCellId = nextCell.id;
     ACTIVE_NB_CELL_ID = doc.activeCellId;
   } else if (createIfLast) {
     const newCell: NotebookCell = {
@@ -1014,6 +1014,7 @@ export function duplicateNotebookCell(cellId?: string) {
   const idx = doc.cells.findIndex((c) => c.id === targetId);
   if (idx < 0) return;
   const orig = doc.cells[idx];
+  if (!orig) return;
   const copy: NotebookCell = {
     id: nextCellId(),
     type: orig.type,
@@ -1036,6 +1037,7 @@ export function moveNotebookCell(dir: -1 | 1, cellId?: string) {
   const nextIdx = idx + dir;
   if (idx < 0 || nextIdx < 0 || nextIdx >= doc.cells.length) return;
   const [item] = doc.cells.splice(idx, 1);
+  if (!item) return;
   doc.cells.splice(nextIdx, 0, item);
   doc.activeCellId = item.id;
   ACTIVE_NB_CELL_ID = item.id;
@@ -1046,10 +1048,13 @@ export function deleteNotebookCell(cellId?: string) {
   const doc = getActiveNotebook();
   const targetId = cellId || doc.activeCellId;
   if (doc.cells.length <= 1) {
-    doc.cells[0].source = "";
-    doc.cells[0].executionCount = null;
-    doc.cells[0].status = "idle";
-    doc.cells[0].output = null;
+    const first = doc.cells[0];
+    if (first) {
+      first.source = "";
+      first.executionCount = null;
+      first.status = "idle";
+      first.output = null;
+    }
     renderNotebookUI();
     return;
   }
@@ -1061,8 +1066,10 @@ export function deleteNotebookCell(cellId?: string) {
   }
   doc.cells.splice(idx, 1);
   const nextActive = doc.cells[Math.min(idx, doc.cells.length - 1)];
-  doc.activeCellId = nextActive.id;
-  ACTIVE_NB_CELL_ID = nextActive.id;
+  if (nextActive) {
+    doc.activeCellId = nextActive.id;
+    ACTIVE_NB_CELL_ID = nextActive.id;
+  }
   renderNotebookUI();
 }
 
@@ -1193,7 +1200,7 @@ export function importNotebookFromJson(jsonText: string, fileName: string): bool
       title: fileName.endsWith(".ipynb") ? fileName : fileName + ".ipynb",
       lang,
       execCounter: 0,
-      activeCellId: cells[0].id,
+      activeCellId: cells[0]?.id || "",
       debuggingCellId: null,
       cells,
       executedHistory: [],
@@ -1216,7 +1223,7 @@ function estimateMarkdownEditorHeight(src: string): number {
   const lines = String(src || "").replace(/\r\n?/g, "\n").split("\n");
   let visualLines = 0;
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+    const line = lines[i] ?? "";
     // Count CJK characters as 2 columns and ASCII as 1 column (~68 columns per line in cell editor)
     let cols = 0;
     for (let k = 0; k < line.length; k++) {
@@ -1691,8 +1698,9 @@ function ensureScriptTabsForLang(lang: "ts" | "python"): { activeTabId: string; 
       content: defaultSrc,
     });
   }
-  if (!store.tabs.some((t) => t.id === store.activeTabId)) {
-    store.activeTabId = store.tabs[0].id;
+  const firstTab = store.tabs[0];
+  if (firstTab && !store.tabs.some((t) => t.id === store.activeTabId)) {
+    store.activeTabId = firstTab.id;
   }
   return store;
 }
@@ -1700,7 +1708,15 @@ function ensureScriptTabsForLang(lang: "ts" | "python"): { activeTabId: string; 
 export function getActiveScriptTab(lang?: "ts" | "python"): ScriptTabDoc {
   const targetLang = lang || (LANG === "python" ? "python" : "ts");
   const store = ensureScriptTabsForLang(targetLang);
-  return store.tabs.find((t) => t.id === store.activeTabId) || store.tabs[0];
+  const found = store.tabs.find((t) => t.id === store.activeTabId) ?? store.tabs[0];
+  if (found) return found;
+  return {
+    id: "stab_0",
+    title: targetLang === "python" ? "quickstart.py" : "showcase.ts",
+    lang: targetLang,
+    source: "",
+    vfsPath: targetLang === "python" ? "workspace/quickstart.py" : "workspace/showcase.ts",
+  };
 }
 
 export function syncActiveScriptTabFromFileName(newFileName: string) {
@@ -1942,7 +1958,7 @@ function openVfsFile(path: string) {
 
   // If user clicked a built-in sample under examples/ts/ or examples/python/, open it in Single-File mode
   const tsMatch = path.match(/^examples\/ts\/([A-Za-z0-9_]+)\.ts$/);
-  if (tsMatch) {
+  if (tsMatch && tsMatch[1]) {
     if (LANG === "python" && (globalThis as any).PY_ENGINE) {
       (globalThis as any).PY_ENGINE.setLang("ts");
     }
@@ -1952,7 +1968,7 @@ function openVfsFile(path: string) {
   }
 
   const pyMatch = path.match(/^examples\/python\/([A-Za-z0-9_]+)\.py$/);
-  if (pyMatch) {
+  if (pyMatch && pyMatch[1]) {
     if (LANG !== "python" && (globalThis as any).PY_ENGINE) {
       (globalThis as any).PY_ENGINE.setLang("python");
     }
@@ -2159,7 +2175,8 @@ export function initNotebookUI() {
         if (idx >= 0) {
           store.tabs.splice(idx, 1);
           if (store.activeTabId === closeId) {
-            store.activeTabId = store.tabs[Math.max(0, idx - 1)].id;
+            const fallbackTab = store.tabs[Math.max(0, idx - 1)];
+            if (fallbackTab) store.activeTabId = fallbackTab.id;
             const nextTab = getActiveScriptTab(lang);
             syncingScriptTab = true;
             editor.value = nextTab.source;
@@ -2487,7 +2504,8 @@ export function initNotebookUI() {
         if (idx >= 0) {
           store.docs.splice(idx, 1);
           if (store.activeDocId === closeId) {
-            store.activeDocId = store.docs[Math.max(0, idx - 1)].id;
+            const fallbackDoc = store.docs[Math.max(0, idx - 1)];
+            if (fallbackDoc) store.activeDocId = fallbackDoc.id;
           }
           syncNotebookGlobalsToSidePanel();
           renderNotebookUI();

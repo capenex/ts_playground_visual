@@ -1,3 +1,4 @@
+"use strict";
 (() => {
   var __defProp = Object.defineProperty;
   var __export = (target, all) => {
@@ -540,10 +541,10 @@ runAsyncDemo()
     return m ? m.map(() => "\n").join("") : "";
   }
   function isIdentStart(c) {
-    return /[A-Za-z_$]/.test(c);
+    return Boolean(c && /[A-Za-z_$]/.test(c));
   }
   function isIdentPart(c) {
-    return /[\w$]/.test(c);
+    return Boolean(c && /[\w$]/.test(c));
   }
   function isWS(c) {
     return c === " " || c === "	" || c === "\n" || c === "\r";
@@ -575,14 +576,14 @@ runAsyncDemo()
       }
       j++;
     }
-    while (j < n && /[gimsuy]/.test(src[j])) j++;
+    while (j < n && /[gimsuy]/.test(src[j] || "")) j++;
     return j;
   }
   function regexAllowedBefore(src, i) {
     let k = i - 1;
     while (k >= 0 && isWS(src[k])) k--;
     if (k < 0) return true;
-    const c = src[k];
+    const c = src[k] || "";
     if (/[(=,:;!?&|{}[\]]/.test(c)) return true;
     if (isIdentPart(c)) {
       let w = k;
@@ -618,6 +619,7 @@ runAsyncDemo()
   }
   var stripComments = stripCommentsOnly;
   function stripInlineCommentSafe(line) {
+    if (!line) return "";
     let out = "";
     for (let i = 0; i < line.length; i++) {
       const ch = line[i];
@@ -787,7 +789,7 @@ runAsyncDemo()
         i = end + 1;
         continue;
       }
-      parts.push(src[i]);
+      parts.push(src[i] || "");
       i++;
     }
     return { next: n, text: parts.join("") };
@@ -1067,7 +1069,7 @@ runAsyncDemo()
       const part = rawPart.trim();
       if (!part) continue;
       const m = part.match(/^([A-Za-z_$][\w$]*)\s*(?:=\s*([\s\S]+))?$/);
-      if (!m) {
+      if (!m || !m[1]) {
         return { error: { line, message: "enum \u6210\u5458\u6682\u4E0D\u652F\u6301\u8FD9\u79CD\u5199\u6CD5\uFF1A" + part.slice(0, 40) } };
       }
       const key = m[1];
@@ -1200,13 +1202,14 @@ runAsyncDemo()
     const nsStack = [];
     let braceDepth = 0;
     for (let i = 0; i < lines.length; i++) {
-      const raw = lines[i];
+      const raw = lines[i] ?? "";
       const trimmed = stripCommentsOnly(raw).trim();
       const depthBefore = braceDepth;
       const nsOpen = trimmed.match(/^(?:export\s+)?(?:namespace|module)\s+([A-Za-z_$][\w$]*)\s*\{(.*)$/);
-      if (nsOpen && !/^declare\b/.test(trimmed)) {
+      if (nsOpen && nsOpen[1] && !/^declare\b/.test(trimmed)) {
         const nsName = nsOpen[1];
-        const indent = raw.match(/^\s*/)[0];
+        const indentMatch = raw.match(/^\s*/);
+        const indent = indentMatch ? indentMatch[0] : "";
         const openBraceIdx = raw.indexOf("{");
         const afterBrace = openBraceIdx >= 0 ? raw.slice(openBraceIdx + 1) : "";
         let d = 1;
@@ -1229,10 +1232,10 @@ runAsyncDemo()
         const hoistedFns = [];
         let scanD = d;
         for (let sIdx = i + 1; sIdx < lines.length && scanD > 0; sIdx++) {
-          const sLine = stripCommentsOnly(lines[sIdx]);
+          const sLine = stripCommentsOnly(lines[sIdx] ?? "");
           if (scanD === 1) {
             const fm = sLine.match(/^\s*export\s+(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*(?:<|\()/);
-            if (fm) hoistedFns.push(fm[1]);
+            if (fm && fm[1]) hoistedFns.push(fm[1]);
           }
           for (let k = 0; k < sLine.length; k++) {
             const ch = sLine[k];
@@ -1261,8 +1264,10 @@ runAsyncDemo()
         if (ch === "{") braceDepth++;
         else if (ch === "}") {
           braceDepth = Math.max(0, braceDepth - 1);
-          if (nsStack.length > 0 && braceDepth <= nsStack[nsStack.length - 1].startDepth) {
-            closedNs = { ns: nsStack.pop(), closeIdx: k };
+          const topEntry = nsStack[nsStack.length - 1];
+          if (topEntry && braceDepth <= topEntry.startDepth) {
+            nsStack.pop();
+            closedNs = { ns: topEntry, closeIdx: k };
             break;
           }
         }
@@ -1274,8 +1279,8 @@ runAsyncDemo()
         lines[i] = `${rewriteNamespaceExportsOnLine(beforeClose, nsName)}}${afterClose}`;
         continue;
       }
-      if (nsStack.length > 0) {
-        const topNs = nsStack[nsStack.length - 1];
+      const topNs = nsStack[nsStack.length - 1];
+      if (topNs) {
         if (depthBefore === topNs.startDepth + 1) {
           lines[i] = rewriteNamespaceExportsOnLine(raw, topNs.name);
         }
@@ -1304,7 +1309,7 @@ runAsyncDemo()
     for (const rawP of parts) {
       const p = rawP.trim();
       const m = p.match(/^(?:(?:public|private|protected|readonly)\s+)+([A-Za-z_$][\w$]*)/);
-      if (m) props.push(m[1]);
+      if (m && m[1]) props.push(m[1]);
     }
     return props;
   }
@@ -1329,14 +1334,14 @@ runAsyncDemo()
       return k;
     }
     function isTernaryColonNow() {
-      if (!ternaryStack.length) return false;
       const top = ternaryStack[ternaryStack.length - 1];
+      if (!top) return false;
       return top.paren === parenDepth && top.brace === braceStack.length;
     }
     function popTernariesAtOrAbove(pDepth, bDepth) {
       while (ternaryStack.length > 0) {
         const top = ternaryStack[ternaryStack.length - 1];
-        if (top.brace > bDepth || top.brace === bDepth && top.paren >= pDepth) {
+        if (top && (top.brace > bDepth || top.brace === bDepth && top.paren >= pDepth)) {
           ternaryStack.pop();
         } else {
           break;
@@ -2059,7 +2064,7 @@ runAsyncDemo()
       return;
     }
     const m = s.match(/^([A-Za-z_$][\w$]*)$/);
-    if (m && !RESERVED_WORDS.has(m[1])) names.add(m[1]);
+    if (m && m[1] && !RESERVED_WORDS.has(m[1])) names.add(m[1]);
   }
   function collectNames(js) {
     const clean = blankStrings(js);
@@ -2067,25 +2072,25 @@ runAsyncDemo()
     let m;
     const forRe = /\bfor\s*\(\s*(?:const|let|var)\s+(.+?)\s+(?:of|in)\b/g;
     while (m = forRe.exec(clean)) {
-      extractBindingNames(m[1], names);
+      extractBindingNames(m[1] || "", names);
     }
     const forClassicRe = /\bfor\s*\(\s*(?:const|let|var)\s+([^;]+)/g;
     while (m = forClassicRe.exec(clean)) {
-      splitTopLevel(m[1]).forEach((part) => extractBindingNames(part, names));
+      splitTopLevel(m[1] || "").forEach((part) => extractBindingNames(part, names));
     }
     const decl = /\b(?:const|let|var)\s+([^;\n]+)/g;
     while (m = decl.exec(clean)) {
-      const rhs = m[1].replace(/\s+\b(?:of|in)\b[\s\S]*$/, "");
+      const rhs = (m[1] || "").replace(/\s+\b(?:of|in)\b[\s\S]*$/, "");
       splitTopLevel(rhs).forEach((part) => extractBindingNames(part, names));
     }
     const fn = /\bfunction\b\s*(?:[A-Za-z_$][\w$]*)?\s*\(([^)]*)\)/g;
     while (m = fn.exec(clean)) {
-      splitTopLevel(m[1]).forEach((p) => extractBindingNames(p, names));
+      splitTopLevel(m[1] || "").forEach((p) => extractBindingNames(p, names));
     }
     const method = /(?:^|[\n;{}])\s*(?:(?:public|private|protected|static|async|readonly|get|set)\s+)*([A-Za-z_$][\w$]*)\s*\(([^)]*)\)\s*(?:\{|:)/g;
     while (m = method.exec(clean)) {
-      if (RESERVED_WORDS.has(m[1])) continue;
-      splitTopLevel(m[2]).forEach((p) => extractBindingNames(p, names));
+      if (!m[1] || RESERVED_WORDS.has(m[1])) continue;
+      splitTopLevel(m[2] || "").forEach((p) => extractBindingNames(p, names));
     }
     for (let i = 0; i < clean.length - 1; i++) {
       if (clean[i] !== "=" || clean[i + 1] !== ">") continue;
@@ -2111,11 +2116,11 @@ runAsyncDemo()
     }
     const singleArrow = /\b([A-Za-z_$][\w$]*)\s*=>/g;
     while (m = singleArrow.exec(clean)) {
-      if (!RESERVED_WORDS.has(m[1])) names.add(m[1]);
+      if (m[1] && !RESERVED_WORDS.has(m[1])) names.add(m[1]);
     }
     const cat = /\bcatch\s*\(\s*([^)]+)\)/g;
     while (m = cat.exec(clean)) {
-      extractBindingNames(m[1], names);
+      extractBindingNames(m[1] || "", names);
     }
     return [...names];
   }
@@ -2141,7 +2146,7 @@ runAsyncDemo()
   }
   function tryInjectLoopOrElseIf(raw, callExpr) {
     const mCond = raw.match(/^(\s*(?:}\s*)?(?:while|else\s+if)\s*)\(/);
-    if (mCond) {
+    if (mCond && mCond[1] !== void 0) {
       const openIdx = mCond[1].length;
       const closeIdx = findBalancedParen(raw, openIdx);
       if (closeIdx > openIdx) {
@@ -2152,16 +2157,16 @@ runAsyncDemo()
       }
     }
     const mFor = raw.match(/^(\s*for\s*)\(/);
-    if (mFor) {
+    if (mFor && mFor[1] !== void 0) {
       const openIdx = mFor[1].length;
       const closeIdx = findBalancedParen(raw, openIdx);
       if (closeIdx > openIdx) {
         const inside = raw.slice(openIdx + 1, closeIdx);
         const semiParts = splitTopLevelSemicolons(inside);
         if (semiParts.length === 3) {
-          const init = semiParts[0];
-          const cond = semiParts[1].trim();
-          const upd = semiParts[2];
+          const init = semiParts[0] ?? "";
+          const cond = (semiParts[1] ?? "").trim();
+          const upd = semiParts[2] ?? "";
           const wrappedCond = cond ? "(" + callExpr + ", (" + cond + "))" : "(" + callExpr + ", true)";
           return raw.slice(0, openIdx + 1) + init + "; " + wrappedCond + ";" + upd + raw.slice(closeIdx);
         } else if (semiParts.length === 1 && /\b(?:of|in)\b/.test(inside)) {
@@ -2181,14 +2186,14 @@ runAsyncDemo()
     let isAsync = false;
     let fnName = "";
     let paramRaw = "";
-    if (m) {
+    if (m && m[2]) {
       isAsync = Boolean(m[1]);
       fnName = m[2];
       paramRaw = m[3] || "";
     }
     if (!m) {
       m = clean.match(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(async\s+)?function(?:\s+[A-Za-z_$][\w$]*)?\s*\(([^)]*)\)\s*\{$/);
-      if (m) {
+      if (m && m[1]) {
         isAsync = Boolean(m[2]);
         fnName = m[1];
         paramRaw = m[3] || "";
@@ -2196,7 +2201,7 @@ runAsyncDemo()
     }
     if (!m) {
       m = clean.match(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(async\s+)?\(([^)]*)\)\s*=>\s*\{$/);
-      if (m) {
+      if (m && m[1]) {
         isAsync = Boolean(m[2]);
         fnName = m[1];
         paramRaw = m[3] || "";
@@ -2204,7 +2209,7 @@ runAsyncDemo()
     }
     if (!m) {
       m = clean.match(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(async\s+)?([A-Za-z_$][\w$]*)\s*=>\s*\{$/);
-      if (m) {
+      if (m && m[1]) {
         isAsync = Boolean(m[2]);
         fnName = m[1];
         paramRaw = m[3] || "";
@@ -2212,14 +2217,14 @@ runAsyncDemo()
     }
     if (!m) {
       m = clean.match(/^((?:(?:public|private|protected|static|async|readonly|get|set)\s+)*)([A-Za-z_$][\w$]*)\s*\(([^)]*)\)\s*(?::\s*[^{]+)?\s*\{$/);
-      if (m && RESERVED_WORDS.has(m[2])) m = null;
-      if (m) {
+      if (m && m[2] && RESERVED_WORDS.has(m[2])) m = null;
+      if (m && m[2]) {
         isAsync = /\basync\b/.test(m[1] || "");
         fnName = m[2];
         paramRaw = m[3] || "";
       }
     }
-    if (!m) return null;
+    if (!m || !fnName) return null;
     const pSet = /* @__PURE__ */ new Set();
     splitTopLevel(paramRaw).forEach((p) => extractBindingNames(p, pSet));
     return {
@@ -2318,9 +2323,10 @@ runAsyncDemo()
     let prevContinued = false;
     let prevUnbracedControl = false;
     for (let i = 0; i < lines.length; i++) {
-      const raw = lines[i];
+      const raw = lines[i] ?? "";
       const t = raw.trim();
-      const indent = raw.match(/^\s*/)[0];
+      const indentMatch = raw.match(/^\s*/);
+      const indent = indentMatch ? indentMatch[0] : "";
       const topBrace = braceStack.length > 0 ? braceStack[braceStack.length - 1] : null;
       const inObject = topBrace === "object";
       const inClassBody = topBrace === "classbody";
@@ -2340,7 +2346,8 @@ runAsyncDemo()
           }
         }
       }
-      const srcLine = (originalLines[i] != null ? originalLines[i] : t).trim();
+      const origLine = originalLines[i];
+      const srcLine = (origLine != null ? origLine : t).trim();
       const note = srcLine.length > 72 ? srcLine.slice(0, 69) + "\u2026" : srcLine;
       const insideClass = braceStack.some((k) => k === "classbody");
       const withThis = insideClass && !inClassBody;
@@ -2421,16 +2428,16 @@ runAsyncDemo()
         let rebuilt = transformedRaw;
         for (let sIdx = closeFnSplices.length - 1; sIdx >= 0; sIdx--) {
           const sp = closeFnSplices[sIdx];
-          if (sp.fnInfo === fnHeader) continue;
+          if (!sp || sp.fnInfo === fnHeader) continue;
           const leaveHook = sp.fnInfo.isAsync ? `} finally { if (typeof __t === "function" && __t.__leave) __t.__leave(${sp.fnInfo.fidVar}); } }, this, ${JSON.stringify(sp.fnInfo.name)}, ${sp.fnInfo.line}) : undefined); ` : `} finally { if (typeof __t === "function" && __t.__leave) __t.__leave(${sp.fnInfo.fidVar}); } `;
           rebuilt = rebuilt.slice(0, sp.idx) + leaveHook + rebuilt.slice(sp.idx);
         }
         transformedRaw = rebuilt;
       } else {
         const singleAsyncFnM = transformedRaw.match(/^(\s*(?:export\s+)?(?:default\s+)?)async\s+function\s+([A-Za-z_$][\w$]*)\s*\(([^)]*)\)\s*\{([\s\S]*)\}\s*;?\s*$/);
-        if (singleAsyncFnM) {
+        if (singleAsyncFnM && singleAsyncFnM[2] !== void 0 && singleAsyncFnM[4] !== void 0) {
           const bodyRewritten = rewriteAwaitExpressions(singleAsyncFnM[4], "0", i + 1);
-          transformedRaw = `${singleAsyncFnM[1]}function ${singleAsyncFnM[2]}(${singleAsyncFnM[3]}) { return (__t && __t.__async ? __t.__async(function* () { ${bodyRewritten} }, this, ${JSON.stringify(singleAsyncFnM[2])}, ${i + 1}) : undefined); }`;
+          transformedRaw = `${singleAsyncFnM[1] || ""}function ${singleAsyncFnM[2]}(${singleAsyncFnM[3] || ""}) { return (__t && __t.__async ? __t.__async(function* () { ${bodyRewritten} }, this, ${JSON.stringify(singleAsyncFnM[2])}, ${i + 1}) : undefined); }`;
         }
       }
       if (activeAsyncFn && /\bawait\b/.test(transformedRaw)) {
@@ -2458,7 +2465,7 @@ runAsyncDemo()
   }
   function extractCall(src) {
     const m = src.match(/\/\/\s*调用[:：]\s*(.+)/);
-    return m ? m[1].trim() : null;
+    return m && m[1] ? m[1].trim() : null;
   }
   function findTrailingTopLevelCall(js) {
     const lines = String(js || "").replace(/\r/g, "").split("\n");
@@ -2892,9 +2899,13 @@ runAsyncDemo()
     let m;
     const typeRe = /\b(?:function|class|interface|type|enum)\s+([A-Za-z_$][\w$]*)/g;
     const rawClean = blankStrings(text);
-    while (m = typeRe.exec(rawClean)) names.add(m[1]);
+    while (m = typeRe.exec(rawClean)) {
+      if (m[1]) names.add(m[1]);
+    }
     const fnAssign = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:function\b|\(|[A-Za-z_$][\w$]*\s*=>)/g;
-    while (m = fnAssign.exec(js)) names.add(m[1]);
+    while (m = fnAssign.exec(js)) {
+      if (m[1]) names.add(m[1]);
+    }
     DECLARED_NAMES_CACHE = { src: text, names };
     return names;
   }
@@ -3114,7 +3125,7 @@ runAsyncDemo()
     try {
       editor.focus();
       let pos = 0;
-      for (let i = 0; i < ln - 1; i++) pos += lines[i].length + 1;
+      for (let i = 0; i < ln - 1; i++) pos += (lines[i] || "").length + 1;
       editor.selectionStart = editor.selectionEnd = Math.min(pos, editor.value.length);
     } catch (_) {
     }
@@ -3177,12 +3188,12 @@ runAsyncDemo()
     if (!lineText) return null;
     let i = Math.min(Math.max(0, col), lineText.length - 1);
     if (!HOVER_WORD_RE.test(lineText[i] || "")) {
-      if (i > 0 && HOVER_WORD_RE.test(lineText[i - 1])) i--;
+      if (i > 0 && HOVER_WORD_RE.test(lineText[i - 1] || "")) i--;
       else return null;
     }
     let s = i, e = i;
-    while (s > 0 && HOVER_WORD_RE.test(lineText[s - 1])) s--;
-    while (e < lineText.length && HOVER_WORD_RE.test(lineText[e])) e++;
+    while (s > 0 && HOVER_WORD_RE.test(lineText[s - 1] || "")) s--;
+    while (e < lineText.length && HOVER_WORD_RE.test(lineText[e] || "")) e++;
     const word = lineText.slice(s, e);
     if (!/^[A-Za-z_$][\w$]*$/.test(word)) return null;
     return { word, start: s, end: e };
@@ -3479,12 +3490,13 @@ runAsyncDemo()
         }
       }).join(" ")) });
     } catch (e) {
+      const errObj = e && typeof e === "object" ? e : null;
       r = {
         ok: false,
-        error: e && e.message ? e.message : String(e),
-        stack: e && e.stack ? String(e.stack) : "",
-        line: e && e.__line || lastLine || entryLine || 0,
-        timeout: Boolean(e && e.__timeout)
+        error: errObj && errObj.message ? errObj.message : String(e),
+        stack: errObj && errObj.stack ? String(errObj.stack) : "",
+        line: errObj && errObj.__line || lastLine || entryLine || 0,
+        timeout: Boolean(errObj && errObj.__timeout)
       };
     }
     if (r && r.ok && !r.line) r.line = lastLine || entryLine || 0;
@@ -3496,7 +3508,7 @@ runAsyncDemo()
     const budget = typeof budgetMs === "number" && budgetMs > 0 ? budgetMs : RUN_TIMEOUT_MS;
     const src = editor.value;
     const unsupported = detectUnsupportedSyntax2(src);
-    if (unsupported.length) {
+    if (unsupported.length && unsupported[0]) {
       unsupported.forEach((x) => say("\u2717 \u7B2C " + x.line + " \u884C\uFF1A\u6682\u4E0D\u652F\u6301 " + x.feature + " \u2014\u2014 " + x.hint, "err", x.line));
       revealErrorLine(unsupported[0].line);
       return;
@@ -3568,7 +3580,7 @@ runAsyncDemo()
       const elapsed = " (" + r.elapsedMs + "ms)";
       say("\u2713 \u8FD0\u884C\u5B8C\u6210  \u2192  " + safeJSONStringify(r.value) + elapsed, "ok");
     } catch (e) {
-      say("\u2717 " + (e && e.message ? e.message : e), "err");
+      say("\u2717 " + (e instanceof Error && e.message ? e.message : e), "err");
     }
   }
   function buildFrameSnapshotFromClosure(frame, fallbackLine, noteForEnrich) {
@@ -3829,7 +3841,7 @@ runAsyncDemo()
     stepLogs.forEach((l) => say("  log: " + l, "dim"));
     if (!pendingStep) {
       if (runtimeErr) {
-        const errMsg = runtimeErr.message ? runtimeErr.message : String(runtimeErr);
+        const errMsg = runtimeErr instanceof Error && runtimeErr.message ? runtimeErr.message : runtimeErr && typeof runtimeErr === "object" && "message" in runtimeErr && typeof runtimeErr.message === "string" ? runtimeErr.message : String(runtimeErr);
         const callLine = globalCallLine;
         const errStep = {
           line: callLine,
@@ -3918,7 +3930,7 @@ runAsyncDemo()
       pendingStep.isCheckpoint = true;
     }
     if (runtimeErr) {
-      const errMsg = runtimeErr.message ? runtimeErr.message : String(runtimeErr);
+      const errMsg = runtimeErr instanceof Error && runtimeErr.message ? runtimeErr.message : runtimeErr && typeof runtimeErr === "object" && "message" in runtimeErr && typeof runtimeErr.message === "string" ? runtimeErr.message : String(runtimeErr);
       pendingStep.error = errMsg;
       pendingStep.note = `${rawLine.trim()}  \u2192  \u2717 \u8FD0\u884C\u65F6\u9519\u8BEF: ${errMsg}`;
       RUNTIME_ERROR_LINES.add(pendingStep.line);
@@ -3956,7 +3968,7 @@ runAsyncDemo()
     SELECTED_FRAME_IDX = null;
     const src = editor.value.replace(/\r/g, "");
     const unsupported = detectUnsupportedSyntax2(src);
-    if (unsupported.length) {
+    if (unsupported.length && unsupported[0]) {
       resetTraceState();
       unsupported.forEach((x) => say("\u2717 \u7B2C " + x.line + " \u884C\uFF1A\u6682\u4E0D\u652F\u6301 " + x.feature + " \u2014\u2014 " + x.hint, "err", x.line));
       revealErrorLine(unsupported[0].line);
@@ -3995,7 +4007,7 @@ runAsyncDemo()
       compiledFn = new Function("__t", "console", body);
     } catch (e) {
       resetTraceState();
-      say("\u2717 \u7F16\u8BD1\u5931\u8D25: " + (e && e.message ? e.message : e), "err");
+      say("\u2717 \u7F16\u8BD1\u5931\u8D25: " + (e instanceof Error && e.message ? e.message : e), "err");
       return false;
     }
     stopAuto();
@@ -4222,18 +4234,19 @@ runAsyncDemo()
       return;
     }
     if (kind === "tree" && d.nodes && d.nodes.length) {
-      let layout = function(idx, depth, xMin, xMax) {
+      let layout2 = function(idx, depth, xMin, xMax) {
         if (idx == null || !nodes[idx] || coords.has(idx) || depth > 4) return;
         const nx = (xMin + xMax) / 2;
         const ny = by + 16 + depth * 32;
         coords.set(idx, { x: nx, y: ny, val: nodes[idx].val, left: nodes[idx].left, right: nodes[idx].right });
-        layout(nodes[idx].left, depth + 1, xMin, nx);
-        layout(nodes[idx].right, depth + 1, nx, xMax);
+        layout2(nodes[idx].left, depth + 1, xMin, nx);
+        layout2(nodes[idx].right, depth + 1, nx, xMax);
       };
+      var layout = layout2;
       const nodes = d.nodes;
       const root = d.root ?? 0;
       const coords = /* @__PURE__ */ new Map();
-      layout(root, 0, bx + 16, bx + bw - 16);
+      layout2(root, 0, bx + 16, bx + bw - 16);
       ctx.strokeStyle = "#334155";
       ctx.lineWidth = 1.5;
       coords.forEach((info) => {
@@ -4527,15 +4540,17 @@ runAsyncDemo()
     let pendingSingle = null;
     const consoleTop = mainBottom - 84;
     function drawRowItems(items) {
-      if (!items.length || curRowY + 95 > consoleTop) return;
+      const first = items[0];
+      const second = items[1];
+      if (!first || curRowY + 95 > consoleTop) return;
       const isTall = items.some((it) => it.kind === "tree" || it.kind === "graph" || it.kind === "grid" || it.kind === "stack" || it.kind === "interface");
       const cardH = Math.min(isTall ? 158 : 108, consoleTop - curRowY - 8);
       if (cardH < 64) return;
-      if (items.length === 1) {
-        drawVizCardOnCanvas(ctx, gridLeft, curRowY, gridW, cardH, items[0].s, items[0].d, items[0].kind);
+      if (items.length === 1 || !second) {
+        drawVizCardOnCanvas(ctx, gridLeft, curRowY, gridW, cardH, first.s, first.d, first.kind);
       } else {
-        drawVizCardOnCanvas(ctx, gridLeft, curRowY, colW, cardH, items[0].s, items[0].d, items[0].kind);
-        drawVizCardOnCanvas(ctx, gridLeft + colW + colGap, curRowY, colW, cardH, items[1].s, items[1].d, items[1].kind);
+        drawVizCardOnCanvas(ctx, gridLeft, curRowY, colW, cardH, first.s, first.d, first.kind);
+        drawVizCardOnCanvas(ctx, gridLeft + colW + colGap, curRowY, colW, cardH, second.s, second.d, second.kind);
       }
       curRowY += cardH + 10;
     }
@@ -4648,12 +4663,12 @@ runAsyncDemo()
   }
   function concatUint8Arrays(arrays) {
     let total = 0;
-    for (let i = 0; i < arrays.length; i++) total += arrays[i].length;
+    for (const arr of arrays) total += arr.length;
     const out = new Uint8Array(total);
     let offset = 0;
-    for (let i = 0; i < arrays.length; i++) {
-      out.set(arrays[i], offset);
-      offset += arrays[i].length;
+    for (const arr of arrays) {
+      out.set(arr, offset);
+      offset += arr.length;
     }
     return out;
   }
@@ -4699,8 +4714,7 @@ runAsyncDemo()
     ]);
     const clusters = [];
     let curCluster = null;
-    for (let i = 0; i < frames.length; i++) {
-      const f = frames[i];
+    for (const f of frames) {
       const tMs = Math.max(0, Math.round(f.timestampMs));
       if (!curCluster || f.isKey || tMs - curCluster.timecodeMs >= 2e3) {
         curCluster = { timecodeMs: tMs, blocks: [] };
@@ -4720,8 +4734,7 @@ runAsyncDemo()
     let segOffset = infoElem.length + tracksElem.length;
     const clusterElems = [];
     const cuePoints = [];
-    for (let c = 0; c < clusters.length; c++) {
-      const cl = clusters[c];
+    for (const cl of clusters) {
       const tcElem = ebmlElement([231], ebmlUintBytes(cl.timecodeMs));
       const clElem = ebmlElement([31, 67, 182, 117], [tcElem, ...cl.blocks]);
       cuePoints.push(
@@ -4769,7 +4782,7 @@ runAsyncDemo()
       }
       if (infoPos < 0) return blob;
       const sizeIdx = infoPos + 4;
-      const firstByte = bytes[sizeIdx];
+      const firstByte = bytes[sizeIdx] ?? 0;
       let vintLen = 1;
       let mask = 128;
       while (vintLen <= 8 && !(firstByte & mask)) {
@@ -4779,7 +4792,7 @@ runAsyncDemo()
       if (vintLen > 8) return blob;
       let parsedInfoSize = firstByte & mask - 1;
       for (let k = 1; k < vintLen; k++) {
-        parsedInfoSize = parsedInfoSize * 256 + bytes[sizeIdx + k];
+        parsedInfoSize = parsedInfoSize * 256 + (bytes[sizeIdx + k] ?? 0);
       }
       const isUnknownInfoSize = vintLen === 8 && bytes[sizeIdx + 1] === 255 && bytes[sizeIdx + 2] === 255 || parsedInfoSize === Math.pow(2, 7 * vintLen) - 1;
       const infoDataStart = sizeIdx + vintLen;
@@ -4832,7 +4845,7 @@ runAsyncDemo()
       let firstClusterTc = null;
       for (let i = tailStartInOut; i < outBytes.length - 16; i++) {
         if (outBytes[i] === 31 && outBytes[i + 1] === 67 && outBytes[i + 2] === 182 && outBytes[i + 3] === 117) {
-          const b0 = outBytes[i + 4];
+          const b0 = outBytes[i + 4] ?? 0;
           let vLen = 1, m = 128;
           while (vLen <= 8 && !(b0 & m)) {
             m >>= 1;
@@ -4840,12 +4853,12 @@ runAsyncDemo()
           }
           const tcPos = i + 4 + vLen;
           if (tcPos + 2 < outBytes.length && outBytes[tcPos] === 231) {
-            const tcSizeByte = outBytes[tcPos + 1];
+            const tcSizeByte = outBytes[tcPos + 1] ?? 0;
             const tcLen = tcSizeByte & 127;
             if (tcLen >= 1 && tcLen <= 8 && tcPos + 2 + tcLen <= outBytes.length) {
               let val = 0;
               for (let b = 0; b < tcLen; b++) {
-                val = val * 256 + outBytes[tcPos + 2 + b];
+                val = val * 256 + (outBytes[tcPos + 2 + b] ?? 0);
               }
               if (firstClusterTc === null) {
                 firstClusterTc = val;
@@ -5094,7 +5107,7 @@ runAsyncDemo()
       say(`\u2713 \u89C6\u9891\u5BFC\u51FA\u5B8C\u6210\uFF1Ats-playground-1080p-60fps-${mult}x.webm (1920\xD71080 \xB7 60fps \xB7 ${mult}x \u500D\u901F \xB7 \u65F6\u957F ${secTxt})`, "ok");
       return true;
     } catch (err) {
-      const msg = err && err.message ? err.message : String(err);
+      const msg = err instanceof Error && err.message ? err.message : String(err);
       if (videoExportStatus) videoExportStatus.textContent = "\u2717 \u5BFC\u51FA\u5931\u8D25: " + msg;
       say("\u2717 \u89C6\u9891\u5BFC\u51FA\u5931\u8D25: " + msg, "err");
       return false;
@@ -5302,7 +5315,7 @@ runAsyncDemo()
       const body = js + finHook + ";return (" + expr + ");";
       compiledFn = new Function("__t", "console", body);
     } catch (e) {
-      say("\u2717 \u7F16\u8BD1\u5931\u8D25: " + (e && e.message ? e.message : e), "err");
+      say("\u2717 \u7F16\u8BD1\u5931\u8D25: " + (e instanceof Error && e.message ? e.message : e), "err");
       return false;
     }
     stopAuto();
@@ -5356,7 +5369,7 @@ runAsyncDemo()
     if (LANG === "python") {
       const text2 = editor.value.replace(/\r\n?/g, "\n");
       const lines2 = text2.split("\n");
-      let line = preferredLine || TRACE.steps[cur] && TRACE.steps[cur].line || (window.__CM_CURSOR_LINE || lastEditorCursorLine) || lines2.length;
+      let line = preferredLine || TRACE.steps[cur]?.line || (window.__CM_CURSOR_LINE || lastEditorCursorLine) || lines2.length;
       line = Math.max(1, Math.min(lines2.length, line));
       const current = lines2[line - 1] || "";
       const indent2 = (current.match(/^\s*/) || [""])[0];
@@ -5375,8 +5388,9 @@ runAsyncDemo()
     }
     const text = editor.value.replace(/\r\n?/g, "\n");
     const lines = text.split("\n");
-    const wasActive = Boolean(DEBUG_SESSION.active && TRACE.steps.length > 0 && TRACE.steps[cur]);
-    const origCurLine = wasActive ? TRACE.steps[cur].line : -1;
+    const curStep = TRACE.steps[cur];
+    const wasActive = Boolean(DEBUG_SESSION.active && TRACE.steps.length > 0 && curStep);
+    const origCurLine = curStep ? curStep.line : -1;
     const origLineVisits = wasActive ? TRACE.steps.slice(0, cur + 1).filter((s) => s.line === origCurLine).length : 0;
     const prevCurIdx = cur;
     let fnOpenIdx = -1;
@@ -5654,7 +5668,7 @@ runAsyncDemo()
         URL.revokeObjectURL(url);
         say("\u2713 \u5DF2\u5BFC\u51FA TypeScript \u6587\u4EF6 " + name + "\uFF08" + editor.value.split("\n").length + " \u884C\uFF09", "ok");
       } catch (e) {
-        say("\u2717 \u5BFC\u51FA\u5931\u8D25: " + (e && e.message ? e.message : e), "err");
+        say("\u2717 \u5BFC\u51FA\u5931\u8D25: " + (e instanceof Error && e.message ? e.message : e), "err");
       }
     };
   }
@@ -5916,7 +5930,7 @@ runAsyncDemo()
   function anonStackLine(stack) {
     const re = /,\s*<anonymous>:(\d+):\d+/g;
     const m = re.exec(String(stack || ""));
-    return m ? parseInt(m[1], 10) : 0;
+    return m && m[1] ? parseInt(m[1], 10) : 0;
   }
   var FN_BODY_LINE_OFFSET = null;
   function fnBodyLineOffset() {
@@ -5925,7 +5939,7 @@ runAsyncDemo()
     try {
       new Function('throw new Error("probe")')();
     } catch (e) {
-      const line = anonStackLine(e && e.stack);
+      const line = anonStackLine(e instanceof Error ? e.stack : void 0);
       if (line > 0) off = Math.max(1, line - 1);
     }
     FN_BODY_LINE_OFFSET = off;
@@ -6873,22 +6887,23 @@ runAsyncDemo()
     intervals.sort((a, b) => a[0] - b[0]);
     const merged = [];
     for (const iv of intervals) {
-      if (!merged.length) {
+      const prev = merged[merged.length - 1];
+      if (!prev) {
         merged.push([iv[0], iv[1]]);
+      } else if (iv[0] <= prev[1] + 2) {
+        prev[1] = Math.max(prev[1], iv[1]);
       } else {
-        const prev = merged[merged.length - 1];
-        if (iv[0] <= prev[1] + 2) {
-          prev[1] = Math.max(prev[1], iv[1]);
-        } else {
-          merged.push([iv[0], iv[1]]);
-        }
+        merged.push([iv[0], iv[1]]);
       }
     }
     const out = [];
     for (let s = 0; s < merged.length; s++) {
-      const [start, end] = merged[s];
-      if (s > 0) {
-        const prevEnd = merged[s - 1][1];
+      const curIv = merged[s];
+      if (!curIv) continue;
+      const [start, end] = curIv;
+      const prevIv = s > 0 ? merged[s - 1] : void 0;
+      if (prevIv) {
+        const prevEnd = prevIv[1];
         const gapCount = start - prevEnd - 1;
         if (gapCount > 0) {
           out.push({ gap: true, count: gapCount, from: prevEnd + 1, to: start - 1 });
@@ -6923,7 +6938,7 @@ runAsyncDemo()
       if (/^\d+$/.test(t)) return +t;
       if (t in safeV && typeof safeV[t] === "number" && Number.isInteger(safeV[t])) return safeV[t];
       const m = t.match(/^([A-Za-z_$][\w$]*)\s*([+-])\s*(\d+)$/);
-      if (m && typeof safeV[m[1]] === "number" && Number.isInteger(safeV[m[1]])) {
+      if (m && m[1] && m[3] !== void 0 && typeof safeV[m[1]] === "number" && Number.isInteger(safeV[m[1]])) {
         return m[2] === "+" ? safeV[m[1]] + +m[3] : safeV[m[1]] - +m[3];
       }
       const evaluated = safeEvalExpr(t, safeV);
@@ -6941,7 +6956,7 @@ runAsyncDemo()
       const propRe = /\b([A-Za-z_$][\w$]*)\s*\.\s*([A-Za-z_$][\w$]*)\b/g;
       let pm;
       while (pm = propRe.exec(text)) {
-        const rawObj = pm[1], propName = pm[2];
+        const rawObj = pm[1] || "", propName = pm[2];
         const objName = rawObj === "self" && !ds.self && ds.this ? "this" : rawObj;
         if (ds[objName] && (ds[objName].kind === "interface" || ds[objName].kind === "object")) {
           ds[objName].hot = propName;
@@ -6952,11 +6967,12 @@ runAsyncDemo()
         }
       }
       const g2 = text.match(/\b([A-Za-z_$][\w$]*)\s*\[\s*([^[\]]+?)\s*\]\s*\[\s*([^[\]]+?)\s*\]/);
-      if (g2 && ds[g2[1]] && ds[g2[1]].kind === "grid") {
+      if (g2 && g2[1] && ds[g2[1]] && ds[g2[1]].kind === "grid") {
+        const gName = g2[1];
         const row = evalIdx(g2[2]);
         const col = evalIdx(g2[3]);
         if (typeof row === "number" && typeof col === "number") {
-          ds[g2[1]].mark = [row, col];
+          ds[gName].mark = [row, col];
         }
         const deps = [];
         const re = /\b[A-Za-z_$][\w$]*\s*\[\s*([^[\]]+?)\s*\]\s*\[\s*([^[\]]+?)\s*\]/g;
@@ -6965,17 +6981,17 @@ runAsyncDemo()
           const r = evalIdx(m[1]);
           const c = evalIdx(m[2]);
           if (typeof r === "number" && typeof c === "number") {
-            if (!(ds[g2[1]].mark && ds[g2[1]].mark[0] === r && ds[g2[1]].mark[1] === c)) {
+            if (!(ds[gName].mark && ds[gName].mark[0] === r && ds[gName].mark[1] === c)) {
               deps.push([r, c]);
             }
           }
         }
-        ds[g2[1]].deps = deps;
+        ds[gName].deps = deps;
       }
       const subRe = /\b([A-Za-z_$][\w$]*)\s*\[\s*([^[\]]+?)\s*\](?!\s*\[)/g;
       let sm;
       while (sm = subRe.exec(text)) {
-        const varName = sm[1];
+        const varName = sm[1] || "";
         const d = ds[varName];
         if (!d || d.kind === "grid") continue;
         let idx = evalIdx(sm[2]);
@@ -6991,7 +7007,7 @@ runAsyncDemo()
         }
       }
       const p = text.match(/\b([A-Za-z_$][\w$]*)\s*\.\s*(push|set|add|pop|shift|unshift|get|has)\s*\(\s*([^,)]*)/);
-      if (p && ds[p[1]]) {
+      if (p && p[1] && ds[p[1]]) {
         const d = ds[p[1]];
         const method = p[2];
         const firstArg = p[3] ? p[3].trim() : "";
@@ -7212,13 +7228,13 @@ runAsyncDemo()
     if (!clean) return { anim: null, note: rawLine };
     let condExpr = null;
     const condMatch = clean.match(/^(?:}\s*)?(?:if|while|else\s+if)\s*\(([\s\S]+)\)\s*\{?$/);
-    if (condMatch) {
+    if (condMatch && condMatch[1]) {
       condExpr = condMatch[1].trim();
     } else {
       const forMatch = clean.match(/^for\s*\(([\s\S]+)\)\s*\{?$/);
-      if (forMatch) {
+      if (forMatch && forMatch[1] !== void 0) {
         const semiParts = splitTopLevelSemicolons(forMatch[1]);
-        if (semiParts.length === 3 && semiParts[1].trim()) {
+        if (semiParts.length === 3 && semiParts[1]?.trim()) {
           condExpr = semiParts[1].trim();
         }
       }
@@ -7229,6 +7245,7 @@ runAsyncDemo()
       let overallResult = safeEvalExpr(condExpr, v);
       for (let i = 0; i < clauses.length; i++) {
         const c = clauses[i];
+        if (!c) continue;
         activeClause = c.expr;
         const cVal = safeEvalExpr(c.expr, v);
         if (typeof cVal === "boolean") {
@@ -7244,7 +7261,7 @@ runAsyncDemo()
         }
       }
       const cmp = activeClause.match(/^(.+?)\s*(===|!==|<=|>=|==|!=|<|>)\s*(.+)$/);
-      if (cmp) {
+      if (cmp && cmp[1] && cmp[2] && cmp[3]) {
         const lhs = cmp[1].trim(), op = cmp[2], rhs = cmp[3].trim();
         const lhsVal = safeEvalExpr(lhs, v);
         const rhsVal = safeEvalExpr(rhs, v);
@@ -7277,7 +7294,7 @@ runAsyncDemo()
       }
     }
     const ckptCall = clean.match(/^(?:checkpoint|断点)\s*\(([\s\S]*)\)$/);
-    if (ckptCall) {
+    if (ckptCall && ckptCall[1] !== void 0) {
       const fnName = clean.startsWith("\u65AD\u70B9") ? "\u65AD\u70B9" : "checkpoint";
       const args = splitTopLevel(ckptCall[1]).map((s) => s.trim()).filter(Boolean);
       const argVals = Array.isArray(nextV && nextV.__ckptVals) && nextV.__ckptVals.length === args.length ? nextV.__ckptVals : args.map((a) => formatShortVal(safeEvalExpr(a, v)));
@@ -7286,7 +7303,7 @@ runAsyncDemo()
       return { anim, note: `\u25C9 ${fnName}(${detail})`, isCheckpoint: true };
     }
     const callOnly = clean.match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\((.*)\)$/);
-    if (callOnly) {
+    if (callOnly && callOnly[1] && callOnly[2] !== void 0) {
       const fnName = callOnly[1];
       const args = splitTopLevel(callOnly[2]).map((s) => s.trim()).filter(Boolean);
       const argVals = args.map((a) => formatShortVal(safeEvalExpr(a, v)));
@@ -7294,7 +7311,7 @@ runAsyncDemo()
       return { anim, note: `${fnName}(${argVals.join(", ")})` };
     }
     const compoundAssign = clean.match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\s*\[[^\]]+\])*)\s*(\+=|-=|\*=|\/=)\s*(.+)$/);
-    if (compoundAssign) {
+    if (compoundAssign && compoundAssign[1] && compoundAssign[2] && compoundAssign[3]) {
       const to = compoundAssign[1].trim();
       const op = compoundAssign[2][0];
       const rhs = compoundAssign[3].trim();
@@ -7307,7 +7324,7 @@ runAsyncDemo()
       }
     }
     const assignMatch = clean.match(/^(?:(?:const|let|var)\s+)?([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\s*\[[^\]]+\])*)\s*=\s*(?!=)(.+)$/);
-    if (assignMatch) {
+    if (assignMatch && assignMatch[1] && assignMatch[2]) {
       const to = assignMatch[1].trim();
       const from = assignMatch[2].trim();
       const isSingleDecl = splitTopLevel(clean.replace(/^(?:const|let|var)\s+/, "")).length === 1;
@@ -7318,7 +7335,7 @@ runAsyncDemo()
         }
         const valStr = val !== void 0 ? formatShortVal(val) : null;
         const rhsCall = from.match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\((.*)\)$/);
-        if (rhsCall && valStr !== null) {
+        if (rhsCall && rhsCall[1] && rhsCall[2] !== void 0 && valStr !== null) {
           const fnName = rhsCall[1];
           const args = splitTopLevel(rhsCall[2]).map((s) => s.trim()).filter(Boolean);
           const argVals = args.map((a) => formatShortVal(safeEvalExpr(a, v)));
@@ -7332,7 +7349,7 @@ runAsyncDemo()
       }
     }
     const retMatch = clean.match(/^return\s+(.+)$/);
-    if (retMatch) {
+    if (retMatch && retMatch[1]) {
       const expr = retMatch[1].trim();
       const val = safeEvalExpr(expr, v);
       if (val !== void 0) {
@@ -7548,7 +7565,7 @@ runAsyncDemo()
         if (ri > 0 && realR > rIdxs[ri - 1] + 1) {
           html2 += '<div class="ggap">\u22EE</div>';
           for (let gi = 0; gi < colTracks.length; gi++) {
-            html2 += '<div class="ggap">' + (colTracks[gi].gap ? "\u22F1" : "\u22EE") + "</div>";
+            html2 += '<div class="ggap">' + (colTracks[gi]?.gap ? "\u22F1" : "\u22EE") + "</div>";
           }
         }
         const isFocusRow = d.mark && d.mark[0] === realR;
@@ -7754,7 +7771,7 @@ runAsyncDemo()
     const curSpan = layoutSpan[id] || 1;
     if (curSpan < 2 && p >= SPAN_UP) layoutSpan[id] = 2;
     else if (curSpan > 1 && p <= SPAN_DOWN) layoutSpan[id] = 1;
-    return layoutSpan[id];
+    return layoutSpan[id] || 1;
   }
   function allocateSlotSpans(vars, ds) {
     const meta = vars.map((s, idx) => {
@@ -7767,12 +7784,15 @@ runAsyncDemo()
     const oneColItems = meta.filter((m) => m.span === 1);
     if (oneColItems.length % 2 === 1) {
       let promote = oneColItems[0];
-      for (let i = 1; i < oneColItems.length; i++) {
-        if (oneColItems[i].p >= promote.p) {
-          promote = oneColItems[i];
+      if (promote) {
+        for (let i = 1; i < oneColItems.length; i++) {
+          const candidate = oneColItems[i];
+          if (candidate && candidate.p >= promote.p) {
+            promote = candidate;
+          }
         }
+        promote.span = 2;
       }
-      promote.span = 2;
     }
     return meta;
   }
@@ -7790,7 +7810,7 @@ runAsyncDemo()
         const keys = Object.keys(ds);
         for (let k = 0; k < keys.length; k++) {
           const name = keys[k];
-          if (!_DISCOVER_CACHE.map.has(name)) {
+          if (name && !_DISCOVER_CACHE.map.has(name)) {
             _DISCOVER_CACHE.map.set(name, { id: name, name, kind: ds[name].kind || name });
             changed = true;
           }
@@ -7984,7 +8004,7 @@ runAsyncDemo()
         const cleaned = mem.replace(/^(?:(?:readonly|public|private|protected|static)\s+)+/, "");
         if (/^(?:constructor|get\s+|set\s+|async\s+|[A-Za-z_$][\w$]*\s*\()/.test(cleaned)) return;
         const m = cleaned.match(/^([A-Za-z_$][\w$]*)(\?)?\s*:\s*([^=]+?)(?:\s*=[\s\S]+)?$/);
-        if (m && !seen.has(m[1])) {
+        if (m && m[1] && m[3] && !seen.has(m[1])) {
           seen.add(m[1]);
           fields.push({
             k: m[1],
@@ -7995,7 +8015,7 @@ runAsyncDemo()
         }
         if (isClass) {
           const initOnly = cleaned.match(/^([A-Za-z_$][\w$]*)\s*=\s*(.+)$/);
-          if (initOnly && !seen.has(initOnly[1])) {
+          if (initOnly && initOnly[1] && initOnly[2] && !seen.has(initOnly[1])) {
             const rhs = initOnly[2].trim();
             let inferred = "any";
             if (/^[+-]?\d+(?:\.\d+)?$/.test(rhs)) inferred = "number";
@@ -8013,11 +8033,11 @@ runAsyncDemo()
       });
       if (isClass) {
         const ctorM = inner.match(/\bconstructor\s*\(([^)]*)\)/);
-        if (ctorM && ctorM[1].trim()) {
+        if (ctorM && ctorM[1]?.trim()) {
           splitTopLevel(ctorM[1]).forEach((rawP) => {
             const p = rawP.trim();
             const pm = p.match(/^(?:(?:public|private|protected|readonly)\s+)+([A-Za-z_$][\w$]*)(\?)?(?:\s*:\s*([^=]+?))?(?:\s*=\s*([\s\S]+))?$/);
-            if (pm && !seen.has(pm[1])) {
+            if (pm && pm[1] && !seen.has(pm[1])) {
               seen.add(pm[1]);
               let pType = pm[3] ? pm[3].trim() : "any";
               if (pType === "any" && pm[4]) {
@@ -8033,7 +8053,7 @@ runAsyncDemo()
         const thisAssignRe = /\bthis\.([A-Za-z_$][\w$]*)\s*=/g;
         let tm;
         while (tm = thisAssignRe.exec(inner)) {
-          if (!seen.has(tm[1])) {
+          if (tm[1] && !seen.has(tm[1])) {
             seen.add(tm[1]);
             fields.push({ k: tm[1], declaredType: "any", optional: false });
           }
@@ -8068,10 +8088,10 @@ runAsyncDemo()
         continue;
       }
       const ifaceM = trimmed.match(/^(?:export\s+)?(?:abstract\s+)?(interface|class)\s+([A-Za-z_$][\w$]*)(?:\s*<[^>]*>)?(?:\s+extends\s+[^{]+)?(?:\s+implements\s+[^{]+)?\s*\{(.*)$/);
-      if (ifaceM) {
+      if (ifaceM && ifaceM[2]) {
         const isClass = ifaceM[1] === "class";
         const name = ifaceM[2];
-        const rest = "{" + ifaceM[3];
+        const rest = "{" + (ifaceM[3] || "");
         let d = 0;
         for (const ch of rest) {
           if (ch === "{") d++;
@@ -8098,7 +8118,7 @@ runAsyncDemo()
         continue;
       }
       const typeObjM = trimmed.match(/^(?:export\s+)?type\s+([A-Za-z_$][\w$]*)\s*=\s*(\{[\s\S]*\});?$/);
-      if (typeObjM) {
+      if (typeObjM && typeObjM[1] && typeObjM[2]) {
         interfaces.set(typeObjM[1], {
           name: typeObjM[1],
           line: i + 1,
@@ -8108,18 +8128,18 @@ runAsyncDemo()
         continue;
       }
       const fnM = trimmed.match(/^(?:export\s+)?(?:default\s+)?function\s+[A-Za-z_$][\w$]*\s*\(([^)]*)\)/);
-      if (fnM && fnM[1].trim()) {
+      if (fnM && fnM[1]?.trim()) {
         splitTopLevel(fnM[1]).forEach((p) => {
           const pm = p.trim().match(/^([A-Za-z_$][\w$]*)\??\s*:\s*(.+)$/);
-          if (pm) varTypes.set(pm[1], pm[2].trim());
+          if (pm && pm[1] && pm[2]) varTypes.set(pm[1], pm[2].trim());
         });
       }
       const varM = trimmed.match(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*:\s*([^=]+?)(?:\s*=|$)/);
-      if (varM) {
+      if (varM && varM[1] && varM[2]) {
         varTypes.set(varM[1], varM[2].trim());
       } else {
         const varNewM = trimmed.match(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*new\s+([A-Za-z_$][\w$]*)\s*(?:<[^>]*>)?\s*\(/);
-        if (varNewM && !/^(Map|Set|Array)$/.test(varNewM[2])) {
+        if (varNewM && varNewM[1] && varNewM[2] && !/^(Map|Set|Array)$/.test(varNewM[2])) {
           varTypes.set(varNewM[1], varNewM[2]);
         }
       }
@@ -8162,7 +8182,7 @@ runAsyncDemo()
     let t = "";
     let i = 0;
     while (i < src.length) {
-      const ch = src[i];
+      const ch = src[i] || "";
       if (ch === '"' || ch === "'" || ch === "`") {
         const end = skipString(src, i);
         let lit = src.slice(i, end);
@@ -8174,7 +8194,7 @@ runAsyncDemo()
         continue;
       }
       if (/\s/.test(ch)) {
-        while (i < src.length && /\s/.test(src[i])) i++;
+        while (i < src.length && /\s/.test(src[i] || "")) i++;
         const prev = t[t.length - 1] || "";
         const next = src[i] || "";
         if (/[A-Za-z0-9_$?]/.test(prev) && /[A-Za-z0-9_$]/.test(next)) {
@@ -8189,11 +8209,11 @@ runAsyncDemo()
       t = t.slice(1, -1).trim();
     }
     const parenArr = t.match(/^\(([^()]+)\)\[\]$/);
-    if (parenArr && !/\binfer\s+/.test(parenArr[1]) && !parenArr[1].includes("|") && !parenArr[1].includes("&") && !parenArr[1].includes("=>")) {
+    if (parenArr && parenArr[1] && !/\binfer\s+/.test(parenArr[1]) && !parenArr[1].includes("|") && !parenArr[1].includes("&") && !parenArr[1].includes("=>")) {
       t = normalizeTsType(parenArr[1]) + "[]";
     }
     const arrGeneric = t.match(/^(?:Readonly)?Array<(.+)>$/);
-    if (arrGeneric && splitTopLevelUnion(arrGeneric[1]).length === 1) {
+    if (arrGeneric && arrGeneric[1] && splitTopLevelUnion(arrGeneric[1]).length === 1) {
       const inner = normalizeTsType(arrGeneric[1]);
       if (/\binfer\s+/.test(inner) || inner.includes("|") || inner.includes("&") || inner.includes("=>")) {
         t = `(${inner})[]`;
@@ -8278,7 +8298,7 @@ runAsyncDemo()
         if (end < 0) return null;
         const expr = body.slice(i + 2, end).trim();
         const inferM = expr.match(/^infer\s+([A-Za-z_$][\w$]*)(?:\s+extends\s+(.+))?$/);
-        if (inferM) {
+        if (inferM && inferM[1]) {
           inferNames.push({ name: inferM[1], constraint: inferM[2] ? normalizeTsType(inferM[2]) : null });
           const hasMoreText = end + 1 < body.length;
           regexStr += hasMoreText ? "(.+?)" : "(.*)";
@@ -8294,7 +8314,7 @@ runAsyncDemo()
         }
         i = end + 1;
       } else {
-        regexStr += body[i].replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        regexStr += (body[i] || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         i++;
       }
     }
@@ -8304,8 +8324,9 @@ runAsyncDemo()
       if (!m) return null;
       const bindings = /* @__PURE__ */ new Map();
       for (let k = 0; k < inferNames.length; k++) {
-        const captured = m[k + 1];
+        const captured = m[k + 1] ?? "";
         const info = inferNames[k];
+        if (!info) continue;
         if (info.constraint === "number") {
           if (!/^[+-]?\d+(?:\.\d+)?$/.test(captured)) return null;
           bindings.set(info.name, captured);
@@ -8554,7 +8575,7 @@ runAsyncDemo()
           s = s.slice(0, eqIdx).trim();
         }
         const extM = s.match(/^([A-Za-z_$][\w$]*)(?:\s+extends\s+([\s\S]+))?$/);
-        if (extM) {
+        if (extM && extM[1]) {
           out.push({
             name: extM[1],
             constraint: extM[2] ? extM[2].trim() : null,
@@ -8603,7 +8624,7 @@ runAsyncDemo()
             continue;
           }
           const word = id.name;
-          const prevCh = i > 0 ? typeStr[i - 1] : "";
+          const prevCh = i > 0 ? typeStr[i - 1] || "" : "";
           let afterIdx = id.end;
           while (afterIdx < typeStr.length && isWS(typeStr[afterIdx])) afterIdx++;
           const isPropKey = (typeStr[afterIdx] === ":" || typeStr[afterIdx] === "?" && typeStr[afterIdx + 1] === ":") && (prevCh === "{" || prevCh === ";" || prevCh === "," || /\s/.test(prevCh));
@@ -8636,7 +8657,7 @@ runAsyncDemo()
         else if (ch === "<") ad++;
         else if (ch === ">" && typeStr[i - 1] !== "=") ad = Math.max(0, ad - 1);
         else if (d === 0 && ad === 0) {
-          if (extPos < 0 && (i === 0 || /[\s>)\]]/.test(typeStr[i - 1]))) {
+          if (extPos < 0 && (i === 0 || /[\s>)\]]/.test(typeStr[i - 1] || ""))) {
             const extM = typeStr.slice(i).match(/^extends(?:\s+|(?=[(\[{"'`]))/);
             if (extM) {
               extPos = i;
@@ -8726,7 +8747,7 @@ runAsyncDemo()
               const eParams = eParamStr ? splitTopLevelDecl(eParamStr) : [];
               const cParams = cParamStr ? splitTopLevelDecl(cParamStr) : [];
               for (let idx = 0; idx < eParams.length; idx++) {
-                const ep = eParams[idx].trim();
+                const ep = (eParams[idx] || "").trim();
                 if (ep.startsWith("...")) {
                   const eColon2 = ep.indexOf(":");
                   const restType = eColon2 >= 0 ? ep.slice(eColon2 + 1).trim() : "any[]";
@@ -8735,7 +8756,7 @@ runAsyncDemo()
                   }
                   const elemRest = restType.endsWith("[]") ? restType.slice(0, -2) : restType;
                   for (let cIdx = idx; cIdx < cParams.length; cIdx++) {
-                    const cp2 = cParams[cIdx];
+                    const cp2 = cParams[cIdx] || "";
                     const cColon2 = cp2.indexOf(":");
                     const cpType2 = cColon2 >= 0 ? cp2.slice(cColon2 + 1).trim() : cp2.trim();
                     const pm2 = matchConditionalExtends(cpType2, elemRest, typeEnv, depth + 1);
@@ -8765,7 +8786,7 @@ runAsyncDemo()
         const eItems = splitTopLevelDecl(eSubst.slice(1, -1)).map((s) => s.trim()).filter(Boolean);
         const cItems = splitTopLevelDecl(cNorm.slice(1, -1)).map((s) => s.trim()).filter(Boolean);
         for (let idx = 0; idx < eItems.length; idx++) {
-          const ei = eItems[idx];
+          const ei = eItems[idx] || "";
           const restInfer = ei.match(/^\.\.\.(?:infer\s+([A-Za-z_$][\w$]*)|([A-Za-z_$][\w$]*))$/);
           if (restInfer) {
             const restVar = restInfer[1];
@@ -8774,21 +8795,21 @@ runAsyncDemo()
             return { matched: true, inferred };
           }
           if (idx >= cItems.length) return { matched: false, inferred };
-          const subM = matchConditionalExtends(cItems[idx], ei, typeEnv, depth + 1);
+          const subM = matchConditionalExtends(cItems[idx] || "any", ei, typeEnv, depth + 1);
           if (!subM.matched) return { matched: false, inferred };
           subM.inferred.forEach((v, k) => inferred.set(k, v));
         }
         return { matched: cItems.length === eItems.length, inferred };
       }
       const eGenM = eSubst.match(/^([A-Za-z_$][\w$]*)<(.+)>$/);
-      if (eGenM && /\binfer\s+/.test(eGenM[2])) {
+      if (eGenM && eGenM[2] && /\binfer\s+/.test(eGenM[2])) {
         const cGenM = cNorm.match(/^([A-Za-z_$][\w$]*)<(.+)>$/);
-        if (!cGenM || cGenM[1] !== eGenM[1]) return { matched: false, inferred };
+        if (!cGenM || !cGenM[2] || cGenM[1] !== eGenM[1]) return { matched: false, inferred };
         const eArgs = splitTopLevelDecl(eGenM[2]).map((s) => s.trim());
         const cArgs = splitTopLevelDecl(cGenM[2]).map((s) => s.trim());
         if (eArgs.length !== cArgs.length) return { matched: false, inferred };
         for (let idx = 0; idx < eArgs.length; idx++) {
-          const subM = matchConditionalExtends(cArgs[idx], eArgs[idx], typeEnv, depth + 1);
+          const subM = matchConditionalExtends(cArgs[idx] || "any", eArgs[idx] || "any", typeEnv, depth + 1);
           if (!subM.matched) return { matched: false, inferred };
           subM.inferred.forEach((v, k) => inferred.set(k, v));
         }
@@ -8841,7 +8862,7 @@ runAsyncDemo()
         }
         if (/^\d+$/.test(keyT)) {
           const idx = Number(keyT);
-          return idx < elems.length ? elems[idx] : "undefined";
+          return idx < elems.length ? elems[idx] || "undefined" : "undefined";
         }
       }
       const shape = getInterfaceShape(objT);
@@ -8977,16 +8998,16 @@ runAsyncDemo()
       if (t.startsWith("{") && t.endsWith("}")) {
         const inner = t.slice(1, -1).trim().replace(/;$/, "").trim();
         const mappedM = inner.match(/^(?:(?:\+|-)?readonly\s+)?\[\s*([A-Za-z_$][\w$]*)\s+in\s+([\s\S]+?)\s*\]([+\-]?)\?\s*:\s*([\s\S]+)$/) || inner.match(/^(?:(?:\+|-)?readonly\s+)?\[\s*([A-Za-z_$][\w$]*)\s+in\s+([\s\S]+?)\s*\]\s*:\s*([\s\S]+)$/);
-        if (mappedM) {
+        if (mappedM && mappedM[1] && mappedM[2]) {
           const kVar = mappedM[1];
           let inClause = mappedM[2].trim();
           let optMod = null;
           let valTemplate = "";
           if (mappedM.length === 5) {
             optMod = mappedM[3] === "-" ? "remove" : "add";
-            valTemplate = mappedM[4].trim();
+            valTemplate = (mappedM[4] || "").trim();
           } else {
-            valTemplate = mappedM[3].trim();
+            valTemplate = (mappedM[3] || "").trim();
           }
           let asClause = null;
           let d = 0, ad = 0;
@@ -9008,7 +9029,7 @@ runAsyncDemo()
           }
           let sourceObjShape = null;
           const keyofM = inClause.match(/^keyof\s+([\s\S]+)$/);
-          if (keyofM) {
+          if (keyofM && keyofM[1]) {
             const srcT = evaluateType(keyofM[1].trim(), typeEnv, depth + 1);
             sourceObjShape = getInterfaceShape(srcT);
           }
@@ -9101,15 +9122,17 @@ runAsyncDemo()
         }
       }
       const genM = t.match(/^([A-Za-z_$][\w$]*)<([\s\S]+)>$/);
-      if (genM) {
+      if (genM && genM[1] && genM[2]) {
         const baseName = genM[1];
         const rawArgs = splitTopLevelDecl(genM[2]).map((a) => evaluateType(a.trim(), typeEnv, depth + 1));
+        const arg0 = rawArgs[0] || "any";
+        const arg1 = rawArgs[1] || "any";
         if (baseName === "Array" || baseName === "ReadonlyArray") {
-          const elem = rawArgs[0] || "any";
+          const elem = arg0;
           return elem.includes("|") ? `(${elem})[]` : `${elem}[]`;
         }
         if (baseName === "Partial" && rawArgs.length === 1) {
-          const shape = getInterfaceShape(rawArgs[0]);
+          const shape = getInterfaceShape(arg0);
           if (shape) {
             const props = [];
             shape.forEach((v, k) => props.push(`${k}?:${v.type}`));
@@ -9117,7 +9140,7 @@ runAsyncDemo()
           }
         }
         if (baseName === "Required" && rawArgs.length === 1) {
-          const shape = getInterfaceShape(rawArgs[0]);
+          const shape = getInterfaceShape(arg0);
           if (shape) {
             const props = [];
             shape.forEach((v, k) => props.push(`${k}:${v.type}`));
@@ -9125,19 +9148,19 @@ runAsyncDemo()
           }
         }
         if (baseName === "Readonly" && rawArgs.length === 1) {
-          if (rawArgs[0].endsWith("[]")) return rawArgs[0];
-          const shape = getInterfaceShape(rawArgs[0]);
+          if (arg0.endsWith("[]")) return arg0;
+          const shape = getInterfaceShape(arg0);
           if (shape) {
             const props = [];
             shape.forEach((v, k) => props.push(`${k}${v.optional ? "?" : ""}:${v.type}`));
             return `{${props.join(";")}}`;
           }
-          return rawArgs[0];
+          return arg0;
         }
         if (baseName === "Pick" && rawArgs.length === 2) {
-          const shape = getInterfaceShape(rawArgs[0]);
+          const shape = getInterfaceShape(arg0);
           if (shape) {
-            const keys = new Set(splitTopLevelUnion(rawArgs[1]).map((k) => k.replace(/^["']|["']$/g, "")));
+            const keys = new Set(splitTopLevelUnion(arg1).map((k) => k.replace(/^["']|["']$/g, "")));
             const props = [];
             shape.forEach((v, k) => {
               if (keys.has(k)) props.push(`${k}${v.optional ? "?" : ""}:${v.type}`);
@@ -9146,9 +9169,9 @@ runAsyncDemo()
           }
         }
         if (baseName === "Omit" && rawArgs.length === 2) {
-          const shape = getInterfaceShape(rawArgs[0]);
+          const shape = getInterfaceShape(arg0);
           if (shape) {
-            const omitKeys = new Set(splitTopLevelUnion(rawArgs[1]).map((k) => k.replace(/^["']|["']$/g, "")));
+            const omitKeys = new Set(splitTopLevelUnion(arg1).map((k) => k.replace(/^["']|["']$/g, "")));
             const props = [];
             shape.forEach((v, k) => {
               if (!omitKeys.has(k)) props.push(`${k}${v.optional ? "?" : ""}:${v.type}`);
@@ -9157,39 +9180,39 @@ runAsyncDemo()
           }
         }
         if (baseName === "Record" && rawArgs.length === 2) {
-          const keyParts = splitTopLevelUnion(rawArgs[0]);
-          const valT = rawArgs[1];
+          const keyParts = splitTopLevelUnion(arg0);
+          const valT = arg1;
           const allLiteralKeys = keyParts.length > 0 && keyParts.every((k) => k.startsWith('"') && k.endsWith('"') || /^[A-Za-z_$][\w$]*$/.test(k) && k !== "string" && k !== "number" && k !== "symbol");
           if (allLiteralKeys) {
             const props = keyParts.map((k) => `${k.replace(/^["']|["']$/g, "")}:${valT}`);
             return `{${props.join(";")}}`;
           }
-          return `Record<${rawArgs[0]},${valT}>`;
+          return `Record<${arg0},${valT}>`;
         }
         if (baseName === "Exclude" && rawArgs.length === 2) {
-          const uParts = splitTopLevelUnion(rawArgs[0]);
-          const excl = rawArgs[1];
+          const uParts = splitTopLevelUnion(arg0);
+          const excl = arg1;
           const kept = uParts.filter((p) => !isTypeCompatible(p, excl));
           return kept.length ? kept.join("|") : "never";
         }
         if (baseName === "Extract" && rawArgs.length === 2) {
-          const uParts = splitTopLevelUnion(rawArgs[0]);
-          const target = rawArgs[1];
+          const uParts = splitTopLevelUnion(arg0);
+          const target = arg1;
           const kept = uParts.filter((p) => isTypeCompatible(p, target));
           return kept.length ? kept.join("|") : "never";
         }
         if (baseName === "NonNullable" && rawArgs.length === 1) {
-          const uParts = splitTopLevelUnion(rawArgs[0]).filter((p) => p !== "null" && p !== "undefined" && p !== "void");
+          const uParts = splitTopLevelUnion(arg0).filter((p) => p !== "null" && p !== "undefined" && p !== "void");
           return uParts.length ? uParts.join("|") : "never";
         }
         if (baseName === "ReturnType" && rawArgs.length === 1) {
-          const fnT = rawArgs[0];
+          const fnT = arg0;
           const arrowIdx = fnT.lastIndexOf("=>");
           if (arrowIdx > 0) return evaluateType(fnT.slice(arrowIdx + 2).trim(), typeEnv, depth + 1);
           return "any";
         }
         if (baseName === "Parameters" && rawArgs.length === 1) {
-          const fnT = rawArgs[0];
+          const fnT = arg0;
           if (fnT.startsWith("(")) {
             const closeP = findBalancedParen(fnT, 0);
             if (closeP > 0) {
@@ -9204,17 +9227,17 @@ runAsyncDemo()
           return "any[]";
         }
         if (baseName === "Awaited" && rawArgs.length === 1) {
-          let cur2 = rawArgs[0];
+          let cur2 = arg0;
           let guard = 0;
           while (guard++ < 8) {
             const pm = cur2.match(/^Promise<(.+)>$/);
-            if (pm) cur2 = evaluateType(pm[1], typeEnv, depth + 1);
+            if (pm && pm[1]) cur2 = evaluateType(pm[1], typeEnv, depth + 1);
             else break;
           }
           return cur2;
         }
         if ((baseName === "Uppercase" || baseName === "Lowercase" || baseName === "Capitalize" || baseName === "Uncapitalize") && rawArgs.length === 1) {
-          const sArg = rawArgs[0];
+          const sArg = arg0;
           if (sArg.startsWith('"') && sArg.endsWith('"')) {
             const inner = sArg.slice(1, -1);
             if (baseName === "Uppercase") return `"${inner.toUpperCase()}"`;
@@ -9228,7 +9251,7 @@ runAsyncDemo()
           const info = genericTypeAliases.get(baseName);
           const subEnv = new Map(typeEnv);
           info.typeParams.forEach((tp, idx) => {
-            const argVal = idx < rawArgs.length ? rawArgs[idx] : tp.defaultType ? evaluateType(tp.defaultType, subEnv, depth + 1) : "any";
+            const argVal = rawArgs[idx] ?? (tp.defaultType ? evaluateType(tp.defaultType, subEnv, depth + 1) : "any");
             subEnv.set(tp.name, argVal);
           });
           return evaluateType(info.body, subEnv, depth + 1);
@@ -9275,7 +9298,7 @@ runAsyncDemo()
       members.forEach((mem) => {
         const cleaned = mem.replace(/^(?:readonly|public|private|protected|static)\s+/, "");
         const m = cleaned.match(/^([A-Za-z_$][\w$]*)(\?)?\s*:\s*([\s\S]+)$/);
-        if (m) {
+        if (m && m[1] && m[3]) {
           const rawT = m[3].trim();
           propMap.set(m[1], { type: evaluateType(rawT, typeEnv), rawType: rawT, optional: Boolean(m[2]) });
         }
@@ -9289,8 +9312,8 @@ runAsyncDemo()
         return parseObjectShapeLiteral(resolved);
       }
       const genM = resolved.match(/^([A-Za-z_$][\w$]*)<([\s\S]+)>$/);
-      const baseName = genM ? genM[1] : resolved;
-      const typeArgs = genM ? splitTopLevelDecl(genM[2]).map((a) => evaluateType(a.trim(), activeTypeParams)) : [];
+      const baseName = genM && genM[1] ? genM[1] : resolved;
+      const typeArgs = genM && genM[2] ? splitTopLevelDecl(genM[2]).map((a) => evaluateType(a.trim(), activeTypeParams)) : [];
       const direct = interfaces.get(resolved) || interfaces.get(baseName);
       if (direct) {
         let merged = /* @__PURE__ */ new Map();
@@ -9311,7 +9334,7 @@ runAsyncDemo()
         if (tParams && tParams.length > 0 && typeArgs.length > 0) {
           const subEnv = new Map(activeTypeParams);
           tParams.forEach((tp, idx) => {
-            subEnv.set(tp.name, idx < typeArgs.length ? typeArgs[idx] : tp.defaultType ? evaluateType(tp.defaultType, subEnv) : "any");
+            subEnv.set(tp.name, typeArgs[idx] ?? (tp.defaultType ? evaluateType(tp.defaultType, subEnv) : "any"));
           });
           const instantiated = /* @__PURE__ */ new Map();
           merged.forEach((v, k) => {
@@ -9329,13 +9352,13 @@ runAsyncDemo()
     function getClassMethodSig(className, methodName) {
       const resolved = evaluateType(className, activeTypeParams);
       const genM = resolved.match(/^([A-Za-z_$][\w$]*)<([\s\S]+)>$/);
-      let cur2 = genM ? genM[1] : resolved;
-      const typeArgs = genM ? splitTopLevelDecl(genM[2]).map((a) => evaluateType(a.trim(), activeTypeParams)) : [];
+      let cur2 = genM && genM[1] ? genM[1] : resolved;
+      const typeArgs = genM && genM[2] ? splitTopLevelDecl(genM[2]).map((a) => evaluateType(a.trim(), activeTypeParams)) : [];
       const tParams = interfaceTypeParams.get(cur2);
       const classEnv = new Map(activeTypeParams);
       if (tParams && tParams.length > 0 && typeArgs.length > 0) {
         tParams.forEach((tp, idx) => {
-          classEnv.set(tp.name, idx < typeArgs.length ? typeArgs[idx] : tp.defaultType ? evaluateType(tp.defaultType, classEnv) : "any");
+          classEnv.set(tp.name, typeArgs[idx] ?? (tp.defaultType ? evaluateType(tp.defaultType, classEnv) : "any"));
         });
       }
       const visited = /* @__PURE__ */ new Set();
@@ -9376,7 +9399,7 @@ runAsyncDemo()
       const e = evaluateType(expectedType, activeTypeParams);
       if (isTsAssignable(a, e)) return true;
       const recM = e.match(/^Record<([^,]+),([\s\S]+)>$/);
-      if (recM) {
+      if (recM && recM[2]) {
         const valExpected = recM[2].trim();
         const aShape = getInterfaceShape(a);
         if (aShape) {
@@ -9423,7 +9446,7 @@ runAsyncDemo()
           if (ep.startsWith("[") && ep.endsWith("]")) {
             const tupleTypes = splitTopLevelDecl(ep.slice(1, -1)).map((s) => s.trim()).filter(Boolean);
             const elemExprs = splitTopLevel(trimmedExpr.slice(1, -1)).map((s) => s.trim()).filter(Boolean);
-            if (tupleTypes.length === elemExprs.length && elemExprs.every((el, idx) => isExpressionAssignable(el, inferType(el, lineNum), tupleTypes[idx], lineNum))) {
+            if (tupleTypes.length === elemExprs.length && elemExprs.every((el, idx) => isExpressionAssignable(el, inferType(el, lineNum), tupleTypes[idx] || "any", lineNum))) {
               return true;
             }
           }
@@ -9533,7 +9556,7 @@ runAsyncDemo()
           else if (ch === ")" || ch === "]" || ch === "}") d--;
           else if (d === 0 && isWS(ch)) {
             const m = s.slice(i).match(/^\s+(?:as|satisfies)\s+([A-Za-z_$][\w$<>[\]\s|()]*)$/);
-            if (m && !/[()]/.test(m[1].replace(/\([^()]*\)\[\]/g, ""))) {
+            if (m && m[1] && !/[()]/.test(m[1].replace(/\([^()]*\)\[\]/g, ""))) {
               castType = resolveAlias(m[1]);
               break;
             }
@@ -9585,7 +9608,7 @@ runAsyncDemo()
         return explicitT + "[]";
       }
       const newClassM = s.match(/^new\s+([A-Za-z_$][\w$]*)\s*(?:<([\s\S]*)>)?\s*\(([\s\S]*)\)$/);
-      if (newClassM && !/^(Map|Set|Array|Promise)$/.test(newClassM[1]) && findBalancedParen(s, s.lastIndexOf("(")) === s.length - 1) {
+      if (newClassM && newClassM[1] && !/^(Map|Set|Array|Promise)$/.test(newClassM[1]) && findBalancedParen(s, s.lastIndexOf("(")) === s.length - 1) {
         const afterNew = s.replace(/^new\s+/, "");
         const idInfo = readIdent(afterNew, 0);
         if (idInfo) {
@@ -9652,7 +9675,7 @@ runAsyncDemo()
         }
       }
       const newClassPrefixM = s.match(/^new\s+([A-Za-z_$][\w$]*)\s*(?:<[^>]*>)?\s*\(/);
-      if (newClassPrefixM && !/^(Map|Set|Array)$/.test(newClassPrefixM[1])) {
+      if (newClassPrefixM && newClassPrefixM[1] && !/^(Map|Set|Array)$/.test(newClassPrefixM[1])) {
         const openIdx = s.indexOf("(");
         const closeIdx = findBalancedParen(s, openIdx);
         if (closeIdx === s.length - 1) {
@@ -9687,7 +9710,7 @@ runAsyncDemo()
         return "object";
       }
       const arrowExprM = s.match(/^(?:async\s+)?(?:<[^>]*>\s*)?(?:\(([^)]*)\)|([A-Za-z_$][\w$]*))\s*(?::\s*[^=]+?)?\s*=>\s*([\s\S]+)$/);
-      if (arrowExprM) {
+      if (arrowExprM && arrowExprM[3]) {
         const rawParamStr = arrowExprM[1] !== void 0 ? arrowExprM[1] : arrowExprM[2];
         const bodyStr = arrowExprM[3].trim();
         const saved = /* @__PURE__ */ new Map();
@@ -9756,10 +9779,10 @@ runAsyncDemo()
             else env.delete(savedNarrow.key);
             savedNarrow = null;
           };
-          if (eqNullM && eqNullM[2] === "!==") applyNarrow(eqNullM[1], eqNullM[3]);
+          if (eqNullM && eqNullM[1] && eqNullM[3] && eqNullM[2] === "!==") applyNarrow(eqNullM[1], eqNullM[3]);
           const t1 = inferType(s.slice(qIdx + 1, cIdx), lineNum);
           if (eqNullM && eqNullM[2] === "!==") restoreNarrow();
-          if (eqNullM && eqNullM[2] === "===") applyNarrow(eqNullM[1], eqNullM[3]);
+          if (eqNullM && eqNullM[1] && eqNullM[3] && eqNullM[2] === "===") applyNarrow(eqNullM[1], eqNullM[3]);
           const t2 = inferType(s.slice(cIdx + 1), lineNum);
           if (eqNullM && eqNullM[2] === "===") restoreNarrow();
           if (t1 === t2) return t1;
@@ -9824,7 +9847,7 @@ runAsyncDemo()
             }
             const rest = s.slice(i);
             const m = rest.match(/^(===|!==|<=|>=|==|!=|<|>)(?!=)/);
-            if (m && i > 0) {
+            if (m && m[1] && i > 0) {
               const op = m[1];
               const lhs = s.slice(0, i).trim();
               const rhs = s.slice(i + op.length).trim();
@@ -9891,7 +9914,7 @@ runAsyncDemo()
         return "number";
       }
       const newChainCallM = s.match(/^(new\s+[A-Za-z_$][\w$]*\s*(?:<[^>]*>)?\s*\([^)]*\))\.([A-Za-z_$][\w$]*)\s*\(([\s\S]*)\)$/);
-      if (newChainCallM && findBalancedParen(s, s.lastIndexOf("(")) === s.length - 1) {
+      if (newChainCallM && newChainCallM[1] && newChainCallM[2] && newChainCallM[3] !== void 0 && findBalancedParen(s, s.lastIndexOf("(")) === s.length - 1) {
         const objType = inferType(newChainCallM[1], lineNum);
         const method = newChainCallM[2];
         const argsRaw = newChainCallM[3].trim();
@@ -9904,7 +9927,7 @@ runAsyncDemo()
         return "any";
       }
       const callPrefixM = s.match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*(?:<([\s\S]+)>)?\s*\(/);
-      if (callPrefixM) {
+      if (callPrefixM && callPrefixM[1]) {
         const callee = callPrefixM[1];
         let scanPos = callee.length;
         while (scanPos < s.length && isWS(s[scanPos])) scanPos++;
@@ -9974,7 +9997,7 @@ runAsyncDemo()
             const method = callee.slice(dotIdx + 1);
             const objType = inferType(objName, lineNum);
             const mapM = objType.match(/^Map<([^,]+),(.+)>$/);
-            if (mapM) {
+            if (mapM && mapM[1] && mapM[2]) {
               const kt = mapM[1], vt = mapM[2];
               if (method === "get" || method === "has" || method === "delete") {
                 if (argTypes[0] && !isExpressionAssignable(args[0], argTypes[0], kt, lineNum)) {
@@ -9993,7 +10016,7 @@ runAsyncDemo()
               }
             }
             const setM = objType.match(/^Set<(.+)>$/);
-            if (setM) {
+            if (setM && setM[1]) {
               const vt = setM[1];
               if (method === "add" || method === "has" || method === "delete") {
                 if (argTypes[0] && !isExpressionAssignable(args[0], argTypes[0], vt, lineNum)) {
@@ -10079,17 +10102,18 @@ runAsyncDemo()
       if (/^[A-Za-z_$][\w$]*!*(?:\.[A-Za-z_$][\w$]*!*)+$/.test(s)) {
         if (env.has(s)) return env.get(s).type;
         const rawParts = s.split(".");
-        const firstBase = rawParts[0].replace(/!+$/, "");
+        const firstPart = rawParts[0] || "";
+        const firstBase = firstPart.replace(/!+$/, "");
         if (!isKnownIdentifier(firstBase)) {
           addDiag(lineNum, "TS2304", `\u627E\u4E0D\u5230\u540D\u79F0 "${firstBase}"\uFF08\u53D8\u91CF\u672A\u58F0\u660E\uFF0C\u8BF7\u4F7F\u7528 let \u6216 const \u58F0\u660E\uFF09`);
           return "any";
         }
         let curType = env.has(firstBase) ? env.get(firstBase).type : interfaces.has(firstBase) ? firstBase : "any";
-        if (rawParts[0].endsWith("!")) {
+        if (firstPart.endsWith("!")) {
           curType = stripNullableFromType(stripNullableFromType(curType, "null"), "undefined");
         }
         for (let pIdx = 1; pIdx < rawParts.length; pIdx++) {
-          const rawProp = rawParts[pIdx];
+          const rawProp = rawParts[pIdx] || "";
           const hasBang = rawProp.endsWith("!");
           const prop = rawProp.replace(/!+$/, "");
           const lookupType = stripNullableFromType(stripNullableFromType(curType, "null"), "undefined");
@@ -10151,6 +10175,7 @@ runAsyncDemo()
         }
         for (let idx = 0; idx < args.length && idx < sig.params.length; idx++) {
           const p = sig.params[idx];
+          if (!p) continue;
           const rawPT = normalizeTsType(p.rawType || p.type || "any");
           const actT = argTypes[idx];
           const litT = inferLiteralType(args[idx]);
@@ -10206,8 +10231,8 @@ runAsyncDemo()
         const p = sig.params[idx];
         if (!p) continue;
         const expectedPT = tParams.length > 0 ? evaluateType(p.rawType || p.type, callEnv) : p.type;
-        const at = argTypes[idx];
-        const rawArg = args[idx] ? args[idx].trim() : "";
+        const at = argTypes[idx] || "any";
+        const rawArg = (args[idx] || "").trim();
         if (expectedPT && expectedPT !== "any") {
           if (rawArg.startsWith("{") && getInterfaceShape(expectedPT)) {
             checkObjectLiteralAgainstShape(rawArg, expectedPT, lineNum, `${calleeLabel} \u7684\u53C2\u6570 "${p.name}"`);
@@ -10244,7 +10269,7 @@ runAsyncDemo()
         const p = pRaw.trim().replace(/^(?:public|private|protected|readonly)\s+/, "");
         if (!p) return;
         const pm = p.match(/^(?:\.\.\.)?([A-Za-z_$][\w$]*)(\?)?(?:\s*:\s*((?:[^=]|=>)+?))?(?:\s*=\s*(?!=|>)([\s\S]+))?$/);
-        if (pm) {
+        if (pm && pm[1]) {
           const pName = pm[1];
           const isOpt = Boolean(pm[2] || pm[4]);
           const rawType = pm[3] ? pm[3].trim() : null;
@@ -10268,14 +10293,14 @@ runAsyncDemo()
       const s = mem.trim();
       if (!s) return;
       const getterM = s.match(/^(?:(?:public|private|protected|static|readonly)\s+)*get\s+([A-Za-z_$][\w$]*)\s*\(\s*\)\s*(?::\s*([^{]+))?/);
-      if (getterM) {
+      if (getterM && getterM[1]) {
         const rawGT = getterM[2] ? getterM[2].trim() : "any";
         const gType = resolveAlias(rawGT);
         propMap.set(getterM[1], { type: gType, rawType: rawGT, optional: false });
         return;
       }
       const methodHdrM = s.match(/^(?:(?:public|private|protected|static|async|readonly|abstract)\s+)*([A-Za-z_$][\w$]*)\s*(<[\s\S]*>)?\s*\(/);
-      if (methodHdrM && !RESERVED_WORDS.has(methodHdrM[1])) {
+      if (methodHdrM && methodHdrM[1] && !RESERVED_WORDS.has(methodHdrM[1])) {
         const mName = methodHdrM[1];
         let openP = -1, ad = 0;
         for (let k = s.indexOf(mName) + mName.length; k < s.length; k++) {
@@ -10293,14 +10318,14 @@ runAsyncDemo()
           const paramStr = s.slice(openP + 1, closeP).trim();
           const afterClose = s.slice(closeP + 1).trim();
           const retM = afterClose.match(/^:\s*([^{;]+?)(?:\s*(?:\{[\s\S]*|;))?$/);
-          const rawRetType = mName === "constructor" ? "void" : retM ? retM[1].trim() : "any";
+          const rawRetType = mName === "constructor" ? "void" : retM && retM[1] ? retM[1].trim() : "any";
           const retType = mName === "constructor" ? "void" : resolveAlias(rawRetType);
           const { params, minArgs } = parseParamList(paramStr, lineNum, true);
           if (mName === "constructor") {
             splitTopLevelDecl(paramStr).forEach((rawP, idx) => {
               const pTrim = rawP.trim();
-              if (/^(?:(?:public|private|protected|readonly)\s+)+/.test(pTrim) && params[idx]) {
-                const pInfo = params[idx];
+              const pInfo = params[idx];
+              if (/^(?:(?:public|private|protected|readonly)\s+)+/.test(pTrim) && pInfo) {
                 propMap.set(pInfo.name, { type: pInfo.type, rawType: pInfo.rawType || pInfo.type, optional: Boolean(pInfo.optional) });
               }
             });
@@ -10323,13 +10348,13 @@ runAsyncDemo()
       if (s.includes("(") && !s.includes("=>") && (!s.includes("=") || s.indexOf("(") < s.indexOf("="))) return;
       const cleaned = s.replace(/^(?:(?:readonly|public|private|protected|static|abstract)\s+)+/, "");
       const pm = cleaned.match(/^([A-Za-z_$][\w$]*)(\?)?\s*:\s*((?:[^=]|=>)+?)(?:\s*=\s*(?!=|>)[\s\S]+)?$/);
-      if (pm) {
+      if (pm && pm[1] && pm[3]) {
         const rawFT = pm[3].trim();
         propMap.set(pm[1], { type: resolveAlias(rawFT), rawType: rawFT, optional: Boolean(pm[2]) });
         return;
       }
       const initM = cleaned.match(/^([A-Za-z_$][\w$]*)\s*=\s*(.+)$/);
-      if (initM) {
+      if (initM && initM[1] && initM[2]) {
         const infT = inferType(initM[2].trim(), lineNum);
         propMap.set(initM[1], { type: infT, rawType: infT, optional: false });
       }
@@ -10370,7 +10395,7 @@ runAsyncDemo()
           const thisAssignRe = /\bthis\.([A-Za-z_$][\w$]*)\s*=\s*(?!=)/g;
           let tm;
           while (tm = thisAssignRe.exec(raw)) {
-            if (!activeInterface.has(tm[1])) {
+            if (tm[1] && !activeInterface.has(tm[1])) {
               activeInterface.set(tm[1], { type: "any", rawType: "any", optional: false });
             }
           }
@@ -10384,12 +10409,12 @@ runAsyncDemo()
         continue;
       }
       const nsKwM = raw.match(/^(?:export\s+)?(?:declare\s+)?(?:namespace|module)\s+([A-Za-z_$][\w$]*)/);
-      if (nsKwM) {
+      if (nsKwM && nsKwM[1]) {
         enumsSet.add(nsKwM[1]);
         continue;
       }
       const ifaceKwM = raw.match(/^(?:export\s+)?(?:declare\s+)?(?:abstract\s+)?(interface|class)\s+([A-Za-z_$][\w$]*)/);
-      if (ifaceKwM) {
+      if (ifaceKwM && ifaceKwM[2]) {
         const isClass = ifaceKwM[1] === "class";
         const ifaceName = ifaceKwM[2];
         let pos = ifaceKwM[0].length;
@@ -10451,12 +10476,12 @@ runAsyncDemo()
         }
       }
       const enumMatch = raw.match(/^(?:export\s+)?(?:const\s+)?enum\s+([A-Za-z_$][\w$]*)\b/);
-      if (enumMatch) {
+      if (enumMatch && enumMatch[1]) {
         enumsSet.add(enumMatch[1]);
         continue;
       }
       const typeHdrM = raw.match(/^(?:export\s+)?type\s+([A-Za-z_$][\w$]*)/);
-      if (typeHdrM) {
+      if (typeHdrM && typeHdrM[1]) {
         const aliasName = typeHdrM[1];
         let fullTypeDecl = raw;
         let scanIdx = i;
@@ -10538,7 +10563,7 @@ runAsyncDemo()
         }
       }
       const fnMatch = raw.match(/^(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/);
-      if (fnMatch && raw.indexOf("(") >= 0) {
+      if (fnMatch && fnMatch[1] && raw.indexOf("(") >= 0) {
         const fnName = fnMatch[1];
         let headerStr = raw;
         let scanLine = i;
@@ -10574,7 +10599,7 @@ runAsyncDemo()
           const paramStr = headerStr.slice(openP + 1, closeP).trim();
           const afterClose = headerStr.slice(closeP + 1).trim();
           const retM = afterClose.match(/^:\s*([^{]+?)(?:\s*\{[\s\S]*)?$/);
-          const rawRetType = retM ? retM[1].trim() : "any";
+          const rawRetType = retM && retM[1] ? retM[1].trim() : "any";
           const tempEnv = /* @__PURE__ */ new Map();
           fnTParams.forEach((tp) => tempEnv.set(tp.name, tp.name));
           const retType = retM ? resolveAlias(rawRetType, tempEnv) : "any";
@@ -10610,10 +10635,10 @@ runAsyncDemo()
     let inEnumBlock = false;
     for (let i = 0; i < lines.length; i++) {
       const lineNum = i + 1;
-      let rawLine = lines[i];
+      let rawLine = lines[i] ?? "";
       const rawTrimmed = rawLine.trim();
       const callComment = rawTrimmed.match(/^\/\/\s*调用[:：]\s*(.+)$/);
-      if (callComment) {
+      if (callComment && callComment[1]) {
         inferType(callComment[1].trim(), lineNum);
         continue;
       }
@@ -10621,14 +10646,14 @@ runAsyncDemo()
       if (!trimmed || trimmed.startsWith("@")) continue;
       if (/^declare\b/.test(trimmed)) {
         const declVarM = trimmed.match(/^declare\s+(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::\s*([^=;]+))?/);
-        if (declVarM) {
+        if (declVarM && declVarM[1]) {
           const dType = declVarM[2] ? resolveAlias(declVarM[2].trim()) : "any";
           env.set(declVarM[1], { type: dType, isConst: true, line: lineNum, declaredType: dType });
         }
         continue;
       }
       const nsOpenM = trimmed.match(/^(?:export\s+)?(?:namespace|module)\s+([A-Za-z_$][\w$]*)\s*\{/);
-      if (nsOpenM) {
+      if (nsOpenM && nsOpenM[1]) {
         env.set(nsOpenM[1], { type: "any", isConst: true, line: lineNum, declaredType: "any" });
         for (let k = 0; k < rawLine.length; k++) {
           const ch = rawLine[k];
@@ -10698,7 +10723,7 @@ runAsyncDemo()
       const classOpen = trimmed.match(/^(?:export\s+)?(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)(?:\s*<[\s\S]*>)?(?:\s+extends\s+[^{]+)?(?:\s+implements\s+[^{]+)?\s*\{/);
       const classExprOpen = !classOpen ? trimmed.match(/^(?:export\s+)?(const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*class\b(?:\s+[A-Za-z_$][\w$]*)?\s*\{/) : null;
       if (classOpen || classExprOpen) {
-        const clsName = classOpen ? classOpen[1] : classExprOpen ? classExprOpen[2] : "";
+        const clsName = (classOpen ? classOpen[1] : classExprOpen ? classExprOpen[2] : "") || "";
         if (classExprOpen) {
           env.set(clsName, { type: clsName, isConst: classExprOpen[1] === "const", line: lineNum, declaredType: clsName });
           if (!interfaces.has(clsName)) interfaces.set(clsName, /* @__PURE__ */ new Map());
@@ -10761,7 +10786,7 @@ runAsyncDemo()
       let validMethodOpen = null;
       if (!fnOpen && !arrowFnOpen && currentClass && braceDepth === classStartBraceDepth + 1) {
         const mHdr = trimmed.match(/^(?:(?:public|private|protected|static|async|readonly|get|set)\s+)*([A-Za-z_$][\w$]*)\s*(?:<[\s\S]*>)?\s*\(/);
-        if (mHdr && !RESERVED_WORDS.has(mHdr[1])) {
+        if (mHdr && mHdr[1] && !RESERVED_WORDS.has(mHdr[1])) {
           let openP = -1, ad = 0;
           for (let k = trimmed.indexOf(mHdr[1]) + mHdr[1].length; k < trimmed.length; k++) {
             if (trimmed[k] === "<") ad++;
@@ -10790,7 +10815,7 @@ runAsyncDemo()
             trimmed += " " + stripInlineCommentSafe(lines[i]).trim();
           }
         }
-        if (arrowFnOpen) {
+        if (arrowFnOpen && arrowFnOpen[2]) {
           const fnVarName = arrowFnOpen[2];
           const isConstFn = arrowFnOpen[1] === "const";
           env.set(fnVarName, { type: "function", isConst: isConstFn, line: lineNum, declaredType: "function" });
@@ -10804,7 +10829,7 @@ runAsyncDemo()
           prevEnv: new Map(env),
           prevTypeParams: new Map(activeTypeParams)
         });
-        const existingFn = fnOpen && fns.get(fnOpen[1]) || (validMethodOpen && currentClass ? fns.get(currentClass + "." + validMethodOpen[1]) : void 0);
+        const existingFn = (fnOpen && fnOpen[1] ? fns.get(fnOpen[1]) : void 0) || (validMethodOpen && validMethodOpen[1] && currentClass ? fns.get(currentClass + "." + validMethodOpen[1]) : void 0);
         let activeFn;
         if (existingFn) {
           activeFn = existingFn;
@@ -10816,7 +10841,7 @@ runAsyncDemo()
           const { params: cbParams, minArgs: cbMin } = parseParamList(cbParamStr, lineNum, false);
           activeFn = { name: "<callback>", params: cbParams, minArgs: cbMin, returnType: cbRet, rawReturnType: cbRawRet, typeParams: cbTParams, line: lineNum, hasValueReturn: false };
         } else {
-          const fName = fnOpen ? fnOpen[1] : arrowFnOpen ? arrowFnOpen[2] : currentClass + "." + (validMethodOpen ? validMethodOpen[1] : "");
+          const fName = (fnOpen ? fnOpen[1] : arrowFnOpen ? arrowFnOpen[2] : currentClass + "." + (validMethodOpen ? validMethodOpen[1] : "")) || "";
           let paramStr = "";
           let retType = "any";
           let rawRetType = "any";
@@ -10828,7 +10853,7 @@ runAsyncDemo()
               paramStr = trimmed.slice(openP + 1, closeP).trim();
               const afterClose = trimmed.slice(closeP + 1).trim();
               const retM2 = afterClose.match(/^:\s*([^{]+?)(?:\s*\{[\s\S]*)?$/);
-              if (retM2) {
+              if (retM2 && retM2[1]) {
                 rawRetType = retM2[1].trim();
                 retType = resolveAlias(rawRetType);
               }
@@ -10859,7 +10884,7 @@ runAsyncDemo()
         const closeBraceIdx = trimmed.lastIndexOf("}");
         const bodyAfterOpenBrace = openBraceIdx >= 0 ? trimmed.slice(openBraceIdx + 1) : "";
         const rm = bodyAfterOpenBrace.match(/\breturn\b([^;}\n]*)/);
-        if (rm && rm[1].trim()) {
+        if (rm && rm[1]?.trim()) {
           activeFn.hasValueReturn = true;
           const inlineRetExpr = rm[1].trim();
           const inlineRetT = inferType(inlineRetExpr, lineNum);
@@ -10873,7 +10898,7 @@ runAsyncDemo()
           const inlineBody = trimmed.slice(openBraceIdx + 1, closeBraceIdx).trim();
           inlineBody.split(";").map((s) => s.trim()).filter(Boolean).forEach((stmt) => {
             const inlineAssign = stmt.match(/^([A-Za-z_$][\w$!]*(?:\.[A-Za-z_$][\w$!]*|\s*\[[^\]]+\])*)\s*(\+=|-=|\*=|\/=|=(?!=))\s*([\s\S]+)$/);
-            if (inlineAssign) {
+            if (inlineAssign && inlineAssign[1] && inlineAssign[3]) {
               const lhs = inlineAssign[1].trim();
               const rhsExpr = inlineAssign[3].trim();
               const rhsT = inferType(rhsExpr, lineNum);
@@ -10930,7 +10955,7 @@ runAsyncDemo()
       }
       if (fnOpen || arrowFnOpen || validMethodOpen || callbackArrowOpen) continue;
       const catchM = trimmed.match(/^(?:}\s*)?catch\s*\(\s*([A-Za-z_$][\w$]*)(?:\s*:\s*[^)]+)?\s*\)/);
-      if (catchM) {
+      if (catchM && catchM[1]) {
         env.set(catchM[1], { type: "any", isConst: false, line: lineNum, declaredType: "any" });
         continue;
       }
@@ -10938,7 +10963,7 @@ runAsyncDemo()
         continue;
       }
       const forOfInM = trimmed.match(/^for\s*\(\s*(?:(const|let|var)\s+)?(.+?)\s+(of|in)\s+([\s\S]+?)\)\s*\{?$/);
-      if (forOfInM) {
+      if (forOfInM && forOfInM[2] && forOfInM[4]) {
         const kind = forOfInM[1] || null;
         const lhsRaw = forOfInM[2].trim();
         const mode = forOfInM[3];
@@ -10954,7 +10979,7 @@ runAsyncDemo()
         }
         if (kind) {
           const simpleVar = lhsRaw.match(/^([A-Za-z_$][\w$]*)(?:\s*:\s*([^=]+))?$/);
-          if (simpleVar) {
+          if (simpleVar && simpleVar[1]) {
             const vName = simpleVar[1];
             const declT = simpleVar[2] ? resolveAlias(simpleVar[2].trim()) : elemT;
             env.set(vName, { type: declT, isConst: kind === "const", line: lineNum, declaredType: declT });
@@ -10975,14 +11000,14 @@ runAsyncDemo()
         continue;
       }
       const forM = trimmed.match(/^for\s*\(\s*(?:(const|let|var)\s+)?([^;]*);([^;]*);([^)]*)\)/);
-      if (forM) {
+      if (forM && forM[2] !== void 0 && forM[3] !== void 0 && forM[4] !== void 0) {
         const kind = forM[1] || null;
         const initPart = forM[2].trim();
         if (kind && initPart) {
           const decls = splitTopLevel(initPart);
           decls.forEach((d) => {
             const dm = d.trim().match(/^([A-Za-z_$][\w$]*)(?:\s*:\s*([^=]+))?\s*=\s*(.+)$/);
-            if (dm) {
+            if (dm && dm[1] && dm[3]) {
               const vName = dm[1];
               const declT = dm[2] ? resolveAlias(dm[2].trim()) : null;
               const initT = inferType(dm[3].trim(), lineNum);
@@ -10995,7 +11020,7 @@ runAsyncDemo()
         } else if (initPart) {
           splitTopLevel(initPart).forEach((d) => {
             const am = d.trim().match(/^([A-Za-z_$][\w$]*)\s*=\s*(.+)$/);
-            if (am) {
+            if (am && am[1] && am[2]) {
               inferType(am[2].trim(), lineNum);
               if (!isKnownIdentifier(am[1])) {
                 addDiag(lineNum, "TS2304", `\u627E\u4E0D\u5230\u540D\u79F0 "${am[1]}"\uFF08\u53D8\u91CF\u672A\u58F0\u660E\uFF0C\u8BF7\u4F7F\u7528 let \u6216 const \u58F0\u660E\uFF09`);
@@ -11010,7 +11035,7 @@ runAsyncDemo()
         if (forM[3].trim()) inferType(forM[3].trim(), lineNum);
         if (forM[4].trim()) {
           const updVar = forM[4].trim().match(/^([A-Za-z_$][\w$]*)\s*(?:\+\+|--|\+=|-=|=)/);
-          if (updVar) {
+          if (updVar && updVar[1]) {
             if (!isKnownIdentifier(updVar[1])) {
               addDiag(lineNum, "TS2304", `\u627E\u4E0D\u5230\u540D\u79F0 "${updVar[1]}"\uFF08\u53D8\u91CF\u672A\u58F0\u660E\uFF0C\u8BF7\u4F7F\u7528 let \u6216 const \u58F0\u660E\uFF09`);
             } else if (env.has(updVar[1]) && env.get(updVar[1]).isConst) {
@@ -11023,7 +11048,7 @@ runAsyncDemo()
       const varM = trimmed.match(/^(?:export\s+)?(const|let|var)\s+([\s\S]+?);?$/);
       if (varM) {
         const isConst = varM[1] === "const";
-        let rest = varM[2];
+        let rest = varM[2] || "";
         const countOpenBrackets = (str) => {
           let b = 0;
           for (let cIdx = 0; cIdx < str.length; cIdx++) {
@@ -11039,7 +11064,7 @@ runAsyncDemo()
         };
         let openB = countOpenBrackets(rest);
         while ((openB > 0 || /[=.,+\-*/|&(\[]$/.test(rest.trim())) && i + 1 < lines.length) {
-          const nextLineRaw = lines[i + 1];
+          const nextLineRaw = lines[i + 1] ?? "";
           const nextLineClean = stripInlineCommentSafe(nextLineRaw).trim();
           for (let k = 0; k < nextLineRaw.length; k++) {
             const ch = nextLineRaw[k];
@@ -11062,13 +11087,13 @@ runAsyncDemo()
           parts.forEach((part) => {
             const pTrim = part.trim();
             const pm = pTrim.match(/^([A-Za-z_$][\w$]*)(?:\s*:\s*((?:[^=]|=>)+?))?(?:\s*=\s*(?!=|>)([\s\S]+))?$/);
-            if (pm) {
+            if (pm && pm[1]) {
               const vName = pm[1];
               const declT = pm[2] ? resolveAlias(pm[2].trim()) : null;
               const initExpr = pm[3] ? pm[3].trim() : null;
               if (initExpr) {
                 const inlineArrowM = initExpr.match(/^(?:async\s+)?(?:(<[\s\S]*?>)\s*)?\(([^)]*)\)\s*(?::\s*((?:[^=]|=>)+?))?\s*=>\s*([\s\S]+)$/);
-                if (inlineArrowM) {
+                if (inlineArrowM && inlineArrowM[2] !== void 0) {
                   const arrowTParams = inlineArrowM[1] ? parseTypeParams(inlineArrowM[1]) : [];
                   const arrowParamStr = inlineArrowM[2].trim();
                   const arrowRawRet = inlineArrowM[3] ? inlineArrowM[3].trim() : null;
@@ -11146,7 +11171,7 @@ runAsyncDemo()
           const expectedRet = currentFn.returnType;
           if (expectedRet && expectedRet !== "any") {
             const promiseInnerM = expectedRet.match(/^Promise<([\s\S]+)>$/);
-            const unwrappedExpected = promiseInnerM ? promiseInnerM[1] : expectedRet;
+            const unwrappedExpected = promiseInnerM && promiseInnerM[1] ? promiseInnerM[1] : expectedRet;
             if (retExpr.startsWith("{") && getInterfaceShape(unwrappedExpected)) {
               checkObjectLiteralAgainstShape(retExpr, unwrappedExpected, lineNum, `\u51FD\u6570 "${currentFn.name}" \u8FD4\u56DE\u503C`);
             } else if (unwrappedExpected.endsWith("[]") && splitTopLevelUnion(unwrappedExpected).length <= 1 && retExpr.startsWith("[")) {
@@ -11159,22 +11184,22 @@ runAsyncDemo()
         continue;
       }
       const throwM = trimmed.match(/^throw\s+([\s\S]+?);?$/);
-      if (throwM) {
+      if (throwM && throwM[1]) {
         inferType(throwM[1].trim(), lineNum);
         continue;
       }
       const switchM = trimmed.match(/^switch\s*\(([\s\S]+)\)\s*\{?$/);
-      if (switchM) {
+      if (switchM && switchM[1]) {
         inferType(switchM[1].trim(), lineNum);
         continue;
       }
       const caseM = trimmed.match(/^case\s+([^:]+):(.*)$/);
-      if (caseM) {
+      if (caseM && caseM[1]) {
         inferType(caseM[1].trim(), lineNum);
         continue;
       }
       const inlineIfRet = trimmed.match(/^if\s*\((.+?)\)\s*(return(?:\s+([\s\S]+?))?|break|continue);?$/);
-      if (inlineIfRet) {
+      if (inlineIfRet && inlineIfRet[1] && inlineIfRet[2]) {
         const condStr = inlineIfRet[1].trim();
         const actionKw = inlineIfRet[2];
         const retExpr = inlineIfRet[3] ? inlineIfRet[3].trim() : "";
@@ -11183,7 +11208,7 @@ runAsyncDemo()
           const savedInlineNarrow = /* @__PURE__ */ new Map();
           condStr.split("&&").forEach((clause) => {
             const cm = clause.trim().match(/^([A-Za-z_$][\w$]*)\s*!==\s*(null|undefined)$/);
-            if (cm && env.has(cm[1])) {
+            if (cm && cm[1] && cm[2] && env.has(cm[1])) {
               const curInfo = env.get(cm[1]);
               savedInlineNarrow.set(cm[1], curInfo);
               env.set(cm[1], { ...curInfo, type: stripNullableFromType(curInfo.type, cm[2]) });
@@ -11225,7 +11250,7 @@ runAsyncDemo()
             const bodyInner = tail.startsWith("{") && tail.endsWith("}") ? tail.slice(1, -1).trim() : tail;
             bodyInner.split(";").map((s) => s.trim()).filter(Boolean).forEach((stmt) => {
               const inlineAssign = stmt.match(/^([A-Za-z_$][\w$!]*(?:\.[A-Za-z_$][\w$!]*|\s*\[[^\]]+\])*)\s*(\+=|-=|\*=|\/=|=(?!=))\s*([\s\S]+)$/);
-              if (inlineAssign) {
+              if (inlineAssign && inlineAssign[1] && inlineAssign[3]) {
                 const lhs = inlineAssign[1].trim();
                 const rhsExpr = inlineAssign[3].trim();
                 const rhsT = inferType(rhsExpr, lineNum);
@@ -11242,12 +11267,12 @@ runAsyncDemo()
           }
           condStr.split("&&").forEach((clause) => {
             const cm = clause.trim().match(/^([A-Za-z_$][\w$]*)\s*!==\s*(null|undefined)$/);
-            if (cm && env.has(cm[1])) {
+            if (cm && cm[1] && cm[2] && env.has(cm[1])) {
               const curInfo = env.get(cm[1]);
               env.set(cm[1], { ...curInfo, type: stripNullableFromType(curInfo.type, cm[2]) });
             }
             const propCm = clause.trim().match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+)\s*!==\s*(null|undefined)$/);
-            if (propCm && i + 1 < lines.length) {
+            if (propCm && propCm[1] && propCm[2] && i + 1 < lines.length) {
               const propExpr = propCm[1];
               const nextTrim = stripInlineCommentSafe(lines[i + 1]).trim();
               const nextDecl = nextTrim.match(/^(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+)\s*;?$/);
@@ -11257,10 +11282,10 @@ runAsyncDemo()
               }
             }
           });
-          if (/^if\s*\(/.test(trimmed) && i + 1 < lines.length && /^\s*(?:return|break|continue)\b/.test(lines[i + 1])) {
+          if (/^if\s*\(/.test(trimmed) && i + 1 < lines.length && /^\s*(?:return|break|continue)\b/.test(lines[i + 1] ?? "")) {
             condStr.split("||").forEach((clause) => {
               const cm = clause.trim().match(/^([A-Za-z_$][\w$]*)\s*===\s*(null|undefined)$/);
-              if (cm && env.has(cm[1])) {
+              if (cm && cm[1] && cm[2] && env.has(cm[1])) {
                 const curInfo = env.get(cm[1]);
                 env.set(cm[1], { ...curInfo, type: stripNullableFromType(curInfo.type, cm[2]) });
               }
@@ -11271,7 +11296,7 @@ runAsyncDemo()
       }
       const incM = trimmed.match(/^(?:(\+\+|--)\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)|([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*(\+\+|--));?$/);
       if (incM) {
-        const vName = incM[2] || incM[3];
+        const vName = incM[2] || incM[3] || "";
         if (vName.includes(".")) {
           const propT = inferType(vName, lineNum);
           if (propT !== "any" && !isTsAssignable("number", propT)) {
@@ -11306,7 +11331,7 @@ runAsyncDemo()
         continue;
       }
       const assignM = trimmed.match(/^([A-Za-z_$][\w$!]*(?:\.[A-Za-z_$][\w$!]*|\s*\[[^\]]+\])*)\s*(\+=|-=|\*=|\/=|=(?!=))\s*([\s\S]+?);?$/);
-      if (assignM) {
+      if (assignM && assignM[1] && assignM[2] && assignM[3]) {
         const lhs = assignM[1].trim();
         const op = assignM[2];
         const rhs = assignM[3].trim();
@@ -11419,7 +11444,7 @@ runAsyncDemo()
     diags.forEach((d) => {
       say(`  \u2022 ${d.code} [\u7B2C ${d.line} \u884C]: ${d.message}`, "err", d.line);
     });
-    if (diags.length && diags[0].line) revealErrorLine(diags[0].line);
+    if (diags[0]?.line) revealErrorLine(diags[0].line);
   }
   var typeCheck = typecheckTS;
   var parseType = normalizeTsType;
@@ -11630,20 +11655,19 @@ runAsyncDemo()
   function getActiveNotebook() {
     const lang = LANG === "python" ? "python" : "ts";
     const store = ensureLangNotebooks(lang);
-    let doc = store.docs.find((d) => d.id === store.activeDocId);
+    let doc = store.docs.find((d) => d.id === store.activeDocId) ?? store.docs[0];
     if (!doc) {
-      doc = store.docs[0];
-      store.activeDocId = doc.id;
+      doc = createDefaultNotebooks(lang)[0];
+      store.docs.push(doc);
     }
+    store.activeDocId = doc.id;
     return doc;
   }
   function getActiveCell(doc = getActiveNotebook()) {
     if (!doc || !doc.cells.length) return null;
-    let cell = doc.cells.find((c) => c.id === doc.activeCellId);
-    if (!cell) {
-      cell = doc.cells[0];
-      doc.activeCellId = cell.id;
-    }
+    const cell = doc.cells.find((c) => c.id === doc.activeCellId) ?? doc.cells[0];
+    if (!cell) return null;
+    doc.activeCellId = cell.id;
     return cell;
   }
   function renderMarkdownHtml(md) {
@@ -11664,7 +11688,7 @@ runAsyncDemo()
       return s;
     };
     for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
+      const line = lines[i] ?? "";
       if (/^\s*```/.test(line)) {
         if (inList) {
           out.push("</ul>");
@@ -11684,7 +11708,7 @@ runAsyncDemo()
         continue;
       }
       const hMatch = line.match(/^(#{1,4})\s+(.+)$/);
-      if (hMatch) {
+      if (hMatch && hMatch[1] && hMatch[2] !== void 0) {
         if (inList) {
           out.push("</ul>");
           inList = false;
@@ -11694,7 +11718,7 @@ runAsyncDemo()
         continue;
       }
       const liMatch = line.match(/^\s*[-*]\s+(.+)$/);
-      if (liMatch) {
+      if (liMatch && liMatch[1] !== void 0) {
         if (!inList) {
           out.push('<ul class="nb-md-ul">');
           inList = true;
@@ -11936,7 +11960,7 @@ runAsyncDemo()
         logs: [],
         returnValue: null,
         error: errText,
-        errorLine: cellDiags[0].line
+        errorLine: cellDiags[0]?.line ?? 1
       };
       say(`\u2717 [Notebook] TypeScript \u4E25\u683C\u7C7B\u578B\u68C0\u67E5\u672A\u901A\u8FC7 (\u5171 ${cellDiags.length} \u5904\u9519\u8BEF)\uFF1A`, "err");
       cellDiags.forEach((d) => {
@@ -12146,7 +12170,7 @@ runAsyncDemo()
         logs: [],
         returnValue: null,
         error: errText,
-        errorLine: cellDiags[0].line
+        errorLine: cellDiags[0]?.line ?? 1
       };
       say(`\u2717 [Notebook] TypeScript \u4E25\u683C\u7C7B\u578B\u68C0\u67E5\u672A\u901A\u8FC7 (\u5171 ${cellDiags.length} \u5904\u9519\u8BEF)\uFF1A`, "err");
       cellDiags.forEach((d) => {
@@ -12280,8 +12304,9 @@ runAsyncDemo()
   function moveFocusToNextCell(doc, currentCellId, createIfLast = false) {
     const idx = doc.cells.findIndex((c) => c.id === currentCellId);
     if (idx < 0) return;
-    if (idx + 1 < doc.cells.length) {
-      doc.activeCellId = doc.cells[idx + 1].id;
+    const nextCell = doc.cells[idx + 1];
+    if (nextCell) {
+      doc.activeCellId = nextCell.id;
       ACTIVE_NB_CELL_ID = doc.activeCellId;
     } else if (createIfLast) {
       const newCell = {
@@ -12326,6 +12351,7 @@ runAsyncDemo()
     const idx = doc.cells.findIndex((c) => c.id === targetId);
     if (idx < 0) return;
     const orig = doc.cells[idx];
+    if (!orig) return;
     const copy = {
       id: nextCellId(),
       type: orig.type,
@@ -12347,6 +12373,7 @@ runAsyncDemo()
     const nextIdx = idx + dir;
     if (idx < 0 || nextIdx < 0 || nextIdx >= doc.cells.length) return;
     const [item] = doc.cells.splice(idx, 1);
+    if (!item) return;
     doc.cells.splice(nextIdx, 0, item);
     doc.activeCellId = item.id;
     ACTIVE_NB_CELL_ID = item.id;
@@ -12356,10 +12383,13 @@ runAsyncDemo()
     const doc = getActiveNotebook();
     const targetId = cellId || doc.activeCellId;
     if (doc.cells.length <= 1) {
-      doc.cells[0].source = "";
-      doc.cells[0].executionCount = null;
-      doc.cells[0].status = "idle";
-      doc.cells[0].output = null;
+      const first = doc.cells[0];
+      if (first) {
+        first.source = "";
+        first.executionCount = null;
+        first.status = "idle";
+        first.output = null;
+      }
       renderNotebookUI();
       return;
     }
@@ -12371,8 +12401,10 @@ runAsyncDemo()
     }
     doc.cells.splice(idx, 1);
     const nextActive = doc.cells[Math.min(idx, doc.cells.length - 1)];
-    doc.activeCellId = nextActive.id;
-    ACTIVE_NB_CELL_ID = nextActive.id;
+    if (nextActive) {
+      doc.activeCellId = nextActive.id;
+      ACTIVE_NB_CELL_ID = nextActive.id;
+    }
     renderNotebookUI();
   }
   function cutNotebookCell() {
@@ -12489,7 +12521,7 @@ runAsyncDemo()
         title: fileName.endsWith(".ipynb") ? fileName : fileName + ".ipynb",
         lang,
         execCounter: 0,
-        activeCellId: cells[0].id,
+        activeCellId: cells[0]?.id || "",
         debuggingCellId: null,
         cells,
         executedHistory: [],
@@ -12510,7 +12542,7 @@ runAsyncDemo()
     const lines = String(src || "").replace(/\r\n?/g, "\n").split("\n");
     let visualLines = 0;
     for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
+      const line = lines[i] ?? "";
       let cols = 0;
       for (let k = 0; k < line.length; k++) {
         cols += line.charCodeAt(k) > 255 ? 2 : 1;
@@ -12822,15 +12854,24 @@ runAsyncDemo()
         content: defaultSrc
       });
     }
-    if (!store.tabs.some((t) => t.id === store.activeTabId)) {
-      store.activeTabId = store.tabs[0].id;
+    const firstTab = store.tabs[0];
+    if (firstTab && !store.tabs.some((t) => t.id === store.activeTabId)) {
+      store.activeTabId = firstTab.id;
     }
     return store;
   }
   function getActiveScriptTab(lang) {
     const targetLang = lang || (LANG === "python" ? "python" : "ts");
     const store = ensureScriptTabsForLang(targetLang);
-    return store.tabs.find((t) => t.id === store.activeTabId) || store.tabs[0];
+    const found = store.tabs.find((t) => t.id === store.activeTabId) ?? store.tabs[0];
+    if (found) return found;
+    return {
+      id: "stab_0",
+      title: targetLang === "python" ? "quickstart.py" : "showcase.ts",
+      lang: targetLang,
+      source: "",
+      vfsPath: targetLang === "python" ? "workspace/quickstart.py" : "workspace/showcase.ts"
+    };
   }
   function syncActiveScriptTabFromFileName(newFileName) {
     if (syncingScriptTab) return;
@@ -12993,7 +13034,7 @@ runAsyncDemo()
       return;
     }
     const tsMatch = path.match(/^examples\/ts\/([A-Za-z0-9_]+)\.ts$/);
-    if (tsMatch) {
+    if (tsMatch && tsMatch[1]) {
       if (LANG === "python" && globalThis.PY_ENGINE) {
         globalThis.PY_ENGINE.setLang("ts");
       }
@@ -13002,7 +13043,7 @@ runAsyncDemo()
       return;
     }
     const pyMatch = path.match(/^examples\/python\/([A-Za-z0-9_]+)\.py$/);
-    if (pyMatch) {
+    if (pyMatch && pyMatch[1]) {
       if (LANG !== "python" && globalThis.PY_ENGINE) {
         globalThis.PY_ENGINE.setLang("python");
       }
@@ -13193,7 +13234,8 @@ runAsyncDemo()
           if (idx >= 0) {
             store.tabs.splice(idx, 1);
             if (store.activeTabId === closeId) {
-              store.activeTabId = store.tabs[Math.max(0, idx - 1)].id;
+              const fallbackTab = store.tabs[Math.max(0, idx - 1)];
+              if (fallbackTab) store.activeTabId = fallbackTab.id;
               const nextTab = getActiveScriptTab(lang);
               syncingScriptTab = true;
               editor.value = nextTab.source;
@@ -13494,7 +13536,8 @@ runAsyncDemo()
           if (idx >= 0) {
             store.docs.splice(idx, 1);
             if (store.activeDocId === closeId) {
-              store.activeDocId = store.docs[Math.max(0, idx - 1)].id;
+              const fallbackDoc = store.docs[Math.max(0, idx - 1)];
+              if (fallbackDoc) store.activeDocId = fallbackDoc.id;
             }
             syncNotebookGlobalsToSidePanel();
             renderNotebookUI();

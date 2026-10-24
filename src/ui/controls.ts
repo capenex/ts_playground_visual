@@ -150,7 +150,7 @@ export function rebuildDebugAtPosition(newTargetLine: number, targetVisits: numb
     const body = js + finHook + ';return (' + expr + ');';
     compiledFn = new Function('__t', 'console', body);
   } catch (e) {
-    say('✗ 编译失败: ' + (e && e.message ? e.message : e), 'err');
+    say('✗ 编译失败: ' + (e instanceof Error && e.message ? e.message : e), 'err');
     return false;
   }
 
@@ -208,7 +208,7 @@ export function addCheckpointFunction(preferredLine?: any) {
   if (LANG === 'python') {
     const text = editor.value.replace(/\r\n?/g, '\n');
     const lines = text.split('\n');
-    let line = preferredLine || (TRACE.steps[cur] && TRACE.steps[cur].line) || (window.__CM_CURSOR_LINE || lastEditorCursorLine) || lines.length;
+    let line = preferredLine || TRACE.steps[cur]?.line || (window.__CM_CURSOR_LINE || lastEditorCursorLine) || lines.length;
     line = Math.max(1, Math.min(lines.length, line));
     const current = lines[line - 1] || '';
     const indent = (current.match(/^\s*/) || [''])[0];
@@ -228,8 +228,9 @@ export function addCheckpointFunction(preferredLine?: any) {
   const text = editor.value.replace(/\r\n?/g, '\n');
   const lines = text.split('\n');
 
-  const wasActive = Boolean(DEBUG_SESSION.active && TRACE.steps.length > 0 && TRACE.steps[cur]);
-  const origCurLine = wasActive ? TRACE.steps[cur].line : -1;
+  const curStep = TRACE.steps[cur];
+  const wasActive = Boolean(DEBUG_SESSION.active && TRACE.steps.length > 0 && curStep);
+  const origCurLine = curStep ? curStep.line : -1;
   const origLineVisits = wasActive
     ? TRACE.steps.slice(0, cur + 1).filter(s => s.line === origCurLine).length
     : 0;
@@ -520,7 +521,7 @@ if ($('btnExportTs')) {
       URL.revokeObjectURL(url);
       say('✓ 已导出 TypeScript 文件 ' + name + '（' + editor.value.split('\n').length + ' 行）', 'ok');
     } catch (e) {
-      say('✗ 导出失败: ' + (e && e.message ? e.message : e), 'err');
+      say('✗ 导出失败: ' + (e instanceof Error && e.message ? e.message : e), 'err');
     }
   };
 }

@@ -42,7 +42,7 @@ export function clearLog(msg?: any) {
 export function anonStackLine(stack: unknown) {
   const re = /,\s*<anonymous>:(\d+):\d+/g;
   const m = re.exec(String(stack || ''));
-  return m ? parseInt(m[1], 10) : 0;
+  return m && m[1] ? parseInt(m[1], 10) : 0;
 }
 
 let FN_BODY_LINE_OFFSET: number | null = null;
@@ -52,7 +52,7 @@ export function fnBodyLineOffset() {
   try {
     new Function('throw new Error("probe")')();
   } catch (e) {
-    const line = anonStackLine(e && e.stack);
+    const line = anonStackLine(e instanceof Error ? e.stack : undefined);
     if (line > 0) off = Math.max(1, line - 1);
   }
   FN_BODY_LINE_OFFSET = off;

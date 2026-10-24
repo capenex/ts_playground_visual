@@ -72,12 +72,13 @@ export function evalCall(js: any, call?: any, opts?: any) {
     }).join(' ')) });
   } catch (e) {
     // A throw from top-level code (outside the evaluated expression) lands here.
+    const errObj = e && typeof e === 'object' ? (e as { message?: string; stack?: string; __line?: number; __timeout?: boolean }) : null;
     r = {
       ok: false,
-      error: e && e.message ? e.message : String(e),
-      stack: e && e.stack ? String(e.stack) : '',
-      line: (e && e.__line) || lastLine || entryLine || 0,
-      timeout: Boolean(e && e.__timeout),
+      error: errObj && errObj.message ? errObj.message : String(e),
+      stack: errObj && errObj.stack ? String(errObj.stack) : '',
+      line: (errObj && errObj.__line) || lastLine || entryLine || 0,
+      timeout: Boolean(errObj && errObj.__timeout),
     };
   }
   if (r && r.ok && !r.line) r.line = lastLine || entryLine || 0;
@@ -90,7 +91,7 @@ export function runOnce(budgetMs?: any) {
   const budget = (typeof budgetMs === 'number' && budgetMs > 0) ? budgetMs : RUN_TIMEOUT_MS;
   const src = editor.value;
   const unsupported = detectUnsupportedSyntax(src);
-  if (unsupported.length) {
+  if (unsupported.length && unsupported[0]) {
     unsupported.forEach(x => say('✗ 第 ' + x.line + ' 行：暂不支持 ' + x.feature + ' —— ' + x.hint, 'err', x.line));
     revealErrorLine(unsupported[0].line);
     return;
@@ -168,7 +169,7 @@ export function runOnce(budgetMs?: any) {
     const elapsed = ' (' + r.elapsedMs + 'ms)';
     say('✓ 运行完成  →  ' + safeJSONStringify(r.value) + elapsed, 'ok');
   } catch (e) {
-    say('✗ ' + (e && e.message ? e.message : e), 'err');
+    say('✗ ' + (e instanceof Error && e.message ? e.message : e), 'err');
   }
 }
 
@@ -410,7 +411,7 @@ export function computeAndAppendNextStep(opts: any = {}) {
   };
 
   let paused = false;
-  let runtimeErr: { message?: string } | null = null;
+  let runtimeErr: unknown = null;
   let retVal = undefined;
 
   try {
@@ -429,7 +430,11 @@ export function computeAndAppendNextStep(opts: any = {}) {
 
   if (!pendingStep) {
     if (runtimeErr) {
-      const errMsg = runtimeErr.message ? runtimeErr.message : String(runtimeErr);
+      const errMsg = runtimeErr instanceof Error && runtimeErr.message
+        ? runtimeErr.message
+        : (runtimeErr && typeof runtimeErr === 'object' && 'message' in runtimeErr && typeof runtimeErr.message === 'string'
+          ? runtimeErr.message
+          : String(runtimeErr));
       const callLine = globalCallLine;
       const errStep = {
         line: callLine,
@@ -526,7 +531,11 @@ export function computeAndAppendNextStep(opts: any = {}) {
   }
 
   if (runtimeErr) {
-    const errMsg = runtimeErr.message ? runtimeErr.message : String(runtimeErr);
+    const errMsg = runtimeErr instanceof Error && runtimeErr.message
+      ? runtimeErr.message
+      : (runtimeErr && typeof runtimeErr === 'object' && 'message' in runtimeErr && typeof runtimeErr.message === 'string'
+        ? runtimeErr.message
+        : String(runtimeErr));
     pendingStep.error = errMsg;
     pendingStep.note = `${rawLine.trim()}  →  ✗ 运行时错误: ${errMsg}`;
     RUNTIME_ERROR_LINES.add(pendingStep.line);
@@ -572,7 +581,7 @@ export function startDebug(initialStep = 0) {
   SELECTED_FRAME_IDX = null;
   const src = editor.value.replace(/\r/g, '');
   const unsupported = detectUnsupportedSyntax(src);
-  if (unsupported.length) {
+  if (unsupported.length && unsupported[0]) {
     resetTraceState();
     unsupported.forEach(x => say('✗ 第 ' + x.line + ' 行：暂不支持 ' + x.feature + ' —— ' + x.hint, 'err', x.line));
     revealErrorLine(unsupported[0].line);
@@ -618,7 +627,7 @@ export function startDebug(initialStep = 0) {
     compiledFn = new Function('__t', 'console', body);
   } catch (e) {
     resetTraceState();
-    say('✗ 编译失败: ' + (e && e.message ? e.message : e), 'err');
+    say('✗ 编译失败: ' + (e instanceof Error && e.message ? e.message : e), 'err');
     return false;
   }
 

@@ -71,7 +71,7 @@ export function extractBindingNames(lhs: string, names: Set<any>): void {
   }
 
   const m = s.match(/^([A-Za-z_$][\w$]*)$/);
-  if (m && !RESERVED_WORDS.has(m[1])) names.add(m[1]);
+  if (m && m[1] && !RESERVED_WORDS.has(m[1])) names.add(m[1]);
 }
 
 export function collectNames(js: string): string[] {
@@ -81,29 +81,29 @@ export function collectNames(js: string): string[] {
 
   const forRe = /\bfor\s*\(\s*(?:const|let|var)\s+(.+?)\s+(?:of|in)\b/g;
   while ((m = forRe.exec(clean))) {
-    extractBindingNames(m[1], names);
+    extractBindingNames(m[1] || '', names);
   }
   const forClassicRe = /\bfor\s*\(\s*(?:const|let|var)\s+([^;]+)/g;
   while ((m = forClassicRe.exec(clean))) {
-    splitTopLevel(m[1]).forEach(part => extractBindingNames(part, names));
+    splitTopLevel(m[1] || '').forEach(part => extractBindingNames(part, names));
   }
 
   const decl = /\b(?:const|let|var)\s+([^;\n]+)/g;
   while ((m = decl.exec(clean))) {
-    const rhs = m[1].replace(/\s+\b(?:of|in)\b[\s\S]*$/, '');
+    const rhs = (m[1] || '').replace(/\s+\b(?:of|in)\b[\s\S]*$/, '');
     splitTopLevel(rhs).forEach(part => extractBindingNames(part, names));
   }
 
   const fn = /\bfunction\b\s*(?:[A-Za-z_$][\w$]*)?\s*\(([^)]*)\)/g;
   while ((m = fn.exec(clean))) {
-    splitTopLevel(m[1]).forEach(p => extractBindingNames(p, names));
+    splitTopLevel(m[1] || '').forEach(p => extractBindingNames(p, names));
   }
 
   // Class / object-literal method parameters: `sum(n) { ... }`, `constructor(v) { ... }`
   const method = /(?:^|[\n;{}])\s*(?:(?:public|private|protected|static|async|readonly|get|set)\s+)*([A-Za-z_$][\w$]*)\s*\(([^)]*)\)\s*(?:\{|:)/g;
   while ((m = method.exec(clean))) {
-    if (RESERVED_WORDS.has(m[1])) continue;
-    splitTopLevel(m[2]).forEach(p => extractBindingNames(p, names));
+    if (!m[1] || RESERVED_WORDS.has(m[1])) continue;
+    splitTopLevel(m[2] || '').forEach(p => extractBindingNames(p, names));
   }
 
   for (let i = 0; i < clean.length - 1; i++) {
@@ -130,12 +130,12 @@ export function collectNames(js: string): string[] {
   }
   const singleArrow = /\b([A-Za-z_$][\w$]*)\s*=>/g;
   while ((m = singleArrow.exec(clean))) {
-    if (!RESERVED_WORDS.has(m[1])) names.add(m[1]);
+    if (m[1] && !RESERVED_WORDS.has(m[1])) names.add(m[1]);
   }
 
   const cat = /\bcatch\s*\(\s*([^)]+)\)/g;
   while ((m = cat.exec(clean))) {
-    extractBindingNames(m[1], names);
+    extractBindingNames(m[1] || '', names);
   }
 
   return [...names];
@@ -166,7 +166,7 @@ function isUnbracedControlHeader(t: string): boolean {
 
 function tryInjectLoopOrElseIf(raw: string, callExpr: string): string | null {
   const mCond = raw.match(/^(\s*(?:}\s*)?(?:while|else\s+if)\s*)\(/);
-  if (mCond) {
+  if (mCond && mCond[1] !== undefined) {
     const openIdx = mCond[1].length;
     const closeIdx = findBalancedParen(raw, openIdx);
     if (closeIdx > openIdx) {
@@ -178,16 +178,16 @@ function tryInjectLoopOrElseIf(raw: string, callExpr: string): string | null {
   }
 
   const mFor = raw.match(/^(\s*for\s*)\(/);
-  if (mFor) {
+  if (mFor && mFor[1] !== undefined) {
     const openIdx = mFor[1].length;
     const closeIdx = findBalancedParen(raw, openIdx);
     if (closeIdx > openIdx) {
       const inside = raw.slice(openIdx + 1, closeIdx);
       const semiParts = splitTopLevelSemicolons(inside);
       if (semiParts.length === 3) {
-        const init = semiParts[0];
-        const cond = semiParts[1].trim();
-        const upd = semiParts[2];
+        const init = semiParts[0] ?? '';
+        const cond = (semiParts[1] ?? '').trim();
+        const upd = semiParts[2] ?? '';
         const wrappedCond = cond ? '(' + callExpr + ', (' + cond + '))' : '(' + callExpr + ', true)';
         return raw.slice(0, openIdx + 1) + init + '; ' + wrappedCond + ';' + upd + raw.slice(closeIdx);
       } else if (semiParts.length === 1 && /\b(?:of|in)\b/.test(inside)) {
@@ -217,33 +217,33 @@ function matchFunctionHeaderForStack(rawLine: string, lineNum: number): FnHeader
   let isAsync = false;
   let fnName = '';
   let paramRaw = '';
-  if (m) {
+  if (m && m[2]) {
     isAsync = Boolean(m[1]);
     fnName = m[2];
     paramRaw = m[3] || '';
   }
   if (!m) {
     m = clean.match(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(async\s+)?function(?:\s+[A-Za-z_$][\w$]*)?\s*\(([^)]*)\)\s*\{$/);
-    if (m) { isAsync = Boolean(m[2]); fnName = m[1]; paramRaw = m[3] || ''; }
+    if (m && m[1]) { isAsync = Boolean(m[2]); fnName = m[1]; paramRaw = m[3] || ''; }
   }
   if (!m) {
     m = clean.match(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(async\s+)?\(([^)]*)\)\s*=>\s*\{$/);
-    if (m) { isAsync = Boolean(m[2]); fnName = m[1]; paramRaw = m[3] || ''; }
+    if (m && m[1]) { isAsync = Boolean(m[2]); fnName = m[1]; paramRaw = m[3] || ''; }
   }
   if (!m) {
     m = clean.match(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(async\s+)?([A-Za-z_$][\w$]*)\s*=>\s*\{$/);
-    if (m) { isAsync = Boolean(m[2]); fnName = m[1]; paramRaw = m[3] || ''; }
+    if (m && m[1]) { isAsync = Boolean(m[2]); fnName = m[1]; paramRaw = m[3] || ''; }
   }
   if (!m) {
     m = clean.match(/^((?:(?:public|private|protected|static|async|readonly|get|set)\s+)*)([A-Za-z_$][\w$]*)\s*\(([^)]*)\)\s*(?::\s*[^{]+)?\s*\{$/);
-    if (m && RESERVED_WORDS.has(m[2])) m = null;
-    if (m) {
+    if (m && m[2] && RESERVED_WORDS.has(m[2])) m = null;
+    if (m && m[2]) {
       isAsync = /\basync\b/.test(m[1] || '');
       fnName = m[2];
       paramRaw = m[3] || '';
     }
   }
-  if (!m) return null;
+  if (!m || !fnName) return null;
   const pSet = new Set<string>();
   splitTopLevel(paramRaw).forEach(p => extractBindingNames(p, pSet));
   return {
@@ -341,9 +341,10 @@ export function instrument(js: string, originalLines: string[], names: string[])
   let prevUnbracedControl = false;
 
   for (let i = 0; i < lines.length; i++) {
-    const raw = lines[i];
+    const raw = lines[i] ?? '';
     const t = raw.trim();
-    const indent = raw.match(/^\s*/)![0];
+    const indentMatch = raw.match(/^\s*/);
+    const indent = indentMatch ? indentMatch[0] : '';
     const topBrace = braceStack.length > 0 ? braceStack[braceStack.length - 1] : null;
     const inObject = topBrace === 'object';
     const inClassBody = topBrace === 'classbody';
@@ -358,7 +359,8 @@ export function instrument(js: string, originalLines: string[], names: string[])
       }
     }
 
-    const srcLine = (originalLines[i] != null ? originalLines[i] : t).trim();
+    const origLine = originalLines[i];
+    const srcLine = (origLine != null ? origLine : t).trim();
     const note = srcLine.length > 72 ? srcLine.slice(0, 69) + '…' : srcLine;
     const insideClass = braceStack.some(k => k === 'classbody');
     const withThis = insideClass && !inClassBody;
@@ -450,7 +452,7 @@ export function instrument(js: string, originalLines: string[], names: string[])
       let rebuilt = transformedRaw;
       for (let sIdx = closeFnSplices.length - 1; sIdx >= 0; sIdx--) {
         const sp = closeFnSplices[sIdx];
-        if (sp.fnInfo === fnHeader) continue;
+        if (!sp || sp.fnInfo === fnHeader) continue;
         const leaveHook = sp.fnInfo.isAsync
           ? `} finally { if (typeof __t === "function" && __t.__leave) __t.__leave(${sp.fnInfo.fidVar}); } }, this, ${JSON.stringify(sp.fnInfo.name)}, ${sp.fnInfo.line}) : undefined); `
           : `} finally { if (typeof __t === "function" && __t.__leave) __t.__leave(${sp.fnInfo.fidVar}); } `;
@@ -460,9 +462,9 @@ export function instrument(js: string, originalLines: string[], names: string[])
     } else {
       // Single-line async function: `async function f() { return 1; }`
       const singleAsyncFnM = transformedRaw.match(/^(\s*(?:export\s+)?(?:default\s+)?)async\s+function\s+([A-Za-z_$][\w$]*)\s*\(([^)]*)\)\s*\{([\s\S]*)\}\s*;?\s*$/);
-      if (singleAsyncFnM) {
+      if (singleAsyncFnM && singleAsyncFnM[2] !== undefined && singleAsyncFnM[4] !== undefined) {
         const bodyRewritten = rewriteAwaitExpressions(singleAsyncFnM[4], '0', i + 1);
-        transformedRaw = `${singleAsyncFnM[1]}function ${singleAsyncFnM[2]}(${singleAsyncFnM[3]}) { return (__t && __t.__async ? __t.__async(function* () { ${bodyRewritten} }, this, ${JSON.stringify(singleAsyncFnM[2])}, ${i + 1}) : undefined); }`;
+        transformedRaw = `${singleAsyncFnM[1] || ''}function ${singleAsyncFnM[2]}(${singleAsyncFnM[3] || ''}) { return (__t && __t.__async ? __t.__async(function* () { ${bodyRewritten} }, this, ${JSON.stringify(singleAsyncFnM[2])}, ${i + 1}) : undefined); }`;
       }
     }
 
@@ -501,7 +503,7 @@ export function instrument(js: string, originalLines: string[], names: string[])
 
 export function extractCall(src: string): string | null {
   const m = src.match(/\/\/\s*调用[:：]\s*(.+)/);
-  return m ? m[1].trim() : null;
+  return m && m[1] ? m[1].trim() : null;
 }
 
 export function findTrailingTopLevelCall(js: string): { index: number; expr: string; line: number } | null {

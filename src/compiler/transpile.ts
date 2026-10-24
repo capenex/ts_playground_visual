@@ -49,7 +49,7 @@ function emitTemplate(src: string, i: number): { next: number; text: string } {
       i = end + 1;
       continue;
     }
-    parts.push(src[i]);
+    parts.push(src[i] || '');
     i++;
   }
   return { next: n, text: parts.join('') };
@@ -314,7 +314,7 @@ export function buildEnumIIFE(name: string, body: string, line: number): { code?
     const part = rawPart.trim();
     if (!part) continue;
     const m = part.match(/^([A-Za-z_$][\w$]*)\s*(?:=\s*([\s\S]+))?$/);
-    if (!m) {
+    if (!m || !m[1]) {
       return { error: { line, message: 'enum 成员暂不支持这种写法：' + part.slice(0, 40) } };
     }
     const key = m[1];
@@ -439,13 +439,14 @@ export function transpileNamespaces(src: string): string {
   const nsStack: Array<{ name: string; startDepth: number }> = [];
   let braceDepth = 0;
   for (let i = 0; i < lines.length; i++) {
-    const raw = lines[i];
+    const raw = lines[i] ?? '';
     const trimmed = stripCommentsOnly(raw).trim();
     const depthBefore = braceDepth;
     const nsOpen = trimmed.match(/^(?:export\s+)?(?:namespace|module)\s+([A-Za-z_$][\w$]*)\s*\{(.*)$/);
-    if (nsOpen && !/^declare\b/.test(trimmed)) {
+    if (nsOpen && nsOpen[1] && !/^declare\b/.test(trimmed)) {
       const nsName = nsOpen[1];
-      const indent = raw.match(/^\s*/)![0];
+      const indentMatch = raw.match(/^\s*/);
+      const indent = indentMatch ? indentMatch[0] : '';
       const openBraceIdx = raw.indexOf('{');
       const afterBrace = openBraceIdx >= 0 ? raw.slice(openBraceIdx + 1) : '';
       let d = 1;
@@ -465,10 +466,10 @@ export function transpileNamespaces(src: string): string {
       const hoistedFns: string[] = [];
       let scanD = d;
       for (let sIdx = i + 1; sIdx < lines.length && scanD > 0; sIdx++) {
-        const sLine = stripCommentsOnly(lines[sIdx]);
+        const sLine = stripCommentsOnly(lines[sIdx] ?? '');
         if (scanD === 1) {
           const fm = sLine.match(/^\s*export\s+(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*(?:<|\()/);
-          if (fm) hoistedFns.push(fm[1]);
+          if (fm && fm[1]) hoistedFns.push(fm[1]);
         }
         for (let k = 0; k < sLine.length; k++) {
           const ch = sLine[k];
@@ -492,8 +493,10 @@ export function transpileNamespaces(src: string): string {
       if (ch === '{') braceDepth++;
       else if (ch === '}') {
         braceDepth = Math.max(0, braceDepth - 1);
-        if (nsStack.length > 0 && braceDepth <= nsStack[nsStack.length - 1].startDepth) {
-          closedNs = { ns: nsStack.pop()!, closeIdx: k };
+        const topEntry = nsStack[nsStack.length - 1];
+        if (topEntry && braceDepth <= topEntry.startDepth) {
+          nsStack.pop();
+          closedNs = { ns: topEntry, closeIdx: k };
           break;
         }
       }
@@ -507,8 +510,8 @@ export function transpileNamespaces(src: string): string {
       continue;
     }
 
-    if (nsStack.length > 0) {
-      const topNs = nsStack[nsStack.length - 1];
+    const topNs = nsStack[nsStack.length - 1];
+    if (topNs) {
       if (depthBefore === topNs.startDepth + 1) {
         lines[i] = rewriteNamespaceExportsOnLine(raw, topNs.name);
       }
@@ -540,7 +543,7 @@ function extractConstructorParamProps(paramSlice: string): string[] {
   for (const rawP of parts) {
     const p = rawP.trim();
     const m = p.match(/^(?:(?:public|private|protected|readonly)\s+)+([A-Za-z_$][\w$]*)/);
-    if (m) props.push(m[1]);
+    if (m && m[1]) props.push(m[1]);
   }
   return props;
 }
@@ -569,15 +572,15 @@ export function stripTypes(rawSrc: string): string {
   }
 
   function isTernaryColonNow(): boolean {
-    if (!ternaryStack.length) return false;
     const top = ternaryStack[ternaryStack.length - 1];
+    if (!top) return false;
     return top.paren === parenDepth && top.brace === braceStack.length;
   }
 
   function popTernariesAtOrAbove(pDepth: number, bDepth: number): void {
     while (ternaryStack.length > 0) {
       const top = ternaryStack[ternaryStack.length - 1];
-      if (top.brace > bDepth || (top.brace === bDepth && top.paren >= pDepth)) {
+      if (top && (top.brace > bDepth || (top.brace === bDepth && top.paren >= pDepth))) {
         ternaryStack.pop();
       } else {
         break;

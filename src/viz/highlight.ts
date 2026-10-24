@@ -34,9 +34,9 @@ export function collectDeclaredNames(src: string | null | undefined): Set<string
   let m;
   const typeRe = /\b(?:function|class|interface|type|enum)\s+([A-Za-z_$][\w$]*)/g;
   const rawClean = blankStrings(text);
-  while ((m = typeRe.exec(rawClean))) names.add(m[1]);
+  while ((m = typeRe.exec(rawClean))) { if (m[1]) names.add(m[1]); }
   const fnAssign = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:function\b|\(|[A-Za-z_$][\w$]*\s*=>)/g;
-  while ((m = fnAssign.exec(js))) names.add(m[1]);
+  while ((m = fnAssign.exec(js))) { if (m[1]) names.add(m[1]); }
 
   DECLARED_NAMES_CACHE = { src: text, names };
   return names;
@@ -285,7 +285,7 @@ export function revealErrorLine(line: any, focus?: any) {
   try {
     editor.focus();
     let pos = 0;
-    for (let i = 0; i < ln - 1; i++) pos += lines[i].length + 1;
+    for (let i = 0; i < ln - 1; i++) pos += (lines[i] || '').length + 1;
     editor.selectionStart = editor.selectionEnd = Math.min(pos, editor.value.length);
   } catch (_) { /* selection is best effort */ }
 }
@@ -352,12 +352,12 @@ export function hoverWordAt(lineText: string, col: number) {
   if (!lineText) return null;
   let i = Math.min(Math.max(0, col), lineText.length - 1);
   if (!HOVER_WORD_RE.test(lineText[i] || '')) {
-    if (i > 0 && HOVER_WORD_RE.test(lineText[i - 1])) i--;
+    if (i > 0 && HOVER_WORD_RE.test(lineText[i - 1] || '')) i--;
     else return null;
   }
   let s = i, e = i;
-  while (s > 0 && HOVER_WORD_RE.test(lineText[s - 1])) s--;
-  while (e < lineText.length && HOVER_WORD_RE.test(lineText[e])) e++;
+  while (s > 0 && HOVER_WORD_RE.test(lineText[s - 1] || '')) s--;
+  while (e < lineText.length && HOVER_WORD_RE.test(lineText[e] || '')) e++;
   const word = lineText.slice(s, e);
   if (!/^[A-Za-z_$][\w$]*$/.test(word)) return null;
   return { word, start: s, end: e };

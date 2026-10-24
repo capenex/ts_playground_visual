@@ -546,15 +546,17 @@ export function renderVideoFrameToCanvas(ctx: CanvasRenderingContext2D, stepIdx:
   const consoleTop = mainBottom - 84;
 
   function drawRowItems(items: AllocatedSlotItem[]) {
-    if (!items.length || curRowY + 95 > consoleTop) return;
+    const first = items[0];
+    const second = items[1];
+    if (!first || curRowY + 95 > consoleTop) return;
     const isTall = items.some((it: AllocatedSlotItem) => it.kind === 'tree' || it.kind === 'graph' || it.kind === 'grid' || it.kind === 'stack' || it.kind === 'interface');
     const cardH = Math.min(isTall ? 158 : 108, consoleTop - curRowY - 8);
     if (cardH < 64) return;
-    if (items.length === 1) {
-      drawVizCardOnCanvas(ctx, gridLeft, curRowY, gridW, cardH, items[0].s, items[0].d, items[0].kind);
+    if (items.length === 1 || !second) {
+      drawVizCardOnCanvas(ctx, gridLeft, curRowY, gridW, cardH, first.s, first.d, first.kind);
     } else {
-      drawVizCardOnCanvas(ctx, gridLeft, curRowY, colW, cardH, items[0].s, items[0].d, items[0].kind);
-      drawVizCardOnCanvas(ctx, gridLeft + colW + colGap, curRowY, colW, cardH, items[1].s, items[1].d, items[1].kind);
+      drawVizCardOnCanvas(ctx, gridLeft, curRowY, colW, cardH, first.s, first.d, first.kind);
+      drawVizCardOnCanvas(ctx, gridLeft + colW + colGap, curRowY, colW, cardH, second.s, second.d, second.kind);
     }
     curRowY += cardH + 10;
   }
@@ -675,12 +677,12 @@ export function ebmlVintSize(len: number) {
 
 export function concatUint8Arrays(arrays: Uint8Array[]) {
   let total = 0;
-  for (let i = 0; i < arrays.length; i++) total += arrays[i].length;
+  for (const arr of arrays) total += arr.length;
   const out = new Uint8Array(total);
   let offset = 0;
-  for (let i = 0; i < arrays.length; i++) {
-    out.set(arrays[i], offset);
-    offset += arrays[i].length;
+  for (const arr of arrays) {
+    out.set(arr, offset);
+    offset += arr.length;
   }
   return out;
 }
@@ -740,8 +742,7 @@ export function muxWebmChunks(
   // Group frames into Clusters (new cluster on every keyframe or every 2000ms)
   const clusters: Array<{ timecodeMs: number; blocks: Uint8Array[] }> = [];
   let curCluster: { timecodeMs: number; blocks: Uint8Array[] } | null = null;
-  for (let i = 0; i < frames.length; i++) {
-    const f = frames[i];
+  for (const f of frames) {
     const tMs = Math.max(0, Math.round(f.timestampMs));
     if (!curCluster || f.isKey || (tMs - curCluster.timecodeMs >= 2000)) {
       curCluster = { timecodeMs: tMs, blocks: [] };
@@ -762,8 +763,7 @@ export function muxWebmChunks(
   const clusterElems: Uint8Array[] = [];
   const cuePoints: Uint8Array[] = [];
 
-  for (let c = 0; c < clusters.length; c++) {
-    const cl = clusters[c];
+  for (const cl of clusters) {
     const tcElem = ebmlElement([0xE7], ebmlUintBytes(cl.timecodeMs));
     const clElem = ebmlElement([0x1F, 0x43, 0xB6, 0x75], [tcElem, ...cl.blocks]);
     cuePoints.push(
@@ -815,7 +815,7 @@ export async function fixWebmDuration(blob: Blob, durationMs: number) {
 
     // Read VINT length of Info size field
     const sizeIdx = infoPos + 4;
-    const firstByte = bytes[sizeIdx];
+    const firstByte = bytes[sizeIdx] ?? 0;
     let vintLen = 1;
     let mask = 0x80;
     while (vintLen <= 8 && !(firstByte & mask)) {
@@ -826,7 +826,7 @@ export async function fixWebmDuration(blob: Blob, durationMs: number) {
 
     let parsedInfoSize = firstByte & (mask - 1);
     for (let k = 1; k < vintLen; k++) {
-      parsedInfoSize = (parsedInfoSize * 256) + bytes[sizeIdx + k];
+      parsedInfoSize = (parsedInfoSize * 256) + (bytes[sizeIdx + k] ?? 0);
     }
     const isUnknownInfoSize = (vintLen === 8 && bytes[sizeIdx + 1] === 0xFF && bytes[sizeIdx + 2] === 0xFF) ||
       (parsedInfoSize === Math.pow(2, 7 * vintLen) - 1);
@@ -894,17 +894,17 @@ export async function fixWebmDuration(blob: Blob, durationMs: number) {
     for (let i = tailStartInOut; i < outBytes.length - 16; i++) {
       if (outBytes[i] === 0x1F && outBytes[i + 1] === 0x43 && outBytes[i + 2] === 0xB6 && outBytes[i + 3] === 0x75) {
         // Skip Cluster size VINT
-        const b0 = outBytes[i + 4];
+        const b0 = outBytes[i + 4] ?? 0;
         let vLen = 1, m = 0x80;
         while (vLen <= 8 && !(b0 & m)) { m >>= 1; vLen++; }
         const tcPos = i + 4 + vLen;
         if (tcPos + 2 < outBytes.length && outBytes[tcPos] === 0xE7) {
-          const tcSizeByte = outBytes[tcPos + 1];
+          const tcSizeByte = outBytes[tcPos + 1] ?? 0;
           const tcLen = tcSizeByte & 0x7F;
           if (tcLen >= 1 && tcLen <= 8 && tcPos + 2 + tcLen <= outBytes.length) {
             let val = 0;
             for (let b = 0; b < tcLen; b++) {
-              val = (val * 256) + outBytes[tcPos + 2 + b];
+              val = (val * 256) + (outBytes[tcPos + 2 + b] ?? 0);
             }
             if (firstClusterTc === null) {
               firstClusterTc = val;
@@ -1195,7 +1195,7 @@ export async function exportVideo(speedMult = VIDEO_EXPORT_SPEED) {
     say(`✓ 视频导出完成：ts-playground-1080p-60fps-${mult}x.webm (1920×1080 · 60fps · ${mult}x 倍速 · 时长 ${secTxt})`, 'ok');
     return true;
   } catch (err) {
-    const msg = err && err.message ? err.message : String(err);
+    const msg = err instanceof Error && err.message ? err.message : String(err);
     if (videoExportStatus) videoExportStatus.textContent = '✗ 导出失败: ' + msg;
     say('✗ 视频导出失败: ' + msg, 'err');
     return false;
