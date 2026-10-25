@@ -2,25 +2,27 @@
 
 `dist/` 目录是**已经构建好的纯静态站点**，部署时不需要 `npm install`、也不需要后端服务。直接将 `dist/` 目录交给任意静态 HTTP(S) 服务器或静态托管平台即可。
 
-更新时间：2026-10-23（基于 `src/**/*.ts` 模块化 TypeScript 架构）。
+更新时间：2026-10-24（基于 `src/**/*.ts` 17 模块严格化 TypeScript 架构，全库 `0 any` / `0 !` 非空断言，支持 Script 源码模式与交互式 `.ipynb` Notebook 模式）。
 
 ## 1. 发布包内文件结构 (`dist/`)
 
 ```text
-index.html                 主页面（TS / PY 均从这里进入）
+index.html                 主页面（TS / PY 及 Script / Notebook 均从这里进入）
 share.html                 分享链接的沙箱预览页
 app-session.js             自动保存 / 分享链接管理
 css/app.css                全部界面与可视化组件样式
-js/app.bundle.js           主应用核心管线（由 src/main.ts 打包生成）
-editor/cm.bundle.js        CodeMirror 6 编辑器构建产物
+js/app.bundle.js           主应用核心管线（由 src/main.ts 及 17 个严格 TS 模块打包生成）
+editor/cm.bundle.js        CodeMirror 6 编辑器构建产物（含主编辑器与 Notebook 单元格编辑器）
 editor/ts-worker.bundle.js 官方 TypeScript 编译器 Web Worker 构建产物
 python/py_engine.js        Python 主线程引擎
 python/py_worker.js        Pyodide Web Worker
 python/py_bridge.py        Python 插桩 / 快照桥接脚本
 python/serve.mjs           本地零依赖静态服务器（需要 Node.js）
+examples/                  示例源码与测试脚本目录
 README.md                  项目架构与技术文档
-USER_GUIDE.md              用户操作手册
+USER_GUIDE.md              用户操作手册（含 Script 与 Notebook 模式指南）
 SYNTAX_REFERENCE.md        TypeScript 语法与可视化范围参考手册
+REFACTOR_PLAN.md           TypeScript 模块化架构映射与严格化编程验收规范
 DEPLOY.md                  本部署说明文件
 ```
 
@@ -37,8 +39,8 @@ npm run build
 
 该命令会依次执行：
 1. `node scripts/build-editor.mjs`：通过 `esbuild` 将 `src/main.ts`、`editor/cm-entry.js`、`editor/ts-worker-entry.js` 打包为 `js/app.bundle.js`、`editor/cm.bundle.js` 和 `editor/ts-worker.bundle.js`；
-2. `node test-pipeline.mjs`：运行全量自动化回归测试；
-3. `node scripts/build.mjs`：将所有静态产物校验并复制组装到 `dist/` 目录。
+2. `node test-pipeline.mjs`：运行全量自动化回归测试与 **Strict TS Gate 严格化门禁**（强制检查 `src/**/*.ts` 中 `0 any`、`0 !` 非空断言、`0 @ts-ignore` 并执行 `tsc --noEmit` 零报错验证）；
+3. `node scripts/build.mjs`：将所有静态产物与五份文档校验并复制组装到 `dist/` 目录。
 
 ## 3. 本地试跑
 
@@ -103,6 +105,8 @@ types {
 ## 6. 验收清单
 
 1. 打开首页，默认加载 `showcase` 样例并自动进入 Debug 模式，右侧展示数据结构卡片，顶部可切换 `async_loop` 等全部 10 个 TS 样例。
-2. 顶部切到 `PY`，Python 样例能正常加载、单步调试并渲染可视化结构。
-3. 点击「⬇ 导出 / 下载」→「🔗 复制分享链接」，打开链接可进入 `share.html` 沙箱预览且不自动运行。
-4. 刷新页面后，上次编辑的代码、文件名和语言模式自动恢复。
+2. 点击顶部 `📓 Notebook` 切换到交互式笔记本模式，默认展示 `Intro.ipynb`，可跨单元格运行代码并点击单元格右上角 `🐞` 进行单步可视化调试。
+3. 顶部切到 `PY`，Python 样例与 Python Notebook 均能正常加载、单步调试并渲染可视化结构。
+4. 点击「⬇ 导出 / 下载」→「🔗 复制分享链接」，打开链接可进入 `share.html` 沙箱预览且不自动运行。
+5. 刷新页面后，上次编辑的代码、文件名和语言模式自动恢复。
+

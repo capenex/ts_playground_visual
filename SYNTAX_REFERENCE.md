@@ -94,3 +94,27 @@
 | 12 | **`graph`（图结构）** | 含 `{ nodes, edges }` 的对象 | 环形拓扑布局并绘制 SVG 节点与边连线 |
 | 13 | **`interface` / `class`（对象与类实例）** | 普通对象、`interface` 实例、或 `class` 实例（含方法内的 `this`） | 展示 `interface` / `class` 标题徽章、属性名、声明类型与实时属性值，高亮当前行访问的字段 |
 | 14 | **`eventloop`（异步事件循环）** | 使用了 `async/await`、`Promise`、`setTimeout`、`queueMicrotask` 或 `sleep` | 四栏实时展示：虚拟时钟与当前阶段、Async 协程挂起/运行状态、Microtask 队列（FIFO）、Macrotask 定时器队列与 Promise 状态表 |
+
+---
+
+## 五、 Notebook 跨单元格编译、类型检查与单步调试规范 (`src/ui/notebook.ts`)
+
+在 `📓 Notebook` 交互式笔记本模式下，代码分散在多个按序执行的单元格（Cells）中。引擎通过以下机制实现跨单元格上下文共享与行号精确定位：
+
+1. **跨单元格静态类型检查 (`typecheckNotebookCellTS`)**
+   - 当检查某个单元格 `cell` 时，编译器会先收集当前笔记本 `executedHistory`（所有已执行过的历史单元格）以及排在该单元格上方的代码单元格源码，合成为前导上下文 `preamble`（共 `preambleLines` 行）。
+   - 对 `preamble + "\n" + cell.source` 执行完整的双遍 `typecheckTS`，随后仅过滤出 `d.line > preambleLines` 的诊断，并将诊断行号减去 `preambleLines`，从而将报错行号 1:1 映射回当前单元格内部的真实行号，且完全识别前序单元格声明的变量、函数、接口与类。
+2. **跨单元格累积求值 (`runNotebookCell`)**
+   - 当运行某个单元格时，引擎将此前已执行的单元格历史与当前单元格按序拼接编译，但仅收集当前单元格行号区间内的 `console.log` 输出、最后一行表达式返回值以及执行完毕后的最新全局快照（`lastGlobalVars` 与 `lastGlobalDs`），并立即刷新右侧 `LOCALS` 与 `WATCH` 面板。
+3. **单元格级按需单步调试 (`debugNotebookCell`)**
+   - 点击任意代码单元格右上角的 `🐞` 按钮时，引擎以前序已执行单元格建立的运行时状态为基础，仅对当前目标单元格生成的轨迹步骤开放单步回放，将当前单元格的 `line` 偏移量还原为单元格内行号，并在该单元格内部渲染 `#stepViz` 行间求值胶囊。
+
+---
+
+## 六、 工程自身源码的严格化 TypeScript 规范 (`Strict TS Gate`)
+
+不仅演练场内部支持严格 TypeScript 检查，本项目自身的核心源码（`src/**/*.ts` 共 17 个模块）也遵循最高级别的工业级严格 TypeScript 标准，并由 `test-pipeline.mjs` 自动守护：
+
+- **`tsconfig.json` 严格编译配置**：启用 `strict: true`、`noUncheckedIndexedAccess: true`、`noUnusedLocals: true`、`noUnusedParameters: true`、`noImplicitOverride: true`、`noFallthroughCasesInSwitch: true`。
+- **零 `any`、零非空断言 `!`、零 `@ts-ignore`**：所有 `src/**/*.ts` 模块均经过词法级静态门禁扫描，确保不存在任何显式或隐式 `any`、后缀非空断言 `!` 或编译器错误压制指令。
+

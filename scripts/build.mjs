@@ -14,6 +14,7 @@ const FILES = [
   'README.md',
   'USER_GUIDE.md',
   'SYNTAX_REFERENCE.md',
+  'REFACTOR_PLAN.md',
   'DEPLOY.md',
 ];
 const DIRS = ['python', 'js', 'css', 'examples'];

@@ -83,10 +83,18 @@ export function evalCall(
   const logs: string[] = [];
   const f = new Function('__t', 'console', body);
   let r: { ok: boolean; value?: unknown; error?: string; stack?: string; line?: number; timeout?: boolean };
+  const formatConsoleArg = (x: unknown): string => {
+    if (x instanceof Error) return x.message || String(x);
+    try { return typeof x === 'object' ? JSON.stringify(x) : String(x); } catch (_) { return String(x); }
+  };
+  const pushLogLine = (...a: unknown[]) => logs.push(a.map(formatConsoleArg).join(' '));
   try {
-    r = f(__t, { log: (...a: unknown[]) => logs.push(a.map(x => {
-      try { return typeof x === 'object' ? JSON.stringify(x) : String(x); } catch (_) { return String(x); }
-    }).join(' ')) });
+    r = f(__t, {
+      log: pushLogLine,
+      info: pushLogLine,
+      warn: pushLogLine,
+      error: pushLogLine,
+    });
   } catch (e) {
     // A throw from top-level code (outside the evaluated expression) lands here.
     const errObj = e && typeof e === 'object' ? (e as { message?: string; stack?: string; __line?: number; __timeout?: boolean }) : null;
@@ -429,13 +437,19 @@ export function computeAndAppendNextStep(opts: { silent?: boolean } = {}) {
     }
   };
 
+  const formatStepConsoleArg = (x: unknown): string => {
+    if (x instanceof Error) return x.message || String(x);
+    try { return typeof x === 'object' ? JSON.stringify(x) : String(x); } catch (_) { return String(x); }
+  };
+  const pushStepConsole = (...a: unknown[]) => {
+    if (!activeRecording) return;
+    stepLogs.push(a.map(formatStepConsoleArg).join(' '));
+  };
   const customConsole = {
-    log: (...a: unknown[]) => {
-      if (!activeRecording) return;
-      stepLogs.push(a.map(x => {
-        try { return typeof x === 'object' ? JSON.stringify(x) : String(x); } catch (_) { return String(x); }
-      }).join(' '));
-    }
+    log: pushStepConsole,
+    info: pushStepConsole,
+    warn: pushStepConsole,
+    error: pushStepConsole,
   };
 
   let paused = false;

@@ -867,7 +867,7 @@ runAsyncDemo()
     }
     if (/^unique\s+symbol\b/.test(rest)) {
       const m = /^unique\s+symbol\b/.exec(rest);
-      return tryParseTypeSuffix(src, j + m[0].length);
+      return m ? tryParseTypeSuffix(src, j + m[0].length) : -1;
     }
     if (/^asserts\b/.test(rest) && !isIdentPart(src[j + 7] || "")) {
       let k2 = j + 7;
@@ -1220,6 +1220,10 @@ runAsyncDemo()
       }
       if (isIdentStart(c)) {
         const id = readIdent(src, i);
+        if (!id) {
+          i++;
+          continue;
+        }
         const isConstEnum = id.name === "const" && /^\s*enum\b/.test(src.slice(i + 5));
         if (id.name === "enum" || isConstEnum) {
           const start = i;
@@ -1411,6 +1415,40 @@ runAsyncDemo()
     "of",
     "instanceof"
   ]);
+  function transpileFsImportStatement(rawStmt) {
+    const flat = stripCommentsOnly(rawStmt).replace(/\s+/g, " ").trim().replace(/;$/, "").trim();
+    if (/^import\s+type\b/.test(flat)) return null;
+    const fromMatch = flat.match(/^import\s+([\s\S]+?)\s+from\s+(['"])([^'"]+)\2\s*$/);
+    if (!fromMatch) return null;
+    const clause = (fromMatch[1] || "").trim();
+    const modSpec = (fromMatch[3] || "").trim();
+    const isFsRoot = modSpec === "fs" || modSpec === "node:fs";
+    const isFsPromises = modSpec === "fs/promises" || modSpec === "node:fs/promises";
+    if (!isFsRoot && !isFsPromises) return null;
+    const baseExpr = isFsPromises ? '(((typeof __t === "function" && __t.__env && __t.__env.fs) || globalThis.__FS_SHIM__).promises)' : '((typeof __t === "function" && __t.__env && __t.__env.fs) || globalThis.__FS_SHIM__)';
+    const convertNamedBraces = (bracePart) => {
+      const inner = bracePart.replace(/^\{|\}$/g, "").trim();
+      if (!inner) return "{}";
+      const specs = inner.split(",").map((s) => s.trim()).filter((s) => Boolean(s) && !/^type\s+/.test(s)).map((s) => s.replace(/^([A-Za-z_$][\w$]*)\s+as\s+([A-Za-z_$][\w$]*)$/, "$1: $2"));
+      return `{ ${specs.join(", ")} }`;
+    };
+    const nsMatch = clause.match(/^\*\s+as\s+([A-Za-z_$][\w$]*)$/);
+    if (nsMatch && nsMatch[1]) {
+      return `/*__import__*/ var ${nsMatch[1]} = ${baseExpr};`;
+    }
+    if (clause.startsWith("{") && clause.endsWith("}")) {
+      return `/*__import__*/ var ${convertNamedBraces(clause)} = ${baseExpr};`;
+    }
+    const defAndNamed = clause.match(/^([A-Za-z_$][\w$]*)\s*,\s*(\{[\s\S]+\})$/);
+    if (defAndNamed && defAndNamed[1] && defAndNamed[2]) {
+      return `/*__import__*/ var ${defAndNamed[1]} = ${baseExpr}, ${convertNamedBraces(defAndNamed[2])} = ${defAndNamed[1]};`;
+    }
+    const defMatch = clause.match(/^([A-Za-z_$][\w$]*)$/);
+    if (defMatch && defMatch[1]) {
+      return `/*__import__*/ var ${defMatch[1]} = ${baseExpr};`;
+    }
+    return null;
+  }
   var _STRIP_TYPES_CACHE = { src: null, out: "" };
   function stripTypes(rawSrc) {
     if (typeof rawSrc === "string" && _STRIP_TYPES_CACHE.src === rawSrc) {
@@ -1558,6 +1596,11 @@ runAsyncDemo()
       }
       if (isIdentStart(c)) {
         const id = readIdent(src, i);
+        if (!id) {
+          out += c;
+          i++;
+          continue;
+        }
         const word = id.name;
         const wordStart = i;
         i = id.end;
@@ -1590,7 +1633,13 @@ runAsyncDemo()
             } else if (ch === "\n" && depth <= 0) break;
             j2++;
           }
-          out += newlinesOf(src.slice(wordStart, j2));
+          const rawStmt = src.slice(wordStart, j2);
+          const fsBinding = transpileFsImportStatement(rawStmt);
+          if (fsBinding) {
+            out += fsBinding + newlinesOf(rawStmt);
+          } else {
+            out += newlinesOf(rawStmt);
+          }
           i = j2;
           continue;
         }
@@ -2237,7 +2286,7 @@ runAsyncDemo()
     if (m && m[1] && !RESERVED_WORDS.has(m[1])) names.add(m[1]);
   }
   function collectNames(js) {
-    const clean = blankStrings(js);
+    const clean = blankStrings(js.replace(/\/\*__import__\*\/[^\n]*/g, ""));
     const names = /* @__PURE__ */ new Set();
     let m;
     const forRe = /\bfor\s*\(\s*(?:const|let|var)\s+(.+?)\s+(?:of|in)\b/g;
@@ -2617,6 +2666,13 @@ runAsyncDemo()
       }
       if (activeAsyncFn && /\bawait\b/.test(transformedRaw)) {
         transformedRaw = rewriteAwaitExpressions(transformedRaw, activeAsyncFn.fidVar, i + 1);
+      }
+      if (/\bcatch\b/.test(transformedRaw)) {
+        transformedRaw = transformedRaw.replace(/\bcatch\s*\(\s*([A-Za-z_$][\w$]*)\s*\)\s*\{/g, "catch ($1) { if ($1 && ($1.__debugPause || $1.__timeout)) throw $1;").replace(/\bcatch\s*\{/g, "catch (__e) { if (__e && (__e.__debugPause || __e.__timeout)) throw __e;");
+      }
+      if (raw.trimStart().startsWith("/*__import__*/")) {
+        out.push(transformedRaw);
+        continue;
       }
       const injectedLine = canInjectHeader ? tryInjectLoopOrElseIf(transformedRaw, callExpr) : null;
       if (injectedLine !== null) {
@@ -3073,6 +3129,15 @@ runAsyncDemo()
     } catch (_) {
     }
     let m;
+    const impRe = /\/\*__import__\*\/\s*var\s+([^\n=]+)=/g;
+    while (m = impRe.exec(js)) {
+      const lhs = m[1] || "";
+      const idRe = /\b([A-Za-z_$][\w$]*)\b/g;
+      let im;
+      while (im = idRe.exec(lhs)) {
+        if (im[1]) names.add(im[1]);
+      }
+    }
     const typeRe = /\b(?:function|class|interface|type|enum)\s+([A-Za-z_$][\w$]*)/g;
     const rawClean = blankStrings(text);
     while (m = typeRe.exec(rawClean)) {
@@ -3659,14 +3724,22 @@ runAsyncDemo()
     const logs = [];
     const f = new Function("__t", "console", body);
     let r;
+    const formatConsoleArg = (x) => {
+      if (x instanceof Error) return x.message || String(x);
+      try {
+        return typeof x === "object" ? JSON.stringify(x) : String(x);
+      } catch (_) {
+        return String(x);
+      }
+    };
+    const pushLogLine = (...a) => logs.push(a.map(formatConsoleArg).join(" "));
     try {
-      r = f(__t, { log: (...a) => logs.push(a.map((x) => {
-        try {
-          return typeof x === "object" ? JSON.stringify(x) : String(x);
-        } catch (_) {
-          return String(x);
-        }
-      }).join(" ")) });
+      r = f(__t, {
+        log: pushLogLine,
+        info: pushLogLine,
+        warn: pushLogLine,
+        error: pushLogLine
+      });
     } catch (e) {
       const errObj = e && typeof e === "object" ? e : null;
       r = {
@@ -3995,17 +4068,23 @@ runAsyncDemo()
         nextVRaw = sameScopeRaw || fallbackRaw || {};
       }
     };
-    const customConsole = {
-      log: (...a) => {
-        if (!activeRecording) return;
-        stepLogs.push(a.map((x) => {
-          try {
-            return typeof x === "object" ? JSON.stringify(x) : String(x);
-          } catch (_) {
-            return String(x);
-          }
-        }).join(" "));
+    const formatStepConsoleArg = (x) => {
+      if (x instanceof Error) return x.message || String(x);
+      try {
+        return typeof x === "object" ? JSON.stringify(x) : String(x);
+      } catch (_) {
+        return String(x);
       }
+    };
+    const pushStepConsole = (...a) => {
+      if (!activeRecording) return;
+      stepLogs.push(a.map(formatStepConsoleArg).join(" "));
+    };
+    const customConsole = {
+      log: pushStepConsole,
+      info: pushStepConsole,
+      warn: pushStepConsole,
+      error: pushStepConsole
     };
     let paused = false;
     let runtimeErr = null;
@@ -5324,8 +5403,13 @@ runAsyncDemo()
     }
     const targetKey = SAMPLES[key] ? key : "showcase";
     if ($("sampleSel")) $("sampleSel").value = targetKey;
-    editor.value = SAMPLES[targetKey] || "";
-    setFileName(targetKey + ".ts");
+    const src = SAMPLES[targetKey] || "";
+    if (typeof globalThis.openSampleScriptTab === "function") {
+      globalThis.openSampleScriptTab(targetKey + ".ts", src, "ts");
+    } else {
+      editor.value = src;
+      setFileName(targetKey + ".ts");
+    }
     lastEditorCursorLine = -1;
     clearLog("\u5DF2\u52A0\u8F7D\u6837\u4F8B \xB7 \u81EA\u52A8\u5F00\u542F Debug \u8C03\u8BD5\u6A21\u5F0F\uFF08\u53EF\u6309 \u2190 / \u2192 \u9010\u6B65\u5F53\u573A\u8BA1\u7B97\uFF0C\u6216\u70B9\u51FB\u5DE6\u4E0B\u300C\u8FD0\u884C\u5230\u4E0B\u4E00\u4E2A\u68C0\u67E5\u70B9\u300D\uFF09");
     resetTraceState();
@@ -5381,8 +5465,13 @@ runAsyncDemo()
     } catch {
     }
     if ($("sampleSel")) $("sampleSel").value = sampleKey;
-    editor.value = SAMPLES[sampleKey] || SAMPLES.showcase || "";
-    setFileName(sampleKey + ".ts");
+    const initialSrc = SAMPLES[sampleKey] || SAMPLES.showcase || "";
+    if (typeof globalThis.openSampleScriptTab === "function") {
+      globalThis.openSampleScriptTab(sampleKey + ".ts", initialSrc, "ts");
+    } else {
+      editor.value = initialSrc;
+      setFileName(sampleKey + ".ts");
+    }
     updateEditorChrome();
     const initialStep = customStep !== null ? customStep : SAMPLE_DEFAULT_STEP[sampleKey] || 0;
     generateTrace(initialStep);
@@ -5862,10 +5951,18 @@ runAsyncDemo()
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-        say("\u2713 \u5DF2\u5BFC\u51FA TypeScript \u6587\u4EF6 " + name + "\uFF08" + editor.value.split("\n").length + " \u884C\uFF09", "ok");
+        say("\u2713 \u5DF2\u5BFC\u51FA\u6587\u4EF6 " + name + "\uFF08" + editor.value.split("\n").length + " \u884C\uFF09", "ok");
       } catch (e) {
         say("\u2717 \u5BFC\u51FA\u5931\u8D25: " + (e instanceof Error && e.message ? e.message : e), "err");
       }
+    };
+  }
+  if ($("btnShareLink")) {
+    $("btnShareLink").onclick = () => {
+      if (exportMenuWrap && exportMenuWrap.classList) exportMenuWrap.classList.remove("open");
+      const tag = $("shareLinkTag");
+      if (tag) tag.textContent = "\u6682\u672A\u5B9E\u73B0";
+      say("\u6682\u672A\u5B9E\u73B0", "dim");
     };
   }
   $("sampleSel").onchange = () => loadSample($("sampleSel").value);
@@ -6387,8 +6484,342 @@ runAsyncDemo()
         }, "Promise.race");
       }
     }
+    const getVfsApi = () => {
+      if (globalThis.__VFS__) return globalThis.__VFS__;
+      const fallbackFiles = /* @__PURE__ */ new Map();
+      const resolveFallbackWorkspacePath = (rawPath, allowEmptyRoot = false) => {
+        const s = String(rawPath ?? "").trim().replace(/\\/g, "/");
+        if (!s) {
+          if (allowEmptyRoot) return "";
+          throw new Error(`ENOENT: no such file or directory, open ''`);
+        }
+        if (/^[A-Za-z]:/.test(s) || s.startsWith("~")) {
+          throw new Error(`EACCES: permission denied, access '${rawPath}' (outside workspace is not allowed)`);
+        }
+        let rel = s;
+        if (s.startsWith("/")) {
+          if (s === "/" || s === "/workspace" || s === "/workspace/") {
+            rel = "";
+          } else if (s.startsWith("/workspace/")) {
+            rel = s.slice("/workspace/".length);
+          } else {
+            throw new Error(`EACCES: permission denied, access '${rawPath}' (outside workspace is not allowed)`);
+          }
+        } else if (s === "workspace" || s === "workspace/") {
+          rel = "";
+        } else if (s.startsWith("workspace/")) {
+          rel = s.slice("workspace/".length);
+        }
+        const rawParts = rel.split("/");
+        const resolved = [];
+        for (const part of rawParts) {
+          if (!part || part === ".") continue;
+          if (part === "..") {
+            if (resolved.length === 0) {
+              throw new Error(`EACCES: permission denied, access '${rawPath}' (outside workspace is not allowed)`);
+            }
+            resolved.pop();
+            continue;
+          }
+          resolved.push(part);
+        }
+        if (resolved.length === 0 && !allowEmptyRoot) {
+          throw new Error(`EISDIR: illegal operation on a directory, open '${rawPath}'`);
+        }
+        return resolved.join("/");
+      };
+      const ensureParentFolders = (norm) => {
+        const parts = norm.split("/").filter(Boolean);
+        let acc = "";
+        for (let idx = 0; idx < parts.length - 1; idx++) {
+          const seg = parts[idx] || "";
+          acc = acc ? `${acc}/${seg}` : seg;
+          if (!fallbackFiles.has(acc)) {
+            fallbackFiles.set(acc, { type: "folder", content: "", mtime: Date.now() });
+          }
+        }
+      };
+      const api = {
+        resolveWorkspacePath(rawPath, allowEmptyRoot = false) {
+          return resolveFallbackWorkspacePath(rawPath, allowEmptyRoot);
+        },
+        readFile(p) {
+          const norm = resolveFallbackWorkspacePath(p, false);
+          const node = fallbackFiles.get(norm);
+          if (!node) throw new Error(`ENOENT: no such file or directory, open '${p}'`);
+          if (node.type === "folder") throw new Error(`EISDIR: illegal operation on a directory, read '${p}'`);
+          return node.content;
+        },
+        writeFile(p, data) {
+          const norm = resolveFallbackWorkspacePath(p, false);
+          ensureParentFolders(norm);
+          const str = typeof data === "string" ? data : JSON.stringify(data, null, 2);
+          fallbackFiles.set(norm, { type: "file", content: str, mtime: Date.now() });
+          return true;
+        },
+        appendFile(p, data) {
+          const norm = resolveFallbackWorkspacePath(p, false);
+          ensureParentFolders(norm);
+          const prev = fallbackFiles.get(norm)?.content ?? "";
+          const str = typeof data === "string" ? data : JSON.stringify(data);
+          fallbackFiles.set(norm, { type: "file", content: prev + str, mtime: Date.now() });
+          return true;
+        },
+        exists(p) {
+          const norm = resolveFallbackWorkspacePath(p, true);
+          if (!norm) return true;
+          return fallbackFiles.has(norm);
+        },
+        listFiles(p) {
+          const norm = resolveFallbackWorkspacePath(p || ".", true);
+          const prefix = norm ? norm + "/" : "";
+          const out = /* @__PURE__ */ new Set();
+          fallbackFiles.forEach((_v, k) => {
+            if (!prefix) {
+              const first = k.split("/")[0];
+              if (first) out.add(first);
+            } else if (k.startsWith(prefix)) {
+              const rest = k.slice(prefix.length).split("/")[0];
+              if (rest) out.add(rest);
+            }
+          });
+          return Array.from(out).sort();
+        },
+        readdir(p) {
+          return api.listFiles(p);
+        },
+        mkdir(p) {
+          const norm = resolveFallbackWorkspacePath(p, true);
+          if (!norm) return true;
+          ensureParentFolders(norm);
+          fallbackFiles.set(norm, { type: "folder", content: "", mtime: Date.now() });
+          return true;
+        },
+        deleteFile(p) {
+          const norm = resolveFallbackWorkspacePath(p, false);
+          const existed = fallbackFiles.delete(norm);
+          Array.from(fallbackFiles.keys()).forEach((k) => {
+            if (k.startsWith(norm + "/")) fallbackFiles.delete(k);
+          });
+          return existed;
+        },
+        unlink(p) {
+          return api.deleteFile(p);
+        },
+        stat(p) {
+          const norm = resolveFallbackWorkspacePath(p, true);
+          if (!norm) {
+            return {
+              size: 0,
+              isFile: () => false,
+              isDirectory: () => true
+            };
+          }
+          const node = fallbackFiles.get(norm);
+          if (!node) throw new Error(`ENOENT: no such file or directory, stat '${p}'`);
+          return {
+            size: node.type === "file" ? node.content.length : 0,
+            isFile: () => node.type === "file",
+            isDirectory: () => node.type === "folder"
+          };
+        },
+        listAll() {
+          return Array.from(fallbackFiles.keys()).sort();
+        },
+        clear() {
+          fallbackFiles.clear();
+        }
+      };
+      globalThis.__VFS__ = api;
+      globalThis.vfs = api;
+      return api;
+    };
+    const readRequiredVfsFile = (p) => {
+      const content = getVfsApi().readFile(p);
+      if (content === null) {
+        throw new Error(`ENOENT: no such file or directory, open '${p}'`);
+      }
+      return content;
+    };
+    const fsPromisesApi = {
+      readFile(p, _encoding) {
+        loop.used = true;
+        return new VirtualPromise((resolve, reject) => {
+          try {
+            resolve(readRequiredVfsFile(p));
+          } catch (e) {
+            reject(e);
+          }
+        }, `fs.readFile(${formatShortVal(p)})`);
+      },
+      writeFile(p, data, _encoding) {
+        loop.used = true;
+        return new VirtualPromise((resolve, reject) => {
+          try {
+            getVfsApi().writeFile(p, typeof data === "string" ? data : String(data ?? ""));
+            resolve(void 0);
+          } catch (e) {
+            reject(e);
+          }
+        }, `fs.writeFile(${formatShortVal(p)})`);
+      },
+      appendFile(p, data, _encoding) {
+        loop.used = true;
+        return new VirtualPromise((resolve, reject) => {
+          try {
+            getVfsApi().appendFile(p, typeof data === "string" ? data : String(data ?? ""));
+            resolve(void 0);
+          } catch (e) {
+            reject(e);
+          }
+        }, `fs.appendFile(${formatShortVal(p)})`);
+      },
+      readdir(p) {
+        loop.used = true;
+        return new VirtualPromise((resolve, reject) => {
+          try {
+            resolve(getVfsApi().readdir(p));
+          } catch (e) {
+            reject(e);
+          }
+        }, `fs.readdir(${formatShortVal(p || ".")})`);
+      },
+      mkdir(p, _options) {
+        loop.used = true;
+        return new VirtualPromise((resolve, reject) => {
+          try {
+            getVfsApi().mkdir(p);
+            resolve(void 0);
+          } catch (e) {
+            reject(e);
+          }
+        }, `fs.mkdir(${formatShortVal(p)})`);
+      },
+      unlink(p) {
+        loop.used = true;
+        return new VirtualPromise((resolve, reject) => {
+          try {
+            getVfsApi().unlink(p);
+            resolve(void 0);
+          } catch (e) {
+            reject(e);
+          }
+        }, `fs.unlink(${formatShortVal(p)})`);
+      },
+      rm(p, _options) {
+        loop.used = true;
+        return new VirtualPromise((resolve, reject) => {
+          try {
+            getVfsApi().unlink(p);
+            resolve(void 0);
+          } catch (e) {
+            reject(e);
+          }
+        }, `fs.rm(${formatShortVal(p)})`);
+      },
+      stat(p) {
+        loop.used = true;
+        return new VirtualPromise((resolve, reject) => {
+          try {
+            resolve(getVfsApi().stat(p));
+          } catch (e) {
+            reject(e);
+          }
+        }, `fs.stat(${formatShortVal(p)})`);
+      },
+      exists(p) {
+        loop.used = true;
+        return new VirtualPromise((resolve, reject) => {
+          try {
+            resolve(getVfsApi().exists(p));
+          } catch (e) {
+            reject(e);
+          }
+        }, `fs.exists(${formatShortVal(p)})`);
+      },
+      access(p, _mode) {
+        loop.used = true;
+        return new VirtualPromise((resolve, reject) => {
+          try {
+            getVfsApi().stat(p);
+            resolve(void 0);
+          } catch (e) {
+            reject(e);
+          }
+        }, `fs.access(${formatShortVal(p)})`);
+      },
+      copyFile(srcPath, destPath) {
+        loop.used = true;
+        return new VirtualPromise((resolve, reject) => {
+          try {
+            const content = readRequiredVfsFile(srcPath);
+            getVfsApi().writeFile(destPath, content);
+            resolve(void 0);
+          } catch (e) {
+            reject(e);
+          }
+        }, `fs.copyFile(${formatShortVal(srcPath)})`);
+      },
+      rename(oldPath, newPath) {
+        loop.used = true;
+        return new VirtualPromise((resolve, reject) => {
+          try {
+            const content = readRequiredVfsFile(oldPath);
+            getVfsApi().writeFile(newPath, content);
+            getVfsApi().unlink(oldPath);
+            resolve(void 0);
+          } catch (e) {
+            reject(e);
+          }
+        }, `fs.rename(${formatShortVal(oldPath)})`);
+      }
+    };
+    const fsModuleEnv = {
+      promises: fsPromisesApi,
+      readFileSync(p, _encoding) {
+        return readRequiredVfsFile(p);
+      },
+      writeFileSync(p, data, _encoding) {
+        getVfsApi().writeFile(p, typeof data === "string" ? data : String(data ?? ""));
+      },
+      appendFileSync(p, data, _encoding) {
+        getVfsApi().appendFile(p, typeof data === "string" ? data : String(data ?? ""));
+      },
+      existsSync(p) {
+        try {
+          return getVfsApi().exists(p);
+        } catch (_) {
+          return false;
+        }
+      },
+      readdirSync(p) {
+        return getVfsApi().readdir(p);
+      },
+      mkdirSync(p, _options) {
+        getVfsApi().mkdir(p);
+      },
+      unlinkSync(p) {
+        getVfsApi().unlink(p);
+      },
+      rmSync(p, _options) {
+        getVfsApi().unlink(p);
+      },
+      statSync(p) {
+        return getVfsApi().stat(p);
+      },
+      copyFileSync(srcPath, destPath) {
+        const content = readRequiredVfsFile(srcPath);
+        getVfsApi().writeFile(destPath, content);
+      },
+      renameSync(oldPath, newPath) {
+        const content = readRequiredVfsFile(oldPath);
+        getVfsApi().writeFile(newPath, content);
+        getVfsApi().unlink(oldPath);
+      }
+    };
     const env = {
       Promise: VirtualPromise,
+      fs: fsModuleEnv,
       queueMicrotask(cb) {
         loop.used = true;
         const line = getCurLine() || 1;
@@ -10599,6 +11030,20 @@ runAsyncDemo()
               if (method === "includes" || method === "startsWith" || method === "endsWith") return "boolean";
               if (method === "indexOf" || method === "charCodeAt") return "number";
             }
+            if (objType === "__FsPromises__" || objName.endsWith(".promises") && inferType(objName.slice(0, -9).trim(), lineNum) === "__FsModule__") {
+              if (method === "readFile") return "Promise<string>";
+              if (method === "writeFile" || method === "appendFile" || method === "mkdir" || method === "unlink" || method === "rm" || method === "access" || method === "copyFile" || method === "rename") return "Promise<void>";
+              if (method === "readdir") return "Promise<string[]>";
+              if (method === "exists") return "Promise<boolean>";
+              if (method === "stat") return "Promise<any>";
+            }
+            if (objType === "__FsModule__") {
+              if (method === "readFileSync") return "string";
+              if (method === "writeFileSync" || method === "appendFileSync" || method === "mkdirSync" || method === "unlinkSync" || method === "rmSync" || method === "copyFileSync" || method === "renameSync") return "void";
+              if (method === "readdirSync") return "string[]";
+              if (method === "existsSync") return "boolean";
+              if (method === "statSync") return "any";
+            }
             const classMethodSig = getClassMethodSig(objType, method);
             if (classMethodSig) {
               return instantiateAndCheckCall(classMethodSig, explicitTypeArgs, args, argTypes, `\u65B9\u6CD5 "${objName}.${method}"`, lineNum);
@@ -11382,6 +11827,45 @@ runAsyncDemo()
       }
       let trimmed = stripInlineCommentSafe(rawLine).trim();
       if (!trimmed || trimmed.startsWith("@")) continue;
+      if (/^import\b/.test(trimmed)) {
+        const impMatch = trimmed.replace(/;$/, "").trim().match(/^import\s+([\s\S]+?)\s+from\s+(['"])([^'"]+)\2\s*$/);
+        if (impMatch) {
+          const clause = (impMatch[1] || "").trim();
+          const modSpec = (impMatch[3] || "").trim();
+          const isFsRoot = modSpec === "fs" || modSpec === "node:fs";
+          const isFsPromises = modSpec === "fs/promises" || modSpec === "node:fs/promises";
+          const modType = isFsPromises ? "__FsPromises__" : isFsRoot ? "__FsModule__" : "any";
+          const registerNamedBindings = (braceStr) => {
+            const inner = braceStr.replace(/^\{|\}$/g, "").trim();
+            if (!inner) return;
+            inner.split(",").forEach((rawSpec) => {
+              const spec = rawSpec.trim().replace(/^type\s+/, "");
+              if (!spec) return;
+              const asM = spec.match(/^([A-Za-z_$][\w$]*)\s+as\s+([A-Za-z_$][\w$]*)$/);
+              const imported = asM && asM[1] ? asM[1] : spec;
+              const local = asM && asM[2] ? asM[2] : spec;
+              if (!/^[A-Za-z_$][\w$]*$/.test(local)) return;
+              const bType = isFsRoot && imported === "promises" ? "__FsPromises__" : "any";
+              env.set(local, { type: bType, isConst: true, line: lineNum, declaredType: bType });
+            });
+          };
+          const nsM = clause.match(/^\*\s+as\s+([A-Za-z_$][\w$]*)$/);
+          if (nsM && nsM[1]) {
+            env.set(nsM[1], { type: modType, isConst: true, line: lineNum, declaredType: modType });
+          } else if (clause.startsWith("{") && clause.endsWith("}")) {
+            registerNamedBindings(clause);
+          } else {
+            const defNamedM = clause.match(/^([A-Za-z_$][\w$]*)\s*,\s*(\{[\s\S]+\})$/);
+            if (defNamedM && defNamedM[1] && defNamedM[2]) {
+              env.set(defNamedM[1], { type: modType, isConst: true, line: lineNum, declaredType: modType });
+              registerNamedBindings(defNamedM[2]);
+            } else if (/^[A-Za-z_$][\w$]*$/.test(clause)) {
+              env.set(clause, { type: modType, isConst: true, line: lineNum, declaredType: modType });
+            }
+          }
+        }
+        continue;
+      }
       if (/^declare\b/.test(trimmed)) {
         const declVarM = trimmed.match(/^declare\s+(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::\s*([^=;]+))?/);
         if (declVarM && declVarM[1]) {
@@ -12386,12 +12870,14 @@ runAsyncDemo()
     initNotebookUI: () => initNotebookUI,
     insertNotebookCell: () => insertNotebookCell,
     moveNotebookCell: () => moveNotebookCell,
+    openSampleScriptTab: () => openSampleScriptTab,
     pasteNotebookCell: () => pasteNotebookCell,
     renderImportSampleMenu: () => renderImportSampleMenu,
     renderMarkdownHtml: () => renderMarkdownHtml,
     renderNotebookUI: () => renderNotebookUI,
     renderScriptTabsUI: () => renderScriptTabsUI,
     renderVfsTreeUI: () => renderVfsTreeUI,
+    resolveWorkspacePath: () => resolveWorkspacePath,
     restartNotebookKernel: () => restartNotebookKernel,
     runAllNotebookCells: () => runAllNotebookCells,
     runNotebookCell: () => runNotebookCell,
@@ -12914,18 +13400,30 @@ runAsyncDemo()
     const snapExpr = snapFnExpr(combinedNames);
     const logs = [];
     let recordLogs = false;
+    const fmtNotebookConsoleArgs = (...args) => args.map((x) => {
+      if (x instanceof Error) return x.message || String(x);
+      try {
+        return typeof x === "object" && x !== null ? JSON.stringify(x) : String(x);
+      } catch (_) {
+        return String(x);
+      }
+    }).join(" ");
     const customConsole = {
       log: (...args) => {
         if (!recordLogs) return;
-        logs.push(
-          args.map((x) => {
-            try {
-              return typeof x === "object" && x !== null ? JSON.stringify(x) : String(x);
-            } catch (_) {
-              return String(x);
-            }
-          }).join(" ")
-        );
+        logs.push(fmtNotebookConsoleArgs(...args));
+      },
+      info: (...args) => {
+        if (!recordLogs) return;
+        logs.push(fmtNotebookConsoleArgs(...args));
+      },
+      warn: (...args) => {
+        if (!recordLogs) return;
+        logs.push(fmtNotebookConsoleArgs(...args));
+      },
+      error: (...args) => {
+        if (!recordLogs) return;
+        logs.push(fmtNotebookConsoleArgs(...args));
       },
       EnableRecording: () => {
         recordLogs = true;
@@ -13488,6 +13986,9 @@ runAsyncDemo()
     const edWrap = $("editorWrap");
     const srcPaneTitle = $("sourcePaneTitle");
     const expMenuWrap = $("exportMenuWrap");
+    const vfsSidebar = $("vfsSidebar");
+    const b1 = $("btnToggleVfs");
+    const b2 = $("nbBtnToggleVfs");
     if (nbWrap) nbWrap.hidden = next !== "notebook";
     if (edWrap) edWrap.style.display = next === "notebook" ? "none" : "flex";
     if (srcPaneTitle) srcPaneTitle.style.display = next === "notebook" ? "none" : "flex";
@@ -13495,6 +13996,11 @@ runAsyncDemo()
       expMenuWrap.style.display = next === "notebook" ? "none" : "";
       if (next === "notebook" && expMenuWrap.classList) expMenuWrap.classList.remove("open");
     }
+    if (vfsSidebar) {
+      vfsSidebar.hidden = true;
+    }
+    if (b1 && b1.classList) b1.classList.remove("active");
+    if (b2 && b2.classList) b2.classList.remove("active");
     if (next === "notebook") {
       const doc = getActiveNotebook();
       ACTIVE_NB_CELL_ID = doc.activeCellId;
@@ -13630,21 +14136,16 @@ runAsyncDemo()
       debugNotebookCell(cell.id);
     }
   }
-  var VFS_STORAGE_KEY = "ts-visual-vfs-v1";
+  var VFS_STORAGE_KEY = "ts-visual-vfs-workspace-v2";
   var scriptTabSeq = 1;
   var syncingScriptTab = false;
+  var vfsBootInitialized = false;
+  var pendingVfsDeletePath = null;
   var SCRIPT_TABS = {
     ts: { activeTabId: "", tabs: [] },
     python: { activeTabId: "", tabs: [] }
   };
-  var VFS_EXPANDED_FOLDERS = /* @__PURE__ */ new Set([
-    "workspace",
-    "notebooks",
-    "examples",
-    "examples/ts",
-    "examples/python",
-    "data"
-  ]);
+  var VFS_EXPANDED_FOLDERS = /* @__PURE__ */ new Set();
   var VFS_NODES = /* @__PURE__ */ new Map();
   var TS_SAMPLE_METADATA = [
     { key: "showcase", label: "showcase.ts \xB7 \u7EFC\u5408\u6F14\u793A", desc: "\u6ED1\u52A8\u7A97\u53E3 + \u5355\u8C03\u6808 + Map + \u6811\u4E0E\u56FE" },
@@ -13670,67 +14171,59 @@ runAsyncDemo()
     const eng = typeof PY_ENGINE !== "undefined" ? PY_ENGINE : null;
     return eng && eng.samples ? eng.samples : {};
   }
+  function resolveWorkspacePath(rawPath, allowEmptyRoot = false) {
+    const raw = String(rawPath ?? "").trim().replace(/\\/g, "/");
+    if (!raw || raw === "." || raw === "./" || raw === "workspace" || raw === "/workspace" || raw === "workspace/" || raw === "/workspace/") {
+      if (allowEmptyRoot) return "";
+      throw new Error(`EISDIR: illegal operation on workspace root directory '${rawPath}'`);
+    }
+    if (/^[A-Za-z]:/.test(raw) || raw.startsWith("~")) {
+      throw new Error(`EACCES: permission denied, file operations outside workspace are not allowed: '${rawPath}'`);
+    }
+    if (raw.startsWith("/")) {
+      if (raw !== "/workspace" && !raw.startsWith("/workspace/")) {
+        throw new Error(`EACCES: permission denied, file operations outside workspace are not allowed: '${rawPath}'`);
+      }
+    }
+    let stripped = raw;
+    if (stripped.startsWith("/workspace/")) {
+      stripped = stripped.slice("/workspace/".length);
+    } else if (stripped.startsWith("workspace/")) {
+      stripped = stripped.slice("workspace/".length);
+    } else if (stripped.startsWith("./")) {
+      stripped = stripped.slice(2);
+    }
+    const rawSegments = stripped.split("/");
+    const resolved = [];
+    for (const seg of rawSegments) {
+      if (!seg || seg === ".") continue;
+      if (seg === "..") {
+        if (resolved.length === 0) {
+          throw new Error(`EACCES: permission denied, file operations outside workspace are not allowed: '${rawPath}'`);
+        }
+        resolved.pop();
+        continue;
+      }
+      resolved.push(seg);
+    }
+    const firstSeg = resolved[0] || "";
+    if (firstSeg === "examples" || firstSeg === "notebooks") {
+      throw new Error(`EACCES: permission denied, file operations outside workspace are not allowed: '${rawPath}'`);
+    }
+    const finalPath = resolved.join("/");
+    if (!finalPath && !allowEmptyRoot) {
+      throw new Error(`EISDIR: illegal operation on workspace root directory '${rawPath}'`);
+    }
+    return finalPath;
+  }
   function ensureVfsInitialized() {
-    if (VFS_NODES.size > 0) return;
-    const addFolder = (path, name, parentPath) => {
-      VFS_NODES.set(path, { path, name, type: "folder", parentPath });
-    };
-    const addFile = (path, name, parentPath, content, readonly = false) => {
-      VFS_NODES.set(path, { path, name, type: "file", parentPath, content, readonly });
-    };
-    addFolder("workspace", "workspace", "");
-    addFolder("notebooks", "notebooks", "");
-    addFolder("examples", "examples", "");
-    addFolder("examples/ts", "ts", "examples");
-    addFolder("examples/python", "python", "examples");
-    addFolder("data", "data", "");
-    TS_SAMPLE_METADATA.forEach((item) => {
-      const code = SAMPLES[item.key] || "";
-      if (code) {
-        addFile(`examples/ts/${item.key}.ts`, `${item.key}.ts`, "examples/ts", code, true);
-      }
-    });
-    const pySamples = getPySamplesDict();
-    PY_SAMPLE_METADATA.forEach((item) => {
-      const code = pySamples[item.key] || "";
-      if (code) {
-        addFile(`examples/python/${item.key}.py`, `${item.key}.py`, "examples/python", code, true);
-      }
-    });
-    addFile(
-      "data/sample_input.json",
-      "sample_input.json",
-      "data",
-      JSON.stringify({ nums: [3, 6, 2, 8, 5, 4, 7], target: 12, author: "TS Visual VFS" }, null, 2),
-      false
-    );
-    addFile(
-      "data/graph_edges.csv",
-      "graph_edges.csv",
-      "data",
-      "from,to,weight\n0,1,4\n0,2,2\n1,2,1\n1,3,5\n2,3,8\n",
-      false
-    );
+    if (vfsBootInitialized) return;
+    vfsBootInitialized = true;
+    VFS_NODES.clear();
     try {
       if (typeof localStorage !== "undefined") {
-        const raw = localStorage.getItem(VFS_STORAGE_KEY);
-        if (raw) {
-          const saved = JSON.parse(raw);
-          if (Array.isArray(saved)) {
-            saved.forEach((entry) => {
-              if (entry && typeof entry.path === "string" && typeof entry.name === "string") {
-                VFS_NODES.set(entry.path, {
-                  path: entry.path,
-                  name: entry.name,
-                  type: entry.type === "folder" ? "folder" : "file",
-                  parentPath: String(entry.parentPath || ""),
-                  content: typeof entry.content === "string" ? entry.content : "",
-                  readonly: false
-                });
-              }
-            });
-          }
-        }
+        localStorage.removeItem("ts-visual-vfs-v1");
+        localStorage.removeItem(VFS_STORAGE_KEY);
       }
     } catch (_) {
     }
@@ -13740,12 +14233,29 @@ runAsyncDemo()
       if (typeof localStorage === "undefined") return;
       const customNodes = [];
       VFS_NODES.forEach((node) => {
-        if (!node.path.startsWith("examples/")) {
-          customNodes.push(node);
-        }
+        customNodes.push(node);
       });
       localStorage.setItem(VFS_STORAGE_KEY, JSON.stringify(customNodes));
     } catch (_) {
+    }
+  }
+  function ensureParentFoldersExist(relPath) {
+    const parts = relPath.split("/").filter(Boolean);
+    if (parts.length <= 1) return;
+    let acc = "";
+    for (let i = 0; i < parts.length - 1; i++) {
+      const folderName = parts[i] || "";
+      const parentPath = acc;
+      acc = acc ? `${acc}/${folderName}` : folderName;
+      if (!VFS_NODES.has(acc)) {
+        VFS_NODES.set(acc, {
+          path: acc,
+          name: folderName,
+          type: "folder",
+          parentPath
+        });
+        VFS_EXPANDED_FOLDERS.add(acc);
+      }
     }
   }
   function ensureScriptTabsForLang(lang) {
@@ -13755,22 +14265,15 @@ runAsyncDemo()
       const defaultTitle = lang === "python" ? LANG === "python" && FILE_NAME ? FILE_NAME : "quickstart.py" : LANG !== "python" && FILE_NAME ? FILE_NAME : "showcase.ts";
       const defaultSrc = lang === "python" ? LANG === "python" && editor && editor.value ? editor.value : getPySamplesDict().quickstart || "" : LANG !== "python" && editor && editor.value ? editor.value : SAMPLES.showcase || "";
       const tabId = "stab_" + ++scriptTabSeq;
-      const vfsPath = `workspace/${defaultTitle}`;
       store.tabs.push({
         id: tabId,
         title: defaultTitle,
         lang,
         source: defaultSrc,
-        vfsPath
+        vfsPath: "",
+        isSample: true
       });
       store.activeTabId = tabId;
-      VFS_NODES.set(vfsPath, {
-        path: vfsPath,
-        name: defaultTitle,
-        type: "file",
-        parentPath: "workspace",
-        content: defaultSrc
-      });
     }
     const firstTab = store.tabs[0];
     if (firstTab && !store.tabs.some((t) => t.id === store.activeTabId)) {
@@ -13788,8 +14291,39 @@ runAsyncDemo()
       title: targetLang === "python" ? "quickstart.py" : "showcase.ts",
       lang: targetLang,
       source: "",
-      vfsPath: targetLang === "python" ? "workspace/quickstart.py" : "workspace/showcase.ts"
+      vfsPath: "",
+      isSample: true
     };
+  }
+  function openSampleScriptTab(title, source, lang) {
+    const targetLang = lang || (LANG === "python" ? "python" : "ts");
+    if (editor && editor.value) {
+      syncActiveScriptTabSource(editor.value);
+    }
+    const store = ensureScriptTabsForLang(targetLang);
+    let tab = store.tabs.find((t) => (t.isSample || !t.vfsPath) && t.title === title);
+    if (!tab) {
+      tab = {
+        id: "stab_" + ++scriptTabSeq,
+        title,
+        lang: targetLang,
+        source,
+        vfsPath: "",
+        isSample: true
+      };
+      store.tabs.push(tab);
+    } else {
+      tab.source = source;
+      tab.vfsPath = "";
+      tab.isSample = true;
+    }
+    store.activeTabId = tab.id;
+    syncingScriptTab = true;
+    if (editor) editor.value = source;
+    setFileName(title);
+    syncingScriptTab = false;
+    renderScriptTabsUI();
+    renderVfsTreeUI();
   }
   function syncActiveScriptTabFromFileName(newFileName) {
     if (syncingScriptTab) return;
@@ -13800,18 +14334,18 @@ runAsyncDemo()
     const oldPath = activeTab.vfsPath;
     activeTab.title = newFileName;
     activeTab.source = editor ? editor.value : activeTab.source;
-    activeTab.vfsPath = `workspace/${newFileName}`;
-    if (oldPath && oldPath !== activeTab.vfsPath && oldPath.startsWith("workspace/")) {
+    if (!activeTab.isSample && oldPath && VFS_NODES.has(oldPath)) {
+      activeTab.vfsPath = newFileName;
       VFS_NODES.delete(oldPath);
+      VFS_NODES.set(activeTab.vfsPath, {
+        path: activeTab.vfsPath,
+        name: newFileName,
+        type: "file",
+        parentPath: "",
+        content: activeTab.source
+      });
+      persistVfsToClientStorage();
     }
-    VFS_NODES.set(activeTab.vfsPath, {
-      path: activeTab.vfsPath,
-      name: newFileName,
-      type: "file",
-      parentPath: "workspace",
-      content: activeTab.source
-    });
-    persistVfsToClientStorage();
     renderScriptTabsUI();
     renderVfsTreeUI();
   }
@@ -13820,19 +14354,13 @@ runAsyncDemo()
     const activeTab = getActiveScriptTab(lang);
     if (!activeTab) return;
     activeTab.source = src;
-    const node = VFS_NODES.get(activeTab.vfsPath);
-    if (node && node.type === "file") {
-      node.content = src;
-    } else {
-      VFS_NODES.set(activeTab.vfsPath, {
-        path: activeTab.vfsPath,
-        name: activeTab.title,
-        type: "file",
-        parentPath: "workspace",
-        content: src
-      });
+    if (!activeTab.isSample && activeTab.vfsPath) {
+      const node = VFS_NODES.get(activeTab.vfsPath);
+      if (node && node.type === "file") {
+        node.content = src;
+        persistVfsToClientStorage();
+      }
     }
-    persistVfsToClientStorage();
   }
   function renderScriptTabsUI() {
     const tabsEl = $("scriptTabsList");
@@ -13857,41 +14385,11 @@ runAsyncDemo()
       (item) => `<button type="button" class="import-sample-item" data-import-sample-key="${esc(item.key)}" title="${esc(item.desc)}"><span class="import-sample-name">${esc(item.label)}</span><span class="import-sample-path">${esc(folderPrefix + item.key + (isPy ? ".py" : ".ts"))}</span></button>`
     ).join("") + (VIEW_MODE !== "notebook" ? nbItemHtml : "");
   }
-  function syncNotebookDocsToVfs() {
-    ensureVfsInitialized();
-    const lang = LANG === "python" ? "python" : "ts";
-    const store = ensureLangNotebooks(lang);
-    store.docs.forEach((doc) => {
-      const path = `notebooks/${doc.title}`;
-      VFS_NODES.set(path, {
-        path,
-        name: doc.title,
-        type: "file",
-        parentPath: "notebooks",
-        content: JSON.stringify({ cells: doc.cells.map((c) => ({ cell_type: c.type, source: [c.source] })) }, null, 2)
-      });
-    });
-  }
   function renderVfsTreeUI() {
     const treeEl = $("vfsTreeList");
     if (!treeEl) return;
     ensureVfsInitialized();
-    syncNotebookDocsToVfs();
-    const pySamples = getPySamplesDict();
-    PY_SAMPLE_METADATA.forEach((item) => {
-      const path = `examples/python/${item.key}.py`;
-      if (!VFS_NODES.has(path) && pySamples[item.key]) {
-        VFS_NODES.set(path, {
-          path,
-          name: `${item.key}.py`,
-          type: "file",
-          parentPath: "examples/python",
-          content: pySamples[item.key],
-          readonly: true
-        });
-      }
-    });
-    const activePath = VIEW_MODE === "notebook" ? `notebooks/${getActiveNotebook().title}` : getActiveScriptTab().vfsPath;
+    const activePath = VIEW_MODE === "notebook" ? getActiveNotebook().title : getActiveScriptTab().vfsPath;
     const childrenOf = (parentPath) => {
       const list = [];
       VFS_NODES.forEach((node) => {
@@ -13902,21 +14400,30 @@ runAsyncDemo()
         return a.name.localeCompare(b.name);
       });
     };
+    const buildConfirmHtml = (node) => {
+      if (pendingVfsDeletePath !== node.path) return "";
+      return `<div class="vfs-del-confirm" data-vfs-confirm-box="${esc(node.path)}"><span class="vfs-del-confirm-text">\u786E\u8BA4\u5220\u9664 ${esc(node.name)}\uFF1F</span><span class="vfs-del-confirm-actions"><button type="button" class="vfs-confirm-btn danger" data-vfs-confirm-del="${esc(node.path)}">\u786E\u8BA4</button><button type="button" class="vfs-confirm-btn" data-vfs-cancel-del="${esc(node.path)}">\u53D6\u6D88</button></span></div>`;
+    };
     const renderNode = (node, depth) => {
       const padLeft = 8 + depth * 14;
+      const canDel = !node.readonly;
+      const delBtnHtml = canDel ? `<span class="vfs-row-actions"><button type="button" class="vfs-del-btn" data-vfs-del="${esc(node.path)}" title="\u5220\u9664">\u274C</button></span>` : "";
       if (node.type === "folder") {
         const isOpen = VFS_EXPANDED_FOLDERS.has(node.path);
         const kids = childrenOf(node.path);
-        return `<div class="vfs-folder-row" data-vfs-folder="${esc(node.path)}" style="padding-left:${padLeft}px" title="\u5355\u51FB\u5C55\u5F00/\u6298\u53E0\u76EE\u5F55 \xB7 \u53CC\u51FB\u91CD\u547D\u540D\u76EE\u5F55"><span class="vfs-caret">${isOpen ? "\u25BE" : "\u25B8"}</span><span class="vfs-icon">\u{1F4C1}</span><span class="vfs-name">${esc(node.name)}/</span></div>` + (isOpen ? `<div class="vfs-folder-children">${kids.map((k) => renderNode(k, depth + 1)).join("")}</div>` : "");
+        return `<div class="vfs-folder-row" data-vfs-folder="${esc(node.path)}" style="padding-left:${padLeft}px" title="\u5355\u51FB\u5C55\u5F00/\u6298\u53E0\u76EE\u5F55 \xB7 \u53CC\u51FB\u91CD\u547D\u540D\u76EE\u5F55"><span class="vfs-caret">${isOpen ? "\u25BE" : "\u25B8"}</span><span class="vfs-icon">\u{1F4C1}</span><span class="vfs-name">${esc(node.name)}/</span>` + delBtnHtml + `</div>` + buildConfirmHtml(node) + (isOpen ? `<div class="vfs-folder-children">${kids.map((k) => renderNode(k, depth + 1)).join("")}</div>` : "");
       }
-      const isAct = node.path === activePath;
+      const isAct = Boolean(activePath && node.path === activePath);
       const ext = (node.name.split(".").pop() || "").toLowerCase();
       const icon = ext === "ipynb" ? "\u{1F4D3}" : ext === "py" ? "\u{1F40D}" : ext === "ts" ? "\u{1F4D8}" : ext === "json" ? "\u{1F5C2}" : "\u{1F4C4}";
-      const canDel = !node.readonly && !node.path.startsWith("examples/");
-      return `<div class="vfs-file-row${isAct ? " active" : ""}" data-vfs-file="${esc(node.path)}" style="padding-left:${padLeft}px" title="${esc(node.path)}\uFF08\u5355\u51FB\u6253\u5F00 \xB7 \u53CC\u51FB\u91CD\u547D\u540D\uFF09"><span class="vfs-icon">${icon}</span><span class="vfs-name">${esc(node.name)}</span><span class="vfs-row-actions">` + (canDel ? `<button type="button" class="vfs-row-btn danger" data-vfs-del="${esc(node.path)}" title="\u5220\u9664\u6587\u4EF6">\xD7</button>` : "") + `</span></div>`;
+      return `<div class="vfs-file-row${isAct ? " active" : ""}" data-vfs-file="${esc(node.path)}" style="padding-left:${padLeft}px" title="${esc(node.path)}\uFF08\u5355\u51FB\u6253\u5F00 \xB7 \u53CC\u51FB\u91CD\u547D\u540D\uFF09"><span class="vfs-icon">${icon}</span><span class="vfs-name">${esc(node.name)}</span>` + delBtnHtml + `</div>` + buildConfirmHtml(node);
     };
     const roots = childrenOf("");
-    treeEl.innerHTML = roots.map((r) => renderNode(r, 0)).join("");
+    if (roots.length === 0) {
+      treeEl.innerHTML = `<div class="vfs-empty-hint" style="padding:14px 10px;color:#64748b;font-size:11.5px;text-align:center;">\u7A7A\u76EE\u5F55</div>`;
+    } else {
+      treeEl.innerHTML = roots.map((r) => renderNode(r, 0)).join("");
+    }
     const footEl = $("vfsFootStatus");
     if (footEl) {
       let fileCount = 0;
@@ -13928,11 +14435,18 @@ runAsyncDemo()
         }
       });
       const kb = (totalBytes / 1024).toFixed(1);
-      footEl.textContent = `\u6D4F\u89C8\u5668\u7AEF VFS \xB7 ${fileCount} \u4E2A\u6587\u4EF6 (${kb} KB)`;
+      footEl.textContent = `${fileCount} \u4E2A\u6587\u4EF6 (${kb} KB)`;
     }
   }
-  function openVfsFile(path) {
+  function openVfsFile(rawPath) {
     ensureVfsInitialized();
+    let path = rawPath;
+    try {
+      path = resolveWorkspacePath(rawPath, false);
+    } catch (err) {
+      say(`\u2717 ${err instanceof Error ? err.message : String(err)}`, "err");
+      return;
+    }
     const node = VFS_NODES.get(path);
     if (!node || node.type !== "file") return;
     if (node.name.endsWith(".ipynb")) {
@@ -13951,24 +14465,6 @@ runAsyncDemo()
       setViewMode("notebook");
       return;
     }
-    const tsMatch = path.match(/^examples\/ts\/([A-Za-z0-9_]+)\.ts$/);
-    if (tsMatch && tsMatch[1]) {
-      if (LANG === "python" && typeof PY_ENGINE !== "undefined" && PY_ENGINE.setLang) {
-        PY_ENGINE.setLang("ts");
-      }
-      setViewMode("script");
-      loadSample(tsMatch[1]);
-      return;
-    }
-    const pyMatch = path.match(/^examples\/python\/([A-Za-z0-9_]+)\.py$/);
-    if (pyMatch && pyMatch[1]) {
-      if (LANG !== "python" && typeof PY_ENGINE !== "undefined" && PY_ENGINE.setLang) {
-        PY_ENGINE.setLang("python");
-      }
-      setViewMode("script");
-      loadSample(pyMatch[1]);
-      return;
-    }
     const isPyFile = node.name.endsWith(".py");
     if (isPyFile && LANG !== "python" && typeof PY_ENGINE !== "undefined" && PY_ENGINE.setLang) {
       PY_ENGINE.setLang("python");
@@ -13977,19 +14473,25 @@ runAsyncDemo()
     }
     setViewMode("script");
     const lang = LANG === "python" ? "python" : "ts";
+    if (editor && editor.value) {
+      syncActiveScriptTabSource(editor.value);
+    }
     const store = ensureScriptTabsForLang(lang);
-    let tab = store.tabs.find((t) => t.vfsPath === node.path || t.title === node.name);
+    let tab = store.tabs.find((t) => !t.isSample && t.vfsPath === node.path);
     if (!tab) {
       tab = {
         id: "stab_" + ++scriptTabSeq,
         title: node.name,
         lang,
         source: node.content || "",
-        vfsPath: node.path
+        vfsPath: node.path,
+        isSample: false
       };
       store.tabs.push(tab);
     } else {
       tab.source = node.content ?? tab.source;
+      tab.vfsPath = node.path;
+      tab.isSample = false;
     }
     store.activeTabId = tab.id;
     syncingScriptTab = true;
@@ -14000,69 +14502,271 @@ runAsyncDemo()
     updateEditorChrome();
     renderScriptTabsUI();
     renderVfsTreeUI();
-    say(`\u{1F4C2} \u5DF2\u4ECE\u865A\u62DF\u76EE\u5F55\u6253\u5F00 ${node.path}`, "ok");
+    say(`\u{1F4C2} \u5DF2\u6253\u5F00 ${node.path}`, "ok");
+  }
+  function serializeFsData(data) {
+    if (typeof data === "string") return data;
+    if (data instanceof Uint8Array) {
+      return typeof TextDecoder !== "undefined" ? new TextDecoder().decode(data) : String(data);
+    }
+    if (data !== null && typeof data === "object") {
+      try {
+        return JSON.stringify(data, null, 2);
+      } catch (_) {
+        return String(data);
+      }
+    }
+    return String(data ?? "");
   }
   function bindGlobalVfsApi() {
     const api = {
+      resolveWorkspacePath(rawPath, allowEmptyRoot = false) {
+        return resolveWorkspacePath(rawPath, allowEmptyRoot);
+      },
       readFile(path) {
         ensureVfsInitialized();
-        const norm = String(path || "").replace(/^\/+/, "");
-        const node = VFS_NODES.get(norm) || VFS_NODES.get(`workspace/${norm}`);
-        return node && node.type === "file" ? node.content ?? "" : null;
+        const rel = resolveWorkspacePath(path, false);
+        const node = VFS_NODES.get(rel);
+        if (!node) return null;
+        if (node.type === "folder") {
+          throw new Error(`EISDIR: illegal operation on a directory, read '${path}'`);
+        }
+        return node.content ?? "";
       },
       writeFile(path, content) {
         ensureVfsInitialized();
-        const norm = String(path || "").replace(/^\/+/, "");
-        const fullPath = norm.includes("/") ? norm : `workspace/${norm}`;
-        const parts = fullPath.split("/");
-        const name = parts.pop() || "untitled.txt";
-        const parentPath = parts.join("/");
-        if (parentPath && !VFS_NODES.has(parentPath)) {
-          VFS_NODES.set(parentPath, {
-            path: parentPath,
-            name: parts[parts.length - 1] || parentPath,
-            type: "folder",
-            parentPath: parts.slice(0, -1).join("/")
-          });
+        const rel = resolveWorkspacePath(path, false);
+        const existing = VFS_NODES.get(rel);
+        if (existing && existing.type === "folder") {
+          throw new Error(`EISDIR: illegal operation on a directory, open '${path}'`);
         }
-        VFS_NODES.set(fullPath, {
-          path: fullPath,
+        ensureParentFoldersExist(rel);
+        const parts = rel.split("/");
+        const name = parts.pop() || rel;
+        const parentPath = parts.join("/");
+        VFS_NODES.set(rel, {
+          path: rel,
           name,
           type: "file",
           parentPath,
-          content: String(content ?? "")
+          content: serializeFsData(content)
         });
         persistVfsToClientStorage();
         renderVfsTreeUI();
         return true;
       },
-      listFiles(dirPath = "workspace") {
+      appendFile(path, content) {
         ensureVfsInitialized();
-        const norm = String(dirPath || "").replace(/^\/+|\/+$/g, "");
+        const rel = resolveWorkspacePath(path, false);
+        const existing = VFS_NODES.get(rel);
+        if (existing && existing.type === "folder") {
+          throw new Error(`EISDIR: illegal operation on a directory, open '${path}'`);
+        }
+        const prev = existing && existing.type === "file" ? existing.content ?? "" : "";
+        return api.writeFile(rel, prev + serializeFsData(content));
+      },
+      listFiles(dirPath = "") {
+        ensureVfsInitialized();
+        const rel = resolveWorkspacePath(dirPath, true);
+        if (rel !== "") {
+          const dirNode = VFS_NODES.get(rel);
+          if (!dirNode) {
+            throw new Error(`ENOENT: no such file or directory, scandir '${dirPath}'`);
+          }
+          if (dirNode.type !== "folder") {
+            throw new Error(`ENOTDIR: not a directory, scandir '${dirPath}'`);
+          }
+        }
         const out = [];
         VFS_NODES.forEach((node) => {
-          if (node.parentPath === norm) out.push(node.name);
+          if (node.parentPath === rel) out.push(node.name);
         });
         return out;
       },
+      readdir(dirPath = "") {
+        return api.listFiles(dirPath);
+      },
+      listAll() {
+        ensureVfsInitialized();
+        return Array.from(VFS_NODES.keys()).sort();
+      },
       exists(path) {
         ensureVfsInitialized();
-        const norm = String(path || "").replace(/^\/+/, "");
-        return VFS_NODES.has(norm) || VFS_NODES.has(`workspace/${norm}`);
+        const rel = resolveWorkspacePath(path, true);
+        if (rel === "") return true;
+        return VFS_NODES.has(rel);
       },
       deleteFile(path) {
         ensureVfsInitialized();
-        const norm = String(path || "").replace(/^\/+/, "");
-        const ok = VFS_NODES.delete(norm);
-        if (ok) {
-          persistVfsToClientStorage();
-          renderVfsTreeUI();
+        const rel = resolveWorkspacePath(path, false);
+        const node = VFS_NODES.get(rel);
+        if (!node) {
+          throw new Error(`ENOENT: no such file or directory, unlink '${path}'`);
         }
-        return ok;
+        const prefix = rel + "/";
+        Array.from(VFS_NODES.keys()).forEach((k) => {
+          if (k === rel || k.startsWith(prefix)) {
+            VFS_NODES.delete(k);
+          }
+        });
+        persistVfsToClientStorage();
+        renderVfsTreeUI();
+        return true;
+      },
+      unlink(path) {
+        return api.deleteFile(path);
+      },
+      mkdir(path) {
+        ensureVfsInitialized();
+        const rel = resolveWorkspacePath(path, true);
+        if (!rel) return true;
+        ensureParentFoldersExist(rel + "/_");
+        persistVfsToClientStorage();
+        renderVfsTreeUI();
+        return true;
+      },
+      stat(path) {
+        ensureVfsInitialized();
+        const rel = resolveWorkspacePath(path, true);
+        if (rel === "") {
+          return {
+            size: 0,
+            isFile: () => false,
+            isDirectory: () => true
+          };
+        }
+        const node = VFS_NODES.get(rel);
+        if (!node) {
+          throw new Error(`ENOENT: no such file or directory, stat '${path}'`);
+        }
+        const isDir = node.type === "folder";
+        const size = isDir ? 0 : (node.content ?? "").length;
+        return {
+          size,
+          isFile: () => !isDir,
+          isDirectory: () => isDir
+        };
+      },
+      clear() {
+        ensureVfsInitialized();
+        VFS_NODES.clear();
+        persistVfsToClientStorage();
+        renderVfsTreeUI();
+      }
+    };
+    const fsPromises = {
+      async readFile(path, _options) {
+        const content = api.readFile(path);
+        if (content === null) {
+          throw new Error(`ENOENT: no such file or directory, open '${path}'`);
+        }
+        return content;
+      },
+      async writeFile(path, data, _options) {
+        api.writeFile(path, serializeFsData(data));
+      },
+      async appendFile(path, data, _options) {
+        api.appendFile(path, serializeFsData(data));
+      },
+      async unlink(path) {
+        api.deleteFile(path);
+      },
+      async rm(path, _options) {
+        api.deleteFile(path);
+      },
+      async readdir(path = "", _options) {
+        return api.listFiles(path);
+      },
+      async mkdir(path, _options) {
+        api.mkdir(path);
+        return void 0;
+      },
+      async rmdir(path, _options) {
+        api.deleteFile(path);
+      },
+      async stat(path) {
+        return api.stat(path);
+      },
+      async access(path, _mode) {
+        if (!api.exists(path)) {
+          throw new Error(`ENOENT: no such file or directory, access '${path}'`);
+        }
+      },
+      async exists(path) {
+        return api.exists(path);
+      },
+      async copyFile(src, dest) {
+        const content = api.readFile(src);
+        if (content === null) {
+          throw new Error(`ENOENT: no such file or directory, copyfile '${src}'`);
+        }
+        api.writeFile(dest, content);
+      },
+      async rename(oldPath, newPath) {
+        const content = api.readFile(oldPath);
+        if (content === null) {
+          throw new Error(`ENOENT: no such file or directory, rename '${oldPath}'`);
+        }
+        api.writeFile(newPath, content);
+        api.deleteFile(oldPath);
+      }
+    };
+    const fsShim = {
+      promises: fsPromises,
+      readFileSync(path, _options) {
+        const content = api.readFile(path);
+        if (content === null) {
+          throw new Error(`ENOENT: no such file or directory, open '${path}'`);
+        }
+        return content;
+      },
+      writeFileSync(path, data, _options) {
+        api.writeFile(path, serializeFsData(data));
+      },
+      appendFileSync(path, data, _options) {
+        api.appendFile(path, serializeFsData(data));
+      },
+      existsSync(path) {
+        return api.exists(path);
+      },
+      unlinkSync(path) {
+        api.deleteFile(path);
+      },
+      rmSync(path, _options) {
+        api.deleteFile(path);
+      },
+      readdirSync(path = "") {
+        return api.listFiles(path);
+      },
+      mkdirSync(path, _options) {
+        api.mkdir(path);
+        return void 0;
+      },
+      rmdirSync(path, _options) {
+        api.deleteFile(path);
+      },
+      statSync(path) {
+        return api.stat(path);
+      },
+      copyFileSync(src, dest) {
+        const content = api.readFile(src);
+        if (content === null) {
+          throw new Error(`ENOENT: no such file or directory, copyfile '${src}'`);
+        }
+        api.writeFile(dest, content);
+      },
+      renameSync(oldPath, newPath) {
+        const content = api.readFile(oldPath);
+        if (content === null) {
+          throw new Error(`ENOENT: no such file or directory, rename '${oldPath}'`);
+        }
+        api.writeFile(newPath, content);
+        api.deleteFile(oldPath);
       }
     };
     globalThis.__VFS__ = api;
     globalThis.vfs = api;
+    globalThis.__FS_SHIM__ = fsShim;
   }
   function initNotebookUI() {
     bindGlobalVfsApi();
@@ -14136,7 +14840,6 @@ runAsyncDemo()
             return;
           }
           loadSample(sampleKey);
-          syncActiveScriptTabFromFileName(FILE_NAME);
         }
       });
     }
@@ -14181,18 +14884,11 @@ runAsyncDemo()
             title: newTitle,
             lang,
             source: lang === "python" ? "# \u65B0\u5EFA Python \u811A\u672C\n" : "// \u65B0\u5EFA TypeScript \u811A\u672C\n",
-            vfsPath: `workspace/${newTitle}`
+            vfsPath: "",
+            isSample: false
           };
           store.tabs.push(newTab);
           store.activeTabId = newTab.id;
-          VFS_NODES.set(newTab.vfsPath, {
-            path: newTab.vfsPath,
-            name: newTitle,
-            type: "file",
-            parentPath: "workspace",
-            content: newTab.source
-          });
-          persistVfsToClientStorage();
           syncingScriptTab = true;
           editor.value = newTab.source;
           setFileName(newTab.title);
@@ -14250,18 +14946,18 @@ runAsyncDemo()
             const nextName = /\.[A-Za-z0-9]{1,12}$/.test(rawVal) ? rawVal : rawVal + ext;
             const oldPath = targetTab.vfsPath;
             targetTab.title = nextName;
-            targetTab.vfsPath = `workspace/${nextName}`;
-            if (oldPath && oldPath !== targetTab.vfsPath && oldPath.startsWith("workspace/")) {
+            if (!targetTab.isSample && oldPath && VFS_NODES.has(oldPath)) {
+              targetTab.vfsPath = nextName;
               VFS_NODES.delete(oldPath);
+              VFS_NODES.set(targetTab.vfsPath, {
+                path: targetTab.vfsPath,
+                name: nextName,
+                type: "file",
+                parentPath: "",
+                content: targetTab.source
+              });
+              persistVfsToClientStorage();
             }
-            VFS_NODES.set(targetTab.vfsPath, {
-              path: targetTab.vfsPath,
-              name: nextName,
-              type: "file",
-              parentPath: "workspace",
-              content: targetTab.source
-            });
-            persistVfsToClientStorage();
             if (store.activeTabId === targetTab.id) {
               syncingScriptTab = true;
               setFileName(nextName);
@@ -14290,25 +14986,30 @@ runAsyncDemo()
       });
     }
     const vfsSidebar = $("vfsSidebar");
+    const b1 = $("btnToggleVfs");
+    const b2 = $("nbBtnToggleVfs");
+    if (vfsSidebar) {
+      vfsSidebar.hidden = true;
+    }
+    if (b1 && b1.classList) b1.classList.remove("active");
+    if (b2 && b2.classList) b2.classList.remove("active");
     const toggleVfsSidebar = () => {
       if (!vfsSidebar) return;
       vfsSidebar.hidden = !vfsSidebar.hidden;
       const isVisible = !vfsSidebar.hidden;
-      const b1 = $("btnToggleVfs");
-      const b2 = $("nbBtnToggleVfs");
       if (b1 && b1.classList) b1.classList.toggle("active", isVisible);
       if (b2 && b2.classList) b2.classList.toggle("active", isVisible);
     };
-    if ($("btnToggleVfs")) $("btnToggleVfs").onclick = toggleVfsSidebar;
-    if ($("nbBtnToggleVfs")) $("nbBtnToggleVfs").onclick = toggleVfsSidebar;
+    if (b1) b1.onclick = toggleVfsSidebar;
+    if (b2) b2.onclick = toggleVfsSidebar;
     if ($("vfsBtnNewFile")) {
       $("vfsBtnNewFile").onclick = () => {
         ensureVfsInitialized();
         const ext = LANG === "python" ? ".py" : ".ts";
         let idx = 1;
-        while (VFS_NODES.has(`workspace/file_${idx}${ext}`)) idx++;
+        while (VFS_NODES.has(`file_${idx}${ext}`)) idx++;
         const name = `file_${idx}${ext}`;
-        const path = `workspace/${name}`;
+        const path = name;
         const content = LANG === "python" ? `# ${name}
 ` : `// ${name}
 `;
@@ -14316,10 +15017,9 @@ runAsyncDemo()
           path,
           name,
           type: "file",
-          parentPath: "workspace",
+          parentPath: "",
           content
         });
-        VFS_EXPANDED_FOLDERS.add("workspace");
         persistVfsToClientStorage();
         openVfsFile(path);
       };
@@ -14328,20 +15028,19 @@ runAsyncDemo()
       $("vfsBtnNewFolder").onclick = () => {
         ensureVfsInitialized();
         let idx = 1;
-        while (VFS_NODES.has(`workspace/folder_${idx}`)) idx++;
+        while (VFS_NODES.has(`folder_${idx}`)) idx++;
         const name = `folder_${idx}`;
-        const path = `workspace/${name}`;
+        const path = name;
         VFS_NODES.set(path, {
           path,
           name,
           type: "folder",
-          parentPath: "workspace"
+          parentPath: ""
         });
-        VFS_EXPANDED_FOLDERS.add("workspace");
         VFS_EXPANDED_FOLDERS.add(path);
         persistVfsToClientStorage();
         renderVfsTreeUI();
-        say(`\u{1F4C1} \u5DF2\u5728\u865A\u62DF\u76EE\u5F55\u521B\u5EFA\u6587\u4EF6\u5939 ${path}/\uFF08\u53CC\u51FB\u53EF\u91CD\u547D\u540D\uFF09`, "ok");
+        say(`\u{1F4C1} \u5DF2\u521B\u5EFA\u6587\u4EF6\u5939 ${path}/\uFF08\u53CC\u51FB\u53EF\u91CD\u547D\u540D\uFF09`, "ok");
       };
     }
     if ($("vfsBtnUpload") && fileInput) {
@@ -14352,15 +15051,49 @@ runAsyncDemo()
       vfsTreeList.addEventListener("click", (e) => {
         const target = e.target;
         if (!target) return;
+        const confirmDelBtn = target.closest ? target.closest("[data-vfs-confirm-del]") : null;
+        if (confirmDelBtn) {
+          e.stopPropagation();
+          const delPath = confirmDelBtn.getAttribute("data-vfs-confirm-del");
+          pendingVfsDeletePath = null;
+          if (delPath && VFS_NODES.has(delPath)) {
+            const prefix = delPath + "/";
+            Array.from(VFS_NODES.keys()).forEach((k) => {
+              if (k === delPath || k.startsWith(prefix)) {
+                VFS_NODES.delete(k);
+              }
+            });
+            ["ts", "python"].forEach((l) => {
+              const st = SCRIPT_TABS[l];
+              st.tabs.forEach((t) => {
+                if (t.vfsPath === delPath || t.vfsPath.startsWith(prefix)) {
+                  t.vfsPath = "";
+                }
+              });
+            });
+            persistVfsToClientStorage();
+            renderScriptTabsUI();
+            renderVfsTreeUI();
+            say(`\u{1F5D1} \u5DF2\u4ECE\u6587\u4EF6\u76EE\u5F55\u79FB\u9664 ${delPath}`, "dim");
+          } else {
+            renderVfsTreeUI();
+          }
+          return;
+        }
+        const cancelDelBtn = target.closest ? target.closest("[data-vfs-cancel-del]") : null;
+        if (cancelDelBtn) {
+          e.stopPropagation();
+          pendingVfsDeletePath = null;
+          renderVfsTreeUI();
+          return;
+        }
         const delBtn = target.closest ? target.closest("[data-vfs-del]") : null;
         if (delBtn) {
           e.stopPropagation();
           const delPath = delBtn.getAttribute("data-vfs-del");
           if (delPath && VFS_NODES.has(delPath)) {
-            VFS_NODES.delete(delPath);
-            persistVfsToClientStorage();
+            pendingVfsDeletePath = pendingVfsDeletePath === delPath ? null : delPath;
             renderVfsTreeUI();
-            say(`\u{1F5D1} \u5DF2\u4ECE\u865A\u62DF\u76EE\u5F55\u79FB\u9664 ${delPath}`, "dim");
           }
           return;
         }
@@ -14378,8 +15111,8 @@ runAsyncDemo()
         if (fileRow) {
           const filePath = fileRow.getAttribute("data-vfs-file");
           if (filePath) {
-            const curActivePath = VIEW_MODE === "notebook" ? `notebooks/${getActiveNotebook().title}` : getActiveScriptTab().vfsPath;
-            if (filePath !== curActivePath) {
+            const curActivePath = VIEW_MODE === "notebook" ? getActiveNotebook().title : getActiveScriptTab().vfsPath;
+            if (filePath !== curActivePath || editor.value !== (VFS_NODES.get(filePath)?.content ?? "")) {
               openVfsFile(filePath);
             }
           }
@@ -14390,7 +15123,7 @@ runAsyncDemo()
         const row = target && target.closest ? target.closest("[data-vfs-file], [data-vfs-folder]") : null;
         if (!row) return;
         const oldPath = row.getAttribute("data-vfs-file") || row.getAttribute("data-vfs-folder");
-        if (!oldPath || oldPath.startsWith("examples/")) return;
+        if (!oldPath) return;
         const node = VFS_NODES.get(oldPath);
         if (!node || node.readonly) return;
         const nameSpan = row.querySelector ? row.querySelector(".vfs-name") : null;

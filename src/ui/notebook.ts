@@ -597,20 +597,33 @@ export async function runNotebookCell(cellId?: string, advanceToNext = false): P
 
   const logs: string[] = [];
   let recordLogs = false;
+  const fmtNotebookConsoleArgs = (...args: unknown[]): string =>
+    args
+      .map((x) => {
+        if (x instanceof Error) return x.message || String(x);
+        try {
+          return typeof x === "object" && x !== null ? JSON.stringify(x) : String(x);
+        } catch (_) {
+          return String(x);
+        }
+      })
+      .join(" ");
   const customConsole = {
     log: (...args: unknown[]) => {
       if (!recordLogs) return;
-      logs.push(
-        args
-          .map((x) => {
-            try {
-              return typeof x === "object" && x !== null ? JSON.stringify(x) : String(x);
-            } catch (_) {
-              return String(x);
-            }
-          })
-          .join(" ")
-      );
+      logs.push(fmtNotebookConsoleArgs(...args));
+    },
+    info: (...args: unknown[]) => {
+      if (!recordLogs) return;
+      logs.push(fmtNotebookConsoleArgs(...args));
+    },
+    warn: (...args: unknown[]) => {
+      if (!recordLogs) return;
+      logs.push(fmtNotebookConsoleArgs(...args));
+    },
+    error: (...args: unknown[]) => {
+      if (!recordLogs) return;
+      logs.push(fmtNotebookConsoleArgs(...args));
     },
     EnableRecording: () => {
       recordLogs = true;
@@ -1256,6 +1269,9 @@ export function setViewMode(mode: "script" | "notebook") {
   const edWrap = $("editorWrap");
   const srcPaneTitle = $("sourcePaneTitle");
   const expMenuWrap = $("exportMenuWrap");
+  const vfsSidebar = $("vfsSidebar");
+  const b1 = $("btnToggleVfs");
+  const b2 = $("nbBtnToggleVfs");
   if (nbWrap) nbWrap.hidden = next !== "notebook";
   if (edWrap) edWrap.style.display = next === "notebook" ? "none" : "flex";
   if (srcPaneTitle) srcPaneTitle.style.display = next === "notebook" ? "none" : "flex";
@@ -1263,6 +1279,11 @@ export function setViewMode(mode: "script" | "notebook") {
     expMenuWrap.style.display = next === "notebook" ? "none" : "";
     if (next === "notebook" && expMenuWrap.classList) expMenuWrap.classList.remove("open");
   }
+  if (vfsSidebar) {
+    vfsSidebar.hidden = true;
+  }
+  if (b1 && b1.classList) b1.classList.remove("active");
+  if (b2 && b2.classList) b2.classList.remove("active");
 
   if (next === "notebook") {
     const doc = getActiveNotebook();
@@ -1524,6 +1545,7 @@ export interface ScriptTabDoc {
   lang: "ts" | "python";
   source: string;
   vfsPath: string;
+  isSample?: boolean;
 }
 
 export interface VfsNode {
@@ -1535,23 +1557,18 @@ export interface VfsNode {
   readonly?: boolean;
 }
 
-const VFS_STORAGE_KEY = "ts-visual-vfs-v1";
+const VFS_STORAGE_KEY = "ts-visual-vfs-workspace-v2";
 let scriptTabSeq = 1;
 let syncingScriptTab = false;
+let vfsBootInitialized = false;
+let pendingVfsDeletePath: string | null = null;
 
 const SCRIPT_TABS: Record<"ts" | "python", { activeTabId: string; tabs: ScriptTabDoc[] }> = {
   ts: { activeTabId: "", tabs: [] },
   python: { activeTabId: "", tabs: [] },
 };
 
-const VFS_EXPANDED_FOLDERS = new Set<string>([
-  "workspace",
-  "notebooks",
-  "examples",
-  "examples/ts",
-  "examples/python",
-  "data",
-]);
+const VFS_EXPANDED_FOLDERS = new Set<string>();
 
 const VFS_NODES = new Map<string, VfsNode>();
 
@@ -1582,77 +1599,60 @@ function getPySamplesDict(): Record<string, string> {
   return (eng && eng.samples) ? eng.samples : {};
 }
 
+export function resolveWorkspacePath(rawPath: string, allowEmptyRoot = false): string {
+  const raw = String(rawPath ?? "").trim().replace(/\\/g, "/");
+  if (!raw || raw === "." || raw === "./" || raw === "workspace" || raw === "/workspace" || raw === "workspace/" || raw === "/workspace/") {
+    if (allowEmptyRoot) return "";
+    throw new Error(`EISDIR: illegal operation on workspace root directory '${rawPath}'`);
+  }
+  if (/^[A-Za-z]:/.test(raw) || raw.startsWith("~")) {
+    throw new Error(`EACCES: permission denied, file operations outside workspace are not allowed: '${rawPath}'`);
+  }
+  if (raw.startsWith("/")) {
+    if (raw !== "/workspace" && !raw.startsWith("/workspace/")) {
+      throw new Error(`EACCES: permission denied, file operations outside workspace are not allowed: '${rawPath}'`);
+    }
+  }
+  let stripped = raw;
+  if (stripped.startsWith("/workspace/")) {
+    stripped = stripped.slice("/workspace/".length);
+  } else if (stripped.startsWith("workspace/")) {
+    stripped = stripped.slice("workspace/".length);
+  } else if (stripped.startsWith("./")) {
+    stripped = stripped.slice(2);
+  }
+  const rawSegments = stripped.split("/");
+  const resolved: string[] = [];
+  for (const seg of rawSegments) {
+    if (!seg || seg === ".") continue;
+    if (seg === "..") {
+      if (resolved.length === 0) {
+        throw new Error(`EACCES: permission denied, file operations outside workspace are not allowed: '${rawPath}'`);
+      }
+      resolved.pop();
+      continue;
+    }
+    resolved.push(seg);
+  }
+  const firstSeg = resolved[0] || "";
+  if (firstSeg === "examples" || firstSeg === "notebooks") {
+    throw new Error(`EACCES: permission denied, file operations outside workspace are not allowed: '${rawPath}'`);
+  }
+  const finalPath = resolved.join("/");
+  if (!finalPath && !allowEmptyRoot) {
+    throw new Error(`EISDIR: illegal operation on workspace root directory '${rawPath}'`);
+  }
+  return finalPath;
+}
+
 function ensureVfsInitialized() {
-  if (VFS_NODES.size > 0) return;
-
-  const addFolder = (path: string, name: string, parentPath: string) => {
-    VFS_NODES.set(path, { path, name, type: "folder", parentPath });
-  };
-  const addFile = (path: string, name: string, parentPath: string, content: string, readonly = false) => {
-    VFS_NODES.set(path, { path, name, type: "file", parentPath, content, readonly });
-  };
-
-  addFolder("workspace", "workspace", "");
-  addFolder("notebooks", "notebooks", "");
-  addFolder("examples", "examples", "");
-  addFolder("examples/ts", "ts", "examples");
-  addFolder("examples/python", "python", "examples");
-  addFolder("data", "data", "");
-
-  // Built-in examples/ts/*.ts
-  TS_SAMPLE_METADATA.forEach((item) => {
-    const code = SAMPLES[item.key] || "";
-    if (code) {
-      addFile(`examples/ts/${item.key}.ts`, `${item.key}.ts`, "examples/ts", code, true);
-    }
-  });
-
-  // Built-in examples/python/*.py
-  const pySamples = getPySamplesDict();
-  PY_SAMPLE_METADATA.forEach((item) => {
-    const code = pySamples[item.key] || "";
-    if (code) {
-      addFile(`examples/python/${item.key}.py`, `${item.key}.py`, "examples/python", code, true);
-    }
-  });
-
-  // Default sample data files in data/ for virtual file experiments
-  addFile(
-    "data/sample_input.json",
-    "sample_input.json",
-    "data",
-    JSON.stringify({ nums: [3, 6, 2, 8, 5, 4, 7], target: 12, author: "TS Visual VFS" }, null, 2),
-    false
-  );
-  addFile(
-    "data/graph_edges.csv",
-    "graph_edges.csv",
-    "data",
-    "from,to,weight\n0,1,4\n0,2,2\n1,2,1\n1,3,5\n2,3,8\n",
-    false
-  );
-
-  // Restore user workspace files from localStorage if available
+  if (vfsBootInitialized) return;
+  vfsBootInitialized = true;
+  VFS_NODES.clear();
   try {
     if (typeof localStorage !== "undefined") {
-      const raw = localStorage.getItem(VFS_STORAGE_KEY);
-      if (raw) {
-        const saved = JSON.parse(raw);
-        if (Array.isArray(saved)) {
-          saved.forEach((entry: Partial<VfsNode> | null) => {
-            if (entry && typeof entry.path === "string" && typeof entry.name === "string") {
-              VFS_NODES.set(entry.path, {
-                path: entry.path,
-                name: entry.name,
-                type: entry.type === "folder" ? "folder" : "file",
-                parentPath: String(entry.parentPath || ""),
-                content: typeof entry.content === "string" ? entry.content : "",
-                readonly: false,
-              });
-            }
-          });
-        }
-      }
+      localStorage.removeItem("ts-visual-vfs-v1");
+      localStorage.removeItem(VFS_STORAGE_KEY);
     }
   } catch (_) {}
 }
@@ -1662,12 +1662,30 @@ function persistVfsToClientStorage() {
     if (typeof localStorage === "undefined") return;
     const customNodes: VfsNode[] = [];
     VFS_NODES.forEach((node) => {
-      if (!node.path.startsWith("examples/")) {
-        customNodes.push(node);
-      }
+      customNodes.push(node);
     });
     localStorage.setItem(VFS_STORAGE_KEY, JSON.stringify(customNodes));
   } catch (_) {}
+}
+
+function ensureParentFoldersExist(relPath: string) {
+  const parts = relPath.split("/").filter(Boolean);
+  if (parts.length <= 1) return;
+  let acc = "";
+  for (let i = 0; i < parts.length - 1; i++) {
+    const folderName = parts[i] || "";
+    const parentPath = acc;
+    acc = acc ? `${acc}/${folderName}` : folderName;
+    if (!VFS_NODES.has(acc)) {
+      VFS_NODES.set(acc, {
+        path: acc,
+        name: folderName,
+        type: "folder",
+        parentPath,
+      });
+      VFS_EXPANDED_FOLDERS.add(acc);
+    }
+  }
 }
 
 function ensureScriptTabsForLang(lang: "ts" | "python"): { activeTabId: string; tabs: ScriptTabDoc[] } {
@@ -1683,22 +1701,15 @@ function ensureScriptTabsForLang(lang: "ts" | "python"): { activeTabId: string; 
         ? (LANG === "python" && editor && editor.value ? editor.value : (getPySamplesDict().quickstart || ""))
         : (LANG !== "python" && editor && editor.value ? editor.value : (SAMPLES.showcase || ""));
     const tabId = "stab_" + (++scriptTabSeq);
-    const vfsPath = `workspace/${defaultTitle}`;
     store.tabs.push({
       id: tabId,
       title: defaultTitle,
       lang,
       source: defaultSrc,
-      vfsPath,
+      vfsPath: "",
+      isSample: true,
     });
     store.activeTabId = tabId;
-    VFS_NODES.set(vfsPath, {
-      path: vfsPath,
-      name: defaultTitle,
-      type: "file",
-      parentPath: "workspace",
-      content: defaultSrc,
-    });
   }
   const firstTab = store.tabs[0];
   if (firstTab && !store.tabs.some((t) => t.id === store.activeTabId)) {
@@ -1717,8 +1728,40 @@ export function getActiveScriptTab(lang?: "ts" | "python"): ScriptTabDoc {
     title: targetLang === "python" ? "quickstart.py" : "showcase.ts",
     lang: targetLang,
     source: "",
-    vfsPath: targetLang === "python" ? "workspace/quickstart.py" : "workspace/showcase.ts",
+    vfsPath: "",
+    isSample: true,
   };
+}
+
+export function openSampleScriptTab(title: string, source: string, lang?: "ts" | "python") {
+  const targetLang = lang || (LANG === "python" ? "python" : "ts");
+  if (editor && editor.value) {
+    syncActiveScriptTabSource(editor.value);
+  }
+  const store = ensureScriptTabsForLang(targetLang);
+  let tab = store.tabs.find((t) => (t.isSample || !t.vfsPath) && t.title === title);
+  if (!tab) {
+    tab = {
+      id: "stab_" + (++scriptTabSeq),
+      title,
+      lang: targetLang,
+      source,
+      vfsPath: "",
+      isSample: true,
+    };
+    store.tabs.push(tab);
+  } else {
+    tab.source = source;
+    tab.vfsPath = "";
+    tab.isSample = true;
+  }
+  store.activeTabId = tab.id;
+  syncingScriptTab = true;
+  if (editor) editor.value = source;
+  setFileName(title);
+  syncingScriptTab = false;
+  renderScriptTabsUI();
+  renderVfsTreeUI();
 }
 
 export function syncActiveScriptTabFromFileName(newFileName: string) {
@@ -1731,19 +1774,19 @@ export function syncActiveScriptTabFromFileName(newFileName: string) {
   const oldPath = activeTab.vfsPath;
   activeTab.title = newFileName;
   activeTab.source = editor ? editor.value : activeTab.source;
-  activeTab.vfsPath = `workspace/${newFileName}`;
 
-  if (oldPath && oldPath !== activeTab.vfsPath && oldPath.startsWith("workspace/")) {
+  if (!activeTab.isSample && oldPath && VFS_NODES.has(oldPath)) {
+    activeTab.vfsPath = newFileName;
     VFS_NODES.delete(oldPath);
+    VFS_NODES.set(activeTab.vfsPath, {
+      path: activeTab.vfsPath,
+      name: newFileName,
+      type: "file",
+      parentPath: "",
+      content: activeTab.source,
+    });
+    persistVfsToClientStorage();
   }
-  VFS_NODES.set(activeTab.vfsPath, {
-    path: activeTab.vfsPath,
-    name: newFileName,
-    type: "file",
-    parentPath: "workspace",
-    content: activeTab.source,
-  });
-  persistVfsToClientStorage();
   renderScriptTabsUI();
   renderVfsTreeUI();
 }
@@ -1753,19 +1796,13 @@ export function syncActiveScriptTabSource(src: string) {
   const activeTab = getActiveScriptTab(lang);
   if (!activeTab) return;
   activeTab.source = src;
-  const node = VFS_NODES.get(activeTab.vfsPath);
-  if (node && node.type === "file") {
-    node.content = src;
-  } else {
-    VFS_NODES.set(activeTab.vfsPath, {
-      path: activeTab.vfsPath,
-      name: activeTab.title,
-      type: "file",
-      parentPath: "workspace",
-      content: src,
-    });
+  if (!activeTab.isSample && activeTab.vfsPath) {
+    const node = VFS_NODES.get(activeTab.vfsPath);
+    if (node && node.type === "file") {
+      node.content = src;
+      persistVfsToClientStorage();
+    }
   }
-  persistVfsToClientStorage();
 }
 
 export function renderScriptTabsUI() {
@@ -1821,47 +1858,14 @@ export function renderImportSampleMenu() {
     (VIEW_MODE !== "notebook" ? nbItemHtml : "");
 }
 
-function syncNotebookDocsToVfs() {
-  ensureVfsInitialized();
-  const lang = LANG === "python" ? "python" : "ts";
-  const store = ensureLangNotebooks(lang);
-  store.docs.forEach((doc) => {
-    const path = `notebooks/${doc.title}`;
-    VFS_NODES.set(path, {
-      path,
-      name: doc.title,
-      type: "file",
-      parentPath: "notebooks",
-      content: JSON.stringify({ cells: doc.cells.map((c) => ({ cell_type: c.type, source: [c.source] })) }, null, 2),
-    });
-  });
-}
-
 export function renderVfsTreeUI() {
   const treeEl = $("vfsTreeList");
   if (!treeEl) return;
   ensureVfsInitialized();
-  syncNotebookDocsToVfs();
-
-  // Keep examples/python populated if PY_ENGINE finished loading
-  const pySamples = getPySamplesDict();
-  PY_SAMPLE_METADATA.forEach((item) => {
-    const path = `examples/python/${item.key}.py`;
-    if (!VFS_NODES.has(path) && pySamples[item.key]) {
-      VFS_NODES.set(path, {
-        path,
-        name: `${item.key}.py`,
-        type: "file",
-        parentPath: "examples/python",
-        content: pySamples[item.key],
-        readonly: true,
-      });
-    }
-  });
 
   const activePath =
     VIEW_MODE === "notebook"
-      ? `notebooks/${getActiveNotebook().title}`
+      ? getActiveNotebook().title
       : getActiveScriptTab().vfsPath;
 
   const childrenOf = (parentPath: string): VfsNode[] => {
@@ -1875,8 +1879,25 @@ export function renderVfsTreeUI() {
     });
   };
 
+  const buildConfirmHtml = (node: VfsNode): string => {
+    if (pendingVfsDeletePath !== node.path) return "";
+    return (
+      `<div class="vfs-del-confirm" data-vfs-confirm-box="${esc(node.path)}">` +
+      `<span class="vfs-del-confirm-text">确认删除 ${esc(node.name)}？</span>` +
+      `<span class="vfs-del-confirm-actions">` +
+      `<button type="button" class="vfs-confirm-btn danger" data-vfs-confirm-del="${esc(node.path)}">确认</button>` +
+      `<button type="button" class="vfs-confirm-btn" data-vfs-cancel-del="${esc(node.path)}">取消</button>` +
+      `</span>` +
+      `</div>`
+    );
+  };
+
   const renderNode = (node: VfsNode, depth: number): string => {
     const padLeft = 8 + depth * 14;
+    const canDel = !node.readonly;
+    const delBtnHtml = canDel
+      ? `<span class="vfs-row-actions"><button type="button" class="vfs-del-btn" data-vfs-del="${esc(node.path)}" title="删除">❌</button></span>`
+      : "";
     if (node.type === "folder") {
       const isOpen = VFS_EXPANDED_FOLDERS.has(node.path);
       const kids = childrenOf(node.path);
@@ -1885,14 +1906,16 @@ export function renderVfsTreeUI() {
         `<span class="vfs-caret">${isOpen ? "▾" : "▸"}</span>` +
         `<span class="vfs-icon">📁</span>` +
         `<span class="vfs-name">${esc(node.name)}/</span>` +
+        delBtnHtml +
         `</div>` +
+        buildConfirmHtml(node) +
         (isOpen
           ? `<div class="vfs-folder-children">${kids.map((k) => renderNode(k, depth + 1)).join("")}</div>`
           : "")
       );
     }
 
-    const isAct = node.path === activePath;
+    const isAct = Boolean(activePath && node.path === activePath);
     const ext = (node.name.split(".").pop() || "").toLowerCase();
     const icon =
       ext === "ipynb"
@@ -1904,22 +1927,22 @@ export function renderVfsTreeUI() {
         : ext === "json"
         ? "🗂"
         : "📄";
-    const canDel = !node.readonly && !node.path.startsWith("examples/");
     return (
       `<div class="vfs-file-row${isAct ? " active" : ""}" data-vfs-file="${esc(node.path)}" style="padding-left:${padLeft}px" title="${esc(node.path)}（单击打开 · 双击重命名）">` +
       `<span class="vfs-icon">${icon}</span>` +
       `<span class="vfs-name">${esc(node.name)}</span>` +
-      `<span class="vfs-row-actions">` +
-      (canDel
-        ? `<button type="button" class="vfs-row-btn danger" data-vfs-del="${esc(node.path)}" title="删除文件">×</button>`
-        : "") +
-      `</span>` +
-      `</div>`
+      delBtnHtml +
+      `</div>` +
+      buildConfirmHtml(node)
     );
   };
 
   const roots = childrenOf("");
-  treeEl.innerHTML = roots.map((r) => renderNode(r, 0)).join("");
+  if (roots.length === 0) {
+    treeEl.innerHTML = `<div class="vfs-empty-hint" style="padding:14px 10px;color:#64748b;font-size:11.5px;text-align:center;">空目录</div>`;
+  } else {
+    treeEl.innerHTML = roots.map((r) => renderNode(r, 0)).join("");
+  }
 
   const footEl = $("vfsFootStatus");
   if (footEl) {
@@ -1932,12 +1955,19 @@ export function renderVfsTreeUI() {
       }
     });
     const kb = (totalBytes / 1024).toFixed(1);
-    footEl.textContent = `浏览器端 VFS · ${fileCount} 个文件 (${kb} KB)`;
+    footEl.textContent = `${fileCount} 个文件 (${kb} KB)`;
   }
 }
 
-function openVfsFile(path: string) {
+function openVfsFile(rawPath: string) {
   ensureVfsInitialized();
+  let path = rawPath;
+  try {
+    path = resolveWorkspacePath(rawPath, false);
+  } catch (err) {
+    say(`✗ ${err instanceof Error ? err.message : String(err)}`, "err");
+    return;
+  }
   const node = VFS_NODES.get(path);
   if (!node || node.type !== "file") return;
 
@@ -1958,28 +1988,6 @@ function openVfsFile(path: string) {
     return;
   }
 
-  // If user clicked a built-in sample under examples/ts/ or examples/python/, open it in Single-File mode
-  const tsMatch = path.match(/^examples\/ts\/([A-Za-z0-9_]+)\.ts$/);
-  if (tsMatch && tsMatch[1]) {
-    if (LANG === "python" && typeof PY_ENGINE !== "undefined" && PY_ENGINE.setLang) {
-      PY_ENGINE.setLang("ts");
-    }
-    setViewMode("script");
-    loadSample(tsMatch[1]);
-    return;
-  }
-
-  const pyMatch = path.match(/^examples\/python\/([A-Za-z0-9_]+)\.py$/);
-  if (pyMatch && pyMatch[1]) {
-    if (LANG !== "python" && typeof PY_ENGINE !== "undefined" && PY_ENGINE.setLang) {
-      PY_ENGINE.setLang("python");
-    }
-    setViewMode("script");
-    loadSample(pyMatch[1]);
-    return;
-  }
-
-  // Otherwise open or activate in Single-File script tabs
   const isPyFile = node.name.endsWith(".py");
   if (isPyFile && LANG !== "python" && typeof PY_ENGINE !== "undefined" && PY_ENGINE.setLang) {
     PY_ENGINE.setLang("python");
@@ -1989,8 +1997,11 @@ function openVfsFile(path: string) {
 
   setViewMode("script");
   const lang = LANG === "python" ? "python" : "ts";
+  if (editor && editor.value) {
+    syncActiveScriptTabSource(editor.value);
+  }
   const store = ensureScriptTabsForLang(lang);
-  let tab = store.tabs.find((t) => t.vfsPath === node.path || t.title === node.name);
+  let tab = store.tabs.find((t) => !t.isSample && t.vfsPath === node.path);
   if (!tab) {
     tab = {
       id: "stab_" + (++scriptTabSeq),
@@ -1998,10 +2009,13 @@ function openVfsFile(path: string) {
       lang,
       source: node.content || "",
       vfsPath: node.path,
+      isSample: false,
     };
     store.tabs.push(tab);
   } else {
     tab.source = node.content ?? tab.source;
+    tab.vfsPath = node.path;
+    tab.isSample = false;
   }
   store.activeTabId = tab.id;
   syncingScriptTab = true;
@@ -2012,71 +2026,278 @@ function openVfsFile(path: string) {
   updateEditorChrome();
   renderScriptTabsUI();
   renderVfsTreeUI();
-  say(`📂 已从虚拟目录打开 ${node.path}`, "ok");
+  say(`📂 已打开 ${node.path}`, "ok");
 }
 
-/* Expose client-side VFS API on globalThis.__VFS__ for programmatic virtual file operations */
+function serializeFsData(data: unknown): string {
+  if (typeof data === "string") return data;
+  if (data instanceof Uint8Array) {
+    return typeof TextDecoder !== "undefined" ? new TextDecoder().decode(data) : String(data);
+  }
+  if (data !== null && typeof data === "object") {
+    try {
+      return JSON.stringify(data, null, 2);
+    } catch (_) {
+      return String(data);
+    }
+  }
+  return String(data ?? "");
+}
+
+/* Expose client-side VFS API on globalThis.__VFS__ and Node-compatible fs shim on globalThis.__FS_SHIM__ */
 function bindGlobalVfsApi() {
   const api = {
+    resolveWorkspacePath(rawPath: string, allowEmptyRoot = false): string {
+      return resolveWorkspacePath(rawPath, allowEmptyRoot);
+    },
     readFile(path: string): string | null {
       ensureVfsInitialized();
-      const norm = String(path || "").replace(/^\/+/, "");
-      const node = VFS_NODES.get(norm) || VFS_NODES.get(`workspace/${norm}`);
-      return node && node.type === "file" ? (node.content ?? "") : null;
+      const rel = resolveWorkspacePath(path, false);
+      const node = VFS_NODES.get(rel);
+      if (!node) return null;
+      if (node.type === "folder") {
+        throw new Error(`EISDIR: illegal operation on a directory, read '${path}'`);
+      }
+      return node.content ?? "";
     },
     writeFile(path: string, content: string): boolean {
       ensureVfsInitialized();
-      const norm = String(path || "").replace(/^\/+/, "");
-      const fullPath = norm.includes("/") ? norm : `workspace/${norm}`;
-      const parts = fullPath.split("/");
-      const name = parts.pop() || "untitled.txt";
-      const parentPath = parts.join("/");
-      if (parentPath && !VFS_NODES.has(parentPath)) {
-        VFS_NODES.set(parentPath, {
-          path: parentPath,
-          name: parts[parts.length - 1] || parentPath,
-          type: "folder",
-          parentPath: parts.slice(0, -1).join("/"),
-        });
+      const rel = resolveWorkspacePath(path, false);
+      const existing = VFS_NODES.get(rel);
+      if (existing && existing.type === "folder") {
+        throw new Error(`EISDIR: illegal operation on a directory, open '${path}'`);
       }
-      VFS_NODES.set(fullPath, {
-        path: fullPath,
+      ensureParentFoldersExist(rel);
+      const parts = rel.split("/");
+      const name = parts.pop() || rel;
+      const parentPath = parts.join("/");
+      VFS_NODES.set(rel, {
+        path: rel,
         name,
         type: "file",
         parentPath,
-        content: String(content ?? ""),
+        content: serializeFsData(content),
       });
       persistVfsToClientStorage();
       renderVfsTreeUI();
       return true;
     },
-    listFiles(dirPath = "workspace"): string[] {
+    appendFile(path: string, content: string): boolean {
       ensureVfsInitialized();
-      const norm = String(dirPath || "").replace(/^\/+|\/+$/g, "");
+      const rel = resolveWorkspacePath(path, false);
+      const existing = VFS_NODES.get(rel);
+      if (existing && existing.type === "folder") {
+        throw new Error(`EISDIR: illegal operation on a directory, open '${path}'`);
+      }
+      const prev = existing && existing.type === "file" ? (existing.content ?? "") : "";
+      return api.writeFile(rel, prev + serializeFsData(content));
+    },
+    listFiles(dirPath = ""): string[] {
+      ensureVfsInitialized();
+      const rel = resolveWorkspacePath(dirPath, true);
+      if (rel !== "") {
+        const dirNode = VFS_NODES.get(rel);
+        if (!dirNode) {
+          throw new Error(`ENOENT: no such file or directory, scandir '${dirPath}'`);
+        }
+        if (dirNode.type !== "folder") {
+          throw new Error(`ENOTDIR: not a directory, scandir '${dirPath}'`);
+        }
+      }
       const out: string[] = [];
       VFS_NODES.forEach((node) => {
-        if (node.parentPath === norm) out.push(node.name);
+        if (node.parentPath === rel) out.push(node.name);
       });
       return out;
     },
+    readdir(dirPath = ""): string[] {
+      return api.listFiles(dirPath);
+    },
+    listAll(): string[] {
+      ensureVfsInitialized();
+      return Array.from(VFS_NODES.keys()).sort();
+    },
     exists(path: string): boolean {
       ensureVfsInitialized();
-      const norm = String(path || "").replace(/^\/+/, "");
-      return VFS_NODES.has(norm) || VFS_NODES.has(`workspace/${norm}`);
+      const rel = resolveWorkspacePath(path, true);
+      if (rel === "") return true;
+      return VFS_NODES.has(rel);
     },
     deleteFile(path: string): boolean {
       ensureVfsInitialized();
-      const norm = String(path || "").replace(/^\/+/, "");
-      const ok = VFS_NODES.delete(norm);
-      if (ok) {
-        persistVfsToClientStorage();
-        renderVfsTreeUI();
+      const rel = resolveWorkspacePath(path, false);
+      const node = VFS_NODES.get(rel);
+      if (!node) {
+        throw new Error(`ENOENT: no such file or directory, unlink '${path}'`);
       }
-      return ok;
+      // Also delete children if folder
+      const prefix = rel + "/";
+      Array.from(VFS_NODES.keys()).forEach((k) => {
+        if (k === rel || k.startsWith(prefix)) {
+          VFS_NODES.delete(k);
+        }
+      });
+      persistVfsToClientStorage();
+      renderVfsTreeUI();
+      return true;
+    },
+    unlink(path: string): boolean {
+      return api.deleteFile(path);
+    },
+    mkdir(path: string): boolean {
+      ensureVfsInitialized();
+      const rel = resolveWorkspacePath(path, true);
+      if (!rel) return true;
+      ensureParentFoldersExist(rel + "/_");
+      persistVfsToClientStorage();
+      renderVfsTreeUI();
+      return true;
+    },
+    stat(path: string) {
+      ensureVfsInitialized();
+      const rel = resolveWorkspacePath(path, true);
+      if (rel === "") {
+        return {
+          size: 0,
+          isFile: () => false,
+          isDirectory: () => true,
+        };
+      }
+      const node = VFS_NODES.get(rel);
+      if (!node) {
+        throw new Error(`ENOENT: no such file or directory, stat '${path}'`);
+      }
+      const isDir = node.type === "folder";
+      const size = isDir ? 0 : (node.content ?? "").length;
+      return {
+        size,
+        isFile: () => !isDir,
+        isDirectory: () => isDir,
+      };
+    },
+    clear(): void {
+      ensureVfsInitialized();
+      VFS_NODES.clear();
+      persistVfsToClientStorage();
+      renderVfsTreeUI();
     },
   };
+
+  const fsPromises = {
+    async readFile(path: string, _options?: unknown): Promise<string> {
+      const content = api.readFile(path);
+      if (content === null) {
+        throw new Error(`ENOENT: no such file or directory, open '${path}'`);
+      }
+      return content;
+    },
+    async writeFile(path: string, data: unknown, _options?: unknown): Promise<void> {
+      api.writeFile(path, serializeFsData(data));
+    },
+    async appendFile(path: string, data: unknown, _options?: unknown): Promise<void> {
+      api.appendFile(path, serializeFsData(data));
+    },
+    async unlink(path: string): Promise<void> {
+      api.deleteFile(path);
+    },
+    async rm(path: string, _options?: unknown): Promise<void> {
+      api.deleteFile(path);
+    },
+    async readdir(path = "", _options?: unknown): Promise<string[]> {
+      return api.listFiles(path);
+    },
+    async mkdir(path: string, _options?: unknown): Promise<string | undefined> {
+      api.mkdir(path);
+      return undefined;
+    },
+    async rmdir(path: string, _options?: unknown): Promise<void> {
+      api.deleteFile(path);
+    },
+    async stat(path: string) {
+      return api.stat(path);
+    },
+    async access(path: string, _mode?: number): Promise<void> {
+      if (!api.exists(path)) {
+        throw new Error(`ENOENT: no such file or directory, access '${path}'`);
+      }
+    },
+    async exists(path: string): Promise<boolean> {
+      return api.exists(path);
+    },
+    async copyFile(src: string, dest: string): Promise<void> {
+      const content = api.readFile(src);
+      if (content === null) {
+        throw new Error(`ENOENT: no such file or directory, copyfile '${src}'`);
+      }
+      api.writeFile(dest, content);
+    },
+    async rename(oldPath: string, newPath: string): Promise<void> {
+      const content = api.readFile(oldPath);
+      if (content === null) {
+        throw new Error(`ENOENT: no such file or directory, rename '${oldPath}'`);
+      }
+      api.writeFile(newPath, content);
+      api.deleteFile(oldPath);
+    },
+  };
+
+  const fsShim = {
+    promises: fsPromises,
+    readFileSync(path: string, _options?: unknown): string {
+      const content = api.readFile(path);
+      if (content === null) {
+        throw new Error(`ENOENT: no such file or directory, open '${path}'`);
+      }
+      return content;
+    },
+    writeFileSync(path: string, data: unknown, _options?: unknown): void {
+      api.writeFile(path, serializeFsData(data));
+    },
+    appendFileSync(path: string, data: unknown, _options?: unknown): void {
+      api.appendFile(path, serializeFsData(data));
+    },
+    existsSync(path: string): boolean {
+      return api.exists(path);
+    },
+    unlinkSync(path: string): void {
+      api.deleteFile(path);
+    },
+    rmSync(path: string, _options?: unknown): void {
+      api.deleteFile(path);
+    },
+    readdirSync(path = ""): string[] {
+      return api.listFiles(path);
+    },
+    mkdirSync(path: string, _options?: unknown): string | undefined {
+      api.mkdir(path);
+      return undefined;
+    },
+    rmdirSync(path: string, _options?: unknown): void {
+      api.deleteFile(path);
+    },
+    statSync(path: string) {
+      return api.stat(path);
+    },
+    copyFileSync(src: string, dest: string): void {
+      const content = api.readFile(src);
+      if (content === null) {
+        throw new Error(`ENOENT: no such file or directory, copyfile '${src}'`);
+      }
+      api.writeFile(dest, content);
+    },
+    renameSync(oldPath: string, newPath: string): void {
+      const content = api.readFile(oldPath);
+      if (content === null) {
+        throw new Error(`ENOENT: no such file or directory, rename '${oldPath}'`);
+      }
+      api.writeFile(newPath, content);
+      api.deleteFile(oldPath);
+    },
+  };
+
   globalThis.__VFS__ = api;
   globalThis.vfs = api;
+  globalThis.__FS_SHIM__ = fsShim;
 }
 
 /* ── Wire Up Notebook DOM Events, Single-File Multi-Tabs, Import Menu & Right VFS Sidebar ── */
@@ -2158,7 +2379,6 @@ export function initNotebookUI() {
           return;
         }
         loadSample(sampleKey);
-        syncActiveScriptTabFromFileName(FILE_NAME);
       }
     });
   }
@@ -2199,7 +2419,6 @@ export function initNotebookUI() {
 
       const newBtn = target.closest ? (target.closest("#scriptBtnNewTab") as HTMLElement | null) : null;
       if (newBtn) {
-        // Save current buffer first
         syncActiveScriptTabSource(editor ? editor.value : "");
         const ext = lang === "python" ? ".py" : ".ts";
         const newTitle = `untitled-${store.tabs.length + 1}${ext}`;
@@ -2208,18 +2427,11 @@ export function initNotebookUI() {
           title: newTitle,
           lang,
           source: lang === "python" ? "# 新建 Python 脚本\n" : "// 新建 TypeScript 脚本\n",
-          vfsPath: `workspace/${newTitle}`,
+          vfsPath: "",
+          isSample: false,
         };
         store.tabs.push(newTab);
         store.activeTabId = newTab.id;
-        VFS_NODES.set(newTab.vfsPath, {
-          path: newTab.vfsPath,
-          name: newTitle,
-          type: "file",
-          parentPath: "workspace",
-          content: newTab.source,
-        });
-        persistVfsToClientStorage();
         syncingScriptTab = true;
         editor.value = newTab.source;
         setFileName(newTab.title);
@@ -2235,7 +2447,6 @@ export function initNotebookUI() {
       const tabEl = target.closest ? (target.closest("[data-script-tab-id]") as HTMLElement | null) : null;
       if (tabEl) {
         const tabId = tabEl.getAttribute("data-script-tab-id");
-        // IMPORTANT: Do NOT re-render DOM if clicking the already-active tab so dblclick works reliably!
         if (tabId && store.activeTabId !== tabId) {
           syncActiveScriptTabSource(editor ? editor.value : "");
           store.activeTabId = tabId;
@@ -2282,18 +2493,18 @@ export function initNotebookUI() {
           const nextName = /\.[A-Za-z0-9]{1,12}$/.test(rawVal) ? rawVal : rawVal + ext;
           const oldPath = targetTab.vfsPath;
           targetTab.title = nextName;
-          targetTab.vfsPath = `workspace/${nextName}`;
-          if (oldPath && oldPath !== targetTab.vfsPath && oldPath.startsWith("workspace/")) {
+          if (!targetTab.isSample && oldPath && VFS_NODES.has(oldPath)) {
+            targetTab.vfsPath = nextName;
             VFS_NODES.delete(oldPath);
+            VFS_NODES.set(targetTab.vfsPath, {
+              path: targetTab.vfsPath,
+              name: nextName,
+              type: "file",
+              parentPath: "",
+              content: targetTab.source,
+            });
+            persistVfsToClientStorage();
           }
-          VFS_NODES.set(targetTab.vfsPath, {
-            path: targetTab.vfsPath,
-            name: nextName,
-            type: "file",
-            parentPath: "workspace",
-            content: targetTab.source,
-          });
-          persistVfsToClientStorage();
           if (store.activeTabId === targetTab.id) {
             syncingScriptTab = true;
             setFileName(nextName);
@@ -2325,35 +2536,40 @@ export function initNotebookUI() {
 
   /* ── 3. Right-Side Virtual File System Sidebar (#vfsSidebar / #vfsTreeList) ── */
   const vfsSidebar = $("vfsSidebar");
+  const b1 = $("btnToggleVfs");
+  const b2 = $("nbBtnToggleVfs");
+  if (vfsSidebar) {
+    vfsSidebar.hidden = true;
+  }
+  if (b1 && b1.classList) b1.classList.remove("active");
+  if (b2 && b2.classList) b2.classList.remove("active");
+
   const toggleVfsSidebar = () => {
     if (!vfsSidebar) return;
     vfsSidebar.hidden = !vfsSidebar.hidden;
     const isVisible = !vfsSidebar.hidden;
-    const b1 = $("btnToggleVfs");
-    const b2 = $("nbBtnToggleVfs");
     if (b1 && b1.classList) b1.classList.toggle("active", isVisible);
     if (b2 && b2.classList) b2.classList.toggle("active", isVisible);
   };
-  if ($("btnToggleVfs")) $("btnToggleVfs").onclick = toggleVfsSidebar;
-  if ($("nbBtnToggleVfs")) $("nbBtnToggleVfs").onclick = toggleVfsSidebar;
+  if (b1) b1.onclick = toggleVfsSidebar;
+  if (b2) b2.onclick = toggleVfsSidebar;
 
   if ($("vfsBtnNewFile")) {
     $("vfsBtnNewFile").onclick = () => {
       ensureVfsInitialized();
       const ext = LANG === "python" ? ".py" : ".ts";
       let idx = 1;
-      while (VFS_NODES.has(`workspace/file_${idx}${ext}`)) idx++;
+      while (VFS_NODES.has(`file_${idx}${ext}`)) idx++;
       const name = `file_${idx}${ext}`;
-      const path = `workspace/${name}`;
+      const path = name;
       const content = LANG === "python" ? `# ${name}\n` : `// ${name}\n`;
       VFS_NODES.set(path, {
         path,
         name,
         type: "file",
-        parentPath: "workspace",
+        parentPath: "",
         content,
       });
-      VFS_EXPANDED_FOLDERS.add("workspace");
       persistVfsToClientStorage();
       openVfsFile(path);
     };
@@ -2363,20 +2579,19 @@ export function initNotebookUI() {
     $("vfsBtnNewFolder").onclick = () => {
       ensureVfsInitialized();
       let idx = 1;
-      while (VFS_NODES.has(`workspace/folder_${idx}`)) idx++;
+      while (VFS_NODES.has(`folder_${idx}`)) idx++;
       const name = `folder_${idx}`;
-      const path = `workspace/${name}`;
+      const path = name;
       VFS_NODES.set(path, {
         path,
         name,
         type: "folder",
-        parentPath: "workspace",
+        parentPath: "",
       });
-      VFS_EXPANDED_FOLDERS.add("workspace");
       VFS_EXPANDED_FOLDERS.add(path);
       persistVfsToClientStorage();
       renderVfsTreeUI();
-      say(`📁 已在虚拟目录创建文件夹 ${path}/（双击可重命名）`, "ok");
+      say(`📁 已创建文件夹 ${path}/（双击可重命名）`, "ok");
     };
   }
 
@@ -2389,15 +2604,52 @@ export function initNotebookUI() {
     vfsTreeList.addEventListener("click", (e: MouseEvent) => {
       const target = e.target as HTMLElement | null;
       if (!target) return;
+
+      const confirmDelBtn = target.closest ? (target.closest("[data-vfs-confirm-del]") as HTMLElement | null) : null;
+      if (confirmDelBtn) {
+        e.stopPropagation();
+        const delPath = confirmDelBtn.getAttribute("data-vfs-confirm-del");
+        pendingVfsDeletePath = null;
+        if (delPath && VFS_NODES.has(delPath)) {
+          const prefix = delPath + "/";
+          Array.from(VFS_NODES.keys()).forEach((k) => {
+            if (k === delPath || k.startsWith(prefix)) {
+              VFS_NODES.delete(k);
+            }
+          });
+          (["ts", "python"] as const).forEach((l) => {
+            const st = SCRIPT_TABS[l];
+            st.tabs.forEach((t) => {
+              if (t.vfsPath === delPath || t.vfsPath.startsWith(prefix)) {
+                t.vfsPath = "";
+              }
+            });
+          });
+          persistVfsToClientStorage();
+          renderScriptTabsUI();
+          renderVfsTreeUI();
+          say(`🗑 已从文件目录移除 ${delPath}`, "dim");
+        } else {
+          renderVfsTreeUI();
+        }
+        return;
+      }
+
+      const cancelDelBtn = target.closest ? (target.closest("[data-vfs-cancel-del]") as HTMLElement | null) : null;
+      if (cancelDelBtn) {
+        e.stopPropagation();
+        pendingVfsDeletePath = null;
+        renderVfsTreeUI();
+        return;
+      }
+
       const delBtn = target.closest ? (target.closest("[data-vfs-del]") as HTMLElement | null) : null;
       if (delBtn) {
         e.stopPropagation();
         const delPath = delBtn.getAttribute("data-vfs-del");
         if (delPath && VFS_NODES.has(delPath)) {
-          VFS_NODES.delete(delPath);
-          persistVfsToClientStorage();
+          pendingVfsDeletePath = pendingVfsDeletePath === delPath ? null : delPath;
           renderVfsTreeUI();
-          say(`🗑 已从虚拟目录移除 ${delPath}`, "dim");
         }
         return;
       }
@@ -2417,12 +2669,11 @@ export function initNotebookUI() {
       if (fileRow) {
         const filePath = fileRow.getAttribute("data-vfs-file");
         if (filePath) {
-          // Avoid destroying DOM if clicking already active file so dblclick rename works smoothly
           const curActivePath =
             VIEW_MODE === "notebook"
-              ? `notebooks/${getActiveNotebook().title}`
+              ? getActiveNotebook().title
               : getActiveScriptTab().vfsPath;
-          if (filePath !== curActivePath) {
+          if (filePath !== curActivePath || editor.value !== (VFS_NODES.get(filePath)?.content ?? "")) {
             openVfsFile(filePath);
           }
         }
@@ -2434,7 +2685,7 @@ export function initNotebookUI() {
       const row = target && target.closest ? (target.closest("[data-vfs-file], [data-vfs-folder]") as HTMLElement | null) : null;
       if (!row) return;
       const oldPath = row.getAttribute("data-vfs-file") || row.getAttribute("data-vfs-folder");
-      if (!oldPath || oldPath.startsWith("examples/")) return;
+      if (!oldPath) return;
       const node = VFS_NODES.get(oldPath);
       if (!node || node.readonly) return;
       const nameSpan = row.querySelector ? row.querySelector(".vfs-name") : null;
@@ -2461,7 +2712,6 @@ export function initNotebookUI() {
           VFS_NODES.set(nextPath, node);
           persistVfsToClientStorage();
 
-          // Sync with script tab if open
           const lang = LANG === "python" ? "python" : "ts";
           const store = ensureScriptTabsForLang(lang);
           const matchingTab = store.tabs.find((t) => t.vfsPath === oldPath);

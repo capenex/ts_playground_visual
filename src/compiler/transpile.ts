@@ -643,6 +643,58 @@ const NON_TYPED_KEYWORDS = new Set([
   'yield', 'await', 'typeof', 'void', 'delete', 'new', 'in', 'of', 'instanceof',
 ]);
 
+function transpileFsImportStatement(rawStmt: string): string | null {
+  const flat = stripCommentsOnly(rawStmt).replace(/\s+/g, ' ').trim().replace(/;$/, '').trim();
+  if (/^import\s+type\b/.test(flat)) return null;
+  const fromMatch = flat.match(/^import\s+([\s\S]+?)\s+from\s+(['"])([^'"]+)\2\s*$/);
+  if (!fromMatch) return null;
+  const clause = (fromMatch[1] || '').trim();
+  const modSpec = (fromMatch[3] || '').trim();
+  const isFsRoot = modSpec === 'fs' || modSpec === 'node:fs';
+  const isFsPromises = modSpec === 'fs/promises' || modSpec === 'node:fs/promises';
+  if (!isFsRoot && !isFsPromises) return null;
+
+  const baseExpr = isFsPromises
+    ? '(((typeof __t === "function" && __t.__env && __t.__env.fs) || globalThis.__FS_SHIM__).promises)'
+    : '((typeof __t === "function" && __t.__env && __t.__env.fs) || globalThis.__FS_SHIM__)';
+
+  const convertNamedBraces = (bracePart: string): string => {
+    const inner = bracePart.replace(/^\{|\}$/g, '').trim();
+    if (!inner) return '{}';
+    const specs = inner
+      .split(',')
+      .map(s => s.trim())
+      .filter(s => Boolean(s) && !/^type\s+/.test(s))
+      .map(s => s.replace(/^([A-Za-z_$][\w$]*)\s+as\s+([A-Za-z_$][\w$]*)$/, '$1: $2'));
+    return `{ ${specs.join(', ')} }`;
+  };
+
+  // `import * as fs from 'fs'`
+  const nsMatch = clause.match(/^\*\s+as\s+([A-Za-z_$][\w$]*)$/);
+  if (nsMatch && nsMatch[1]) {
+    return `/*__import__*/ var ${nsMatch[1]} = ${baseExpr};`;
+  }
+
+  // `import { promises as fs } from 'fs'`
+  if (clause.startsWith('{') && clause.endsWith('}')) {
+    return `/*__import__*/ var ${convertNamedBraces(clause)} = ${baseExpr};`;
+  }
+
+  // `import fs, { promises as fsp } from 'fs'`
+  const defAndNamed = clause.match(/^([A-Za-z_$][\w$]*)\s*,\s*(\{[\s\S]+\})$/);
+  if (defAndNamed && defAndNamed[1] && defAndNamed[2]) {
+    return `/*__import__*/ var ${defAndNamed[1]} = ${baseExpr}, ${convertNamedBraces(defAndNamed[2])} = ${defAndNamed[1]};`;
+  }
+
+  // `import fs from 'fs'`
+  const defMatch = clause.match(/^([A-Za-z_$][\w$]*)$/);
+  if (defMatch && defMatch[1]) {
+    return `/*__import__*/ var ${defMatch[1]} = ${baseExpr};`;
+  }
+
+  return null;
+}
+
 let _STRIP_TYPES_CACHE: { src: string | null; out: string } = { src: null, out: '' };
 
 export function stripTypes(rawSrc: string): string {
@@ -825,7 +877,13 @@ export function stripTypes(rawSrc: string): string {
           else if (ch === '\n' && depth <= 0) break;
           j++;
         }
-        out += newlinesOf(src.slice(wordStart, j));
+        const rawStmt = src.slice(wordStart, j);
+        const fsBinding = transpileFsImportStatement(rawStmt);
+        if (fsBinding) {
+          out += fsBinding + newlinesOf(rawStmt);
+        } else {
+          out += newlinesOf(rawStmt);
+        }
         i = j;
         continue;
       }

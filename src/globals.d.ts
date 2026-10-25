@@ -80,12 +80,58 @@ export interface PlaygroundCMBridge {
   blur(): void;
 }
 
+export interface FsStats {
+  size: number;
+  isFile(): boolean;
+  isDirectory(): boolean;
+}
+
+export interface FsPromisesApi {
+  readFile(path: string, options?: unknown): Promise<string>;
+  writeFile(path: string, data: unknown, options?: unknown): Promise<void>;
+  appendFile(path: string, data: unknown, options?: unknown): Promise<void>;
+  unlink(path: string): Promise<void>;
+  rm(path: string, options?: unknown): Promise<void>;
+  readdir(path?: string, options?: unknown): Promise<string[]>;
+  mkdir(path: string, options?: unknown): Promise<string | undefined>;
+  rmdir(path: string, options?: unknown): Promise<void>;
+  stat(path: string): Promise<FsStats>;
+  access(path: string, mode?: number): Promise<void>;
+  exists(path: string): Promise<boolean>;
+  copyFile(src: string, dest: string): Promise<void>;
+  rename(oldPath: string, newPath: string): Promise<void>;
+}
+
+export interface FsModuleApi {
+  promises: FsPromisesApi;
+  readFileSync(path: string, options?: unknown): string;
+  writeFileSync(path: string, data: unknown, options?: unknown): void;
+  appendFileSync(path: string, data: unknown, options?: unknown): void;
+  existsSync(path: string): boolean;
+  unlinkSync(path: string): void;
+  rmSync(path: string, options?: unknown): void;
+  readdirSync(path?: string): string[];
+  mkdirSync(path: string, options?: unknown): string | undefined;
+  rmdirSync(path: string, options?: unknown): void;
+  statSync(path: string): FsStats;
+  copyFileSync(src: string, dest: string): void;
+  renameSync(oldPath: string, newPath: string): void;
+}
+
 export interface VfsClientApi {
+  resolveWorkspacePath(rawPath: string, allowEmptyRoot?: boolean): string;
   readFile(path: string): string | null;
   writeFile(path: string, content: string): boolean;
+  appendFile(path: string, content: string): boolean;
   listFiles(dirPath?: string): string[];
+  readdir(dirPath?: string): string[];
+  listAll(): string[];
   exists(path: string): boolean;
   deleteFile(path: string): boolean;
+  unlink(path: string): boolean;
+  mkdir(path: string): boolean;
+  stat(path: string): FsStats;
+  clear(): void;
 }
 
 declare global {
@@ -165,6 +211,7 @@ declare global {
   var runNotebookCell: ((cellId?: string, advanceToNext?: boolean) => Promise<boolean>) | undefined;
   var debugNotebookCell: ((cellId?: string) => Promise<boolean>) | undefined;
   var renderNotebookUI: ((focusActiveEditor?: boolean) => void) | undefined;
+  var openSampleScriptTab: ((title: string, source: string, lang?: 'ts' | 'python') => void) | undefined;
   var syncActiveScriptTabFromFileName: ((newFileName: string) => void) | undefined;
   var syncActiveScriptTabSource: ((src: string) => void) | undefined;
   var importNotebookFromJson: ((jsonText: string, fileName: string) => boolean) | undefined;
@@ -174,6 +221,7 @@ declare global {
   var breakpoints: Set<number> | undefined;
   var __VFS__: VfsClientApi | undefined;
   var vfs: VfsClientApi | undefined;
+  var __FS_SHIM__: FsModuleApi | undefined;
 
   interface Window {
     PlaygroundCM?: PlaygroundCMBridge;

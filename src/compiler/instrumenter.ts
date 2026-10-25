@@ -75,7 +75,7 @@ export function extractBindingNames(lhs: string, names: Set<string>): void {
 }
 
 export function collectNames(js: string): string[] {
-  const clean = blankStrings(js);
+  const clean = blankStrings(js.replace(/\/\*__import__\*\/[^\n]*/g, ''));
   const names = new Set<string>();
   let m: RegExpExecArray | null;
 
@@ -472,6 +472,17 @@ export function instrument(js: string, originalLines: string[], names: string[])
 
     if (activeAsyncFn && /\bawait\b/.test(transformedRaw)) {
       transformedRaw = rewriteAwaitExpressions(transformedRaw, activeAsyncFn.fidVar, i + 1);
+    }
+
+    if (/\bcatch\b/.test(transformedRaw)) {
+      transformedRaw = transformedRaw
+        .replace(/\bcatch\s*\(\s*([A-Za-z_$][\w$]*)\s*\)\s*\{/g, 'catch ($1) { if ($1 && ($1.__debugPause || $1.__timeout)) throw $1;')
+        .replace(/\bcatch\s*\{/g, 'catch (__e) { if (__e && (__e.__debugPause || __e.__timeout)) throw __e;');
+    }
+
+    if (raw.trimStart().startsWith('/*__import__*/')) {
+      out.push(transformedRaw);
+      continue;
     }
 
     const injectedLine = canInjectHeader ? tryInjectLoopOrElseIf(transformedRaw, callExpr) : null;

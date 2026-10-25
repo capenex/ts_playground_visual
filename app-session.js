@@ -174,26 +174,10 @@
   }
 
   async function copyShareLink() {
-    try {
-      if (exportWrap) exportWrap.classList.remove('open');
-      const state = snapshot();
-      const lang = state.lang;
-      const buf = lang === 'python' ? state.python : state.ts;
-      const payload = {
-        v: 1,
-        lang,
-        ts: lang === 'ts' ? buf : null,
-        python: lang === 'python' ? buf : null,
-      };
-      const encoded = await packState(payload);
-      const base = new URL('share.html', location.href).href;
-      const url = base + '#s=' + encoded;
-      await copyText(url);
-      saySafe('✓ 已复制分享链接（' + url.length + ' 字符）。打开后会在沙箱 iframe 中加载代码，不会自动运行。', 'ok');
-      if (url.length > 120000) saySafe('⚠ 链接较长，部分聊天工具可能截断。', 'dim');
-    } catch (err) {
-      saySafe('✗ 复制分享链接失败：' + ((err && err.message) || err), 'err');
-    }
+    if (exportWrap) exportWrap.classList.remove('open');
+    const tag = document.getElementById('shareLinkTag');
+    if (tag) tag.textContent = '暂未实现';
+    saySafe('暂未实现', 'dim');
   }
 
   async function restoreFromHash() {

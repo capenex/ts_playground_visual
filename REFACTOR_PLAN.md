@@ -12,68 +12,71 @@
 
 ---
 
-## 二、 目标目录结构 (`src/`)
+## 二、 目标目录结构 (`src/` · 17 个严格化 TypeScript 模块)
 
 ```text
 ├── src/
-│   ├── types.ts                  # 全局核心数据结构与接口定义 (Diag, Frame, HeapObj, EventLoopSnapshot, StepSnapshot 等)
+│   ├── types.ts                  # 全局核心数据结构与严格接口定义 (Diag, Frame, StepSnapshot, NotebookDocument 等)
+│   ├── globals.d.ts              # 全局桥接变量、CodeMirror 6 桥接与 WebCodecs API 环境声明
 │   ├── state.ts                  # 集中式运行时与 UI 状态管理 (替代原分散的全局变量)
 │   ├── samples/
-│   │   ├── ts-samples.ts         # TypeScript 内置示例与预期输出 (SAMPLES, EXPECTED_LINES)
+│   │   ├── ts-samples.ts         # TypeScript 内置示例与默认步进配置 (SAMPLES, SAMPLE_DEFAULT_STEP)
 │   │   └── py-samples.ts         # Python / 多语言示例桥接支持
 │   ├── compiler/
-│   │   ├── comments.ts           # stripComments, splitTopLevel, splitStatements
-│   │   ├── transpile.ts          # TS 类型擦除与全语法降级编译器 (transpileTS, findSyntaxErrors)
-│   │   ├── instrumenter.ts       # AST/行级插桩器与异步状态快照捕获 (instrument, formatVal)
-│   │   └── type-checker.ts       # 内置快速静态类型诊断器与 TS Worker 诊断桥接 (typeCheck, liveTypeDiags)
+│   │   ├── comments.ts           # stripComments, splitTopLevel, splitStatements 及字符串/注释掩码工具
+│   │   ├── transpile.ts          # TS 类型擦除与全语法降级编译器 (stripTypes, transpileEnums, transpileNamespaces)
+│   │   ├── instrumenter.ts       # 语句级自动插桩器与 async/await 协程改写 (instrument, collectNames, resolveEntry)
+│   │   └── type-checker.ts       # 同步静态类型检查器、接口/类元数据提取与 TS Worker 诊断桥接 (typecheckTS)
 │   ├── runtime/
-│   │   ├── event-loop.ts         # 虚拟事件循环调度器 (VirtualPromise, setTimeout, queueMicrotask, sleep)
-│   │   └── runner.ts             # 沙箱执行器与步进轨迹生成 (runTrace, rebuildFromSource)
+│   │   ├── event-loop.ts         # 确定性虚拟事件循环调度器 (createVirtualEventLoop, VirtualPromise, setTimeout)
+│   │   └── runner.ts             # 沙箱执行器与按需步进轨迹生成 (startDebug, computeAndAppendNextStep, runOnce)
 │   ├── viz/
-│   │   ├── highlight.ts          # 语法高亮与符号收集 (highlightTS, collectDeclaredNames)
-│   │   ├── memory-graph.ts       # 栈帧、堆内存卡片、SVG 引用连线与异步队列面板渲染 (renderMemory, drawArrows)
-│   │   └── ast-view.ts           # AST 语法树构建与视图渲染 (buildAST, renderAST)
+│   │   ├── highlight.ts          # 声明感知语法高亮、波浪线同步与悬停查看器 (hl, collectDeclaredNames, hoverInfoFor)
+│   │   ├── memory-graph.ts       # 调用栈面包屑与 14 类数据结构可视化渲染器 (classifyValue, VIZ, renderStatic)
+│   │   └── ast-view.ts           # 行间求值胶囊 (#stepViz) 与飞入动画渲染 (buildStepVizRow, deriveAnimAndNote)
 │   ├── ui/
-│   │   ├── controls.ts           # 步进器、播放控制、断点、主题切换、下拉示例管理
-│   │   └── share.ts              # URL Hash 压缩分享与解码逻辑
-│   └── main.ts                   # 统一入口：初始化 DOM 事件，挂载必要的全局兼容接口
+│   │   ├── controls.ts           # 步进器、播放控制、动态检查点注入、文件导入/改名/导出与分栏拖拽
+│   │   ├── notebook.ts           # Jupyter 风格交互式笔记本引擎 (多标签 .ipynb、跨单元格上下文、单元格级单步 Debug)
+│   │   └── share.ts              # 1920×1080 60fps WebCodecs/WebM 视频导出器、样例加载与启动引导 (boot)
+│   └── main.ts                   # 统一入口：初始化 DOM 事件，挂载全局兼容桥接接口
 ├── editor/
-│   ├── cm-entry.js               # CodeMirror 6 编辑器入口
-│   └── ts-worker-entry.js        # 官方 TypeScript 编译器 Web Worker
+│   ├── cm-entry.js               # CodeMirror 6 编辑器源码入口
+│   └── ts-worker-entry.js        # 官方 TypeScript 编译器 Web Worker 源码入口
 ├── python/
 │   └── py_engine.js              # Python 引擎模块
 ├── scripts/
-│   ├── build-editor.mjs          # 打包编辑器、TS Worker 与主应用 bundle
+│   ├── build-editor.mjs          # 打包 js/app.bundle.js、editor/cm.bundle.js 与 editor/ts-worker.bundle.js
 │   └── build.mjs                 # 生成 dist/ 生产环境纯静态发布目录
-├── test-pipeline.mjs             # 自动化端到端测试套件
-└── tsconfig.json                 # TypeScript 严格模式与模块化配置
+├── test-pipeline.mjs             # 自动化端到端测试套件（含 Strict TS Gate 静态门禁）
+└── tsconfig.json                 # TypeScript 工业级严格模式配置 (strict + noUncheckedIndexedAccess)
 ```
 
 ---
 
-## 三、 原 `js/01..10` 到 `src/` 的逐文件映射表
+## 三、 原 `js/01..10` 到 `src/` 17 模块的映射表
 
-| 原文件 | 目标 TypeScript 模块 | 关键导出内容与职责 |
+| 原文件 / 功能域 | 目标 TypeScript 模块 | 关键导出内容与职责 |
 | :--- | :--- | :--- |
-| `js/01-prelude-and-samples.js` | `src/types.ts`, `src/state.ts`, `src/samples/ts-samples.ts` | 导出 `SAMPLES`, `EXPECTED_LINES`, 应用状态单例 `appState`，以及通用 DOM/转义工具函数 (`esc`) |
-| `js/02-comments-and-transpile.js` | `src/compiler/comments.ts`, `src/compiler/transpile.ts` | 导出 `stripComments`, `splitTopLevel`, `splitStatements`, `findSyntaxErrors`, `transpileTS` |
-| `js/03-instrumenter.js` | `src/compiler/instrumenter.ts` | 导出 `instrument`, `formatVal`, `__describeHeapVal` |
-| `js/04-ast.js` | `src/viz/ast-view.ts` | 导出 `buildAST`, `renderAST` |
-| `js/05-type-checker.js` | `src/compiler/type-checker.ts` | 导出 `typeCheck`, `parseType`, `typeToStr`, `isAssignable`, `inferExpr` |
-| `js/06-run-trace.js` | `src/runtime/event-loop.ts`, `src/runtime/runner.ts` | 导出 `runTrace`, `VirtualPromise` 及虚拟异步 API (`setTimeout`, `queueMicrotask`, `sleep`) |
-| `js/07-highlight.js` | `src/viz/highlight.ts` | 导出 `highlightTS`, `collectDeclaredNames` |
-| `js/08-memory-viz.js` | `src/viz/memory-graph.ts` | 导出 `renderMemory`, `renderAsyncQueues`, `drawArrows`, `scheduleArrowRedraw` |
-| `js/09-ui-and-playback.js` | `src/ui/controls.ts` | 导出 `renderStep`, `rebuildFromSource`, `stepForward`, `stepBack`, `togglePlay` 等 |
-| `js/10-init.js` | `src/ui/share.ts`, `src/main.ts` | 导出 `initApp`, 绑定窗口与按钮事件，处理分享链接 |
+| `js/01-prelude-and-samples.js` | `src/types.ts`, `src/globals.d.ts`, `src/state.ts`, `src/samples/ts-samples.ts`, `src/samples/py-samples.ts` | 核心领域接口定义、全局类型声明、响应式状态中心、10 个内置 TS 示例 `SAMPLES` 与 `SAMPLE_DEFAULT_STEP` |
+| `js/02-comments-and-transpile.js` | `src/compiler/comments.ts`, `src/compiler/transpile.ts` | 导出 `stripTypes`, `transpileEnums`, `transpileNamespaces`, `extractConstructorParamProps`, `blankLine` |
+| `js/03-instrumenter.js` | `src/compiler/instrumenter.ts` | 导出 `instrument`, `collectNames`, `resolveEntry`, `blankJsLine`, `rewriteAsyncFunctions` |
+| `js/04-ast.js` | `src/viz/ast-view.ts` | 导出 `buildStepVizRow`, `deriveAnimAndNote`, `enrichFromNote`, `launchFlyChips` |
+| `js/05-type-checker.js` | `src/compiler/type-checker.ts` | 导出 `typecheckTS`, `extractTsInterfaceMetadata`, `scheduleWorkerTypecheck` |
+| `js/06-run-trace.js` | `src/runtime/event-loop.ts`, `src/runtime/runner.ts` | 导出 `createVirtualEventLoop`, `startDebug`, `computeAndAppendNextStep`, `runOnce` |
+| `js/07-highlight.js` | `src/viz/highlight.ts` | 导出 `hl`, `hlActiveLine`, `collectDeclaredNames`, `hoverInfoFor`, `hoverTipHtml` |
+| `js/08-memory-viz.js` | `src/viz/memory-graph.ts` | 导出 `classifyValue`, `VIZ`, `renderStatic`, `renderCallStack`, `selectStackFrame` |
+| `js/09-ui-and-playback.js` | `src/ui/controls.ts` | 导出 `stepNext`, `stepPrev`, `runToNextCheckpoint`, `addCheckpointFunction`, `loadImportedSource` |
+| `js/10-init.js` | `src/ui/share.ts`, `src/main.ts` | 导出 `exportVideo`, `fixWebmDuration`, `loadSample`, `boot` 及全局兼容桥接挂载 |
+| 新增：交互式笔记本 | `src/ui/notebook.ts` | 导出 `setViewMode`, `getActiveNotebook`, `runNotebookCell`, `debugNotebookCell`, `typecheckNotebookCellTS`, `importIpynbFile`, `exportActiveNotebookIpynb` |
 
 ---
 
 ## 四、 外部兼容契约（Global Bridge）
 
-为了保证 `python/py_engine.js`、`app-session.js`、`editor/cm-entry.js` 和 `test-pipeline.mjs` 无缝协作，`src/main.ts` 会在 `window` / `globalThis` 上暴露以下桥接属性：
+为了保证 `python/py_engine.js`、`app-session.js`、`editor/cm-entry.js` 和 `test-pipeline.mjs` 无缝协作，`src/main.ts` 会在 `window` / `globalThis` 上暴露以下严格类型的桥接属性：
 
-- **编辑器与 Worker 桥接**：`window.__cmView`, `window.liveTypeDiags`, `window.breakpoints`, `window.currentStepLine`, `window.rebuildFromSource`, `window.scheduleRebuild`, `window.syncGutterAndHighlight`, `window.updateCursorPos`
-- **多语言引擎桥接 (`python/py_engine.js` & `app-session.js`)**：`window.SAMPLES`, `window.EXPECTED_LINES`, `window.steps`, `window.idx`, `window.renderStep`, `window.setStatus`, `window.transpileTS`, `window.typeCheck`, `window.instrument`, `window.runTrace`, `window.buildAST`, `window.highlightTS`
+- **编辑器与 Worker 桥接**：`window.__cmEditor`, `window.__cmCreateNotebookCellEditor`, `window.liveTypeDiags`, `window.updateEditorChrome`, `window.syncScroll`, `window.scheduleAutoDebug`
+- **多语言、会话与测试桥接**：`window.SAMPLES`, `window.stripTypes`, `window.typecheckTS`, `window.instrument`, `window.startDebug`, `window.stepNext`, `window.stepPrev`, `window.runOnce`, `window.setViewMode`, `window.getActiveNotebook`, `window.runNotebookCell`, `window.debugNotebookCell`, `window.typecheckNotebookCellTS`, `window.__tsPlaygroundSessionHook`
 
 ---
 

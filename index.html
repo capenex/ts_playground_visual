@@ -67,13 +67,13 @@
   <button id="btnRun" class="primary" title="Ctrl/Cmd+Enter">▶ 运行</button>
   <button id="btnTrace" class="trace-btn" title="编译通过后开启 Debug 模式，每走一步当场计算 (Ctrl/Cmd+Shift+Enter)">🐞 Debug 调试</button>
   <div class="top-menu-wrap" id="exportMenuWrap">
-    <button id="btnExportMenu" class="top-menu-btn" title="导出 TypeScript 文件或 1080p 60fps 演示视频">
+    <button id="btnExportMenu" class="top-menu-btn" title="导出文件或 1080p 60fps 演示视频">
       <span>⬇ 导出 / 下载</span>
       <span class="top-menu-caret">▾</span>
     </button>
     <div class="top-menu-pop" id="exportMenuPop">
-      <button id="btnExportTs" class="menu-item" title="把当前编辑器里的源码导出为 TypeScript 文件">
-        <span>📄 导出 TypeScript 文件</span>
+      <button id="btnExportTs" class="menu-item" title="把当前编辑器里的源码导出为文件">
+        <span>📄 导出文件</span>
         <span class="sub-tag" id="fileExportTag">playground.ts</span>
       </button>
       <button id="btnShareLink" class="menu-item" title="复制包含当前代码的分享链接（打开后只加载，不自动运行）">
@@ -113,8 +113,8 @@
         <span class="file-edit" aria-hidden="true">✎</span>
       </span>
       <div class="script-header-actions">
-        <span id="checkerBadge" class="checker-badge" role="button" tabindex="0" title="内置类型检查器只覆盖常用 TypeScript 语法，不是完整 tsc；点击查看已知限制">TS 子集检查</span>
-        <button type="button" id="btnToggleVfs" class="vfs-toggle-btn active" title="展开/收起右侧虚拟文件目录系统 (VFS)">📁 文件目录</button>
+        <span id="checkerBadge" class="checker-badge" role="button" tabindex="0" title="内置类型检查器只覆盖常用 TypeScript 语法，不是完整 tsc；点击查看已知限制" hidden>TS 子集检查</span>
+        <button type="button" id="btnToggleVfs" class="vfs-toggle-btn" title="展开/收起右侧虚拟文件目录系统 (VFS)">📁 文件目录</button>
       </div>
     </div>
     <div class="code-workspace-row" id="codeWorkspaceRow">
@@ -129,7 +129,12 @@
           </div>
         </div>
         <div id="notebookWrap" hidden>
-          <div class="nb-tabs-bar" id="nbTabsList" role="tablist" aria-label="Notebook 文件标签页"></div>
+          <div class="nb-top-bar">
+            <div class="nb-tabs-bar" id="nbTabsList" role="tablist" aria-label="Notebook 文件标签页"></div>
+            <div class="nb-top-actions">
+              <button type="button" id="nbBtnToggleVfs" class="vfs-toggle-btn" title="展开/收起右侧虚拟文件目录系统 (VFS)">📁 文件目录</button>
+            </div>
+          </div>
           <div class="nb-toolbar" role="toolbar" aria-label="Notebook 操作工具栏">
             <button type="button" id="nbBtnAdd" class="nb-tool-btn" title="在当前单元格下方插入新单元格">＋</button>
             <button type="button" id="nbBtnCut" class="nb-tool-btn" title="剪切选中单元格">✂</button>
@@ -147,12 +152,11 @@
             <div class="nb-toolbar-spacer"></div>
             <span class="nb-brand-tag">Notebook</span>
             <div class="nb-kernel-status" id="nbKernelStatus"></div>
-            <button type="button" id="nbBtnToggleVfs" class="vfs-toggle-btn active" title="展开/收起右侧虚拟文件目录系统 (VFS)">📁 文件目录</button>
           </div>
           <div class="nb-cells-scroll" id="nbCellsList"></div>
         </div>
       </div>
-      <aside class="vfs-sidebar" id="vfsSidebar" aria-label="虚拟文件目录系统">
+      <aside class="vfs-sidebar" id="vfsSidebar" aria-label="虚拟文件目录系统" hidden>
         <div class="vfs-head">
           <span class="vfs-head-title">📁 文件目录 (VFS)</span>
           <div class="vfs-head-actions">
@@ -162,7 +166,7 @@
           </div>
         </div>
         <div class="vfs-tree" id="vfsTreeList" role="tree" aria-label="虚拟文件树"></div>
-        <div class="vfs-foot" id="vfsFootStatus">客户端 VFS (IndexedDB) · 0 KB</div>
+        <div class="vfs-foot" id="vfsFootStatus">0 个文件 (0.0 KB)</div>
       </aside>
     </div>
     <div id="log"><div class="dim">Ctrl/Cmd+Enter 运行 · Ctrl/Cmd+Shift+Enter 开启 Debug 调试 · 双击顶部文件标签或右侧文件目录可重命名文件 · 顶部「📂 导入」可加载示例或上传文件</div></div>

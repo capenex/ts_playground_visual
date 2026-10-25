@@ -7,6 +7,7 @@ import { revealErrorLine, updateEditorChrome } from "../viz/highlight";
 import { clearFlyLayer } from "../viz/ast-view";
 import { stopAuto } from "../ui/controls";
 import { EventLoopSnapshot } from "../types";
+import type { VfsClientApi } from "../globals";
 
 export function say(msg: string, cls?: string, line?: number) {
   const d = document.createElement('div');
@@ -413,8 +414,346 @@ export function createVirtualEventLoop(
     }
   }
 
+  const getVfsApi = (): VfsClientApi => {
+    if (globalThis.__VFS__) return globalThis.__VFS__;
+    const fallbackFiles = new Map<string, { type: 'file' | 'folder'; content: string; mtime: number }>();
+    const resolveFallbackWorkspacePath = (rawPath: string, allowEmptyRoot = false): string => {
+      const s = String(rawPath ?? '').trim().replace(/\\/g, '/');
+      if (!s) {
+        if (allowEmptyRoot) return '';
+        throw new Error(`ENOENT: no such file or directory, open ''`);
+      }
+      if (/^[A-Za-z]:/.test(s) || s.startsWith('~')) {
+        throw new Error(`EACCES: permission denied, access '${rawPath}' (outside workspace is not allowed)`);
+      }
+      let rel = s;
+      if (s.startsWith('/')) {
+        if (s === '/' || s === '/workspace' || s === '/workspace/') {
+          rel = '';
+        } else if (s.startsWith('/workspace/')) {
+          rel = s.slice('/workspace/'.length);
+        } else {
+          throw new Error(`EACCES: permission denied, access '${rawPath}' (outside workspace is not allowed)`);
+        }
+      } else if (s === 'workspace' || s === 'workspace/') {
+        rel = '';
+      } else if (s.startsWith('workspace/')) {
+        rel = s.slice('workspace/'.length);
+      }
+      const rawParts = rel.split('/');
+      const resolved: string[] = [];
+      for (const part of rawParts) {
+        if (!part || part === '.') continue;
+        if (part === '..') {
+          if (resolved.length === 0) {
+            throw new Error(`EACCES: permission denied, access '${rawPath}' (outside workspace is not allowed)`);
+          }
+          resolved.pop();
+          continue;
+        }
+        resolved.push(part);
+      }
+      if (resolved.length === 0 && !allowEmptyRoot) {
+        throw new Error(`EISDIR: illegal operation on a directory, open '${rawPath}'`);
+      }
+      return resolved.join('/');
+    };
+    const ensureParentFolders = (norm: string) => {
+      const parts = norm.split('/').filter(Boolean);
+      let acc = '';
+      for (let idx = 0; idx < parts.length - 1; idx++) {
+        const seg = parts[idx] || '';
+        acc = acc ? `${acc}/${seg}` : seg;
+        if (!fallbackFiles.has(acc)) {
+          fallbackFiles.set(acc, { type: 'folder', content: '', mtime: Date.now() });
+        }
+      }
+    };
+    const api: VfsClientApi = {
+      resolveWorkspacePath(rawPath: string, allowEmptyRoot = false) {
+        return resolveFallbackWorkspacePath(rawPath, allowEmptyRoot);
+      },
+      readFile(p: string) {
+        const norm = resolveFallbackWorkspacePath(p, false);
+        const node = fallbackFiles.get(norm);
+        if (!node) throw new Error(`ENOENT: no such file or directory, open '${p}'`);
+        if (node.type === 'folder') throw new Error(`EISDIR: illegal operation on a directory, read '${p}'`);
+        return node.content;
+      },
+      writeFile(p: string, data: string) {
+        const norm = resolveFallbackWorkspacePath(p, false);
+        ensureParentFolders(norm);
+        const str = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+        fallbackFiles.set(norm, { type: 'file', content: str, mtime: Date.now() });
+        return true;
+      },
+      appendFile(p: string, data: string) {
+        const norm = resolveFallbackWorkspacePath(p, false);
+        ensureParentFolders(norm);
+        const prev = fallbackFiles.get(norm)?.content ?? '';
+        const str = typeof data === 'string' ? data : JSON.stringify(data);
+        fallbackFiles.set(norm, { type: 'file', content: prev + str, mtime: Date.now() });
+        return true;
+      },
+      exists(p: string) {
+        const norm = resolveFallbackWorkspacePath(p, true);
+        if (!norm) return true;
+        return fallbackFiles.has(norm);
+      },
+      listFiles(p?: string) {
+        const norm = resolveFallbackWorkspacePath(p || '.', true);
+        const prefix = norm ? norm + '/' : '';
+        const out = new Set<string>();
+        fallbackFiles.forEach((_v, k) => {
+          if (!prefix) {
+            const first = k.split('/')[0];
+            if (first) out.add(first);
+          } else if (k.startsWith(prefix)) {
+            const rest = k.slice(prefix.length).split('/')[0];
+            if (rest) out.add(rest);
+          }
+        });
+        return Array.from(out).sort();
+      },
+      readdir(p?: string) {
+        return api.listFiles(p);
+      },
+      mkdir(p: string) {
+        const norm = resolveFallbackWorkspacePath(p, true);
+        if (!norm) return true;
+        ensureParentFolders(norm);
+        fallbackFiles.set(norm, { type: 'folder', content: '', mtime: Date.now() });
+        return true;
+      },
+      deleteFile(p: string) {
+        const norm = resolveFallbackWorkspacePath(p, false);
+        const existed = fallbackFiles.delete(norm);
+        Array.from(fallbackFiles.keys()).forEach(k => {
+          if (k.startsWith(norm + '/')) fallbackFiles.delete(k);
+        });
+        return existed;
+      },
+      unlink(p: string) {
+        return api.deleteFile(p);
+      },
+      stat(p: string) {
+        const norm = resolveFallbackWorkspacePath(p, true);
+        if (!norm) {
+          return {
+            size: 0,
+            isFile: () => false,
+            isDirectory: () => true,
+          };
+        }
+        const node = fallbackFiles.get(norm);
+        if (!node) throw new Error(`ENOENT: no such file or directory, stat '${p}'`);
+        return {
+          size: node.type === 'file' ? node.content.length : 0,
+          isFile: () => node.type === 'file',
+          isDirectory: () => node.type === 'folder',
+        };
+      },
+      listAll() {
+        return Array.from(fallbackFiles.keys()).sort();
+      },
+      clear() {
+        fallbackFiles.clear();
+      },
+    };
+    globalThis.__VFS__ = api;
+    globalThis.vfs = api;
+    return api;
+  };
+
+  const readRequiredVfsFile = (p: string): string => {
+    const content = getVfsApi().readFile(p);
+    if (content === null) {
+      throw new Error(`ENOENT: no such file or directory, open '${p}'`);
+    }
+    return content;
+  };
+
+  const fsPromisesApi = {
+    readFile(p: string, _encoding?: string) {
+      loop.used = true;
+      return new VirtualPromise((resolve: (v?: unknown) => void, reject: (r?: unknown) => void) => {
+        try {
+          resolve(readRequiredVfsFile(p));
+        } catch (e) {
+          reject(e);
+        }
+      }, `fs.readFile(${formatShortVal(p)})`);
+    },
+    writeFile(p: string, data: unknown, _encoding?: string) {
+      loop.used = true;
+      return new VirtualPromise((resolve: (v?: unknown) => void, reject: (r?: unknown) => void) => {
+        try {
+          getVfsApi().writeFile(p, typeof data === 'string' ? data : String(data ?? ''));
+          resolve(undefined);
+        } catch (e) {
+          reject(e);
+        }
+      }, `fs.writeFile(${formatShortVal(p)})`);
+    },
+    appendFile(p: string, data: unknown, _encoding?: string) {
+      loop.used = true;
+      return new VirtualPromise((resolve: (v?: unknown) => void, reject: (r?: unknown) => void) => {
+        try {
+          getVfsApi().appendFile(p, typeof data === 'string' ? data : String(data ?? ''));
+          resolve(undefined);
+        } catch (e) {
+          reject(e);
+        }
+      }, `fs.appendFile(${formatShortVal(p)})`);
+    },
+    readdir(p?: string) {
+      loop.used = true;
+      return new VirtualPromise((resolve: (v?: unknown) => void, reject: (r?: unknown) => void) => {
+        try {
+          resolve(getVfsApi().readdir(p));
+        } catch (e) {
+          reject(e);
+        }
+      }, `fs.readdir(${formatShortVal(p || '.')})`);
+    },
+    mkdir(p: string, _options?: unknown) {
+      loop.used = true;
+      return new VirtualPromise((resolve: (v?: unknown) => void, reject: (r?: unknown) => void) => {
+        try {
+          getVfsApi().mkdir(p);
+          resolve(undefined);
+        } catch (e) {
+          reject(e);
+        }
+      }, `fs.mkdir(${formatShortVal(p)})`);
+    },
+    unlink(p: string) {
+      loop.used = true;
+      return new VirtualPromise((resolve: (v?: unknown) => void, reject: (r?: unknown) => void) => {
+        try {
+          getVfsApi().unlink(p);
+          resolve(undefined);
+        } catch (e) {
+          reject(e);
+        }
+      }, `fs.unlink(${formatShortVal(p)})`);
+    },
+    rm(p: string, _options?: unknown) {
+      loop.used = true;
+      return new VirtualPromise((resolve: (v?: unknown) => void, reject: (r?: unknown) => void) => {
+        try {
+          getVfsApi().unlink(p);
+          resolve(undefined);
+        } catch (e) {
+          reject(e);
+        }
+      }, `fs.rm(${formatShortVal(p)})`);
+    },
+    stat(p: string) {
+      loop.used = true;
+      return new VirtualPromise((resolve: (v?: unknown) => void, reject: (r?: unknown) => void) => {
+        try {
+          resolve(getVfsApi().stat(p));
+        } catch (e) {
+          reject(e);
+        }
+      }, `fs.stat(${formatShortVal(p)})`);
+    },
+    exists(p: string) {
+      loop.used = true;
+      return new VirtualPromise((resolve: (v?: unknown) => void, reject: (r?: unknown) => void) => {
+        try {
+          resolve(getVfsApi().exists(p));
+        } catch (e) {
+          reject(e);
+        }
+      }, `fs.exists(${formatShortVal(p)})`);
+    },
+    access(p: string, _mode?: number) {
+      loop.used = true;
+      return new VirtualPromise((resolve: (v?: unknown) => void, reject: (r?: unknown) => void) => {
+        try {
+          getVfsApi().stat(p);
+          resolve(undefined);
+        } catch (e) {
+          reject(e);
+        }
+      }, `fs.access(${formatShortVal(p)})`);
+    },
+    copyFile(srcPath: string, destPath: string) {
+      loop.used = true;
+      return new VirtualPromise((resolve: (v?: unknown) => void, reject: (r?: unknown) => void) => {
+        try {
+          const content = readRequiredVfsFile(srcPath);
+          getVfsApi().writeFile(destPath, content);
+          resolve(undefined);
+        } catch (e) {
+          reject(e);
+        }
+      }, `fs.copyFile(${formatShortVal(srcPath)})`);
+    },
+    rename(oldPath: string, newPath: string) {
+      loop.used = true;
+      return new VirtualPromise((resolve: (v?: unknown) => void, reject: (r?: unknown) => void) => {
+        try {
+          const content = readRequiredVfsFile(oldPath);
+          getVfsApi().writeFile(newPath, content);
+          getVfsApi().unlink(oldPath);
+          resolve(undefined);
+        } catch (e) {
+          reject(e);
+        }
+      }, `fs.rename(${formatShortVal(oldPath)})`);
+    },
+  };
+
+  const fsModuleEnv = {
+    promises: fsPromisesApi,
+    readFileSync(p: string, _encoding?: string) {
+      return readRequiredVfsFile(p);
+    },
+    writeFileSync(p: string, data: unknown, _encoding?: string) {
+      getVfsApi().writeFile(p, typeof data === 'string' ? data : String(data ?? ''));
+    },
+    appendFileSync(p: string, data: unknown, _encoding?: string) {
+      getVfsApi().appendFile(p, typeof data === 'string' ? data : String(data ?? ''));
+    },
+    existsSync(p: string) {
+      try {
+        return getVfsApi().exists(p);
+      } catch (_) {
+        return false;
+      }
+    },
+    readdirSync(p?: string) {
+      return getVfsApi().readdir(p);
+    },
+    mkdirSync(p: string, _options?: unknown) {
+      getVfsApi().mkdir(p);
+    },
+    unlinkSync(p: string) {
+      getVfsApi().unlink(p);
+    },
+    rmSync(p: string, _options?: unknown) {
+      getVfsApi().unlink(p);
+    },
+    statSync(p: string) {
+      return getVfsApi().stat(p);
+    },
+    copyFileSync(srcPath: string, destPath: string) {
+      const content = readRequiredVfsFile(srcPath);
+      getVfsApi().writeFile(destPath, content);
+    },
+    renameSync(oldPath: string, newPath: string) {
+      const content = readRequiredVfsFile(oldPath);
+      getVfsApi().writeFile(newPath, content);
+      getVfsApi().unlink(oldPath);
+    },
+  };
+
   const env = {
     Promise: VirtualPromise,
+    fs: fsModuleEnv,
     queueMicrotask(cb: (() => unknown) | null | undefined) {
       loop.used = true;
       const line = getCurLine() || 1;

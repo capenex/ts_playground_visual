@@ -1225,8 +1225,13 @@ export function loadSample(key: string) {
   if (LANG === 'python') { PY_ENGINE.loadSample(key); return; }
   const targetKey = SAMPLES[key] ? key : 'showcase';
   if ($('sampleSel')) $('sampleSel').value = targetKey;
-  editor.value = SAMPLES[targetKey] || '';
-  setFileName(targetKey + '.ts');
+  const src = SAMPLES[targetKey] || '';
+  if (typeof globalThis.openSampleScriptTab === 'function') {
+    globalThis.openSampleScriptTab(targetKey + '.ts', src, 'ts');
+  } else {
+    editor.value = src;
+    setFileName(targetKey + '.ts');
+  }
   lastEditorCursorLine = -1;
   clearLog('已加载样例 · 自动开启 Debug 调试模式（可按 ← / → 逐步当场计算，或点击左下「运行到下一个检查点」）');
   resetTraceState();
@@ -1281,8 +1286,13 @@ export function boot() {
   } catch {}
 
   if ($('sampleSel')) $('sampleSel').value = sampleKey;
-  editor.value = SAMPLES[sampleKey] || SAMPLES.showcase || '';
-  setFileName(sampleKey + '.ts');
+  const initialSrc = SAMPLES[sampleKey] || SAMPLES.showcase || '';
+  if (typeof globalThis.openSampleScriptTab === 'function') {
+    globalThis.openSampleScriptTab(sampleKey + '.ts', initialSrc, 'ts');
+  } else {
+    editor.value = initialSrc;
+    setFileName(sampleKey + '.ts');
+  }
   updateEditorChrome();
   const initialStep = customStep !== null ? customStep : (SAMPLE_DEFAULT_STEP[sampleKey] || 0);
   generateTrace(initialStep);

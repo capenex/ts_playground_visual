@@ -32,6 +32,15 @@ export function collectDeclaredNames(src: string | null | undefined): Set<string
     collectNames(js).forEach(n => names.add(n));
   } catch (_) { /* keep what we have */ }
   let m;
+  const impRe = /\/\*__import__\*\/\s*var\s+([^\n=]+)=/g;
+  while ((m = impRe.exec(js))) {
+    const lhs = m[1] || '';
+    const idRe = /\b([A-Za-z_$][\w$]*)\b/g;
+    let im: RegExpExecArray | null;
+    while ((im = idRe.exec(lhs))) {
+      if (im[1]) names.add(im[1]);
+    }
+  }
   const typeRe = /\b(?:function|class|interface|type|enum)\s+([A-Za-z_$][\w$]*)/g;
   const rawClean = blankStrings(text);
   while ((m = typeRe.exec(rawClean))) { if (m[1]) names.add(m[1]); }

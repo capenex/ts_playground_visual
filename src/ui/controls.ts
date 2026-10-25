@@ -506,7 +506,7 @@ if (fileNameEl) {
 }
 setFileName(FILE_NAME);
 
-/* ── export the buffer as a real .ts file, named by the editable file chip ── */
+/* ── export the buffer as a real file, named by the editable file chip ── */
 if ($('btnExportTs')) {
   $('btnExportTs').onclick = () => {
     try {
@@ -521,10 +521,19 @@ if ($('btnExportTs')) {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      say('✓ 已导出 TypeScript 文件 ' + name + '（' + editor.value.split('\n').length + ' 行）', 'ok');
+      say('✓ 已导出文件 ' + name + '（' + editor.value.split('\n').length + ' 行）', 'ok');
     } catch (e) {
       say('✗ 导出失败: ' + (e instanceof Error && e.message ? e.message : e), 'err');
     }
+  };
+}
+
+if ($('btnShareLink')) {
+  $('btnShareLink').onclick = () => {
+    if (exportMenuWrap && exportMenuWrap.classList) exportMenuWrap.classList.remove('open');
+    const tag = $('shareLinkTag');
+    if (tag) tag.textContent = '暂未实现';
+    say('暂未实现', 'dim');
   };
 }
 

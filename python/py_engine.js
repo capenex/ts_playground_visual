@@ -1017,10 +1017,10 @@ run_counter(1, 3)
     const exportBtn = document.getElementById('btnExportTs');
     if (exportBtn) {
       const span = exportBtn.querySelector('span');
-      if (span) span.textContent = isPy ? '📄 导出 Python 文件' : '📄 导出 TypeScript 文件';
+      if (span) span.textContent = '📄 导出文件';
     }
     const exportWrap = document.getElementById('btnExportMenu');
-    if (exportWrap) exportWrap.title = isPy ? '导出 Python 文件（视频导出暂未适配 Python 模式）' : '导出 TypeScript 文件或 1080p 60fps 演示视频';
+    if (exportWrap) exportWrap.title = isPy ? '导出文件（视频导出暂未适配 Python 模式）' : '导出文件或 1080p 60fps 演示视频';
     const videoBtn = document.getElementById('btnExportVideo');
     if (videoBtn) videoBtn.disabled = isPy;
     const editorEl = document.getElementById('editor');
@@ -1070,8 +1070,13 @@ run_counter(1, 3)
   function loadPySample(key) {
     const target = PY_SAMPLES[key] ? key : 'quickstart';
     activeSampleKey = target;
-    editor.value = PY_SAMPLES[target];
-    setFileName(target + '.py');
+    const src = PY_SAMPLES[target];
+    if (typeof globalThis.openSampleScriptTab === 'function') {
+      globalThis.openSampleScriptTab(target + '.py', src, 'python');
+    } else {
+      editor.value = src;
+      setFileName(target + '.py');
+    }
     lastEditorCursorLine = -1;
     const sel = document.getElementById('sampleSel');
     if (sel) sel.value = target;

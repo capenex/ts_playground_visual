@@ -474,6 +474,85 @@ declare function sleep<T = void>(ms?: number, value?: T): Promise<T>;
 declare function checkpoint(...args: any[]): void;
 declare function 断点(...args: any[]): void;
 
+interface FsStats {
+  size: number;
+  mtime: number;
+  isFile(): boolean;
+  isDirectory(): boolean;
+}
+
+interface FsPromisesApi {
+  readFile(path: string, encoding?: string): Promise<string>;
+  writeFile(path: string, data: string, encoding?: string): Promise<void>;
+  appendFile(path: string, data: string, encoding?: string): Promise<void>;
+  readdir(path?: string): Promise<string[]>;
+  mkdir(path: string, options?: { recursive?: boolean } | boolean): Promise<void>;
+  unlink(path: string): Promise<void>;
+  rm(path: string, options?: { recursive?: boolean; force?: boolean }): Promise<void>;
+  stat(path: string): Promise<FsStats>;
+  exists(path: string): Promise<boolean>;
+  access(path: string, mode?: number): Promise<void>;
+  copyFile(src: string, dest: string): Promise<void>;
+  rename(oldPath: string, newPath: string): Promise<void>;
+}
+
+declare module 'fs' {
+  export const promises: FsPromisesApi;
+  export function readFileSync(path: string, encoding?: string): string;
+  export function writeFileSync(path: string, data: string, encoding?: string): void;
+  export function appendFileSync(path: string, data: string, encoding?: string): void;
+  export function existsSync(path: string): boolean;
+  export function readdirSync(path?: string): string[];
+  export function mkdirSync(path: string, options?: { recursive?: boolean } | boolean): void;
+  export function unlinkSync(path: string): void;
+  export function rmSync(path: string, options?: { recursive?: boolean; force?: boolean }): void;
+  export function statSync(path: string): FsStats;
+  export function copyFileSync(src: string, dest: string): void;
+  export function renameSync(oldPath: string, newPath: string): void;
+  const fsDefault: {
+    promises: FsPromisesApi;
+    readFileSync: typeof readFileSync;
+    writeFileSync: typeof writeFileSync;
+    appendFileSync: typeof appendFileSync;
+    existsSync: typeof existsSync;
+    readdirSync: typeof readdirSync;
+    mkdirSync: typeof mkdirSync;
+    unlinkSync: typeof unlinkSync;
+    rmSync: typeof rmSync;
+    statSync: typeof statSync;
+    copyFileSync: typeof copyFileSync;
+    renameSync: typeof renameSync;
+  };
+  export default fsDefault;
+}
+
+declare module 'node:fs' {
+  export * from 'fs';
+  export { default } from 'fs';
+}
+
+declare module 'fs/promises' {
+  export const readFile: FsPromisesApi['readFile'];
+  export const writeFile: FsPromisesApi['writeFile'];
+  export const appendFile: FsPromisesApi['appendFile'];
+  export const readdir: FsPromisesApi['readdir'];
+  export const mkdir: FsPromisesApi['mkdir'];
+  export const unlink: FsPromisesApi['unlink'];
+  export const rm: FsPromisesApi['rm'];
+  export const stat: FsPromisesApi['stat'];
+  export const exists: FsPromisesApi['exists'];
+  export const access: FsPromisesApi['access'];
+  export const copyFile: FsPromisesApi['copyFile'];
+  export const rename: FsPromisesApi['rename'];
+  const fsPromisesDefault: FsPromisesApi;
+  export default fsPromisesDefault;
+}
+
+declare module 'node:fs/promises' {
+  export * from 'fs/promises';
+  export { default } from 'fs/promises';
+}
+
 // Algorithm Playground Predeclared Helpers (conditional if user hasn't declared them)
 `;
 

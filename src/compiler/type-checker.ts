@@ -2487,6 +2487,22 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
             if (method === 'indexOf' || method === 'charCodeAt') return 'number';
           }
 
+          if (objType === '__FsPromises__' || (objName.endsWith('.promises') && inferType(objName.slice(0, -9).trim(), lineNum) === '__FsModule__')) {
+            if (method === 'readFile') return 'Promise<string>';
+            if (method === 'writeFile' || method === 'appendFile' || method === 'mkdir' || method === 'unlink' || method === 'rm' || method === 'access' || method === 'copyFile' || method === 'rename') return 'Promise<void>';
+            if (method === 'readdir') return 'Promise<string[]>';
+            if (method === 'exists') return 'Promise<boolean>';
+            if (method === 'stat') return 'Promise<any>';
+          }
+
+          if (objType === '__FsModule__') {
+            if (method === 'readFileSync') return 'string';
+            if (method === 'writeFileSync' || method === 'appendFileSync' || method === 'mkdirSync' || method === 'unlinkSync' || method === 'rmSync' || method === 'copyFileSync' || method === 'renameSync') return 'void';
+            if (method === 'readdirSync') return 'string[]';
+            if (method === 'existsSync') return 'boolean';
+            if (method === 'statSync') return 'any';
+          }
+
           const classMethodSig = getClassMethodSig(objType, method);
           if (classMethodSig) {
             return instantiateAndCheckCall(classMethodSig, explicitTypeArgs, args, argTypes, `方法 "${objName}.${method}"`, lineNum);
@@ -3300,6 +3316,47 @@ export function typecheckTS(src: string, strict = STRICT_TS) {
 
     let trimmed = stripInlineCommentSafe(rawLine).trim();
     if (!trimmed || trimmed.startsWith('@')) continue;
+
+    // Handle `import ... from '...'`
+    if (/^import\b/.test(trimmed)) {
+      const impMatch = trimmed.replace(/;$/, '').trim().match(/^import\s+([\s\S]+?)\s+from\s+(['"])([^'"]+)\2\s*$/);
+      if (impMatch) {
+        const clause = (impMatch[1] || '').trim();
+        const modSpec = (impMatch[3] || '').trim();
+        const isFsRoot = modSpec === 'fs' || modSpec === 'node:fs';
+        const isFsPromises = modSpec === 'fs/promises' || modSpec === 'node:fs/promises';
+        const modType = isFsPromises ? '__FsPromises__' : (isFsRoot ? '__FsModule__' : 'any');
+        const registerNamedBindings = (braceStr: string) => {
+          const inner = braceStr.replace(/^\{|\}$/g, '').trim();
+          if (!inner) return;
+          inner.split(',').forEach(rawSpec => {
+            const spec = rawSpec.trim().replace(/^type\s+/, '');
+            if (!spec) return;
+            const asM = spec.match(/^([A-Za-z_$][\w$]*)\s+as\s+([A-Za-z_$][\w$]*)$/);
+            const imported = asM && asM[1] ? asM[1] : spec;
+            const local = asM && asM[2] ? asM[2] : spec;
+            if (!/^[A-Za-z_$][\w$]*$/.test(local)) return;
+            const bType = (isFsRoot && imported === 'promises') ? '__FsPromises__' : 'any';
+            env.set(local, { type: bType, isConst: true, line: lineNum, declaredType: bType });
+          });
+        };
+        const nsM = clause.match(/^\*\s+as\s+([A-Za-z_$][\w$]*)$/);
+        if (nsM && nsM[1]) {
+          env.set(nsM[1], { type: modType, isConst: true, line: lineNum, declaredType: modType });
+        } else if (clause.startsWith('{') && clause.endsWith('}')) {
+          registerNamedBindings(clause);
+        } else {
+          const defNamedM = clause.match(/^([A-Za-z_$][\w$]*)\s*,\s*(\{[\s\S]+\})$/);
+          if (defNamedM && defNamedM[1] && defNamedM[2]) {
+            env.set(defNamedM[1], { type: modType, isConst: true, line: lineNum, declaredType: modType });
+            registerNamedBindings(defNamedM[2]);
+          } else if (/^[A-Za-z_$][\w$]*$/.test(clause)) {
+            env.set(clause, { type: modType, isConst: true, line: lineNum, declaredType: modType });
+          }
+        }
+      }
+      continue;
+    }
 
     // Handle `declare const/let/var/function/class/namespace`
     if (/^declare\b/.test(trimmed)) {

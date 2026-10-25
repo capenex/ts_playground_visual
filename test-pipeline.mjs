@@ -728,8 +728,8 @@ check('Debug mode also uses the real trailing call as entry',
 // --- Feature F: import button, editable file name, TypeScript export
 check('import button, hidden file input and editable file name exist',
   html.includes('id="btnImport"') && html.includes('id="fileInput"') && html.includes('id="fileName"'));
-check('export menu offers a TypeScript file (single-file html download removed)',
-  /id="btnExportTs"[\s\S]{0,220}?导出 TypeScript 文件/.test(html) && !html.includes('下载单文件版') && !html.includes('btnDownloadHtml'));
+check('export menu offers a file download (single-file html download removed)',
+  /id="btnExportTs"[\s\S]{0,220}?导出文件/.test(html) && !html.includes('下载单文件版') && !html.includes('btnDownloadHtml'));
 
 setFileName('my algorithm.ts');
 check('a .ts name is kept as-is', exportFileName() === 'my algorithm.ts', exportFileName());
@@ -1831,6 +1831,238 @@ check('circular structure in return value runs and finishes debug without JSON c
       cmEntrySrc.includes('function computeCompletionsForDoc(') &&
       cmEntrySrc.includes('autocomplete: tsAndPyCompletionSource'),
   );
+
+  // 8. UI Header Cleanup, Separated Sample Tabs vs Workspace VFS, Path Sandboxing, `fs` Module Import, VFS Delete Confirmation & Export Menu
+  {
+    check(
+      'Figure 1 UI & Script Tab Bar: #checkerBadge is hidden while #scriptTabsList is shown on #sourcePaneTitle row in Notebook tab style',
+      !/<div[^>]*id="scriptTabsList"[^>]*\bhidden\b/.test(html) &&
+        /<span[^>]*id="checkerBadge"[^>]*\bhidden\b/.test(html) &&
+        /#codeCol\s+\.pane-title\s+\.checker-badge\s*\{\s*display\s*:\s*none\s*!important/.test(css) &&
+        sandbox.document.getElementById('scriptTabsList').innerHTML.includes('class="nb-tab'),
+    );
+    check(
+      'Default VFS sidebar is collapsed (hidden) and toggle buttons are not active on boot in both Script and Notebook modes',
+      /<aside class="vfs-sidebar" id="vfsSidebar"[^>]*\bhidden\b/.test(html) &&
+        !html.includes('class="btn vfs-toggle-btn active" id="btnToggleVfs"') &&
+        !html.includes('class="nb-tool-btn active" id="nbBtnToggleVfs"') &&
+        Boolean(sandbox.document.getElementById('vfsSidebar').hidden),
+    );
+    check(
+      'Notebook mode top bar: #nbBtnToggleVfs is placed inside .nb-top-bar directly above .nb-toolbar, leaving #nbKernelStatus at far right of .nb-toolbar',
+      /<div class="nb-top-bar">[\s\S]*?id="nbTabsList"[\s\S]*?id="nbBtnToggleVfs"[\s\S]*?<\/div>\s*<\/div>\s*<div class="nb-toolbar"/.test(html),
+    );
+    check(
+      'Figure 2 clean workspace VFS: starts as an empty directory with no data/, examples/, notebooks/, or workspace/ wrapper',
+      Boolean(sandbox.__VFS__) &&
+        Array.isArray(sandbox.__VFS__.listAll()) &&
+        sandbox.__VFS__.listAll().length === 0 &&
+        sandbox.document.getElementById('vfsTreeList').innerHTML.includes('空目录') &&
+        !sandbox.document.getElementById('vfsTreeList').innerHTML.includes('examples') &&
+        !sandbox.document.getElementById('vfsTreeList').innerHTML.includes('notebooks') &&
+        !sandbox.document.getElementById('vfsTreeList').innerHTML.includes('workspace'),
+      JSON.stringify(sandbox.__VFS__ && sandbox.__VFS__.listAll()),
+    );
+
+    // Verify separation between VFS files and built-in sample files
+    const vfsNewFileBtn = sandbox.document.getElementById('vfsBtnNewFile');
+    if (vfsNewFileBtn && typeof vfsNewFileBtn.onclick === 'function') {
+      vfsNewFileBtn.onclick();
+    }
+    check(
+      'Creating a VFS file adds file_1.ts to workspace VFS and opens it in #scriptTabsList',
+      sandbox.__VFS__.exists('file_1.ts') &&
+        sandbox.document.getElementById('scriptTabsList').innerHTML.includes('file_1.ts'),
+    );
+
+    // Now open a built-in sample file ('mergesort') while file_1.ts is in VFS
+    sandbox.loadSample('mergesort');
+    const tabsHtmlAfterSample = sandbox.document.getElementById('scriptTabsList').innerHTML;
+    const vfsFilesAfterSample = sandbox.__VFS__.listAll();
+    check(
+      'Opening built-in sample mergesort.ts displays it in #scriptTabsList alongside file_1.ts without loading mergesort.ts into workspace VFS or overwriting file_1.ts',
+      tabsHtmlAfterSample.includes('file_1.ts') &&
+        tabsHtmlAfterSample.includes('mergesort.ts') &&
+        vfsFilesAfterSample.includes('file_1.ts') &&
+        !vfsFilesAfterSample.includes('mergesort.ts') &&
+        !vfsFilesAfterSample.includes('showcase.ts'),
+      JSON.stringify({ vfsFilesAfterSample, tabsHtmlAfterSample }),
+    );
+
+    // Verify VFS ❌ delete button on the right and inline confirmation prompt below the row
+    const treeHtmlWithFile = sandbox.document.getElementById('vfsTreeList').innerHTML;
+    check(
+      'VFS file row renders red ❌ delete button (.vfs-del-btn) without .vfs-row-btn rounded-rect class',
+      treeHtmlWithFile.includes('class="vfs-del-btn"') &&
+        treeHtmlWithFile.includes('data-vfs-del="file_1.ts"') &&
+        treeHtmlWithFile.includes('❌') &&
+        !treeHtmlWithFile.includes('class="vfs-row-btn danger"'),
+      treeHtmlWithFile,
+    );
+
+    // Simulate clicking ❌ on file_1.ts -> should show inline confirmation prompt below row without deleting immediately
+    const vfsTreeEl = sandbox.document.getElementById('vfsTreeList');
+    if (vfsTreeEl && typeof vfsTreeEl.fire === 'function') {
+      const fakeDelTarget = {
+        closest(sel) {
+          if (sel === '[data-vfs-del]') {
+            return { getAttribute: (attr) => (attr === 'data-vfs-del' ? 'file_1.ts' : null) };
+          }
+          return null;
+        },
+      };
+      vfsTreeEl.fire('click', { target: fakeDelTarget, stopPropagation() {} });
+    }
+    const treeHtmlAfterDelClick = sandbox.document.getElementById('vfsTreeList').innerHTML;
+    check(
+      'Clicking ❌ on file_1.ts does not delete immediately and renders .vfs-del-confirm prompt below the row',
+      sandbox.__VFS__.exists('file_1.ts') &&
+        treeHtmlAfterDelClick.includes('class="vfs-del-confirm"') &&
+        treeHtmlAfterDelClick.includes('确认删除 file_1.ts？') &&
+        treeHtmlAfterDelClick.includes('data-vfs-confirm-del="file_1.ts"') &&
+        treeHtmlAfterDelClick.includes('data-vfs-cancel-del="file_1.ts"'),
+      treeHtmlAfterDelClick,
+    );
+
+    // Simulate clicking confirm delete -> removes file_1.ts from workspace VFS
+    if (vfsTreeEl && typeof vfsTreeEl.fire === 'function') {
+      const fakeConfirmTarget = {
+        closest(sel) {
+          if (sel === '[data-vfs-confirm-del]') {
+            return { getAttribute: (attr) => (attr === 'data-vfs-confirm-del' ? 'file_1.ts' : null) };
+          }
+          return null;
+        },
+      };
+      vfsTreeEl.fire('click', { target: fakeConfirmTarget, stopPropagation() {} });
+    }
+    check(
+      'Clicking 确认 in .vfs-del-confirm deletes file_1.ts from workspace VFS',
+      !sandbox.__VFS__.exists('file_1.ts') && sandbox.__VFS__.listAll().length === 0,
+    );
+
+    // Verify Export menu label ('📄 导出文件' without 'TypeScript') and Share Link ('暂未实现')
+    check(
+      'Export button #btnExportTs displays "📄 导出文件" without "TypeScript"',
+      html.includes('<span>📄 导出文件</span>') && !html.includes('导出 TypeScript 文件'),
+    );
+    const shareBtn = sandbox.document.getElementById('btnShareLink');
+    const shareMark = logChildren().length;
+    if (shareBtn && typeof shareBtn.onclick === 'function') {
+      shareBtn.onclick();
+    }
+    const shareLog = readLogSince(shareMark);
+    check(
+      'Clicking #btnShareLink ("复制分享链接") displays "暂未实现"',
+      sandbox.document.getElementById('shareLinkTag').textContent === '暂未实现' &&
+        shareLog.includes('暂未实现'),
+      shareLog,
+    );
+
+    // Verify strict workspace path sandboxing and isolation of sample files
+    const forbiddenPaths = [
+      '../outside.txt',
+      '../../etc/passwd',
+      '/etc/passwd',
+      'C:\\Windows\\win.ini',
+      '~/secret.txt',
+      'examples/ts/showcase.ts',
+      '../examples/ts/mergesort.ts',
+    ];
+    for (const badPath of forbiddenPaths) {
+      let threwEacces = false;
+      try {
+        sandbox.__VFS__.readFile(badPath);
+      } catch (err) {
+        threwEacces = /EACCES/.test(String(err && err.message ? err.message : err));
+      }
+      check(`Workspace sandbox blocks readFile("${badPath}") with EACCES`, threwEacces);
+
+      let threwWriteEacces = false;
+      try {
+        sandbox.__VFS__.writeFile(badPath, 'hack');
+      } catch (err) {
+        threwWriteEacces = /EACCES/.test(String(err && err.message ? err.message : err));
+      }
+      check(`Workspace sandbox blocks writeFile("${badPath}") with EACCES`, threwWriteEacces);
+    }
+
+    // Verify code running in a sample file cannot read other built-in sample files (since they are not in workspace VFS)
+    check(
+      'Built-in sample files cannot be read from workspace VFS (readFile returns null / ENOENT)',
+      sandbox.__VFS__.readFile('showcase.ts') === null &&
+        sandbox.__VFS__.readFile('mergesort.ts') === null,
+    );
+
+    // Figure 3 exact program: `import { promises as fs } from 'fs';`
+    const fig3Program = [
+      "import { promises as fs } from 'fs';",
+      '',
+      'async function fileOperations() {',
+      "  const filePath = 'data.json';",
+      '',
+      '  try {',
+      '    // 1. 异步写入文件',
+      '    await fs.writeFile(filePath, \'{"name": "Alice", "age": 25}\', \'utf-8\');',
+      "    console.log('写入成功');",
+      '',
+      '    // 2. 异步读取文件',
+      "    const content = await fs.readFile(filePath, 'utf-8');",
+      "    console.log('读取内容:', content);",
+      '',
+      '    // 3. 顺便解析 JSON',
+      '    const data = JSON.parse(content);',
+      '    console.log(data.name); // Alice',
+      '',
+      '  } catch (err) {',
+      "    console.error('文件操作失败:', err);",
+      '  }',
+      '}',
+      '',
+      'fileOperations();',
+    ].join('\n');
+
+    const fig3Diags = typecheckTS(fig3Program, true);
+    check(
+      'Figure 3 program passes static typecheckTS with 0 errors',
+      fig3Diags.length === 0,
+      JSON.stringify(fig3Diags),
+    );
+
+    setEditorVal(fig3Program);
+    const fig3RunMark = logChildren().length;
+    runOnce(800);
+    const fig3RunLog = readLogSince(fig3RunMark);
+    check(
+      'Figure 3 program runs in ▶ 运行 mode, writes data.json to workspace VFS, and logs 写入成功, 读取内容, Alice',
+      fig3RunLog.includes('写入成功') &&
+        fig3RunLog.includes('读取内容: {"name": "Alice", "age": 25}') &&
+        fig3RunLog.includes('Alice') &&
+        sandbox.__VFS__.exists('data.json') &&
+        sandbox.__VFS__.readFile('data.json') === '{"name": "Alice", "age": 25}',
+      fig3RunLog,
+    );
+
+    // Also test Figure 3 program in 🐞 Debug step-by-step mode
+    sandbox.__VFS__.unlink('data.json');
+    const fig3DbgMark = logChildren().length;
+    const fig3DbgOk = startDebug(0);
+    while (getDebugState().DEBUG_SESSION.active && !getDebugState().DEBUG_SESSION.finished) {
+      stepNext();
+    }
+    const fig3DbgLog = readLogSince(fig3DbgMark);
+    check(
+      'Figure 3 program steps through 🐞 Debug mode without catch(err) swallowing pause signals and writes data.json',
+      fig3DbgOk &&
+        !getDebugState().DEBUG_SESSION.crashed &&
+        fig3DbgLog.includes('写入成功') &&
+        fig3DbgLog.includes('读取内容: {"name": "Alice", "age": 25}') &&
+        fig3DbgLog.includes('Alice') &&
+        sandbox.__VFS__.exists('data.json'),
+      fig3DbgLog,
+    );
+    sandbox.__VFS__.unlink('data.json');
+  }
 
   // =========================================================================
   // Strict TypeScript Codebase Gate (Enforced on Every Update per REFACTOR_PLAN.md)
