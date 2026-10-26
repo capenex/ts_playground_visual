@@ -2065,6 +2065,153 @@ check('circular structure in return value runs and finishes debug without JSON c
   }
 
   // =========================================================================
+  // Storage Version Guard ("本地存储版本守卫" R1-R8 & Acceptance Tests T1-T4)
+  // =========================================================================
+  {
+    const guardPath = new URL('./storage-guard.js', ROOT);
+    check('Storage Guard R8: storage-guard.js exists in project root', fs.existsSync(guardPath));
+    const guardSrc = fs.readFileSync(guardPath, 'utf8');
+    const indexHtmlSrc = fs.readFileSync(new URL('./index.html', ROOT), 'utf8');
+
+    // R1: Loaded in <head> before any business script
+    const headEndIdx = indexHtmlSrc.indexOf('</head>');
+    const guardScriptIdx = indexHtmlSrc.indexOf('<script src="storage-guard.js');
+    const firstBodyScriptIdx = indexHtmlSrc.indexOf('editor/cm.bundle.js');
+    check(
+      'Storage Guard R1: <script src="storage-guard.js"> is placed inside <head> before all business scripts',
+      guardScriptIdx > 0 && guardScriptIdx < headEndIdx && guardScriptIdx < firstBodyScriptIdx,
+    );
+
+    // R2 & R3: Version key & selective deletion without localStorage.clear()
+    check(
+      'Storage Guard R2 & R3: defines STORAGE_VERSION_KEY = "ts-playground-storage-version", CURRENT_STORAGE_VERSION, and never calls localStorage.clear()',
+      guardSrc.includes("var STORAGE_VERSION_KEY = 'ts-playground-storage-version';") &&
+        /var CURRENT_STORAGE_VERSION = '\d{8}-\d+';/.test(guardSrc) &&
+        !guardSrc.includes('localStorage.clear('),
+    );
+
+    const verMatch = guardSrc.match(/var CURRENT_STORAGE_VERSION = '([^']+)';/);
+    const expectedVer = verMatch ? verMatch[1] : '';
+
+    // Helper to create an isolated mock localStorage + window for T1-T4
+    function createMockStorageEnv(initialEntries = {}, throwOnAccess = false) {
+      const store = new Map(Object.entries(initialEntries));
+      let clearCalled = false;
+      const deletedDbNames = [];
+      const mockLocalStorage = {
+        get length() {
+          if (throwOnAccess) throw new Error('SecurityError: storage disabled');
+          return store.size;
+        },
+        key(idx) {
+          if (throwOnAccess) throw new Error('SecurityError: storage disabled');
+          return Array.from(store.keys())[idx] ?? null;
+        },
+        getItem(k) {
+          if (throwOnAccess) throw new Error('SecurityError: storage disabled');
+          return store.has(k) ? store.get(k) : null;
+        },
+        setItem(k, v) {
+          if (throwOnAccess) throw new Error('SecurityError: storage disabled');
+          store.set(String(k), String(v));
+        },
+        removeItem(k) {
+          if (throwOnAccess) throw new Error('SecurityError: storage disabled');
+          store.delete(String(k));
+        },
+        clear() {
+          clearCalled = true;
+          store.clear();
+        },
+      };
+      const mockIndexedDB = {
+        databases: () =>
+          Promise.resolve([
+            { name: 'ts-playground-cache' },
+            { name: 'ts-visual-db' },
+            { name: 'playground' },
+            { name: 'other-site-db' },
+          ]),
+        deleteDatabase: (name) => {
+          deletedDbNames.push(name);
+        },
+      };
+      const ctx = vm.createContext({
+        window: {
+          localStorage: mockLocalStorage,
+          indexedDB: mockIndexedDB,
+        },
+        localStorage: mockLocalStorage,
+        indexedDB: mockIndexedDB,
+      });
+      vm.runInContext(guardSrc, ctx);
+      return { store, clearCalled: () => clearCalled, deletedDbNames, ctx };
+    }
+
+    // T1: Old data cleared when version is missing or outdated
+    const t1Env = createMockStorageEnv({
+      'ts-playground-vfs-v1': '{"files":{"old.ts":{"type":"file","content":"old"}}}',
+      'ts-playground-custom-key': 'legacy',
+      'ts-visual-theme': 'light',
+      'ts-visual-extra': '123',
+      'ts-playground-storage-version': '19990101-1',
+    });
+    check(
+      'Storage Guard T1 (旧数据被清): outdated version triggers removal of ts-playground-* and ts-visual-* keys and writes new version',
+      !t1Env.store.has('ts-playground-vfs-v1') &&
+        !t1Env.store.has('ts-playground-custom-key') &&
+        !t1Env.store.has('ts-visual-theme') &&
+        !t1Env.store.has('ts-visual-extra') &&
+        t1Env.store.get('ts-playground-storage-version') === expectedVer &&
+        !t1Env.clearCalled(),
+      JSON.stringify(Array.from(t1Env.store.entries())),
+    );
+
+    // T2: Idempotent when version matches (user data preserved across normal reloads)
+    const t2Env = createMockStorageEnv({
+      'ts-playground-storage-version': expectedVer,
+      'ts-playground-vfs-v1': '{"files":{"hello.ts":{"type":"file","content":"console.log(1)"}}}',
+      'ts-visual-theme': 'light',
+    });
+    check(
+      'Storage Guard T2 (幂等不误清): matching version preserves ts-playground-vfs-v1 and ts-visual-theme without clearing',
+      t2Env.store.get('ts-playground-vfs-v1') ===
+        '{"files":{"hello.ts":{"type":"file","content":"console.log(1)"}}}' &&
+        t2Env.store.get('ts-visual-theme') === 'light' &&
+        t2Env.store.get('ts-playground-storage-version') === expectedVer,
+    );
+
+    // T3: Unrelated same-origin keys are never touched
+    const t3Env = createMockStorageEnv({
+      'foo': 'bar',
+      'home-theme': 'sepia',
+      'notes-draft': 'keep-me',
+      'ts-playground-vfs-v1': 'stale-vfs',
+    });
+    check(
+      'Storage Guard T3 (不伤无辜): unrelated same-origin keys ("foo", "home-theme", "notes-draft") remain intact while stale playground keys are removed',
+      t3Env.store.get('foo') === 'bar' &&
+        t3Env.store.get('home-theme') === 'sepia' &&
+        t3Env.store.get('notes-draft') === 'keep-me' &&
+        !t3Env.store.has('ts-playground-vfs-v1') &&
+        t3Env.store.get('ts-playground-storage-version') === expectedVer &&
+        !t3Env.clearCalled(),
+    );
+
+    // T4: Graceful silent degradation when localStorage throws (e.g. private browsing / disabled storage)
+    let t4Threw = false;
+    try {
+      createMockStorageEnv({}, true);
+    } catch (_) {
+      t4Threw = true;
+    }
+    check(
+      'Storage Guard T4 (异常环境兜底): throwing localStorage is caught silently without uncaught exceptions',
+      !t4Threw,
+    );
+  }
+
+  // =========================================================================
   // Strict TypeScript Codebase Gate (Enforced on Every Update per REFACTOR_PLAN.md)
   // =========================================================================
   function collectTsSourceFiles(dirUrl) {

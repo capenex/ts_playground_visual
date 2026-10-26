@@ -16,21 +16,34 @@ import {
   renderPicker,
   renderStatic,
 } from "../viz/memory-graph";
-import { hl, hlActiveLine, collectDeclaredNames, updateEditorChrome } from "../viz/highlight";
+import { hl, hlActiveLine, collectDeclaredNames } from "../viz/highlight";
 import { buildStepVizRow, clearFlyLayer } from "../viz/ast-view";
-import { stopAuto, setFileName } from "./controls";
-import { SAMPLES } from "../samples/ts-samples";
-import { loadSample } from "./share";
+import { stopAuto } from "./controls";
+import {
+  bindGlobalVfsApi,
+  ensureVfsInitialized,
+  initVfsSidebarEvents,
+  renderVfsTreeUI,
+  VFS_NODES,
+} from "./vfs";
+import {
+  initScriptTabsAndImportEvents,
+  renderImportSampleMenu,
+  renderScriptTabsUI,
+} from "./script-tabs";
+
+export * from "./vfs";
+export * from "./script-tabs";
 
 let nbClipboardCell: NotebookCell | null = null;
 let nbCellSeq = 100;
 let nbDocSeq = 10;
 
-function nextCellId(): string {
+export function nextCellId(): string {
   return "cell_" + (++nbCellSeq) + "_" + Math.random().toString(36).slice(2, 6);
 }
 
-function nextDocId(): string {
+export function nextDocId(): string {
   return "nb_" + (++nbDocSeq);
 }
 
@@ -199,7 +212,7 @@ const notebooksByLang: Record<"ts" | "python", { docs: NotebookDocument[]; activ
   python: { docs: [], activeDocId: "nb_intro" },
 };
 
-function ensureLangNotebooks(lang: "ts" | "python") {
+export function ensureLangNotebooks(lang: "ts" | "python") {
   const key = lang === "python" ? "python" : "ts";
   if (!notebooksByLang[key].docs.length) {
     const docs = createDefaultNotebooks(key);
@@ -431,120 +444,84 @@ export function syncNotebookGlobalsToSidePanel(doc = getActiveNotebook()) {
   }
 }
 
-/* ── Execute a Single Notebook Cell (▶ Run Cell) ── */
-export async function runNotebookCell(cellId?: string, advanceToNext = false): Promise<boolean> {
-  const doc = getActiveNotebook();
-  const cell = cellId ? doc.cells.find((c) => c.id === cellId) : getActiveCell(doc);
-  if (!cell) return false;
-
-  doc.activeCellId = cell.id;
-  ACTIVE_NB_CELL_ID = cell.id;
-
-  if (doc.debuggingCellId) {
-    doc.debuggingCellId = null;
-    stopAuto();
-    clearFlyLayer();
-  }
-
-  if (cell.type === "markdown") {
-    cell.markdownRendered = true;
-    cell.status = "idle";
-    if (advanceToNext) moveFocusToNextCell(doc, cell.id, true);
-    renderNotebookUI();
-    return true;
-  }
-
-  const rawSrc = cell.source.replace(/\r\n?/g, "\n");
-  if (!rawSrc.trim()) {
-    cell.executionCount = null;
-    cell.status = "idle";
-    cell.output = null;
-    if (advanceToNext) moveFocusToNextCell(doc, cell.id, true);
-    renderNotebookUI();
-    return true;
-  }
-
-  cell.status = "running";
-  renderNotebookUI();
-
-  if (LANG === "python") {
-    try {
-      const payload = await PY_ENGINE.run(rawSrc, {
-        trace: false,
-        useNotebookKernel: true,
-        timeLimit: 6,
-      });
-      if (payload.syntaxError) {
-        const err = payload.syntaxError;
-        const msg = `SyntaxError (第 ${err.line || 1} 行): ${err.msg || "语法错误"}`;
-        cell.status = "error";
-        cell.output = { logs: [], returnValue: null, error: msg, errorLine: err.line || 1 };
-        say(`✗ [${doc.title}] ${msg}`, "err");
-        renderNotebookUI();
-        return false;
-      }
-      doc.execCounter += 1;
-      cell.executionCount = doc.execCounter;
-      const logs = payload.stdout ? String(payload.stdout).replace(/\n$/, "").split("\n") : [];
-      const rvHydrated = PY_ENGINE.hydrate(payload.returnValue);
-      const hasReturn = rvHydrated !== undefined && rvHydrated !== null && payload.entryExpr;
-      const rvStr = hasReturn ? PY_ENGINE.fmtReturn(rvHydrated) : null;
-
-      if (payload.meta) {
-        PY_ENGINE.applyMeta(payload.meta);
-      }
-
-      const vRaw = PY_ENGINE.hydrateVars(payload.finalVars || {});
-      const v = PY_ENGINE.cloneVars(vRaw);
-      const ds: Record<string, StepAnim> = {};
-      Object.keys(vRaw).forEach((name) => {
-        const d = classifyValue(name, vRaw[name]);
-        if (d) ds[name] = d;
-      });
-      populateInterfaceSchemas(ds);
-      doc.lastGlobalVars = v;
-      doc.lastGlobalDs = ds;
-
-      if (payload.error) {
-        cell.status = "error";
-        cell.output = {
-          logs,
-          returnValue: null,
-          error: payload.error,
-          errorLine: payload.errorLine || 1,
-        };
-        say(`✗ [Cell ${cell.executionCount}] 第 ${payload.errorLine || 1} 行报错: ${payload.error}`, "err");
-      } else {
-        cell.status = "success";
-        cell.output = {
-          logs,
-          returnValue: rvStr,
-          error: null,
-        };
-        doc.executedHistory = doc.executedHistory.filter((h) => h.cellId !== cell.id);
-        doc.executedHistory.push({ cellId: cell.id, execCount: cell.executionCount, source: rawSrc });
-        say(
-          `✓ [Cell ${cell.executionCount}] 执行完成` +
-            (logs.length ? ` · 输出: ${logs.join(" | ")}` : "") +
-            (rvStr ? `  →  ${rvStr}` : ""),
-          "ok"
-        );
-      }
-      syncNotebookGlobalsToSidePanel(doc);
-      if (advanceToNext && !payload.error) {
-        moveFocusToNextCell(doc, cell.id, true);
-      }
-      renderNotebookUI();
-      return !payload.error;
-    } catch (err: unknown) {
+async function runPythonNotebookCell(doc: NotebookDocument, cell: NotebookCell, rawSrc: string, advanceToNext: boolean): Promise<boolean> {
+  try {
+    const payload = await PY_ENGINE.run(rawSrc, {
+      trace: false,
+      useNotebookKernel: true,
+      timeLimit: 6,
+    });
+    if (payload.syntaxError) {
+      const err = payload.syntaxError;
+      const msg = `SyntaxError (第 ${err.line || 1} 行): ${err.msg || "语法错误"}`;
       cell.status = "error";
-      cell.output = { logs: [], returnValue: null, error: (err instanceof Error && err.message) || String(err) };
+      cell.output = { logs: [], returnValue: null, error: msg, errorLine: err.line || 1 };
+      say(`✗ [${doc.title}] ${msg}`, "err");
       renderNotebookUI();
       return false;
     }
-  }
+    doc.execCounter += 1;
+    cell.executionCount = doc.execCounter;
+    const logs = payload.stdout ? String(payload.stdout).replace(/\n$/, "").split("\n") : [];
+    const rvHydrated = PY_ENGINE.hydrate(payload.returnValue);
+    const hasReturn = rvHydrated !== undefined && rvHydrated !== null && payload.entryExpr;
+    const rvStr = hasReturn ? PY_ENGINE.fmtReturn(rvHydrated) : null;
 
-  // TypeScript Mode Execution with Cumulative Session Context & Strict Type Checking
+    if (payload.meta) {
+      PY_ENGINE.applyMeta(payload.meta);
+    }
+
+    const vRaw = PY_ENGINE.hydrateVars(payload.finalVars || {});
+    const v = PY_ENGINE.cloneVars(vRaw);
+    const ds: Record<string, StepAnim> = {};
+    Object.keys(vRaw).forEach((name) => {
+      const d = classifyValue(name, vRaw[name]);
+      if (d) ds[name] = d;
+    });
+    populateInterfaceSchemas(ds);
+    doc.lastGlobalVars = v;
+    doc.lastGlobalDs = ds;
+
+    if (payload.error) {
+      cell.status = "error";
+      cell.output = {
+        logs,
+        returnValue: null,
+        error: payload.error,
+        errorLine: payload.errorLine || 1,
+      };
+      say(`✗ [Cell ${cell.executionCount}] 第 ${payload.errorLine || 1} 行报错: ${payload.error}`, "err");
+    } else {
+      cell.status = "success";
+      cell.output = {
+        logs,
+        returnValue: rvStr,
+        error: null,
+      };
+      doc.executedHistory = doc.executedHistory.filter((h) => h.cellId !== cell.id);
+      doc.executedHistory.push({ cellId: cell.id, execCount: cell.executionCount, source: rawSrc });
+      say(
+        `✓ [Cell ${cell.executionCount}] 执行完成` +
+          (logs.length ? ` · 输出: ${logs.join(" | ")}` : "") +
+          (rvStr ? `  →  ${rvStr}` : ""),
+        "ok"
+      );
+    }
+    syncNotebookGlobalsToSidePanel(doc);
+    if (advanceToNext && !payload.error) {
+      moveFocusToNextCell(doc, cell.id, true);
+    }
+    renderNotebookUI();
+    return !payload.error;
+  } catch (err: unknown) {
+    cell.status = "error";
+    cell.output = { logs: [], returnValue: null, error: (err instanceof Error && err.message) || String(err) };
+    renderNotebookUI();
+    return false;
+  }
+}
+
+function runTsNotebookCell(doc: NotebookDocument, cell: NotebookCell, rawSrc: string, advanceToNext: boolean): boolean {
   const t0 = Date.now();
   const { combinedTs } = buildTsTypecheckContext(doc, cell);
   const cellDiags = typecheckNotebookCellTS(doc, cell);
@@ -703,113 +680,137 @@ export async function runNotebookCell(cellId?: string, advanceToNext = false): P
   }
 }
 
-/* ── Step-by-Step Debug a Single Notebook Cell (🐞 Debug Cell) ── */
-export async function debugNotebookCell(cellId?: string): Promise<boolean> {
+/* ── Execute a Single Notebook Cell (▶ Run Cell) ── */
+export async function runNotebookCell(cellId?: string, advanceToNext = false): Promise<boolean> {
   const doc = getActiveNotebook();
   const cell = cellId ? doc.cells.find((c) => c.id === cellId) : getActiveCell(doc);
-  if (!cell || cell.type !== "code") return false;
+  if (!cell) return false;
 
   doc.activeCellId = cell.id;
   ACTIVE_NB_CELL_ID = cell.id;
 
-  const rawSrc = cell.source.replace(/\r\n?/g, "\n");
-  if (!rawSrc.trim()) {
-    say("⚠ 当前单元格为空，请先输入代码后再启动单步调试", "dim");
-    return false;
+  if (doc.debuggingCellId) {
+    doc.debuggingCellId = null;
+    stopAuto();
+    clearFlyLayer();
   }
 
-  stopAuto();
-  clearFlyLayer();
+  if (cell.type === "markdown") {
+    cell.markdownRendered = true;
+    cell.status = "idle";
+    if (advanceToNext) moveFocusToNextCell(doc, cell.id, true);
+    renderNotebookUI();
+    return true;
+  }
+
+  const rawSrc = cell.source.replace(/\r\n?/g, "\n");
+  if (!rawSrc.trim()) {
+    cell.executionCount = null;
+    cell.status = "idle";
+    cell.output = null;
+    if (advanceToNext) moveFocusToNextCell(doc, cell.id, true);
+    renderNotebookUI();
+    return true;
+  }
+
+  cell.status = "running";
+  renderNotebookUI();
 
   if (LANG === "python") {
-    cell.status = "debugging";
-    doc.debuggingCellId = cell.id;
-    renderNotebookUI();
-    try {
-      say(`… 正在录制单元格 [${cell.executionCount || " "}] 的 Python 单步轨迹…`, "dim");
-      const payload = await PY_ENGINE.run(rawSrc, {
-        trace: true,
-        useNotebookKernel: true,
-        maxSteps: 2000,
-        timeLimit: 6,
-      });
-      if (payload.syntaxError) {
-        const err = payload.syntaxError;
-        cell.status = "error";
-        doc.debuggingCellId = null;
-        cell.output = {
-          logs: [],
-          returnValue: null,
-          error: `SyntaxError (第 ${err.line || 1} 行): ${err.msg || "语法错误"}`,
-          errorLine: err.line || 1,
-        };
-        renderNotebookUI();
-        return false;
-      }
-      doc.execCounter += 1;
-      cell.executionCount = doc.execCounter;
-      const sourceLines = rawSrc.split("\n");
-      PY_ENGINE.applyMeta(payload.meta || {});
-      payload.__returnValueHydrated = PY_ENGINE.hydrate(payload.returnValue);
-      payload.__callExpr = payload.entryExpr || "";
-      const steps = PY_ENGINE.buildSteps(payload, sourceLines);
+    return runPythonNotebookCell(doc, cell, rawSrc, advanceToNext);
+  }
+  return runTsNotebookCell(doc, cell, rawSrc, advanceToNext);
+}
 
-      resetTraceState();
-      TRACE = { title: `${doc.title} · Cell [${cell.executionCount}]`, code: sourceLines, steps };
-      DEBUG_SESSION = {
-        active: true,
-        finished: true,
-        crashed: Boolean(payload.error),
-        error: payload.error || null,
-        errorLine: payload.errorLine || -1,
-        returnValue: payload.__returnValueHydrated,
-        compiledFn: null,
-        originalLines: sourceLines,
-        callExpr: payload.entryExpr || "undefined",
-      };
-
-      const vRaw = PY_ENGINE.hydrateVars(payload.finalVars || {});
-      const v = PY_ENGINE.cloneVars(vRaw);
-      const ds: Record<string, StepAnim> = {};
-      Object.keys(vRaw).forEach((name) => {
-        const d = classifyValue(name, vRaw[name]);
-        if (d) ds[name] = d;
-      });
-      populateInterfaceSchemas(ds);
-      doc.lastGlobalVars = v;
-      doc.lastGlobalDs = ds;
-
-      const logs = payload.stdout ? String(payload.stdout).replace(/\n$/, "").split("\n") : [];
-      cell.output = {
-        logs,
-        returnValue:
-          payload.__returnValueHydrated !== undefined && payload.__returnValueHydrated !== null && payload.entryExpr
-            ? PY_ENGINE.fmtReturn(payload.__returnValueHydrated)
-            : null,
-        error: payload.error || null,
-        errorLine: payload.errorLine || null,
-      };
-
-      cur = 0;
-      SELECTED_FRAME_IDX = null;
-      watched = new Set();
-      SEEN_VARS_EVER = new Set();
-      layoutSpan = Object.create(null);
-      initWatchedVars();
-      renderPicker();
-      renderStatic(cur, false);
-      renderNotebookUI();
-      say(`✓ [Cell ${cell.executionCount}] 已进入单步调试模式（共 ${steps.length} 步，可使用底部控制栏逐步观察）`, "ok");
-      return true;
-    } catch (_err: unknown) {
+async function debugPythonNotebookCell(doc: NotebookDocument, cell: NotebookCell, rawSrc: string): Promise<boolean> {
+  cell.status = "debugging";
+  doc.debuggingCellId = cell.id;
+  renderNotebookUI();
+  try {
+    say(`… 正在录制单元格 [${cell.executionCount || " "}] 的 Python 单步轨迹…`, "dim");
+    const payload = await PY_ENGINE.run(rawSrc, {
+      trace: true,
+      useNotebookKernel: true,
+      maxSteps: 2000,
+      timeLimit: 6,
+    });
+    if (payload.syntaxError) {
+      const err = payload.syntaxError;
       cell.status = "error";
       doc.debuggingCellId = null;
+      cell.output = {
+        logs: [],
+        returnValue: null,
+        error: `SyntaxError (第 ${err.line || 1} 行): ${err.msg || "语法错误"}`,
+        errorLine: err.line || 1,
+      };
       renderNotebookUI();
       return false;
     }
-  }
+    doc.execCounter += 1;
+    cell.executionCount = doc.execCounter;
+    const sourceLines = rawSrc.split("\n");
+    PY_ENGINE.applyMeta(payload.meta || {});
+    payload.__returnValueHydrated = PY_ENGINE.hydrate(payload.returnValue);
+    payload.__callExpr = payload.entryExpr || "";
+    const steps = PY_ENGINE.buildSteps(payload, sourceLines);
 
-  // TypeScript Single-Cell Step-by-Step Debugger (with cumulative preamble & strict typecheck)
+    resetTraceState();
+    TRACE = { title: `${doc.title} · Cell [${cell.executionCount}]`, code: sourceLines, steps };
+    DEBUG_SESSION = {
+      active: true,
+      finished: true,
+      crashed: Boolean(payload.error),
+      error: payload.error || null,
+      errorLine: payload.errorLine || -1,
+      returnValue: payload.__returnValueHydrated,
+      compiledFn: null,
+      originalLines: sourceLines,
+      callExpr: payload.entryExpr || "undefined",
+    };
+
+    const vRaw = PY_ENGINE.hydrateVars(payload.finalVars || {});
+    const v = PY_ENGINE.cloneVars(vRaw);
+    const ds: Record<string, StepAnim> = {};
+    Object.keys(vRaw).forEach((name) => {
+      const d = classifyValue(name, vRaw[name]);
+      if (d) ds[name] = d;
+    });
+    populateInterfaceSchemas(ds);
+    doc.lastGlobalVars = v;
+    doc.lastGlobalDs = ds;
+
+    const logs = payload.stdout ? String(payload.stdout).replace(/\n$/, "").split("\n") : [];
+    cell.output = {
+      logs,
+      returnValue:
+        payload.__returnValueHydrated !== undefined && payload.__returnValueHydrated !== null && payload.entryExpr
+          ? PY_ENGINE.fmtReturn(payload.__returnValueHydrated)
+          : null,
+      error: payload.error || null,
+      errorLine: payload.errorLine || null,
+    };
+
+    cur = 0;
+    SELECTED_FRAME_IDX = null;
+    watched = new Set();
+    SEEN_VARS_EVER = new Set();
+    layoutSpan = Object.create(null);
+    initWatchedVars();
+    renderPicker();
+    renderStatic(cur, false);
+    renderNotebookUI();
+    say(`✓ [Cell ${cell.executionCount}] 已进入单步调试模式（共 ${steps.length} 步，可使用底部控制栏逐步观察）`, "ok");
+    return true;
+  } catch (_err: unknown) {
+    cell.status = "error";
+    doc.debuggingCellId = null;
+    renderNotebookUI();
+    return false;
+  }
+}
+
+function debugTsNotebookCell(doc: NotebookDocument, cell: NotebookCell, rawSrc: string): boolean {
   const { combinedTs } = buildTsTypecheckContext(doc, cell);
   const cellDiags = typecheckNotebookCellTS(doc, cell);
   if (cellDiags.length > 0) {
@@ -925,6 +926,30 @@ export async function debugNotebookCell(cellId?: string): Promise<boolean> {
 
   say(`✓ [Cell ${cell.executionCount}] 已开启单步调试 · 可使用底部「下一步 ›」或「⏭ 运行到下一个检查点」逐步推导`, "ok");
   return true;
+}
+
+/* ── Step-by-Step Debug a Single Notebook Cell (🐞 Debug Cell) ── */
+export async function debugNotebookCell(cellId?: string): Promise<boolean> {
+  const doc = getActiveNotebook();
+  const cell = cellId ? doc.cells.find((c) => c.id === cellId) : getActiveCell(doc);
+  if (!cell || cell.type !== "code") return false;
+
+  doc.activeCellId = cell.id;
+  ACTIVE_NB_CELL_ID = cell.id;
+
+  const rawSrc = cell.source.replace(/\r\n?/g, "\n");
+  if (!rawSrc.trim()) {
+    say("⚠ 当前单元格为空，请先输入代码后再启动单步调试", "dim");
+    return false;
+  }
+
+  stopAuto();
+  clearFlyLayer();
+
+  if (LANG === "python") {
+    return debugPythonNotebookCell(doc, cell, rawSrc);
+  }
+  return debugTsNotebookCell(doc, cell, rawSrc);
 }
 
 /* ── Run All Cells & Restart Kernel ── */
@@ -1239,7 +1264,6 @@ function estimateMarkdownEditorHeight(src: string): number {
   let visualLines = 0;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i] ?? "";
-    // Count CJK characters as 2 columns and ASCII as 1 column (~68 columns per line in cell editor)
     let cols = 0;
     for (let k = 0; k < line.length; k++) {
       cols += line.charCodeAt(k) > 255 ? 2 : 1;
@@ -1497,7 +1521,6 @@ export function renderNotebookUI(focusActiveEditor = false) {
     `<button type="button" class="nb-add-chip" id="nbBottomAddMd">＋ 文档单元格 (Markdown)</button>` +
     `</div>`;
 
-  // Auto-fit any rendered Markdown textareas so wrapped lines are never clipped or omitted
   if (cellsContainer.querySelectorAll) {
     cellsContainer.querySelectorAll(".nb-cell-textarea.md-textarea").forEach((el: HTMLElement) => {
       if (el && el.scrollHeight && el.scrollHeight > el.clientHeight) {
@@ -1536,768 +1559,309 @@ function toggleNotebookCellCheckpoint(cellId: string, lineNum: number) {
   }
 }
 
-/* ================================================================
-   Single-File Mode Multi-Tab Bar (#scriptTabsList) + Client-Side Virtual File System (#vfsSidebar)
-   ================================================================ */
-export interface ScriptTabDoc {
-  id: string;
-  title: string;
-  lang: "ts" | "python";
-  source: string;
-  vfsPath: string;
-  isSample?: boolean;
-}
+function initNotebookTabsEvents() {
+  const tabsEl = $("nbTabsList");
+  if (!tabsEl || !tabsEl.addEventListener) return;
 
-export interface VfsNode {
-  path: string;
-  name: string;
-  type: "file" | "folder";
-  parentPath: string;
-  content?: string;
-  readonly?: boolean;
-}
-
-const VFS_STORAGE_KEY = "ts-visual-vfs-workspace-v2";
-let scriptTabSeq = 1;
-let syncingScriptTab = false;
-let vfsBootInitialized = false;
-let pendingVfsDeletePath: string | null = null;
-
-const SCRIPT_TABS: Record<"ts" | "python", { activeTabId: string; tabs: ScriptTabDoc[] }> = {
-  ts: { activeTabId: "", tabs: [] },
-  python: { activeTabId: "", tabs: [] },
-};
-
-const VFS_EXPANDED_FOLDERS = new Set<string>();
-
-const VFS_NODES = new Map<string, VfsNode>();
-
-const TS_SAMPLE_METADATA: Array<{ key: string; label: string; desc: string }> = [
-  { key: "showcase", label: "showcase.ts · 综合演示", desc: "滑动窗口 + 单调栈 + Map + 树与图" },
-  { key: "mergesort", label: "mergesort.ts · 归并排序", desc: "分治递归与左右子数组归并" },
-  { key: "debug_crash", label: "debug_crash.ts · 越界排错", desc: "二分查找 <= 越界 Bug 现场定位" },
-  { key: "lcs", label: "lcs.ts · 最长公共子序列", desc: "二维 DP 网格规划" },
-  { key: "analyze", label: "analyze.ts · 频率统计", desc: "数组与 Map 哈希统计" },
-  { key: "window", label: "window.ts · 滑动窗口", desc: "双指针定长滑动窗口" },
-  { key: "structures", label: "structures.ts · 数据结构全家桶", desc: "栈 / 队列 / 堆 / 并查集 / 树 / 图" },
-  { key: "counter", label: "counter.ts · 闭包计数器", desc: "高阶函数与词法作用域闭包" },
-  { key: "classes", label: "classes.ts · 类与继承", desc: "class / extends / super 实例方法" },
-  { key: "async_loop", label: "async_loop.ts · 事件循环", desc: "async / await 与微任务队列" },
-];
-
-const PY_SAMPLE_METADATA: Array<{ key: string; label: string; desc: string }> = [
-  { key: "quickstart", label: "quickstart.py · 冒泡排序", desc: "Python 列表原地交换与双层循环" },
-  { key: "binary_search", label: "binary_search.py · 二分查找", desc: "双指针折半搜索与 checkpoint()" },
-  { key: "bfs", label: "bfs.py · BFS 广度优先搜索", desc: "deque 队列与集合访问标记" },
-  { key: "lcs", label: "lcs.py · DP 最长公共子序列", desc: "二维列表推导式与动态规划" },
-  { key: "structures", label: "structures.py · 结构集合", desc: "TreeNode / ListNode / 字典 / 集合" },
-  { key: "classes", label: "classes.py · 类与实例", desc: "Counter 类构造与实例属性追踪" },
-];
-
-function getPySamplesDict(): Record<string, string> {
-  const eng = typeof PY_ENGINE !== "undefined" ? PY_ENGINE : null;
-  return (eng && eng.samples) ? eng.samples : {};
-}
-
-export function resolveWorkspacePath(rawPath: string, allowEmptyRoot = false): string {
-  const raw = String(rawPath ?? "").trim().replace(/\\/g, "/");
-  if (!raw || raw === "." || raw === "./" || raw === "workspace" || raw === "/workspace" || raw === "workspace/" || raw === "/workspace/") {
-    if (allowEmptyRoot) return "";
-    throw new Error(`EISDIR: illegal operation on workspace root directory '${rawPath}'`);
-  }
-  if (/^[A-Za-z]:/.test(raw) || raw.startsWith("~")) {
-    throw new Error(`EACCES: permission denied, file operations outside workspace are not allowed: '${rawPath}'`);
-  }
-  if (raw.startsWith("/")) {
-    if (raw !== "/workspace" && !raw.startsWith("/workspace/")) {
-      throw new Error(`EACCES: permission denied, file operations outside workspace are not allowed: '${rawPath}'`);
-    }
-  }
-  let stripped = raw;
-  if (stripped.startsWith("/workspace/")) {
-    stripped = stripped.slice("/workspace/".length);
-  } else if (stripped.startsWith("workspace/")) {
-    stripped = stripped.slice("workspace/".length);
-  } else if (stripped.startsWith("./")) {
-    stripped = stripped.slice(2);
-  }
-  const rawSegments = stripped.split("/");
-  const resolved: string[] = [];
-  for (const seg of rawSegments) {
-    if (!seg || seg === ".") continue;
-    if (seg === "..") {
-      if (resolved.length === 0) {
-        throw new Error(`EACCES: permission denied, file operations outside workspace are not allowed: '${rawPath}'`);
-      }
-      resolved.pop();
-      continue;
-    }
-    resolved.push(seg);
-  }
-  const firstSeg = resolved[0] || "";
-  if (firstSeg === "examples" || firstSeg === "notebooks") {
-    throw new Error(`EACCES: permission denied, file operations outside workspace are not allowed: '${rawPath}'`);
-  }
-  const finalPath = resolved.join("/");
-  if (!finalPath && !allowEmptyRoot) {
-    throw new Error(`EISDIR: illegal operation on workspace root directory '${rawPath}'`);
-  }
-  return finalPath;
-}
-
-function ensureVfsInitialized() {
-  if (vfsBootInitialized) return;
-  vfsBootInitialized = true;
-  VFS_NODES.clear();
-  try {
-    if (typeof localStorage !== "undefined") {
-      localStorage.removeItem("ts-visual-vfs-v1");
-      localStorage.removeItem(VFS_STORAGE_KEY);
-    }
-  } catch (_) {}
-}
-
-function persistVfsToClientStorage() {
-  try {
-    if (typeof localStorage === "undefined") return;
-    const customNodes: VfsNode[] = [];
-    VFS_NODES.forEach((node) => {
-      customNodes.push(node);
-    });
-    localStorage.setItem(VFS_STORAGE_KEY, JSON.stringify(customNodes));
-  } catch (_) {}
-}
-
-function ensureParentFoldersExist(relPath: string) {
-  const parts = relPath.split("/").filter(Boolean);
-  if (parts.length <= 1) return;
-  let acc = "";
-  for (let i = 0; i < parts.length - 1; i++) {
-    const folderName = parts[i] || "";
-    const parentPath = acc;
-    acc = acc ? `${acc}/${folderName}` : folderName;
-    if (!VFS_NODES.has(acc)) {
-      VFS_NODES.set(acc, {
-        path: acc,
-        name: folderName,
-        type: "folder",
-        parentPath,
-      });
-      VFS_EXPANDED_FOLDERS.add(acc);
-    }
-  }
-}
-
-function ensureScriptTabsForLang(lang: "ts" | "python"): { activeTabId: string; tabs: ScriptTabDoc[] } {
-  ensureVfsInitialized();
-  const store = SCRIPT_TABS[lang];
-  if (store.tabs.length === 0) {
-    const defaultTitle =
-      lang === "python"
-        ? (LANG === "python" && FILE_NAME ? FILE_NAME : "quickstart.py")
-        : (LANG !== "python" && FILE_NAME ? FILE_NAME : "showcase.ts");
-    const defaultSrc =
-      lang === "python"
-        ? (LANG === "python" && editor && editor.value ? editor.value : (getPySamplesDict().quickstart || ""))
-        : (LANG !== "python" && editor && editor.value ? editor.value : (SAMPLES.showcase || ""));
-    const tabId = "stab_" + (++scriptTabSeq);
-    store.tabs.push({
-      id: tabId,
-      title: defaultTitle,
-      lang,
-      source: defaultSrc,
-      vfsPath: "",
-      isSample: true,
-    });
-    store.activeTabId = tabId;
-  }
-  const firstTab = store.tabs[0];
-  if (firstTab && !store.tabs.some((t) => t.id === store.activeTabId)) {
-    store.activeTabId = firstTab.id;
-  }
-  return store;
-}
-
-export function getActiveScriptTab(lang?: "ts" | "python"): ScriptTabDoc {
-  const targetLang = lang || (LANG === "python" ? "python" : "ts");
-  const store = ensureScriptTabsForLang(targetLang);
-  const found = store.tabs.find((t) => t.id === store.activeTabId) ?? store.tabs[0];
-  if (found) return found;
-  return {
-    id: "stab_0",
-    title: targetLang === "python" ? "quickstart.py" : "showcase.ts",
-    lang: targetLang,
-    source: "",
-    vfsPath: "",
-    isSample: true,
-  };
-}
-
-export function openSampleScriptTab(title: string, source: string, lang?: "ts" | "python") {
-  const targetLang = lang || (LANG === "python" ? "python" : "ts");
-  if (editor && editor.value) {
-    syncActiveScriptTabSource(editor.value);
-  }
-  const store = ensureScriptTabsForLang(targetLang);
-  let tab = store.tabs.find((t) => (t.isSample || !t.vfsPath) && t.title === title);
-  if (!tab) {
-    tab = {
-      id: "stab_" + (++scriptTabSeq),
-      title,
-      lang: targetLang,
-      source,
-      vfsPath: "",
-      isSample: true,
-    };
-    store.tabs.push(tab);
-  } else {
-    tab.source = source;
-    tab.vfsPath = "";
-    tab.isSample = true;
-  }
-  store.activeTabId = tab.id;
-  syncingScriptTab = true;
-  if (editor) editor.value = source;
-  setFileName(title);
-  syncingScriptTab = false;
-  renderScriptTabsUI();
-  renderVfsTreeUI();
-}
-
-export function syncActiveScriptTabFromFileName(newFileName: string) {
-  if (syncingScriptTab) return;
-  const lang = LANG === "python" ? "python" : "ts";
-  const store = ensureScriptTabsForLang(lang);
-  const activeTab = store.tabs.find((t) => t.id === store.activeTabId);
-  if (!activeTab) return;
-
-  const oldPath = activeTab.vfsPath;
-  activeTab.title = newFileName;
-  activeTab.source = editor ? editor.value : activeTab.source;
-
-  if (!activeTab.isSample && oldPath && VFS_NODES.has(oldPath)) {
-    activeTab.vfsPath = newFileName;
-    VFS_NODES.delete(oldPath);
-    VFS_NODES.set(activeTab.vfsPath, {
-      path: activeTab.vfsPath,
-      name: newFileName,
-      type: "file",
-      parentPath: "",
-      content: activeTab.source,
-    });
-    persistVfsToClientStorage();
-  }
-  renderScriptTabsUI();
-  renderVfsTreeUI();
-}
-
-export function syncActiveScriptTabSource(src: string) {
-  const lang = LANG === "python" ? "python" : "ts";
-  const activeTab = getActiveScriptTab(lang);
-  if (!activeTab) return;
-  activeTab.source = src;
-  if (!activeTab.isSample && activeTab.vfsPath) {
-    const node = VFS_NODES.get(activeTab.vfsPath);
-    if (node && node.type === "file") {
-      node.content = src;
-      persistVfsToClientStorage();
-    }
-  }
-}
-
-export function renderScriptTabsUI() {
-  const tabsEl = $("scriptTabsList");
-  if (!tabsEl) return;
-  const lang = LANG === "python" ? "python" : "ts";
-  const store = ensureScriptTabsForLang(lang);
-  const activeTab = getActiveScriptTab(lang);
-
-  tabsEl.innerHTML =
-    store.tabs
-      .map((t) => {
-        const isAct = t.id === activeTab.id;
-        const iconCls = lang === "python" ? "py-icon" : "ts-icon";
-        return (
-          `<div class="nb-tab${isAct ? " active" : ""}" data-script-tab-id="${esc(t.id)}" title="单击切换标签页 · 双击文件名重命名">` +
-          `<span class="nb-tab-icon ${iconCls}" aria-hidden="true"></span>` +
-          `<span class="nb-tab-title">${esc(t.title)}</span>` +
-          (store.tabs.length > 1
-            ? `<button type="button" class="nb-tab-close" data-close-script-tab="${esc(t.id)}" title="关闭标签页">×</button>`
-            : "") +
-          `</div>`
-        );
-      })
-      .join("") +
-    `<button type="button" class="nb-tab-add" id="scriptBtnNewTab" title="新建代码文件标签页">＋</button>`;
-}
-
-export function renderImportSampleMenu() {
-  const listEl = $("importSampleList");
-  if (!listEl) return;
-  const isPy = LANG === "python";
-  const items = isPy ? PY_SAMPLE_METADATA : TS_SAMPLE_METADATA;
-  const folderPrefix = isPy ? "examples/python/" : "examples/ts/";
-
-  const nbItemHtml =
-    `<button type="button" class="import-sample-item" data-import-sample-notebook="Intro.ipynb">` +
-    `<span class="import-sample-name">📓 Intro.ipynb · 交互式笔记本示例</span>` +
-    `<span class="import-sample-path">examples/notebooks/</span>` +
-    `</button>`;
-
-  listEl.innerHTML =
-    (VIEW_MODE === "notebook" ? nbItemHtml : "") +
-    items
-      .map(
-        (item) =>
-          `<button type="button" class="import-sample-item" data-import-sample-key="${esc(item.key)}" title="${esc(item.desc)}">` +
-          `<span class="import-sample-name">${esc(item.label)}</span>` +
-          `<span class="import-sample-path">${esc(folderPrefix + item.key + (isPy ? ".py" : ".ts"))}</span>` +
-          `</button>`
-      )
-      .join("") +
-    (VIEW_MODE !== "notebook" ? nbItemHtml : "");
-}
-
-export function renderVfsTreeUI() {
-  const treeEl = $("vfsTreeList");
-  if (!treeEl) return;
-  ensureVfsInitialized();
-
-  const activePath =
-    VIEW_MODE === "notebook"
-      ? getActiveNotebook().title
-      : getActiveScriptTab().vfsPath;
-
-  const childrenOf = (parentPath: string): VfsNode[] => {
-    const list: VfsNode[] = [];
-    VFS_NODES.forEach((node) => {
-      if (node.parentPath === parentPath) list.push(node);
-    });
-    return list.sort((a, b) => {
-      if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
-      return a.name.localeCompare(b.name);
-    });
-  };
-
-  const buildConfirmHtml = (node: VfsNode): string => {
-    if (pendingVfsDeletePath !== node.path) return "";
-    return (
-      `<div class="vfs-del-confirm" data-vfs-confirm-box="${esc(node.path)}">` +
-      `<span class="vfs-del-confirm-text">确认删除 ${esc(node.name)}？</span>` +
-      `<span class="vfs-del-confirm-actions">` +
-      `<button type="button" class="vfs-confirm-btn danger" data-vfs-confirm-del="${esc(node.path)}">确认</button>` +
-      `<button type="button" class="vfs-confirm-btn" data-vfs-cancel-del="${esc(node.path)}">取消</button>` +
-      `</span>` +
-      `</div>`
-    );
-  };
-
-  const renderNode = (node: VfsNode, depth: number): string => {
-    const padLeft = 8 + depth * 14;
-    const canDel = !node.readonly;
-    const delBtnHtml = canDel
-      ? `<span class="vfs-row-actions"><button type="button" class="vfs-del-btn" data-vfs-del="${esc(node.path)}" title="删除">❌</button></span>`
-      : "";
-    if (node.type === "folder") {
-      const isOpen = VFS_EXPANDED_FOLDERS.has(node.path);
-      const kids = childrenOf(node.path);
-      return (
-        `<div class="vfs-folder-row" data-vfs-folder="${esc(node.path)}" style="padding-left:${padLeft}px" title="单击展开/折叠目录 · 双击重命名目录">` +
-        `<span class="vfs-caret">${isOpen ? "▾" : "▸"}</span>` +
-        `<span class="vfs-icon">📁</span>` +
-        `<span class="vfs-name">${esc(node.name)}/</span>` +
-        delBtnHtml +
-        `</div>` +
-        buildConfirmHtml(node) +
-        (isOpen
-          ? `<div class="vfs-folder-children">${kids.map((k) => renderNode(k, depth + 1)).join("")}</div>`
-          : "")
-      );
-    }
-
-    const isAct = Boolean(activePath && node.path === activePath);
-    const ext = (node.name.split(".").pop() || "").toLowerCase();
-    const icon =
-      ext === "ipynb"
-        ? "📓"
-        : ext === "py"
-        ? "🐍"
-        : ext === "ts"
-        ? "📘"
-        : ext === "json"
-        ? "🗂"
-        : "📄";
-    return (
-      `<div class="vfs-file-row${isAct ? " active" : ""}" data-vfs-file="${esc(node.path)}" style="padding-left:${padLeft}px" title="${esc(node.path)}（单击打开 · 双击重命名）">` +
-      `<span class="vfs-icon">${icon}</span>` +
-      `<span class="vfs-name">${esc(node.name)}</span>` +
-      delBtnHtml +
-      `</div>` +
-      buildConfirmHtml(node)
-    );
-  };
-
-  const roots = childrenOf("");
-  if (roots.length === 0) {
-    treeEl.innerHTML = `<div class="vfs-empty-hint" style="padding:14px 10px;color:#64748b;font-size:11.5px;text-align:center;">空目录</div>`;
-  } else {
-    treeEl.innerHTML = roots.map((r) => renderNode(r, 0)).join("");
-  }
-
-  const footEl = $("vfsFootStatus");
-  if (footEl) {
-    let fileCount = 0;
-    let totalBytes = 0;
-    VFS_NODES.forEach((n) => {
-      if (n.type === "file") {
-        fileCount++;
-        totalBytes += (n.content || "").length;
-      }
-    });
-    const kb = (totalBytes / 1024).toFixed(1);
-    footEl.textContent = `${fileCount} 个文件 (${kb} KB)`;
-  }
-}
-
-function openVfsFile(rawPath: string) {
-  ensureVfsInitialized();
-  let path = rawPath;
-  try {
-    path = resolveWorkspacePath(rawPath, false);
-  } catch (err) {
-    say(`✗ ${err instanceof Error ? err.message : String(err)}`, "err");
-    return;
-  }
-  const node = VFS_NODES.get(path);
-  if (!node || node.type !== "file") return;
-
-  if (node.name.endsWith(".ipynb")) {
+  tabsEl.addEventListener("click", (e: MouseEvent) => {
+    const target = e.target as HTMLElement | null;
+    if (!target) return;
+    const closeBtn = target.closest ? (target.closest("[data-close-doc]") as HTMLElement | null) : null;
     const lang = LANG === "python" ? "python" : "ts";
     const store = ensureLangNotebooks(lang);
-    const existing = store.docs.find((d) => d.title === node.name);
-    if (existing) {
-      store.activeDocId = existing.id;
-      setViewMode("notebook");
-      renderNotebookUI();
+    if (closeBtn) {
+      e.stopPropagation();
+      const closeId = closeBtn.getAttribute("data-close-doc");
+      if (store.docs.length <= 1) return;
+      const idx = store.docs.findIndex((d) => d.id === closeId);
+      if (idx >= 0) {
+        store.docs.splice(idx, 1);
+        if (store.activeDocId === closeId) {
+          const fallbackDoc = store.docs[Math.max(0, idx - 1)];
+          if (fallbackDoc) store.activeDocId = fallbackDoc.id;
+        }
+        syncNotebookGlobalsToSidePanel();
+        renderNotebookUI();
+        renderVfsTreeUI();
+      }
       return;
     }
-    if (node.content && importNotebookFromJson(node.content, node.name)) {
-      return;
-    }
-    setViewMode("notebook");
-    return;
-  }
-
-  const isPyFile = node.name.endsWith(".py");
-  if (isPyFile && LANG !== "python" && typeof PY_ENGINE !== "undefined" && PY_ENGINE.setLang) {
-    PY_ENGINE.setLang("python");
-  } else if (node.name.endsWith(".ts") && LANG === "python" && typeof PY_ENGINE !== "undefined" && PY_ENGINE.setLang) {
-    PY_ENGINE.setLang("ts");
-  }
-
-  setViewMode("script");
-  const lang = LANG === "python" ? "python" : "ts";
-  if (editor && editor.value) {
-    syncActiveScriptTabSource(editor.value);
-  }
-  const store = ensureScriptTabsForLang(lang);
-  let tab = store.tabs.find((t) => !t.isSample && t.vfsPath === node.path);
-  if (!tab) {
-    tab = {
-      id: "stab_" + (++scriptTabSeq),
-      title: node.name,
-      lang,
-      source: node.content || "",
-      vfsPath: node.path,
-      isSample: false,
-    };
-    store.tabs.push(tab);
-  } else {
-    tab.source = node.content ?? tab.source;
-    tab.vfsPath = node.path;
-    tab.isSample = false;
-  }
-  store.activeTabId = tab.id;
-  syncingScriptTab = true;
-  editor.value = tab.source;
-  setFileName(tab.title);
-  syncingScriptTab = false;
-  resetTraceState();
-  updateEditorChrome();
-  renderScriptTabsUI();
-  renderVfsTreeUI();
-  say(`📂 已打开 ${node.path}`, "ok");
-}
-
-function serializeFsData(data: unknown): string {
-  if (typeof data === "string") return data;
-  if (data instanceof Uint8Array) {
-    return typeof TextDecoder !== "undefined" ? new TextDecoder().decode(data) : String(data);
-  }
-  if (data !== null && typeof data === "object") {
-    try {
-      return JSON.stringify(data, null, 2);
-    } catch (_) {
-      return String(data);
-    }
-  }
-  return String(data ?? "");
-}
-
-/* Expose client-side VFS API on globalThis.__VFS__ and Node-compatible fs shim on globalThis.__FS_SHIM__ */
-function bindGlobalVfsApi() {
-  const api = {
-    resolveWorkspacePath(rawPath: string, allowEmptyRoot = false): string {
-      return resolveWorkspacePath(rawPath, allowEmptyRoot);
-    },
-    readFile(path: string): string | null {
-      ensureVfsInitialized();
-      const rel = resolveWorkspacePath(path, false);
-      const node = VFS_NODES.get(rel);
-      if (!node) return null;
-      if (node.type === "folder") {
-        throw new Error(`EISDIR: illegal operation on a directory, read '${path}'`);
-      }
-      return node.content ?? "";
-    },
-    writeFile(path: string, content: string): boolean {
-      ensureVfsInitialized();
-      const rel = resolveWorkspacePath(path, false);
-      const existing = VFS_NODES.get(rel);
-      if (existing && existing.type === "folder") {
-        throw new Error(`EISDIR: illegal operation on a directory, open '${path}'`);
-      }
-      ensureParentFoldersExist(rel);
-      const parts = rel.split("/");
-      const name = parts.pop() || rel;
-      const parentPath = parts.join("/");
-      VFS_NODES.set(rel, {
-        path: rel,
-        name,
-        type: "file",
-        parentPath,
-        content: serializeFsData(content),
-      });
-      persistVfsToClientStorage();
-      renderVfsTreeUI();
-      return true;
-    },
-    appendFile(path: string, content: string): boolean {
-      ensureVfsInitialized();
-      const rel = resolveWorkspacePath(path, false);
-      const existing = VFS_NODES.get(rel);
-      if (existing && existing.type === "folder") {
-        throw new Error(`EISDIR: illegal operation on a directory, open '${path}'`);
-      }
-      const prev = existing && existing.type === "file" ? (existing.content ?? "") : "";
-      return api.writeFile(rel, prev + serializeFsData(content));
-    },
-    listFiles(dirPath = ""): string[] {
-      ensureVfsInitialized();
-      const rel = resolveWorkspacePath(dirPath, true);
-      if (rel !== "") {
-        const dirNode = VFS_NODES.get(rel);
-        if (!dirNode) {
-          throw new Error(`ENOENT: no such file or directory, scandir '${dirPath}'`);
-        }
-        if (dirNode.type !== "folder") {
-          throw new Error(`ENOTDIR: not a directory, scandir '${dirPath}'`);
-        }
-      }
-      const out: string[] = [];
-      VFS_NODES.forEach((node) => {
-        if (node.parentPath === rel) out.push(node.name);
-      });
-      return out;
-    },
-    readdir(dirPath = ""): string[] {
-      return api.listFiles(dirPath);
-    },
-    listAll(): string[] {
-      ensureVfsInitialized();
-      return Array.from(VFS_NODES.keys()).sort();
-    },
-    exists(path: string): boolean {
-      ensureVfsInitialized();
-      const rel = resolveWorkspacePath(path, true);
-      if (rel === "") return true;
-      return VFS_NODES.has(rel);
-    },
-    deleteFile(path: string): boolean {
-      ensureVfsInitialized();
-      const rel = resolveWorkspacePath(path, false);
-      const node = VFS_NODES.get(rel);
-      if (!node) {
-        throw new Error(`ENOENT: no such file or directory, unlink '${path}'`);
-      }
-      // Also delete children if folder
-      const prefix = rel + "/";
-      Array.from(VFS_NODES.keys()).forEach((k) => {
-        if (k === rel || k.startsWith(prefix)) {
-          VFS_NODES.delete(k);
-        }
-      });
-      persistVfsToClientStorage();
-      renderVfsTreeUI();
-      return true;
-    },
-    unlink(path: string): boolean {
-      return api.deleteFile(path);
-    },
-    mkdir(path: string): boolean {
-      ensureVfsInitialized();
-      const rel = resolveWorkspacePath(path, true);
-      if (!rel) return true;
-      ensureParentFoldersExist(rel + "/_");
-      persistVfsToClientStorage();
-      renderVfsTreeUI();
-      return true;
-    },
-    stat(path: string) {
-      ensureVfsInitialized();
-      const rel = resolveWorkspacePath(path, true);
-      if (rel === "") {
-        return {
-          size: 0,
-          isFile: () => false,
-          isDirectory: () => true,
-        };
-      }
-      const node = VFS_NODES.get(rel);
-      if (!node) {
-        throw new Error(`ENOENT: no such file or directory, stat '${path}'`);
-      }
-      const isDir = node.type === "folder";
-      const size = isDir ? 0 : (node.content ?? "").length;
-      return {
-        size,
-        isFile: () => !isDir,
-        isDirectory: () => isDir,
+    const newBtn = target.closest ? (target.closest("#nbBtnNewTab") as HTMLElement | null) : null;
+    if (newBtn) {
+      const cId = nextCellId();
+      const newDoc: NotebookDocument = {
+        id: nextDocId(),
+        title: `Untitled-${store.docs.length + 1}.ipynb`,
+        lang,
+        execCounter: 0,
+        activeCellId: cId,
+        debuggingCellId: null,
+        cells: [
+          {
+            id: cId,
+            type: "code",
+            source: "",
+            executionCount: null,
+            status: "idle",
+            output: null,
+          },
+        ],
+        executedHistory: [],
+        lastGlobalVars: {},
+        lastGlobalDs: {},
       };
-    },
-    clear(): void {
-      ensureVfsInitialized();
-      VFS_NODES.clear();
-      persistVfsToClientStorage();
+      store.docs.push(newDoc);
+      store.activeDocId = newDoc.id;
+      syncNotebookGlobalsToSidePanel(newDoc);
+      renderNotebookUI(true);
       renderVfsTreeUI();
-    },
-  };
+      return;
+    }
+    const tab = target.closest ? (target.closest(".nb-tab") as HTMLElement | null) : null;
+    if (tab && tab.dataset.docId) {
+      if (store.activeDocId !== tab.dataset.docId) {
+        store.activeDocId = tab.dataset.docId;
+        syncNotebookGlobalsToSidePanel();
+        renderNotebookUI();
+        renderVfsTreeUI();
+      }
+    }
+  });
 
-  const fsPromises = {
-    async readFile(path: string, _options?: unknown): Promise<string> {
-      const content = api.readFile(path);
-      if (content === null) {
-        throw new Error(`ENOENT: no such file or directory, open '${path}'`);
+  tabsEl.addEventListener("dblclick", (e: MouseEvent) => {
+    const target = e.target as HTMLElement | null;
+    const tab = target && target.closest ? (target.closest(".nb-tab") as HTMLElement | null) : null;
+    if (!tab || !tab.dataset.docId) return;
+    const lang = LANG === "python" ? "python" : "ts";
+    const store = ensureLangNotebooks(lang);
+    const targetDoc = store.docs.find((d) => d.id === tab.dataset.docId) || getActiveNotebook();
+    const titleSpan = tab.querySelector ? tab.querySelector(".nb-tab-title") : null;
+    if (!titleSpan) return;
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "nb-tab-rename-input";
+    input.value = targetDoc.title;
+    titleSpan.replaceWith(input);
+    input.focus();
+    input.select();
+    let committed = false;
+    const commit = () => {
+      if (committed) return;
+      committed = true;
+      const val = input.value.trim();
+      if (val) {
+        const oldPath = `notebooks/${targetDoc.title}`;
+        targetDoc.title = val.endsWith(".ipynb") ? val : val + ".ipynb";
+        if (oldPath !== `notebooks/${targetDoc.title}`) {
+          VFS_NODES.delete(oldPath);
+        }
+        say(`✓ 笔记本已重命名为 ${targetDoc.title}`, "ok");
       }
-      return content;
-    },
-    async writeFile(path: string, data: unknown, _options?: unknown): Promise<void> {
-      api.writeFile(path, serializeFsData(data));
-    },
-    async appendFile(path: string, data: unknown, _options?: unknown): Promise<void> {
-      api.appendFile(path, serializeFsData(data));
-    },
-    async unlink(path: string): Promise<void> {
-      api.deleteFile(path);
-    },
-    async rm(path: string, _options?: unknown): Promise<void> {
-      api.deleteFile(path);
-    },
-    async readdir(path = "", _options?: unknown): Promise<string[]> {
-      return api.listFiles(path);
-    },
-    async mkdir(path: string, _options?: unknown): Promise<string | undefined> {
-      api.mkdir(path);
-      return undefined;
-    },
-    async rmdir(path: string, _options?: unknown): Promise<void> {
-      api.deleteFile(path);
-    },
-    async stat(path: string) {
-      return api.stat(path);
-    },
-    async access(path: string, _mode?: number): Promise<void> {
-      if (!api.exists(path)) {
-        throw new Error(`ENOENT: no such file or directory, access '${path}'`);
+      renderNotebookUI();
+      renderVfsTreeUI();
+    };
+    input.addEventListener("blur", commit);
+    input.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") {
+        ev.preventDefault();
+        input.blur();
+      } else if (ev.key === "Escape") {
+        committed = true;
+        renderNotebookUI();
       }
-    },
-    async exists(path: string): Promise<boolean> {
-      return api.exists(path);
-    },
-    async copyFile(src: string, dest: string): Promise<void> {
-      const content = api.readFile(src);
-      if (content === null) {
-        throw new Error(`ENOENT: no such file or directory, copyfile '${src}'`);
-      }
-      api.writeFile(dest, content);
-    },
-    async rename(oldPath: string, newPath: string): Promise<void> {
-      const content = api.readFile(oldPath);
-      if (content === null) {
-        throw new Error(`ENOENT: no such file or directory, rename '${oldPath}'`);
-      }
-      api.writeFile(newPath, content);
-      api.deleteFile(oldPath);
-    },
-  };
+    });
+  });
+}
 
-  const fsShim = {
-    promises: fsPromises,
-    readFileSync(path: string, _options?: unknown): string {
-      const content = api.readFile(path);
-      if (content === null) {
-        throw new Error(`ENOENT: no such file or directory, open '${path}'`);
-      }
-      return content;
-    },
-    writeFileSync(path: string, data: unknown, _options?: unknown): void {
-      api.writeFile(path, serializeFsData(data));
-    },
-    appendFileSync(path: string, data: unknown, _options?: unknown): void {
-      api.appendFile(path, serializeFsData(data));
-    },
-    existsSync(path: string): boolean {
-      return api.exists(path);
-    },
-    unlinkSync(path: string): void {
-      api.deleteFile(path);
-    },
-    rmSync(path: string, _options?: unknown): void {
-      api.deleteFile(path);
-    },
-    readdirSync(path = ""): string[] {
-      return api.listFiles(path);
-    },
-    mkdirSync(path: string, _options?: unknown): string | undefined {
-      api.mkdir(path);
-      return undefined;
-    },
-    rmdirSync(path: string, _options?: unknown): void {
-      api.deleteFile(path);
-    },
-    statSync(path: string) {
-      return api.stat(path);
-    },
-    copyFileSync(src: string, dest: string): void {
-      const content = api.readFile(src);
-      if (content === null) {
-        throw new Error(`ENOENT: no such file or directory, copyfile '${src}'`);
-      }
-      api.writeFile(dest, content);
-    },
-    renameSync(oldPath: string, newPath: string): void {
-      const content = api.readFile(oldPath);
-      if (content === null) {
-        throw new Error(`ENOENT: no such file or directory, rename '${oldPath}'`);
-      }
-      api.writeFile(newPath, content);
-      api.deleteFile(oldPath);
-    },
-  };
+function initNotebookCellsEvents() {
+  const typeSel = $("nbCellType");
+  if (typeSel) {
+    typeSel.onchange = () => {
+      const doc = getActiveNotebook();
+      const cell = getActiveCell(doc);
+      if (!cell) return;
+      cell.type = typeSel.value === "markdown" ? "markdown" : "code";
+      cell.markdownRendered = false;
+      cell.output = null;
+      cell.executionCount = null;
+      renderNotebookUI(true);
+    };
+  }
 
-  globalThis.__VFS__ = api;
-  globalThis.vfs = api;
-  globalThis.__FS_SHIM__ = fsShim;
+  const cellsList = $("nbCellsList");
+  if (!cellsList || !cellsList.addEventListener) return;
+
+  cellsList.addEventListener("click", (e: MouseEvent) => {
+    const target = e.target as HTMLElement | null;
+    if (!target) return;
+    if (target.closest && target.closest("#nbBottomAddCode")) {
+      const doc = getActiveNotebook();
+      const last = doc.cells[doc.cells.length - 1];
+      insertNotebookCell("below", last ? last.id : undefined, "code");
+      return;
+    }
+    if (target.closest && target.closest("#nbBottomAddMd")) {
+      const doc = getActiveNotebook();
+      const last = doc.cells[doc.cells.length - 1];
+      insertNotebookCell("below", last ? last.id : undefined, "markdown");
+      return;
+    }
+
+    const gline = target.closest ? (target.closest(".nb-gline") as HTMLElement | null) : null;
+    if (gline && gline.dataset.line) {
+      const cellEl = gline.closest(".nb-cell") as HTMLElement | null;
+      if (cellEl && cellEl.dataset.cellId) {
+        toggleNotebookCellCheckpoint(cellEl.dataset.cellId, parseInt(gline.dataset.line, 10));
+        return;
+      }
+    }
+
+    const actEl = target.closest ? (target.closest("[data-cell-act]") as HTMLElement | null) : null;
+    if (actEl) {
+      const act = actEl.getAttribute("data-cell-act");
+      const cid = actEl.getAttribute("data-cell-id");
+      if (!cid) return;
+      const doc = getActiveNotebook();
+      doc.activeCellId = cid;
+      ACTIVE_NB_CELL_ID = cid;
+      if (act === "run") {
+        runNotebookCell(cid, true);
+        return;
+      }
+      if (act === "debug") {
+        debugNotebookCell(cid);
+        return;
+      }
+      if (act === "dup") {
+        duplicateNotebookCell(cid);
+        return;
+      }
+      if (act === "up") {
+        moveNotebookCell(-1, cid);
+        return;
+      }
+      if (act === "down") {
+        moveNotebookCell(1, cid);
+        return;
+      }
+      if (act === "ins-above") {
+        insertNotebookCell("above", cid);
+        return;
+      }
+      if (act === "ins-below") {
+        insertNotebookCell("below", cid);
+        return;
+      }
+      if (act === "del") {
+        deleteNotebookCell(cid);
+        return;
+      }
+      if (act === "toggle-md") {
+        const c = doc.cells.find((x) => x.id === cid);
+        if (c) {
+          c.markdownRendered = !c.markdownRendered;
+          renderNotebookUI(!c.markdownRendered);
+        }
+        return;
+      }
+    }
+
+    const cellBox = target.closest ? (target.closest(".nb-cell") as HTMLElement | null) : null;
+    if (cellBox && cellBox.dataset.cellId) {
+      const doc = getActiveNotebook();
+      if (doc.activeCellId !== cellBox.dataset.cellId) {
+        doc.activeCellId = cellBox.dataset.cellId;
+        ACTIVE_NB_CELL_ID = doc.activeCellId;
+        if (cellsList.querySelectorAll) {
+          cellsList.querySelectorAll(".nb-cell").forEach((el: HTMLElement) => {
+            el.classList.toggle("active", el.dataset.cellId === doc.activeCellId);
+          });
+        }
+        const c = getActiveCell(doc);
+        if (typeSel && c) typeSel.value = c.type;
+      }
+    }
+  });
+
+  cellsList.addEventListener("dblclick", (e: MouseEvent) => {
+    const target = e.target as HTMLElement | null;
+    const mdPrev = target && target.closest ? (target.closest('[data-cell-act="edit-md"]') as HTMLElement | null) : null;
+    if (mdPrev) {
+      const cid = mdPrev.getAttribute("data-cell-id");
+      const doc = getActiveNotebook();
+      const c = doc.cells.find((x) => x.id === cid);
+      if (c) {
+        c.markdownRendered = false;
+        doc.activeCellId = c.id;
+        renderNotebookUI(true);
+      }
+    }
+  });
+
+  cellsList.addEventListener("input", (e: Event) => {
+    const ta = e.target as HTMLTextAreaElement;
+    if (!ta || !ta.classList || !ta.classList.contains("nb-cell-textarea")) return;
+    const cid = ta.getAttribute("data-cell-id");
+    const doc = getActiveNotebook();
+    const cell = doc.cells.find((c) => c.id === cid);
+    if (!cell) return;
+    cell.source = ta.value;
+
+    if (cell.type === "markdown") {
+      const estH = estimateMarkdownEditorHeight(cell.source);
+      ta.style.height = "auto";
+      const nextH = Math.max(estH, (ta.scrollHeight || 0) + 10);
+      ta.style.height = nextH + "px";
+      return;
+    }
+
+    const lineCount = Math.max(1, cell.source.split("\n").length);
+    const h = Math.max(38, lineCount * 24 + 14);
+    ta.style.height = h + "px";
+    const codeBox = ta.closest ? (ta.closest(".nb-cell-code-box") as HTMLElement | null) : null;
+    if (codeBox) codeBox.style.height = h + "px";
+
+    if (cell.type === "code") {
+      const isDebugging = doc.debuggingCellId === cell.id && DEBUG_SESSION.active;
+      const { hlHtml, gutterHtml } = renderCellCodeHighlight(cell, isDebugging);
+      const hlPre = codeBox && codeBox.querySelector ? codeBox.querySelector(".nb-cell-hl") : null;
+      if (hlPre) hlPre.innerHTML = hlHtml;
+      const inputWrap = ta.closest ? ta.closest(".nb-cell-input") : null;
+      const gutter = inputWrap && inputWrap.querySelector ? inputWrap.querySelector(".nb-cell-gutter") : null;
+      if (gutter) gutter.innerHTML = gutterHtml;
+    }
+  });
+
+  cellsList.addEventListener("keydown", (e: KeyboardEvent) => {
+    const ta = e.target as HTMLTextAreaElement;
+    if (!ta || !ta.classList || !ta.classList.contains("nb-cell-textarea")) return;
+    const cid = ta.getAttribute("data-cell-id") || undefined;
+    if (e.key === "Tab") {
+      e.preventDefault();
+      const s = ta.selectionStart || 0;
+      const t = ta.selectionEnd || 0;
+      const indent = LANG === "python" ? "    " : "  ";
+      ta.value = ta.value.slice(0, s) + indent + ta.value.slice(t);
+      ta.selectionStart = ta.selectionEnd = s + indent.length;
+      ta.dispatchEvent(new Event("input", { bubbles: true }));
+      return;
+    }
+    if (e.key === "Enter" && e.shiftKey && !(e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      runNotebookCell(cid, true);
+      return;
+    }
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && e.shiftKey) {
+      e.preventDefault();
+      debugNotebookCell(cid);
+      return;
+    }
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
+      e.preventDefault();
+      runNotebookCell(cid, false);
+      return;
+    }
+  });
 }
 
 /* ── Wire Up Notebook DOM Events, Single-File Multi-Tabs, Import Menu & Right VFS Sidebar ── */
@@ -2315,433 +1879,8 @@ export function initNotebookUI() {
     });
   }
 
-  /* ── 1. Import Dropdown Menu (#importMenuWrap / #btnImport / #btnUploadLocalFile / #importSampleList) ── */
-  const importMenuWrap = $("importMenuWrap");
-  const btnImport = $("btnImport");
-  const btnUploadLocalFile = $("btnUploadLocalFile");
-  const importSampleList = $("importSampleList");
-  const fileInput = $("fileInput") as HTMLInputElement | null;
-
-  if (btnImport && importMenuWrap) {
-    btnImport.onclick = (e?: MouseEvent) => {
-      if (e && typeof e.stopPropagation === "function") e.stopPropagation();
-      renderImportSampleMenu();
-      if (importMenuWrap.classList) {
-        importMenuWrap.classList.toggle("open");
-      }
-    };
-    addEventListener("click", (e: MouseEvent) => {
-      if (!importMenuWrap.classList || !importMenuWrap.classList.contains("open")) return;
-      if (importMenuWrap.contains && importMenuWrap.contains(e.target)) return;
-      importMenuWrap.classList.remove("open");
-    });
-  }
-
-  if (btnUploadLocalFile && fileInput) {
-    btnUploadLocalFile.onclick = (e?: MouseEvent) => {
-      if (e && typeof e.stopPropagation === "function") e.stopPropagation();
-      if (importMenuWrap && importMenuWrap.classList) importMenuWrap.classList.remove("open");
-      fileInput.click();
-    };
-  }
-
-  if (importSampleList && importSampleList.addEventListener) {
-    importSampleList.addEventListener("click", (e: MouseEvent) => {
-      const target = e.target as HTMLElement | null;
-      const btn = target && target.closest ? (target.closest(".import-sample-item") as HTMLElement | null) : null;
-      if (!btn) return;
-      if (importMenuWrap && importMenuWrap.classList) importMenuWrap.classList.remove("open");
-      const nbFile = btn.getAttribute("data-import-sample-notebook");
-      if (nbFile) {
-        setViewMode("notebook");
-        say(`✓ 已加载内置示例笔记本 ${nbFile}`, "ok");
-        return;
-      }
-      const sampleKey = btn.getAttribute("data-import-sample-key");
-      if (sampleKey) {
-        if (VIEW_MODE === "notebook") {
-          const code = LANG === "python" ? (getPySamplesDict()[sampleKey] || "") : (SAMPLES[sampleKey] || "");
-          if (code) {
-            const doc = getActiveNotebook();
-            const newCell: NotebookCell = {
-              id: nextCellId(),
-              type: "code",
-              source: code.trim(),
-              executionCount: null,
-              status: "idle",
-              output: null,
-            };
-            doc.cells.push(newCell);
-            doc.activeCellId = newCell.id;
-            renderNotebookUI(true);
-            say(`✓ 已将示例 ${sampleKey} 导入到当前 Notebook 新单元格`, "ok");
-          }
-          return;
-        }
-        loadSample(sampleKey);
-      }
-    });
-  }
-
-  /* ── 2. Single-File Mode Multi-Tab Bar (#scriptTabsList) with Double-Click Rename ── */
-  const scriptTabsEl = $("scriptTabsList");
-  if (scriptTabsEl && scriptTabsEl.addEventListener) {
-    scriptTabsEl.addEventListener("click", (e: MouseEvent) => {
-      const target = e.target as HTMLElement | null;
-      if (!target) return;
-      const lang = LANG === "python" ? "python" : "ts";
-      const store = ensureScriptTabsForLang(lang);
-
-      const closeBtn = target.closest ? (target.closest("[data-close-script-tab]") as HTMLElement | null) : null;
-      if (closeBtn) {
-        e.stopPropagation();
-        const closeId = closeBtn.getAttribute("data-close-script-tab");
-        if (store.tabs.length <= 1) return;
-        const idx = store.tabs.findIndex((t) => t.id === closeId);
-        if (idx >= 0) {
-          store.tabs.splice(idx, 1);
-          if (store.activeTabId === closeId) {
-            const fallbackTab = store.tabs[Math.max(0, idx - 1)];
-            if (fallbackTab) store.activeTabId = fallbackTab.id;
-            const nextTab = getActiveScriptTab(lang);
-            syncingScriptTab = true;
-            editor.value = nextTab.source;
-            setFileName(nextTab.title);
-            syncingScriptTab = false;
-            resetTraceState();
-            updateEditorChrome();
-          }
-          renderScriptTabsUI();
-          renderVfsTreeUI();
-        }
-        return;
-      }
-
-      const newBtn = target.closest ? (target.closest("#scriptBtnNewTab") as HTMLElement | null) : null;
-      if (newBtn) {
-        syncActiveScriptTabSource(editor ? editor.value : "");
-        const ext = lang === "python" ? ".py" : ".ts";
-        const newTitle = `untitled-${store.tabs.length + 1}${ext}`;
-        const newTab: ScriptTabDoc = {
-          id: "stab_" + (++scriptTabSeq),
-          title: newTitle,
-          lang,
-          source: lang === "python" ? "# 新建 Python 脚本\n" : "// 新建 TypeScript 脚本\n",
-          vfsPath: "",
-          isSample: false,
-        };
-        store.tabs.push(newTab);
-        store.activeTabId = newTab.id;
-        syncingScriptTab = true;
-        editor.value = newTab.source;
-        setFileName(newTab.title);
-        syncingScriptTab = false;
-        resetTraceState();
-        updateEditorChrome();
-        renderScriptTabsUI();
-        renderVfsTreeUI();
-        if (editor && typeof editor.focus === "function") editor.focus();
-        return;
-      }
-
-      const tabEl = target.closest ? (target.closest("[data-script-tab-id]") as HTMLElement | null) : null;
-      if (tabEl) {
-        const tabId = tabEl.getAttribute("data-script-tab-id");
-        if (tabId && store.activeTabId !== tabId) {
-          syncActiveScriptTabSource(editor ? editor.value : "");
-          store.activeTabId = tabId;
-          const nextTab = getActiveScriptTab(lang);
-          syncingScriptTab = true;
-          editor.value = nextTab.source;
-          setFileName(nextTab.title);
-          syncingScriptTab = false;
-          resetTraceState();
-          updateEditorChrome();
-          renderScriptTabsUI();
-          renderVfsTreeUI();
-        }
-      }
-    });
-
-    scriptTabsEl.addEventListener("dblclick", (e: MouseEvent) => {
-      const target = e.target as HTMLElement | null;
-      const tabEl = target && target.closest ? (target.closest("[data-script-tab-id]") as HTMLElement | null) : null;
-      if (!tabEl) return;
-      const tabId = tabEl.getAttribute("data-script-tab-id");
-      const lang = LANG === "python" ? "python" : "ts";
-      const store = ensureScriptTabsForLang(lang);
-      const targetTab = store.tabs.find((t) => t.id === tabId);
-      if (!targetTab) return;
-      const titleSpan = tabEl.querySelector ? tabEl.querySelector(".nb-tab-title") : null;
-      if (!titleSpan) return;
-
-      const input = document.createElement("input");
-      input.type = "text";
-      input.className = "nb-tab-rename-input";
-      input.value = targetTab.title;
-      titleSpan.replaceWith(input);
-      input.focus();
-      input.select();
-
-      let committed = false;
-      const commit = () => {
-        if (committed) return;
-        committed = true;
-        const rawVal = input.value.trim();
-        if (rawVal) {
-          const ext = lang === "python" ? ".py" : ".ts";
-          const nextName = /\.[A-Za-z0-9]{1,12}$/.test(rawVal) ? rawVal : rawVal + ext;
-          const oldPath = targetTab.vfsPath;
-          targetTab.title = nextName;
-          if (!targetTab.isSample && oldPath && VFS_NODES.has(oldPath)) {
-            targetTab.vfsPath = nextName;
-            VFS_NODES.delete(oldPath);
-            VFS_NODES.set(targetTab.vfsPath, {
-              path: targetTab.vfsPath,
-              name: nextName,
-              type: "file",
-              parentPath: "",
-              content: targetTab.source,
-            });
-            persistVfsToClientStorage();
-          }
-          if (store.activeTabId === targetTab.id) {
-            syncingScriptTab = true;
-            setFileName(nextName);
-            syncingScriptTab = false;
-          }
-          say(`✓ 文件已重命名为 ${nextName}`, "ok");
-        }
-        renderScriptTabsUI();
-        renderVfsTreeUI();
-      };
-      input.addEventListener("blur", commit);
-      input.addEventListener("keydown", (ev) => {
-        if (ev.key === "Enter") {
-          ev.preventDefault();
-          input.blur();
-        } else if (ev.key === "Escape") {
-          committed = true;
-          renderScriptTabsUI();
-        }
-      });
-    });
-  }
-
-  if (editor && editor.addEventListener) {
-    editor.addEventListener("input", () => {
-      syncActiveScriptTabSource(editor.value);
-    });
-  }
-
-  /* ── 3. Right-Side Virtual File System Sidebar (#vfsSidebar / #vfsTreeList) ── */
-  const vfsSidebar = $("vfsSidebar");
-  const b1 = $("btnToggleVfs");
-  const b2 = $("nbBtnToggleVfs");
-  if (vfsSidebar) {
-    vfsSidebar.hidden = true;
-  }
-  if (b1 && b1.classList) b1.classList.remove("active");
-  if (b2 && b2.classList) b2.classList.remove("active");
-
-  const toggleVfsSidebar = () => {
-    if (!vfsSidebar) return;
-    vfsSidebar.hidden = !vfsSidebar.hidden;
-    const isVisible = !vfsSidebar.hidden;
-    if (b1 && b1.classList) b1.classList.toggle("active", isVisible);
-    if (b2 && b2.classList) b2.classList.toggle("active", isVisible);
-  };
-  if (b1) b1.onclick = toggleVfsSidebar;
-  if (b2) b2.onclick = toggleVfsSidebar;
-
-  if ($("vfsBtnNewFile")) {
-    $("vfsBtnNewFile").onclick = () => {
-      ensureVfsInitialized();
-      const ext = LANG === "python" ? ".py" : ".ts";
-      let idx = 1;
-      while (VFS_NODES.has(`file_${idx}${ext}`)) idx++;
-      const name = `file_${idx}${ext}`;
-      const path = name;
-      const content = LANG === "python" ? `# ${name}\n` : `// ${name}\n`;
-      VFS_NODES.set(path, {
-        path,
-        name,
-        type: "file",
-        parentPath: "",
-        content,
-      });
-      persistVfsToClientStorage();
-      openVfsFile(path);
-    };
-  }
-
-  if ($("vfsBtnNewFolder")) {
-    $("vfsBtnNewFolder").onclick = () => {
-      ensureVfsInitialized();
-      let idx = 1;
-      while (VFS_NODES.has(`folder_${idx}`)) idx++;
-      const name = `folder_${idx}`;
-      const path = name;
-      VFS_NODES.set(path, {
-        path,
-        name,
-        type: "folder",
-        parentPath: "",
-      });
-      VFS_EXPANDED_FOLDERS.add(path);
-      persistVfsToClientStorage();
-      renderVfsTreeUI();
-      say(`📁 已创建文件夹 ${path}/（双击可重命名）`, "ok");
-    };
-  }
-
-  if ($("vfsBtnUpload") && fileInput) {
-    $("vfsBtnUpload").onclick = () => fileInput.click();
-  }
-
-  const vfsTreeList = $("vfsTreeList");
-  if (vfsTreeList && vfsTreeList.addEventListener) {
-    vfsTreeList.addEventListener("click", (e: MouseEvent) => {
-      const target = e.target as HTMLElement | null;
-      if (!target) return;
-
-      const confirmDelBtn = target.closest ? (target.closest("[data-vfs-confirm-del]") as HTMLElement | null) : null;
-      if (confirmDelBtn) {
-        e.stopPropagation();
-        const delPath = confirmDelBtn.getAttribute("data-vfs-confirm-del");
-        pendingVfsDeletePath = null;
-        if (delPath && VFS_NODES.has(delPath)) {
-          const prefix = delPath + "/";
-          Array.from(VFS_NODES.keys()).forEach((k) => {
-            if (k === delPath || k.startsWith(prefix)) {
-              VFS_NODES.delete(k);
-            }
-          });
-          (["ts", "python"] as const).forEach((l) => {
-            const st = SCRIPT_TABS[l];
-            st.tabs.forEach((t) => {
-              if (t.vfsPath === delPath || t.vfsPath.startsWith(prefix)) {
-                t.vfsPath = "";
-              }
-            });
-          });
-          persistVfsToClientStorage();
-          renderScriptTabsUI();
-          renderVfsTreeUI();
-          say(`🗑 已从文件目录移除 ${delPath}`, "dim");
-        } else {
-          renderVfsTreeUI();
-        }
-        return;
-      }
-
-      const cancelDelBtn = target.closest ? (target.closest("[data-vfs-cancel-del]") as HTMLElement | null) : null;
-      if (cancelDelBtn) {
-        e.stopPropagation();
-        pendingVfsDeletePath = null;
-        renderVfsTreeUI();
-        return;
-      }
-
-      const delBtn = target.closest ? (target.closest("[data-vfs-del]") as HTMLElement | null) : null;
-      if (delBtn) {
-        e.stopPropagation();
-        const delPath = delBtn.getAttribute("data-vfs-del");
-        if (delPath && VFS_NODES.has(delPath)) {
-          pendingVfsDeletePath = pendingVfsDeletePath === delPath ? null : delPath;
-          renderVfsTreeUI();
-        }
-        return;
-      }
-
-      const folderRow = target.closest ? (target.closest("[data-vfs-folder]") as HTMLElement | null) : null;
-      if (folderRow) {
-        const folderPath = folderRow.getAttribute("data-vfs-folder");
-        if (folderPath) {
-          if (VFS_EXPANDED_FOLDERS.has(folderPath)) VFS_EXPANDED_FOLDERS.delete(folderPath);
-          else VFS_EXPANDED_FOLDERS.add(folderPath);
-          renderVfsTreeUI();
-        }
-        return;
-      }
-
-      const fileRow = target.closest ? (target.closest("[data-vfs-file]") as HTMLElement | null) : null;
-      if (fileRow) {
-        const filePath = fileRow.getAttribute("data-vfs-file");
-        if (filePath) {
-          const curActivePath =
-            VIEW_MODE === "notebook"
-              ? getActiveNotebook().title
-              : getActiveScriptTab().vfsPath;
-          if (filePath !== curActivePath || editor.value !== (VFS_NODES.get(filePath)?.content ?? "")) {
-            openVfsFile(filePath);
-          }
-        }
-      }
-    });
-
-    vfsTreeList.addEventListener("dblclick", (e: MouseEvent) => {
-      const target = e.target as HTMLElement | null;
-      const row = target && target.closest ? (target.closest("[data-vfs-file], [data-vfs-folder]") as HTMLElement | null) : null;
-      if (!row) return;
-      const oldPath = row.getAttribute("data-vfs-file") || row.getAttribute("data-vfs-folder");
-      if (!oldPath) return;
-      const node = VFS_NODES.get(oldPath);
-      if (!node || node.readonly) return;
-      const nameSpan = row.querySelector ? row.querySelector(".vfs-name") : null;
-      if (!nameSpan) return;
-
-      const input = document.createElement("input");
-      input.type = "text";
-      input.className = "vfs-rename-input";
-      input.value = node.name;
-      nameSpan.replaceWith(input);
-      input.focus();
-      input.select();
-
-      let committed = false;
-      const commit = () => {
-        if (committed) return;
-        committed = true;
-        const nextName = input.value.trim().replace(/[\\/:*?"<>|]/g, "");
-        if (nextName && nextName !== node.name) {
-          const nextPath = node.parentPath ? `${node.parentPath}/${nextName}` : nextName;
-          VFS_NODES.delete(oldPath);
-          node.name = nextName;
-          node.path = nextPath;
-          VFS_NODES.set(nextPath, node);
-          persistVfsToClientStorage();
-
-          const lang = LANG === "python" ? "python" : "ts";
-          const store = ensureScriptTabsForLang(lang);
-          const matchingTab = store.tabs.find((t) => t.vfsPath === oldPath);
-          if (matchingTab) {
-            matchingTab.title = nextName;
-            matchingTab.vfsPath = nextPath;
-            if (store.activeTabId === matchingTab.id) {
-              syncingScriptTab = true;
-              setFileName(nextName);
-              syncingScriptTab = false;
-            }
-            renderScriptTabsUI();
-          }
-          say(`✓ 已重命名为 ${nextPath}`, "ok");
-        }
-        renderVfsTreeUI();
-      };
-
-      input.addEventListener("blur", commit);
-      input.addEventListener("keydown", (ev) => {
-        if (ev.key === "Enter") {
-          ev.preventDefault();
-          input.blur();
-        } else if (ev.key === "Escape") {
-          committed = true;
-          renderVfsTreeUI();
-        }
-      });
-    });
-  }
+  initScriptTabsAndImportEvents();
+  initVfsSidebarEvents();
 
   renderScriptTabsUI();
   renderVfsTreeUI();
@@ -2750,118 +1889,7 @@ export function initNotebookUI() {
   const nbWrap = $("notebookWrap");
   if (!nbWrap || !nbWrap.addEventListener) return;
 
-  const tabsEl = $("nbTabsList");
-  if (tabsEl && tabsEl.addEventListener) {
-    tabsEl.addEventListener("click", (e: MouseEvent) => {
-      const target = e.target as HTMLElement | null;
-      if (!target) return;
-      const closeBtn = target.closest ? (target.closest("[data-close-doc]") as HTMLElement | null) : null;
-      const lang = LANG === "python" ? "python" : "ts";
-      const store = ensureLangNotebooks(lang);
-      if (closeBtn) {
-        e.stopPropagation();
-        const closeId = closeBtn.getAttribute("data-close-doc");
-        if (store.docs.length <= 1) return;
-        const idx = store.docs.findIndex((d) => d.id === closeId);
-        if (idx >= 0) {
-          store.docs.splice(idx, 1);
-          if (store.activeDocId === closeId) {
-            const fallbackDoc = store.docs[Math.max(0, idx - 1)];
-            if (fallbackDoc) store.activeDocId = fallbackDoc.id;
-          }
-          syncNotebookGlobalsToSidePanel();
-          renderNotebookUI();
-          renderVfsTreeUI();
-        }
-        return;
-      }
-      const newBtn = target.closest ? (target.closest("#nbBtnNewTab") as HTMLElement | null) : null;
-      if (newBtn) {
-        const cId = nextCellId();
-        const newDoc: NotebookDocument = {
-          id: nextDocId(),
-          title: `Untitled-${store.docs.length + 1}.ipynb`,
-          lang,
-          execCounter: 0,
-          activeCellId: cId,
-          debuggingCellId: null,
-          cells: [
-            {
-              id: cId,
-              type: "code",
-              source: "",
-              executionCount: null,
-              status: "idle",
-              output: null,
-            },
-          ],
-          executedHistory: [],
-          lastGlobalVars: {},
-          lastGlobalDs: {},
-        };
-        store.docs.push(newDoc);
-        store.activeDocId = newDoc.id;
-        syncNotebookGlobalsToSidePanel(newDoc);
-        renderNotebookUI(true);
-        renderVfsTreeUI();
-        return;
-      }
-      const tab = target.closest ? (target.closest(".nb-tab") as HTMLElement | null) : null;
-      if (tab && tab.dataset.docId) {
-        // IMPORTANT: Only re-render if switching to a DIFFERENT tab so double-clicking a tab to rename is never interrupted!
-        if (store.activeDocId !== tab.dataset.docId) {
-          store.activeDocId = tab.dataset.docId;
-          syncNotebookGlobalsToSidePanel();
-          renderNotebookUI();
-          renderVfsTreeUI();
-        }
-      }
-    });
-
-    tabsEl.addEventListener("dblclick", (e: MouseEvent) => {
-      const target = e.target as HTMLElement | null;
-      const tab = target && target.closest ? (target.closest(".nb-tab") as HTMLElement | null) : null;
-      if (!tab || !tab.dataset.docId) return;
-      const lang = LANG === "python" ? "python" : "ts";
-      const store = ensureLangNotebooks(lang);
-      const targetDoc = store.docs.find((d) => d.id === tab.dataset.docId) || getActiveNotebook();
-      const titleSpan = tab.querySelector ? tab.querySelector(".nb-tab-title") : null;
-      if (!titleSpan) return;
-      const input = document.createElement("input");
-      input.type = "text";
-      input.className = "nb-tab-rename-input";
-      input.value = targetDoc.title;
-      titleSpan.replaceWith(input);
-      input.focus();
-      input.select();
-      let committed = false;
-      const commit = () => {
-        if (committed) return;
-        committed = true;
-        const val = input.value.trim();
-        if (val) {
-          const oldPath = `notebooks/${targetDoc.title}`;
-          targetDoc.title = val.endsWith(".ipynb") ? val : val + ".ipynb";
-          if (oldPath !== `notebooks/${targetDoc.title}`) {
-            VFS_NODES.delete(oldPath);
-          }
-          say(`✓ 笔记本已重命名为 ${targetDoc.title}`, "ok");
-        }
-        renderNotebookUI();
-        renderVfsTreeUI();
-      };
-      input.addEventListener("blur", commit);
-      input.addEventListener("keydown", (ev) => {
-        if (ev.key === "Enter") {
-          ev.preventDefault();
-          input.blur();
-        } else if (ev.key === "Escape") {
-          committed = true;
-          renderNotebookUI();
-        }
-      });
-    });
-  }
+  initNotebookTabsEvents();
 
   const bindBtn = (id: string, fn: () => void) => {
     const b = $(id);
@@ -2884,194 +1912,7 @@ export function initNotebookUI() {
   bindBtn("nbBtnRestart", () => restartNotebookKernel(false));
   bindBtn("nbBtnRunAll", () => runAllNotebookCells());
 
-  const typeSel = $("nbCellType");
-  if (typeSel) {
-    typeSel.onchange = () => {
-      const doc = getActiveNotebook();
-      const cell = getActiveCell(doc);
-      if (!cell) return;
-      cell.type = typeSel.value === "markdown" ? "markdown" : "code";
-      cell.markdownRendered = false;
-      cell.output = null;
-      cell.executionCount = null;
-      renderNotebookUI(true);
-    };
-  }
-
-  const cellsList = $("nbCellsList");
-  if (cellsList && cellsList.addEventListener) {
-    cellsList.addEventListener("click", (e: MouseEvent) => {
-      const target = e.target as HTMLElement | null;
-      if (!target) return;
-      if (target.closest && target.closest("#nbBottomAddCode")) {
-        const doc = getActiveNotebook();
-        const last = doc.cells[doc.cells.length - 1];
-        insertNotebookCell("below", last ? last.id : undefined, "code");
-        return;
-      }
-      if (target.closest && target.closest("#nbBottomAddMd")) {
-        const doc = getActiveNotebook();
-        const last = doc.cells[doc.cells.length - 1];
-        insertNotebookCell("below", last ? last.id : undefined, "markdown");
-        return;
-      }
-
-      const gline = target.closest ? (target.closest(".nb-gline") as HTMLElement | null) : null;
-      if (gline && gline.dataset.line) {
-        const cellEl = gline.closest(".nb-cell") as HTMLElement | null;
-        if (cellEl && cellEl.dataset.cellId) {
-          toggleNotebookCellCheckpoint(cellEl.dataset.cellId, parseInt(gline.dataset.line, 10));
-          return;
-        }
-      }
-
-      const actEl = target.closest ? (target.closest("[data-cell-act]") as HTMLElement | null) : null;
-      if (actEl) {
-        const act = actEl.getAttribute("data-cell-act");
-        const cid = actEl.getAttribute("data-cell-id");
-        if (!cid) return;
-        const doc = getActiveNotebook();
-        doc.activeCellId = cid;
-        ACTIVE_NB_CELL_ID = cid;
-        if (act === "run") {
-          runNotebookCell(cid, true);
-          return;
-        }
-        if (act === "debug") {
-          debugNotebookCell(cid);
-          return;
-        }
-        if (act === "dup") {
-          duplicateNotebookCell(cid);
-          return;
-        }
-        if (act === "up") {
-          moveNotebookCell(-1, cid);
-          return;
-        }
-        if (act === "down") {
-          moveNotebookCell(1, cid);
-          return;
-        }
-        if (act === "ins-above") {
-          insertNotebookCell("above", cid);
-          return;
-        }
-        if (act === "ins-below") {
-          insertNotebookCell("below", cid);
-          return;
-        }
-        if (act === "del") {
-          deleteNotebookCell(cid);
-          return;
-        }
-        if (act === "toggle-md") {
-          const c = doc.cells.find((x) => x.id === cid);
-          if (c) {
-            c.markdownRendered = !c.markdownRendered;
-            renderNotebookUI(!c.markdownRendered);
-          }
-          return;
-        }
-      }
-
-      const cellBox = target.closest ? (target.closest(".nb-cell") as HTMLElement | null) : null;
-      if (cellBox && cellBox.dataset.cellId) {
-        const doc = getActiveNotebook();
-        if (doc.activeCellId !== cellBox.dataset.cellId) {
-          doc.activeCellId = cellBox.dataset.cellId;
-          ACTIVE_NB_CELL_ID = doc.activeCellId;
-          if (cellsList.querySelectorAll) {
-            cellsList.querySelectorAll(".nb-cell").forEach((el: HTMLElement) => {
-              el.classList.toggle("active", el.dataset.cellId === doc.activeCellId);
-            });
-          }
-          const c = getActiveCell(doc);
-          if (typeSel && c) typeSel.value = c.type;
-        }
-      }
-    });
-
-    cellsList.addEventListener("dblclick", (e: MouseEvent) => {
-      const target = e.target as HTMLElement | null;
-      const mdPrev = target && target.closest ? (target.closest('[data-cell-act="edit-md"]') as HTMLElement | null) : null;
-      if (mdPrev) {
-        const cid = mdPrev.getAttribute("data-cell-id");
-        const doc = getActiveNotebook();
-        const c = doc.cells.find((x) => x.id === cid);
-        if (c) {
-          c.markdownRendered = false;
-          doc.activeCellId = c.id;
-          renderNotebookUI(true);
-        }
-      }
-    });
-
-    cellsList.addEventListener("input", (e: Event) => {
-      const ta = e.target as HTMLTextAreaElement;
-      if (!ta || !ta.classList || !ta.classList.contains("nb-cell-textarea")) return;
-      const cid = ta.getAttribute("data-cell-id");
-      const doc = getActiveNotebook();
-      const cell = doc.cells.find((c) => c.id === cid);
-      if (!cell) return;
-      cell.source = ta.value;
-
-      if (cell.type === "markdown") {
-        const estH = estimateMarkdownEditorHeight(cell.source);
-        ta.style.height = "auto";
-        const nextH = Math.max(estH, (ta.scrollHeight || 0) + 10);
-        ta.style.height = nextH + "px";
-        return;
-      }
-
-      const lineCount = Math.max(1, cell.source.split("\n").length);
-      const h = Math.max(38, lineCount * 24 + 14);
-      ta.style.height = h + "px";
-      const codeBox = ta.closest ? (ta.closest(".nb-cell-code-box") as HTMLElement | null) : null;
-      if (codeBox) codeBox.style.height = h + "px";
-
-      if (cell.type === "code") {
-        const isDebugging = doc.debuggingCellId === cell.id && DEBUG_SESSION.active;
-        const { hlHtml, gutterHtml } = renderCellCodeHighlight(cell, isDebugging);
-        const hlPre = codeBox && codeBox.querySelector ? codeBox.querySelector(".nb-cell-hl") : null;
-        if (hlPre) hlPre.innerHTML = hlHtml;
-        const inputWrap = ta.closest ? ta.closest(".nb-cell-input") : null;
-        const gutter = inputWrap && inputWrap.querySelector ? inputWrap.querySelector(".nb-cell-gutter") : null;
-        if (gutter) gutter.innerHTML = gutterHtml;
-      }
-    });
-
-    cellsList.addEventListener("keydown", (e: KeyboardEvent) => {
-      const ta = e.target as HTMLTextAreaElement;
-      if (!ta || !ta.classList || !ta.classList.contains("nb-cell-textarea")) return;
-      const cid = ta.getAttribute("data-cell-id") || undefined;
-      if (e.key === "Tab") {
-        e.preventDefault();
-        const s = ta.selectionStart || 0;
-        const t = ta.selectionEnd || 0;
-        const indent = LANG === "python" ? "    " : "  ";
-        ta.value = ta.value.slice(0, s) + indent + ta.value.slice(t);
-        ta.selectionStart = ta.selectionEnd = s + indent.length;
-        ta.dispatchEvent(new Event("input", { bubbles: true }));
-        return;
-      }
-      if (e.key === "Enter" && e.shiftKey && !(e.ctrlKey || e.metaKey)) {
-        e.preventDefault();
-        runNotebookCell(cid, true);
-        return;
-      }
-      if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && e.shiftKey) {
-        e.preventDefault();
-        debugNotebookCell(cid);
-        return;
-      }
-      if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
-        e.preventDefault();
-        runNotebookCell(cid, false);
-        return;
-      }
-    });
-  }
+  initNotebookCellsEvents();
 
   if (typeof window !== "undefined") {
     window.onNotebookLangChanged = (_nextLang: "ts" | "python") => {
@@ -3086,4 +1927,3 @@ export function initNotebookUI() {
     };
   }
 }
-

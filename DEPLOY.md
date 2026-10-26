@@ -9,9 +9,10 @@
 ```text
 index.html                 主页面（TS / PY 及 Script / Notebook 均从这里进入）
 share.html                 分享链接的沙箱预览页
+storage-guard.js           本地存储版本守卫（在 <head> 最先执行，版本变更时精准清理本应用旧缓存）
 app-session.js             自动保存 / 分享链接管理
 css/app.css                全部界面与可视化组件样式
-js/app.bundle.js           主应用核心管线（由 src/main.ts 及 17 个严格 TS 模块打包生成）
+js/app.bundle.js           主应用核心管线（由 src/main.ts 及严格 TS 模块打包生成）
 editor/cm.bundle.js        CodeMirror 6 编辑器构建产物（含主编辑器与 Notebook 单元格编辑器）
 editor/ts-worker.bundle.js 官方 TypeScript 编译器 Web Worker 构建产物
 python/py_engine.js        Python 主线程引擎
@@ -26,7 +27,7 @@ REFACTOR_PLAN.md           TypeScript 模块化架构映射与严格化编程验
 DEPLOY.md                  本部署说明文件
 ```
 
-⚠️ 请保持上述目录结构完整上传：页面逻辑在 `js/app.bundle.js`、编辑器与类型工作线程在 `editor/`、样式在 `css/app.css`、分享页与 Python 模式依赖对应的相对路径文件。
+⚠️ 请保持上述目录结构完整上传：页面逻辑在 `js/app.bundle.js`、存储守卫在 `storage-guard.js`、编辑器与类型工作线程在 `editor/`、样式在 `css/app.css`、分享页与 Python 模式依赖对应的相对路径文件。
 
 ## 2. 从源码构建发布包
 
@@ -38,9 +39,11 @@ npm run build
 ```
 
 该命令会依次执行：
-1. `node scripts/build-editor.mjs`：通过 `esbuild` 将 `src/main.ts`、`editor/cm-entry.js`、`editor/ts-worker-entry.js` 打包为 `js/app.bundle.js`、`editor/cm.bundle.js` 和 `editor/ts-worker.bundle.js`；
-2. `node test-pipeline.mjs`：运行全量自动化回归测试与 **Strict TS Gate 严格化门禁**（强制检查 `src/**/*.ts` 中 `0 any`、`0 !` 非空断言、`0 @ts-ignore` 并执行 `tsc --noEmit` 零报错验证）；
+1. `node scripts/build-editor.mjs`：通过 `esbuild` 将 `src/main.ts`、`editor/cm-entry.js`、`editor/ts-worker-entry.js` 打包为 `js/app.bundle.js`、`editor/cm.bundle.js` 和 `editor/ts-worker.bundle.js`，并自动将 `STORAGE_VERSION` 同步注入到 `storage-guard.js` 与 `index.html`；
+2. `node test-pipeline.mjs`：运行全量自动化回归测试（含本地存储版本守卫 T1–T4 验收测试）与 **Strict TS Gate 严格化门禁**（强制检查 `src/**/*.ts` 中 `0 any`、`0 !` 非空断言、`0 @ts-ignore` 并执行 `tsc --noEmit` 零报错验证）；
 3. `node scripts/build.mjs`：将所有静态产物与五份文档校验并复制组装到 `dist/` 目录。
+
+> **本地存储版本守卫规范**：凡修改了本地持久化数据结构（如 `ts-playground-session-v1` 或 `ts-visual-vfs-*` 的 JSON 结构），发布前请递增 `scripts/build-editor.mjs` 中的 `STORAGE_VERSION`（或通过环境变量 `STORAGE_VERSION=YYYYMMDD-N npm run build` 构建）。用户浏览器首次加载新版本时，`storage-guard.js` 会自动清理当前应用的旧 `ts-playground-*` / `ts-visual-*` 存储并回退到默认样例，同时严禁调用 `localStorage.clear()`，不会误伤同源下其他应用的数据。
 
 ## 3. 本地试跑
 

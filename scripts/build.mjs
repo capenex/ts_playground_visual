@@ -8,10 +8,12 @@ const DIST = path.join(ROOT, 'dist');
 const FILES = [
   'index.html',
   'share.html',
+  'storage-guard.js',
   'app-session.js',
   'editor/cm.bundle.js',
   'editor/ts-worker.bundle.js',
   'README.md',
+  'CHANGELOG.md',
   'USER_GUIDE.md',
   'SYNTAX_REFERENCE.md',
   'REFACTOR_PLAN.md',
@@ -22,6 +24,7 @@ const DIRS = ['python', 'js', 'css', 'examples'];
 const REQUIRED = [
   'index.html',
   'share.html',
+  'storage-guard.js',
   'app-session.js',
   'editor/cm.bundle.js',
   'editor/ts-worker.bundle.js',

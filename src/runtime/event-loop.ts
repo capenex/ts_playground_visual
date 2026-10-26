@@ -7,7 +7,9 @@ import { revealErrorLine, updateEditorChrome } from "../viz/highlight";
 import { clearFlyLayer } from "../viz/ast-view";
 import { stopAuto } from "../ui/controls";
 import { EventLoopSnapshot } from "../types";
-import type { VfsClientApi } from "../globals";
+import { createVirtualPromiseAndFsEnv, rethrowIfControlSignal } from "./event-loop-env";
+
+export * from "./event-loop-env";
 
 export function say(msg: string, cls?: string, line?: number) {
   const d = document.createElement('div');
@@ -39,9 +41,6 @@ export function clearLog(msg?: string) {
   if (msg) say(msg, 'dim');
 }
 
-/* V8 wraps a Function body in extra lines; measure it instead of hard-coding.
-   Stack frames look like `at boom (eval at f (file:12:3), <anonymous>:6:9)` — the
-   `<anonymous>` location after the comma is the one inside the compiled body. */
 export function anonStackLine(stack: unknown) {
   const re = /,\s*<anonymous>:(\d+):\d+/g;
   const m = re.exec(String(stack || ''));
@@ -62,20 +61,15 @@ export function fnBodyLineOffset() {
   return off;
 }
 
-/* Map a compiled-function stack line back to the editor line it came from.
-   The generated body is: line 1 = checkpoint stub, source line 1 starts on body line 2. */
 export function sourceLineFromStack(stack: unknown, lineCount?: number) {
   const stackLine = anonStackLine(stack);
   if (!stackLine) return 0;
   const line = stackLine - fnBodyLineOffset() - 1;
   if (!isFinite(line) || line < 1) return 0;
-  if (lineCount && line > lineCount) return 0;   // threw inside the evaluation wrapper, not user code
+  if (lineCount && line > lineCount) return 0;
   return line;
 }
 
-/* Compile & evaluate one call. `opts.budgetMs` arms the loop watchdog: the instrumented
-   `__t(line)` hooks count executions and throw once the wall-clock budget is spent, so a
-   runaway loop is aborted on the spot and we still know which source line kept spinning. */
 export function safeJSONStringify(val: unknown) {
   if (val === undefined) return '(undefined)';
   try {
@@ -99,11 +93,6 @@ export function safeJSONStringify(val: unknown) {
   }
 }
 
-/* ================================================================
-   4.1) Deterministic Virtual Event Loop Sandbox (Promise / async-await / setTimeout / queueMicrotask)
-   Executes microtasks and timer macrotasks deterministically so step-by-step replay
-   and PAUSE_SIGNAL unwinding work across async boundaries.
-   ================================================================ */
 export function hasAsyncConstructs(src: unknown) {
   if (!src || typeof src !== 'string') return false;
   const clean = blankStrings(src);
@@ -178,7 +167,7 @@ export function createVirtualEventLoop(
   const loop: VirtualLoopState = {
     used: false,
     virtualTime: 0,
-    phase: 'sync', // 'sync' | 'microtask' | 'macrotask' | 'idle'
+    phase: 'sync',
     activeTaskLabel: '主线程同步栈 (Sync)',
     coroutines: [],
     microtasks: [],
@@ -186,15 +175,6 @@ export function createVirtualEventLoop(
     promises: [],
     globalSnapFn: null,
   };
-
-  function rethrowIfControlSignal(err: unknown) {
-    const ctrl = (err && typeof err === 'object')
-      ? (err as { __debugPause?: boolean; __timeout?: boolean })
-      : null;
-    if (err === PAUSE_SIGNAL || (ctrl && (ctrl.__debugPause || ctrl.__timeout))) {
-      throw err;
-    }
-  }
 
   function enqueueMicrotask(item: {
     label?: string;
@@ -217,539 +197,13 @@ export function createVirtualEventLoop(
     return task;
   }
 
-  interface PromiseHandler {
-    onFulfilled?: ((v: unknown) => unknown) | null;
-    onRejected?: ((r: unknown) => unknown) | null;
-    child: VirtualPromise;
-    line?: number;
-    label?: string;
-    isInternalAwait?: boolean;
-  }
-
-  class VirtualPromise implements VirtualPromiseLike {
-    __isVirtualPromise: boolean;
-    id: number;
-    label: string;
-    state: string;
-    value: unknown;
-    reason: unknown;
-    line: number;
-    _handlers: PromiseHandler[];
-    _internal?: boolean;
-    reactions?: unknown[];
-
-    constructor(
-      executor?: ((resolve: (val?: unknown) => void, reject: (reason?: unknown) => void) => void) | null,
-      label?: string
-    ) {
-      loop.used = true;
-      this.__isVirtualPromise = true;
-      this.id = ++promiseSeq;
-      this.label = label || ('Promise#' + this.id);
-      this.state = 'pending';
-      this.value = undefined;
-      this.reason = undefined;
-      this.line = getCurLine() || 1;
-      this._handlers = [];
-      loop.promises.push(this);
-
-      const resolve = (val?: unknown) => this._resolve(val);
-      const reject = (reason?: unknown) => this._reject(reason);
-      if (typeof executor === 'function') {
-        try {
-          executor(resolve, reject);
-        } catch (err) {
-          rethrowIfControlSignal(err);
-          this._reject(err);
-        }
-      }
-    }
-
-    _resolve(val?: unknown) {
-      if (this.state !== 'pending') return;
-      const thenable = (val && (typeof val === 'object' || typeof val === 'function'))
-        ? (val as { __isVirtualPromise?: boolean; then?: (onF: (v: unknown) => void, onR: (r: unknown) => void) => void })
-        : null;
-      if (thenable && (thenable.__isVirtualPromise || typeof thenable.then === 'function') && typeof thenable.then === 'function') {
-        try {
-          thenable.then((v: unknown) => this._resolve(v), (r: unknown) => this._reject(r));
-        } catch (err) {
-          rethrowIfControlSignal(err);
-          this._reject(err);
-        }
-        return;
-      }
-      this.state = 'fulfilled';
-      this.value = val;
-      this._flush();
-    }
-
-    _reject(reason?: unknown) {
-      if (this.state !== 'pending') return;
-      this.state = 'rejected';
-      this.reason = reason;
-      this._flush();
-    }
-
-    _flush() {
-      if (this.state === 'pending') return;
-      const pending = this._handlers.splice(0, this._handlers.length);
-      for (const h of pending) {
-        this._scheduleHandler(h);
-      }
-    }
-
-    _scheduleHandler(h: PromiseHandler) {
-      const isFulfilled = this.state === 'fulfilled';
-      const cb = isFulfilled ? h.onFulfilled : h.onRejected;
-      const arg = isFulfilled ? this.value : this.reason;
-      enqueueMicrotask({
-        label: h.label || (this.label + (isFulfilled ? '.then' : '.catch')),
-        line: h.line || this.line || 1,
-        isInternalAwait: Boolean(h.isInternalAwait),
-        rawCb: cb,
-        run: () => {
-          if (typeof cb !== 'function') {
-            if (isFulfilled) h.child._resolve(arg);
-            else h.child._reject(arg);
-            return;
-          }
-          try {
-            // If user wrote a single-line callback without inner __t hooks, emit a trace step for the microtask
-            const cbSrc = Function.prototype.toString.call(cb);
-            if (!h.isInternalAwait && !cbSrc.includes('__t(') && typeof __t === 'function') {
-              __t(h.line || 1, '⚡ [微任务 Microtask] ' + (h.label || 'Promise.then'), loop.globalSnapFn);
-            }
-            const res = cb(arg);
-            h.child._resolve(res);
-          } catch (err) {
-            rethrowIfControlSignal(err);
-            h.child._reject(err);
-          }
-        },
-      });
-    }
-
-    then(
-      onFulfilled?: ((v: unknown) => unknown) | null,
-      onRejected?: ((r: unknown) => unknown) | null,
-      metaLabel?: string,
-      isInternalAwait?: boolean
-    ) {
-      const callLine = getCurLine() || this.line || 1;
-      const child = new VirtualPromise(null, metaLabel || (this.label + '.then'));
-      // Hide internal child promises created purely for chaining from cluttering the promise list if needed
-      if (isInternalAwait) child._internal = true;
-      const handler: PromiseHandler = {
-        onFulfilled,
-        onRejected,
-        child,
-        line: callLine,
-        label: metaLabel || (this.label + '.then'),
-        isInternalAwait: Boolean(isInternalAwait),
-      };
-      if (this.state === 'pending') {
-        this._handlers.push(handler);
-      } else {
-        this._scheduleHandler(handler);
-      }
-      return child;
-    }
-
-    catch(onRejected?: ((reason: unknown) => unknown) | null) {
-      return this.then(null, onRejected, this.label + '.catch');
-    }
-
-    finally(onFinally?: (() => unknown) | null) {
-      return this.then(
-        (v: unknown) => {
-          if (typeof onFinally === 'function') onFinally();
-          return v;
-        },
-        (err: unknown) => {
-          if (typeof onFinally === 'function') onFinally();
-          throw err;
-        },
-        this.label + '.finally'
-      );
-    }
-
-    static resolve(val?: unknown): VirtualPromise {
-      loop.used = true;
-      if (val instanceof VirtualPromise || (val && typeof val === 'object' && '__isVirtualPromise' in val)) {
-        return val as VirtualPromise;
-      }
-      return new VirtualPromise((res: (v?: unknown) => void) => res(val), 'Promise.resolve(' + formatShortVal(val) + ')');
-    }
-
-    static reject(reason?: unknown): VirtualPromise {
-      loop.used = true;
-      return new VirtualPromise((_res: (v?: unknown) => void, rej: (r?: unknown) => void) => rej(reason), 'Promise.reject(' + formatShortVal(reason) + ')');
-    }
-
-    static all(items: Iterable<unknown> | null | undefined): VirtualPromise {
-      loop.used = true;
-      const arr = Array.from(items || []);
-      return new VirtualPromise((resolve: (v?: unknown) => void, reject: (r?: unknown) => void) => {
-        if (arr.length === 0) { resolve([]); return; }
-        const out = new Array(arr.length);
-        let left = arr.length;
-        arr.forEach((item, idx) => {
-          VirtualPromise.resolve(item).then((val: unknown) => {
-            out[idx] = val;
-            if (--left === 0) resolve(out);
-          }, reject);
-        });
-      }, 'Promise.all');
-    }
-
-    static race(items: Iterable<unknown> | null | undefined): VirtualPromise {
-      loop.used = true;
-      const arr = Array.from(items || []);
-      return new VirtualPromise((resolve: (v?: unknown) => void, reject: (r?: unknown) => void) => {
-        arr.forEach((item) => {
-          VirtualPromise.resolve(item).then(resolve, reject);
-        });
-      }, 'Promise.race');
-    }
-  }
-
-  const getVfsApi = (): VfsClientApi => {
-    if (globalThis.__VFS__) return globalThis.__VFS__;
-    const fallbackFiles = new Map<string, { type: 'file' | 'folder'; content: string; mtime: number }>();
-    const resolveFallbackWorkspacePath = (rawPath: string, allowEmptyRoot = false): string => {
-      const s = String(rawPath ?? '').trim().replace(/\\/g, '/');
-      if (!s) {
-        if (allowEmptyRoot) return '';
-        throw new Error(`ENOENT: no such file or directory, open ''`);
-      }
-      if (/^[A-Za-z]:/.test(s) || s.startsWith('~')) {
-        throw new Error(`EACCES: permission denied, access '${rawPath}' (outside workspace is not allowed)`);
-      }
-      let rel = s;
-      if (s.startsWith('/')) {
-        if (s === '/' || s === '/workspace' || s === '/workspace/') {
-          rel = '';
-        } else if (s.startsWith('/workspace/')) {
-          rel = s.slice('/workspace/'.length);
-        } else {
-          throw new Error(`EACCES: permission denied, access '${rawPath}' (outside workspace is not allowed)`);
-        }
-      } else if (s === 'workspace' || s === 'workspace/') {
-        rel = '';
-      } else if (s.startsWith('workspace/')) {
-        rel = s.slice('workspace/'.length);
-      }
-      const rawParts = rel.split('/');
-      const resolved: string[] = [];
-      for (const part of rawParts) {
-        if (!part || part === '.') continue;
-        if (part === '..') {
-          if (resolved.length === 0) {
-            throw new Error(`EACCES: permission denied, access '${rawPath}' (outside workspace is not allowed)`);
-          }
-          resolved.pop();
-          continue;
-        }
-        resolved.push(part);
-      }
-      if (resolved.length === 0 && !allowEmptyRoot) {
-        throw new Error(`EISDIR: illegal operation on a directory, open '${rawPath}'`);
-      }
-      return resolved.join('/');
-    };
-    const ensureParentFolders = (norm: string) => {
-      const parts = norm.split('/').filter(Boolean);
-      let acc = '';
-      for (let idx = 0; idx < parts.length - 1; idx++) {
-        const seg = parts[idx] || '';
-        acc = acc ? `${acc}/${seg}` : seg;
-        if (!fallbackFiles.has(acc)) {
-          fallbackFiles.set(acc, { type: 'folder', content: '', mtime: Date.now() });
-        }
-      }
-    };
-    const api: VfsClientApi = {
-      resolveWorkspacePath(rawPath: string, allowEmptyRoot = false) {
-        return resolveFallbackWorkspacePath(rawPath, allowEmptyRoot);
-      },
-      readFile(p: string) {
-        const norm = resolveFallbackWorkspacePath(p, false);
-        const node = fallbackFiles.get(norm);
-        if (!node) throw new Error(`ENOENT: no such file or directory, open '${p}'`);
-        if (node.type === 'folder') throw new Error(`EISDIR: illegal operation on a directory, read '${p}'`);
-        return node.content;
-      },
-      writeFile(p: string, data: string) {
-        const norm = resolveFallbackWorkspacePath(p, false);
-        ensureParentFolders(norm);
-        const str = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
-        fallbackFiles.set(norm, { type: 'file', content: str, mtime: Date.now() });
-        return true;
-      },
-      appendFile(p: string, data: string) {
-        const norm = resolveFallbackWorkspacePath(p, false);
-        ensureParentFolders(norm);
-        const prev = fallbackFiles.get(norm)?.content ?? '';
-        const str = typeof data === 'string' ? data : JSON.stringify(data);
-        fallbackFiles.set(norm, { type: 'file', content: prev + str, mtime: Date.now() });
-        return true;
-      },
-      exists(p: string) {
-        const norm = resolveFallbackWorkspacePath(p, true);
-        if (!norm) return true;
-        return fallbackFiles.has(norm);
-      },
-      listFiles(p?: string) {
-        const norm = resolveFallbackWorkspacePath(p || '.', true);
-        const prefix = norm ? norm + '/' : '';
-        const out = new Set<string>();
-        fallbackFiles.forEach((_v, k) => {
-          if (!prefix) {
-            const first = k.split('/')[0];
-            if (first) out.add(first);
-          } else if (k.startsWith(prefix)) {
-            const rest = k.slice(prefix.length).split('/')[0];
-            if (rest) out.add(rest);
-          }
-        });
-        return Array.from(out).sort();
-      },
-      readdir(p?: string) {
-        return api.listFiles(p);
-      },
-      mkdir(p: string) {
-        const norm = resolveFallbackWorkspacePath(p, true);
-        if (!norm) return true;
-        ensureParentFolders(norm);
-        fallbackFiles.set(norm, { type: 'folder', content: '', mtime: Date.now() });
-        return true;
-      },
-      deleteFile(p: string) {
-        const norm = resolveFallbackWorkspacePath(p, false);
-        const existed = fallbackFiles.delete(norm);
-        Array.from(fallbackFiles.keys()).forEach(k => {
-          if (k.startsWith(norm + '/')) fallbackFiles.delete(k);
-        });
-        return existed;
-      },
-      unlink(p: string) {
-        return api.deleteFile(p);
-      },
-      stat(p: string) {
-        const norm = resolveFallbackWorkspacePath(p, true);
-        if (!norm) {
-          return {
-            size: 0,
-            isFile: () => false,
-            isDirectory: () => true,
-          };
-        }
-        const node = fallbackFiles.get(norm);
-        if (!node) throw new Error(`ENOENT: no such file or directory, stat '${p}'`);
-        return {
-          size: node.type === 'file' ? node.content.length : 0,
-          isFile: () => node.type === 'file',
-          isDirectory: () => node.type === 'folder',
-        };
-      },
-      listAll() {
-        return Array.from(fallbackFiles.keys()).sort();
-      },
-      clear() {
-        fallbackFiles.clear();
-      },
-    };
-    globalThis.__VFS__ = api;
-    globalThis.vfs = api;
-    return api;
-  };
-
-  const readRequiredVfsFile = (p: string): string => {
-    const content = getVfsApi().readFile(p);
-    if (content === null) {
-      throw new Error(`ENOENT: no such file or directory, open '${p}'`);
-    }
-    return content;
-  };
-
-  const fsPromisesApi = {
-    readFile(p: string, _encoding?: string) {
-      loop.used = true;
-      return new VirtualPromise((resolve: (v?: unknown) => void, reject: (r?: unknown) => void) => {
-        try {
-          resolve(readRequiredVfsFile(p));
-        } catch (e) {
-          reject(e);
-        }
-      }, `fs.readFile(${formatShortVal(p)})`);
-    },
-    writeFile(p: string, data: unknown, _encoding?: string) {
-      loop.used = true;
-      return new VirtualPromise((resolve: (v?: unknown) => void, reject: (r?: unknown) => void) => {
-        try {
-          getVfsApi().writeFile(p, typeof data === 'string' ? data : String(data ?? ''));
-          resolve(undefined);
-        } catch (e) {
-          reject(e);
-        }
-      }, `fs.writeFile(${formatShortVal(p)})`);
-    },
-    appendFile(p: string, data: unknown, _encoding?: string) {
-      loop.used = true;
-      return new VirtualPromise((resolve: (v?: unknown) => void, reject: (r?: unknown) => void) => {
-        try {
-          getVfsApi().appendFile(p, typeof data === 'string' ? data : String(data ?? ''));
-          resolve(undefined);
-        } catch (e) {
-          reject(e);
-        }
-      }, `fs.appendFile(${formatShortVal(p)})`);
-    },
-    readdir(p?: string) {
-      loop.used = true;
-      return new VirtualPromise((resolve: (v?: unknown) => void, reject: (r?: unknown) => void) => {
-        try {
-          resolve(getVfsApi().readdir(p));
-        } catch (e) {
-          reject(e);
-        }
-      }, `fs.readdir(${formatShortVal(p || '.')})`);
-    },
-    mkdir(p: string, _options?: unknown) {
-      loop.used = true;
-      return new VirtualPromise((resolve: (v?: unknown) => void, reject: (r?: unknown) => void) => {
-        try {
-          getVfsApi().mkdir(p);
-          resolve(undefined);
-        } catch (e) {
-          reject(e);
-        }
-      }, `fs.mkdir(${formatShortVal(p)})`);
-    },
-    unlink(p: string) {
-      loop.used = true;
-      return new VirtualPromise((resolve: (v?: unknown) => void, reject: (r?: unknown) => void) => {
-        try {
-          getVfsApi().unlink(p);
-          resolve(undefined);
-        } catch (e) {
-          reject(e);
-        }
-      }, `fs.unlink(${formatShortVal(p)})`);
-    },
-    rm(p: string, _options?: unknown) {
-      loop.used = true;
-      return new VirtualPromise((resolve: (v?: unknown) => void, reject: (r?: unknown) => void) => {
-        try {
-          getVfsApi().unlink(p);
-          resolve(undefined);
-        } catch (e) {
-          reject(e);
-        }
-      }, `fs.rm(${formatShortVal(p)})`);
-    },
-    stat(p: string) {
-      loop.used = true;
-      return new VirtualPromise((resolve: (v?: unknown) => void, reject: (r?: unknown) => void) => {
-        try {
-          resolve(getVfsApi().stat(p));
-        } catch (e) {
-          reject(e);
-        }
-      }, `fs.stat(${formatShortVal(p)})`);
-    },
-    exists(p: string) {
-      loop.used = true;
-      return new VirtualPromise((resolve: (v?: unknown) => void, reject: (r?: unknown) => void) => {
-        try {
-          resolve(getVfsApi().exists(p));
-        } catch (e) {
-          reject(e);
-        }
-      }, `fs.exists(${formatShortVal(p)})`);
-    },
-    access(p: string, _mode?: number) {
-      loop.used = true;
-      return new VirtualPromise((resolve: (v?: unknown) => void, reject: (r?: unknown) => void) => {
-        try {
-          getVfsApi().stat(p);
-          resolve(undefined);
-        } catch (e) {
-          reject(e);
-        }
-      }, `fs.access(${formatShortVal(p)})`);
-    },
-    copyFile(srcPath: string, destPath: string) {
-      loop.used = true;
-      return new VirtualPromise((resolve: (v?: unknown) => void, reject: (r?: unknown) => void) => {
-        try {
-          const content = readRequiredVfsFile(srcPath);
-          getVfsApi().writeFile(destPath, content);
-          resolve(undefined);
-        } catch (e) {
-          reject(e);
-        }
-      }, `fs.copyFile(${formatShortVal(srcPath)})`);
-    },
-    rename(oldPath: string, newPath: string) {
-      loop.used = true;
-      return new VirtualPromise((resolve: (v?: unknown) => void, reject: (r?: unknown) => void) => {
-        try {
-          const content = readRequiredVfsFile(oldPath);
-          getVfsApi().writeFile(newPath, content);
-          getVfsApi().unlink(oldPath);
-          resolve(undefined);
-        } catch (e) {
-          reject(e);
-        }
-      }, `fs.rename(${formatShortVal(oldPath)})`);
-    },
-  };
-
-  const fsModuleEnv = {
-    promises: fsPromisesApi,
-    readFileSync(p: string, _encoding?: string) {
-      return readRequiredVfsFile(p);
-    },
-    writeFileSync(p: string, data: unknown, _encoding?: string) {
-      getVfsApi().writeFile(p, typeof data === 'string' ? data : String(data ?? ''));
-    },
-    appendFileSync(p: string, data: unknown, _encoding?: string) {
-      getVfsApi().appendFile(p, typeof data === 'string' ? data : String(data ?? ''));
-    },
-    existsSync(p: string) {
-      try {
-        return getVfsApi().exists(p);
-      } catch (_) {
-        return false;
-      }
-    },
-    readdirSync(p?: string) {
-      return getVfsApi().readdir(p);
-    },
-    mkdirSync(p: string, _options?: unknown) {
-      getVfsApi().mkdir(p);
-    },
-    unlinkSync(p: string) {
-      getVfsApi().unlink(p);
-    },
-    rmSync(p: string, _options?: unknown) {
-      getVfsApi().unlink(p);
-    },
-    statSync(p: string) {
-      return getVfsApi().stat(p);
-    },
-    copyFileSync(srcPath: string, destPath: string) {
-      const content = readRequiredVfsFile(srcPath);
-      getVfsApi().writeFile(destPath, content);
-    },
-    renameSync(oldPath: string, newPath: string) {
-      const content = readRequiredVfsFile(oldPath);
-      getVfsApi().writeFile(newPath, content);
-      getVfsApi().unlink(oldPath);
-    },
-  };
+  const { VirtualPromise, fsModuleEnv } = createVirtualPromiseAndFsEnv({
+    loop,
+    getCurLine,
+    nextPromiseId: () => ++promiseSeq,
+    enqueueMicrotask,
+    __t,
+  });
 
   const env = {
     Promise: VirtualPromise,
@@ -892,7 +346,6 @@ export function createVirtualEventLoop(
 
     let safety = 0;
     while (safety++ < 2000) {
-      // 1. Drain all queued microtasks (FIFO)
       const nextMicro = loop.microtasks.find((m: { status: string }) => m.status === 'queued');
       if (nextMicro) {
         nextMicro.status = 'running';
@@ -906,7 +359,6 @@ export function createVirtualEventLoop(
         continue;
       }
 
-      // 2. Pick the earliest waiting macrotask timer
       let bestMacro: VirtualMacrotaskEntry | null = null;
       for (const m of loop.macrotasks) {
         if (m.status !== 'waiting') continue;
@@ -1041,7 +493,6 @@ export function formatCallFrameLabel(fnName: string, _paramNames: unknown, param
   const isPrimitive = (v: unknown) => v === null || v === undefined || typeof v === 'number' || typeof v === 'string' || typeof v === 'boolean';
   const primVals = vals.filter(isPrimitive);
   const hasComplex = vals.some((v: unknown) => !isPrimitive(v));
-  // If a function takes a container alongside >=2 numeric range indices (e.g. mergeSort(arr, 0, 7)), display the numeric indices cleanly as mergeSort(0, 7)
   if (hasComplex && primVals.length >= 2 && primVals.every((v: unknown) => typeof v === 'number')) {
     return `${fnName}(${primVals.map((v: unknown) => formatCallArgItem(v)).join(', ')})`;
   }
@@ -1072,4 +523,3 @@ export function resetTraceState() {
   renderStatic(0);
   updateEditorChrome();
 }
-

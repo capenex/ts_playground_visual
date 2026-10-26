@@ -749,55 +749,25 @@ runAsyncDemo()
   // src/compiler/transpile.ts
   var transpile_exports = {};
   __export(transpile_exports, {
+    NON_TYPED_KEYWORDS: () => NON_TYPED_KEYWORDS,
     buildEnumIIFE: () => buildEnumIIFE,
     detectUnsupportedSyntax: () => detectUnsupportedSyntax,
+    extractConstructorParamProps: () => extractConstructorParamProps,
     findSyntaxErrors: () => findSyntaxErrors,
+    looksLikeTypeText: () => looksLikeTypeText,
     stripTypes: () => stripTypes,
     transpileEnums: () => transpileEnums,
+    transpileFsImportStatement: () => transpileFsImportStatement,
     transpileNamespaces: () => transpileNamespaces,
     transpileTS: () => transpileTS,
-    tryParseType: () => tryParseType
+    tryParseType: () => tryParseType,
+    tryParseTypeAtom: () => tryParseTypeAtom,
+    tryParseTypeSuffix: () => tryParseTypeSuffix,
+    tryStripAngleTypeAssertion: () => tryStripAngleTypeAssertion,
+    tryStripGenericArrow: () => tryStripGenericArrow
   });
-  function emitTemplate(src, i) {
-    const n = src.length;
-    const parts = ["`"];
-    i++;
-    while (i < n) {
-      if (src[i] === "\\") {
-        parts.push(src.slice(i, i + 2));
-        i += 2;
-        continue;
-      }
-      if (src[i] === "`") {
-        parts.push("`");
-        return { next: i + 1, text: parts.join("") };
-      }
-      if (src[i] === "$" && src[i + 1] === "{") {
-        parts.push("${");
-        i += 2;
-        const start = i;
-        let depth = 1;
-        while (i < n && depth > 0) {
-          const ch = src[i];
-          if (ch === "{") depth++;
-          else if (ch === "}") depth--;
-          else if (ch === '"' || ch === "'" || ch === "`") {
-            i = skipString(src, i);
-            continue;
-          }
-          i++;
-        }
-        const end = Math.max(start, i - 1);
-        parts.push(stripTypes(src.slice(start, end)));
-        parts.push("}");
-        i = end + 1;
-        continue;
-      }
-      parts.push(src[i] || "");
-      i++;
-    }
-    return { next: n, text: parts.join("") };
-  }
+
+  // src/compiler/transpile-helpers.ts
   function looksLikeTypeText(text) {
     const t = text.trim();
     if (!t) return false;
@@ -1448,6 +1418,79 @@ runAsyncDemo()
       return `/*__import__*/ var ${defMatch[1]} = ${baseExpr};`;
     }
     return null;
+  }
+
+  // src/compiler/transpile.ts
+  function emitTemplate(src, i) {
+    const n = src.length;
+    const parts = ["`"];
+    i++;
+    while (i < n) {
+      if (src[i] === "\\") {
+        parts.push(src.slice(i, i + 2));
+        i += 2;
+        continue;
+      }
+      if (src[i] === "`") {
+        parts.push("`");
+        return { next: i + 1, text: parts.join("") };
+      }
+      if (src[i] === "$" && src[i + 1] === "{") {
+        parts.push("${");
+        i += 2;
+        const start = i;
+        let depth = 1;
+        while (i < n && depth > 0) {
+          const ch = src[i];
+          if (ch === "{") depth++;
+          else if (ch === "}") depth--;
+          else if (ch === '"' || ch === "'" || ch === "`") {
+            i = skipString(src, i);
+            continue;
+          }
+          i++;
+        }
+        const end = Math.max(start, i - 1);
+        parts.push(stripTypes(src.slice(start, end)));
+        parts.push("}");
+        i = end + 1;
+        continue;
+      }
+      parts.push(src[i] || "");
+      i++;
+    }
+    return { next: n, text: parts.join("") };
+  }
+  function classifyOpenBraceKind(src, k, braceStack) {
+    let kind = "block";
+    if (k < 0) return kind;
+    const prev = src[k];
+    if (prev === ":") {
+      const lineStart = src.lastIndexOf("\n", k) + 1;
+      const linePrefix = src.slice(lineStart, k + 1).trim();
+      const inObject = braceStack.length > 0 && braceStack[braceStack.length - 1] === "object";
+      if (!inObject && /^(?:default|case\b[\s\S]*):$/.test(linePrefix)) {
+        kind = "block";
+      } else {
+        kind = "object";
+      }
+    } else if (prev === "=" || prev === "(" || prev === "," || prev === "[" || prev === "!" || prev === "&" || prev === "|" || prev === "?") {
+      kind = "object";
+    } else if (prev === ">" && k >= 1 && src[k - 1] === "=") {
+      kind = "block";
+    } else if (prev === ")") {
+      kind = "block";
+    } else if (isIdentPart(prev)) {
+      let w = k;
+      while (w >= 0 && isIdentPart(src[w])) w--;
+      const prevWord = src.slice(w + 1, k + 1);
+      if (prevWord === "return" || prevWord === "case" || prevWord === "yield" || prevWord === "typeof" || prevWord === "const" || prevWord === "let" || prevWord === "var") {
+        kind = "object";
+      } else {
+        kind = "block";
+      }
+    }
+    return kind;
   }
   var _STRIP_TYPES_CACHE = { src: null, out: "" };
   function stripTypes(rawSrc) {
@@ -2104,35 +2147,7 @@ runAsyncDemo()
       }
       if (c === "{") {
         const k = lookBackSignificant(i);
-        let kind = "block";
-        if (k >= 0) {
-          const prev = src[k];
-          if (prev === ":") {
-            const lineStart = src.lastIndexOf("\n", k) + 1;
-            const linePrefix = src.slice(lineStart, k + 1).trim();
-            const inObject = braceStack.length > 0 && braceStack[braceStack.length - 1] === "object";
-            if (!inObject && /^(?:default|case\b[\s\S]*):$/.test(linePrefix)) {
-              kind = "block";
-            } else {
-              kind = "object";
-            }
-          } else if (prev === "=" || prev === "(" || prev === "," || prev === "[" || prev === "!" || prev === "&" || prev === "|" || prev === "?") {
-            kind = "object";
-          } else if (prev === ">" && k >= 1 && src[k - 1] === "=") {
-            kind = "block";
-          } else if (prev === ")") {
-            kind = "block";
-          } else if (isIdentPart(prev)) {
-            let w = k;
-            while (w >= 0 && isIdentPart(src[w])) w--;
-            const prevWord = src.slice(w + 1, k + 1);
-            if (prevWord === "return" || prevWord === "case" || prevWord === "yield" || prevWord === "typeof" || prevWord === "const" || prevWord === "let" || prevWord === "var") {
-              kind = "object";
-            } else {
-              kind = "block";
-            }
-          }
-        }
+        const kind = classifyOpenBraceKind(src, k, braceStack);
         braceStack.push(kind);
         if (pendingCtorProps && parenDepth === 0 && kind === "block") {
           const assigns = pendingCtorProps.map((p) => ` this.${p} = ${p};`).join("");
@@ -2757,9 +2772,16 @@ runAsyncDemo()
   // src/compiler/type-checker.ts
   var type_checker_exports = {};
   __export(type_checker_exports, {
+    BUILTIN_TS_GLOBALS: () => BUILTIN_TS_GLOBALS,
+    checkPass2Statements: () => checkPass2Statements,
+    collectPass1Declarations: () => collectPass1Declarations,
+    createTypeCheckContext: () => createTypeCheckContext,
+    createTypeEvalEngine: () => createTypeEvalEngine,
+    createTypeInferEngine: () => createTypeInferEngine,
     ensureTsWorker: () => ensureTsWorker,
     extractTsInterfaceMetadata: () => extractTsInterfaceMetadata,
     inferExpr: () => inferExpr,
+    inferLiteralType: () => inferLiteralType,
     inferRuntimeTsType: () => inferRuntimeTsType,
     isAssignable: () => isAssignable,
     isLiteralOfPrimitive: () => isLiteralOfPrimitive,
@@ -2767,16 +2789,40 @@ runAsyncDemo()
     matchInterfaceForObject: () => matchInterfaceForObject,
     matchTemplateLiteralType: () => matchTemplateLiteralType,
     normalizeTsType: () => normalizeTsType,
+    parseObjectLiteralEntries: () => parseObjectLiteralEntries,
+    parseTopLevelConditional: () => parseTopLevelConditional,
     parseType: () => parseType,
+    parseTypeParams: () => parseTypeParams,
     reportTypeErrors: () => reportTypeErrors,
     requestTsWorkerCheck: () => requestTsWorkerCheck,
+    splitTopLevelDecl: () => splitTopLevelDecl,
     splitTopLevelIntersection: () => splitTopLevelIntersection,
     splitTopLevelUnion: () => splitTopLevelUnion,
     stripNullableFromType: () => stripNullableFromType,
     stripTupleElementLabel: () => stripTupleElementLabel,
+    substituteTypeParamsInStr: () => substituteTypeParamsInStr,
     typeCheck: () => typeCheck,
     typeToStr: () => typeToStr,
     typecheckTS: () => typecheckTS
+  });
+
+  // src/runtime/event-loop.ts
+  var event_loop_exports = {};
+  __export(event_loop_exports, {
+    anonStackLine: () => anonStackLine,
+    clearLog: () => clearLog,
+    createVirtualEventLoop: () => createVirtualEventLoop,
+    createVirtualPromiseAndFsEnv: () => createVirtualPromiseAndFsEnv,
+    fnBodyLineOffset: () => fnBodyLineOffset,
+    formatCallArgItem: () => formatCallArgItem,
+    formatCallFrameLabel: () => formatCallFrameLabel,
+    getOrCreateVfsApi: () => getOrCreateVfsApi,
+    hasAsyncConstructs: () => hasAsyncConstructs,
+    resetTraceState: () => resetTraceState,
+    rethrowIfControlSignal: () => rethrowIfControlSignal,
+    safeJSONStringify: () => safeJSONStringify,
+    say: () => say,
+    sourceLineFromStack: () => sourceLineFromStack
   });
 
   // src/viz/memory-graph.ts
@@ -2832,22 +2878,6 @@ runAsyncDemo()
     vizString: () => vizString,
     vizTree: () => vizTree,
     vizUF: () => vizUF
-  });
-
-  // src/runtime/event-loop.ts
-  var event_loop_exports = {};
-  __export(event_loop_exports, {
-    anonStackLine: () => anonStackLine,
-    clearLog: () => clearLog,
-    createVirtualEventLoop: () => createVirtualEventLoop,
-    fnBodyLineOffset: () => fnBodyLineOffset,
-    formatCallArgItem: () => formatCallArgItem,
-    formatCallFrameLabel: () => formatCallFrameLabel,
-    hasAsyncConstructs: () => hasAsyncConstructs,
-    resetTraceState: () => resetTraceState,
-    safeJSONStringify: () => safeJSONStringify,
-    say: () => say,
-    sourceLineFromStack: () => sourceLineFromStack
   });
 
   // src/viz/highlight.ts
@@ -3637,6 +3667,1534 @@ runAsyncDemo()
   }
   var highlightTS = hl;
 
+  // src/viz/memory-normalizers.ts
+  function isMapLike(v) {
+    return Object.prototype.toString.call(v) === "[object Map]";
+  }
+  function isSetLike(v) {
+    return Object.prototype.toString.call(v) === "[object Set]";
+  }
+  function defineHidden(obj, key, val) {
+    if (!obj || typeof obj !== "object") return;
+    try {
+      Object.defineProperty(obj, key, {
+        value: val,
+        enumerable: false,
+        configurable: true,
+        writable: true
+      });
+    } catch (_) {
+    }
+  }
+  function cloneDeepBounded(val, depth = 0) {
+    if (val === null || typeof val !== "object") return val;
+    const obj = val;
+    if (obj.__isVirtualPromise) {
+      if (obj.state === "pending") return "Promise <pending>";
+      if (obj.state === "fulfilled") return "Promise <fulfilled: " + formatShortVal(obj.value) + ">";
+      return "Promise <rejected: " + formatShortVal(obj.reason) + ">";
+    }
+    if (depth >= 4) return String(val);
+    if (Array.isArray(val)) return val.slice(0, 40).map((x) => cloneDeepBounded(x, depth + 1));
+    if (isMapLike(val)) {
+      const entries = [];
+      for (const [k, v] of val) {
+        if (entries.length >= 40) break;
+        entries.push({ k: cloneDeepBounded(k, depth + 1), v: cloneDeepBounded(v, depth + 1) });
+      }
+      return entries;
+    }
+    if (isSetLike(val)) {
+      const items = [];
+      for (const v of val) {
+        if (items.length >= 40) break;
+        items.push(cloneDeepBounded(v, depth + 1));
+      }
+      return items;
+    }
+    const out = {};
+    const clsName = obj.__py_cls__ || (val.constructor && val.constructor !== Object && val.constructor.name ? val.constructor.name : "");
+    if (clsName) {
+      defineHidden(out, "__py_cls__", clsName);
+    }
+    Object.keys(obj).slice(0, 20).forEach((k) => {
+      out[k] = cloneDeepBounded(obj[k], depth + 1);
+    });
+    return out;
+  }
+  function normalizeTree(value) {
+    if (value && Array.isArray(value.nodes)) {
+      return {
+        kind: "tree",
+        total: value.total || value.nodes.length,
+        nodes: value.nodes.slice(0, 31).map((n) => ({
+          val: n.val !== void 0 ? n.val : n.id,
+          left: n.left ?? null,
+          right: n.right ?? null
+        })),
+        root: value.root ?? 0
+      };
+    }
+    const nodes = [];
+    const seen = /* @__PURE__ */ new Set();
+    const nodeMap = /* @__PURE__ */ new Map();
+    function walk(node) {
+      if (!node || typeof node !== "object" || seen.has(node)) return null;
+      seen.add(node);
+      if (nodes.length >= 31) {
+        if (seen.size < 2e3) {
+          walk(node.left);
+          walk(node.right);
+        }
+        return null;
+      }
+      const idx = nodes.length;
+      nodeMap.set(node, idx);
+      const item = {
+        val: node.val !== void 0 ? node.val : node.value,
+        left: null,
+        right: null
+      };
+      nodes.push(item);
+      item.left = walk(node.left);
+      item.right = walk(node.right);
+      return idx;
+    }
+    const root = walk(value);
+    const out = { kind: "tree", nodes, root: root ?? 0, total: seen.size };
+    defineHidden(out, "__nodeMap", nodeMap);
+    return out;
+  }
+  function normalizeList(value) {
+    const pyMeta = value && typeof value === "object" && "__py_meta__" in value ? value.__py_meta__ || null : null;
+    if (Array.isArray(value)) {
+      const total = pyMeta && typeof pyMeta.total === "number" ? pyMeta.total : value.length;
+      const out2 = { kind: "list", items: value.slice(0, 30).map((x) => cloneDeepBounded(x, 1)), total };
+      if (total > 20) {
+        defineHidden(out2, "__raw", value);
+        if (pyMeta) defineHidden(out2, "__pyMeta", pyMeta);
+      }
+      return out2;
+    }
+    const items = [];
+    const rawNodes = [];
+    const rawVals = [];
+    const seen = /* @__PURE__ */ new Set();
+    let curNode = value;
+    while (curNode && typeof curNode === "object" && !seen.has(curNode) && rawNodes.length < 5e3) {
+      seen.add(curNode);
+      const v = curNode.val !== void 0 ? curNode.val : curNode.value;
+      rawNodes.push(curNode);
+      rawVals.push(v);
+      if (items.length < 30) items.push(cloneDeepBounded(v, 1));
+      curNode = curNode.next;
+    }
+    const out = { kind: "list", items, total: rawNodes.length };
+    if (rawNodes.length > 0) {
+      defineHidden(out, "__rawNodes", rawNodes);
+      defineHidden(out, "__rawVals", rawVals);
+    }
+    return out;
+  }
+  function normalizeGraph(value) {
+    if (value && Array.isArray(value.nodes) && Array.isArray(value.edges)) {
+      const rawNodes = value.nodes.slice(0, 16);
+      const count = rawNodes.length || 1;
+      const nodes = rawNodes.map((n, idx) => {
+        const angle = 2 * Math.PI * idx / count - Math.PI / 2;
+        const id = n && typeof n === "object" ? n.id ?? idx : n;
+        const label = n && typeof n === "object" ? n.label ?? n.val ?? id : String(n);
+        const x = n && typeof n.x === "number" ? n.x : Math.round(90 + 62 * Math.cos(angle));
+        const y = n && typeof n.y === "number" ? n.y : Math.round(68 + 48 * Math.sin(angle));
+        return { id, label: String(label), x, y };
+      });
+      const edges = value.edges.slice(0, 32).map(
+        (e) => Array.isArray(e) ? [e[0], e[1]] : [e.from ?? 0, e.to ?? 0]
+      );
+      return { kind: "graph", nodes, edges, totalNodes: value.nodes.length, totalEdges: value.edges.length };
+    }
+    return { kind: "graph", nodes: [], edges: [] };
+  }
+  function snapshot(kind, value, extra) {
+    const recVal = value && typeof value === "object" ? value : null;
+    const pyMeta = recVal && recVal.__py_meta__ ? recVal.__py_meta__ : null;
+    if (kind === "stack") {
+      const arr = Array.isArray(value) ? value : [];
+      const total = pyMeta && typeof pyMeta.total === "number" ? pyMeta.total : arr.length;
+      let items;
+      let baseIdx = 0;
+      if (pyMeta && Array.isArray(pyMeta.tail) && total > arr.length) {
+        items = pyMeta.tail.map((x) => cloneDeepBounded(x, 1));
+        baseIdx = Math.max(0, total - items.length);
+      } else if (arr.length > 40) {
+        baseIdx = arr.length - 40;
+        items = arr.slice(baseIdx).map((x) => cloneDeepBounded(x, 1));
+      } else {
+        items = arr.slice(0, 40).map((x) => cloneDeepBounded(x, 1));
+      }
+      return Object.assign({ kind, items, total, baseIdx }, extra || {});
+    }
+    if (kind === "array" || kind === "heap" || kind === "queue" || kind === "uf") {
+      const arr = Array.isArray(value) ? value : [];
+      const total = pyMeta && typeof pyMeta.total === "number" ? pyMeta.total : arr.length;
+      const items = arr.slice(0, 40).map((x) => cloneDeepBounded(x, 1));
+      const out = Object.assign({ kind, items, total }, extra || {});
+      if (total > 20) {
+        defineHidden(out, "__raw", arr);
+        if (pyMeta) defineHidden(out, "__pyMeta", pyMeta);
+      }
+      return out;
+    }
+    if (kind === "list") {
+      return Object.assign(normalizeList(value), extra || {});
+    }
+    if (kind === "tree") {
+      return Object.assign(normalizeTree(value), extra || {});
+    }
+    if (kind === "graph") {
+      return Object.assign(normalizeGraph(value), extra || {});
+    }
+    if (kind === "string") {
+      const s = String(value);
+      const total = s.length;
+      const items = s.slice(0, 40).split("");
+      const out = Object.assign({ kind, items, total }, extra || {});
+      if (total > 20) {
+        defineHidden(out, "__raw", s);
+      }
+      return out;
+    }
+    if (kind === "map") {
+      const entries = [];
+      let total = 0;
+      if (isMapLike(value)) {
+        const mapVal = value;
+        total = pyMeta && typeof pyMeta.total === "number" ? pyMeta.total : mapVal.size;
+        for (const [k, v] of mapVal) {
+          if (entries.length >= 40) break;
+          entries.push({ k: cloneDeepBounded(k, 1), v: cloneDeepBounded(v, 1) });
+        }
+      } else if (recVal && typeof recVal.forEach === "function") {
+        recVal.forEach((v, k) => {
+          total++;
+          if (entries.length < 40) entries.push({ k: cloneDeepBounded(k, 1), v: cloneDeepBounded(v, 1) });
+        });
+      } else if (recVal) {
+        const keys = Object.keys(recVal);
+        total = keys.length;
+        keys.slice(0, 40).forEach((k) => entries.push({ k, v: cloneDeepBounded(recVal[k], 1) }));
+      }
+      const out = Object.assign({ kind, entries, total }, extra || {});
+      if (total > 20) defineHidden(out, "__raw", value);
+      return out;
+    }
+    if (kind === "set") {
+      const items = [];
+      let total = 0;
+      if (isSetLike(value)) {
+        const setVal = value;
+        total = pyMeta && typeof pyMeta.total === "number" ? pyMeta.total : setVal.size;
+        for (const v of setVal) {
+          if (items.length >= 40) break;
+          items.push(cloneDeepBounded(v, 1));
+        }
+      } else if (recVal && typeof recVal.forEach === "function") {
+        recVal.forEach((v) => {
+          total++;
+          if (items.length < 40) items.push(cloneDeepBounded(v, 1));
+        });
+      }
+      const out = Object.assign({ kind, items, total }, extra || {});
+      if (total > 20) defineHidden(out, "__raw", value);
+      return out;
+    }
+    if (kind === "grid") {
+      const totalRows = pyMeta && typeof pyMeta.totalRows === "number" ? pyMeta.totalRows : Array.isArray(value) ? value.length : 0;
+      const totalCols = pyMeta && typeof pyMeta.totalCols === "number" ? pyMeta.totalCols : Array.isArray(value) && Array.isArray(value[0]) ? value[0].length : 0;
+      const cloned = Array.isArray(value) ? value.slice(0, 30).map((r) => Array.isArray(r) ? r.slice(0, 30).map((c) => cloneDeepBounded(c, 2)) : r) : [[0]];
+      const out = Object.assign({ kind, cells: cloned, mark: null, deps: [], totalRows, totalCols }, extra || {});
+      if (totalRows > 10 || totalCols > 10) {
+        defineHidden(out, "__raw", value);
+        if (pyMeta) defineHidden(out, "__pyMeta", pyMeta);
+      }
+      return out;
+    }
+    if (kind === "interface" || kind === "object") {
+      return Object.assign({ kind: "interface", fields: [], entries: [] }, extra || {});
+    }
+    return { kind: "array", items: [] };
+  }
+  function classifyValue(name, value) {
+    if (value == null) return null;
+    const n = String(name);
+    if (Array.isArray(value)) {
+      if (value.length > 0 && Array.isArray(value[0])) return snapshot("grid", value);
+      if (/^(parent|uf|fa|dsu)\b/i.test(n)) return snapshot("uf", value);
+      if (/stack|stk/i.test(n)) return snapshot("stack", value);
+      if (/queue|deque/i.test(n)) return snapshot("queue", value);
+      if (/heap|pq/i.test(n)) return snapshot("heap", value);
+      if (/^list$/i.test(n)) return snapshot("list", value);
+      return snapshot("array", value);
+    }
+    if (isMapLike(value)) return snapshot("map", value);
+    if (isSetLike(value)) return snapshot("set", value);
+    if (typeof value === "string") {
+      if (value.length > 0) return snapshot("string", value);
+      return null;
+    }
+    if (typeof value === "object") {
+      const obj = value;
+      if (obj.__isVirtualPromise) return null;
+      if (Array.isArray(obj.nodes) && Array.isArray(obj.edges)) return snapshot("graph", obj);
+      if (Array.isArray(obj.nodes) && "root" in obj) return snapshot("tree", obj);
+      if (n !== "this") {
+        if (("val" in obj || "value" in obj) && ("left" in obj || "right" in obj)) return snapshot("tree", obj);
+        if (("val" in obj || "value" in obj) && "next" in obj) return snapshot("list", obj);
+      }
+      const ifaceDef = matchInterfaceForObject(n, obj);
+      const annotType = CURRENT_TS_META.varTypes.get(n);
+      const ifaceName = ifaceDef ? ifaceDef.name : annotType || obj.__py_cls__ || "object";
+      const isClass = Boolean(ifaceDef && ifaceDef.isClass || obj.__py_cls__);
+      const fieldMap = /* @__PURE__ */ new Map();
+      if (ifaceDef) {
+        ifaceDef.fields.forEach((f) => {
+          const fk = f.k || f.name || "";
+          fieldMap.set(fk, {
+            k: fk,
+            v: fk in obj ? cloneDeepBounded(obj[fk], 1) : void 0,
+            declaredType: f.declaredType,
+            optional: Boolean(f.optional)
+          });
+        });
+      }
+      Object.keys(obj).slice(0, 20).forEach((k) => {
+        if (!fieldMap.has(k)) {
+          fieldMap.set(k, {
+            k,
+            v: cloneDeepBounded(obj[k], 1),
+            declaredType: inferRuntimeTsType(obj[k]),
+            optional: false
+          });
+        }
+      });
+      const fields = [...fieldMap.values()];
+      if (fields.length > 0 || isClass) {
+        return snapshot("interface", obj, {
+          interfaceName: ifaceName,
+          isClass,
+          isSchema: false,
+          fields,
+          entries: fields.map((f) => ({ k: f.k, v: f.v }))
+        });
+      }
+    }
+    return null;
+  }
+  function populateInterfaceSchemas(ds) {
+    const { interfaces, varTypes } = CURRENT_TS_META;
+    if (!interfaces || !interfaces.size) return;
+    interfaces.forEach((iface) => {
+      if (iface.isClass && (!iface.fields || !iface.fields.length)) return;
+      const prefix = iface.isClass ? "class " : "interface ";
+      const slotKey = iface.name in ds ? prefix + iface.name : iface.name;
+      let boundInstance = null;
+      let boundVarName = null;
+      Object.keys(ds).forEach((k) => {
+        const item = ds[k];
+        if (!boundInstance && item && item.kind === "interface" && !item.isSchema && item.interfaceName === iface.name) {
+          boundInstance = item;
+          boundVarName = k;
+        }
+      });
+      if (!boundVarName && varTypes) {
+        Object.keys(ds).forEach((k) => {
+          if (!boundVarName && varTypes.get(k) === iface.name) {
+            boundVarName = k;
+          }
+        });
+      }
+      const fields = iface.fields.map((f) => {
+        const key = f.k || f.name || "";
+        const instField = boundInstance && boundInstance.fields ? boundInstance.fields.find((x) => x.k === key) : null;
+        return {
+          k: key,
+          declaredType: f.declaredType,
+          optional: Boolean(f.optional),
+          v: instField ? instField.v : void 0
+        };
+      });
+      ds[slotKey] = {
+        kind: "interface",
+        interfaceName: iface.name,
+        isClass: Boolean(iface.isClass),
+        isSchema: true,
+        instanceName: boundVarName,
+        fields,
+        entries: fields.map((f) => ({ k: f.k, v: f.v !== void 0 ? f.v : f.declaredType }))
+      };
+    });
+  }
+  function detectWindowRange(v) {
+    if (!v) return null;
+    const pairs = [["l", "r"], ["left", "right"], ["lo", "hi"], ["start", "end"]];
+    for (const [lk, rk] of pairs) {
+      const lv = v[lk];
+      const rv = v[rk];
+      if (typeof lv === "number" && typeof rv === "number" && lv >= 0 && rv >= lv) {
+        return [lv, rv];
+      }
+    }
+    return null;
+  }
+  var POINTER_VAR_NAMES = [
+    "mid",
+    "m",
+    "i",
+    "j",
+    "k",
+    "idx",
+    "p",
+    "q",
+    "cur",
+    "curr",
+    "slow",
+    "fast",
+    "pivot",
+    "l",
+    "r",
+    "left",
+    "right",
+    "lo",
+    "hi",
+    "low",
+    "high",
+    "start",
+    "end"
+  ];
+  function build1DFocalSlice(total, getAt, focalCenters) {
+    if (total <= 20) return null;
+    const centers = [];
+    const seenC = /* @__PURE__ */ new Set();
+    (focalCenters || []).forEach((c) => {
+      if (typeof c === "number" && Number.isInteger(c) && c >= 0 && c < total && !seenC.has(c)) {
+        seenC.add(c);
+        centers.push(c);
+      }
+    });
+    const activeCenters = centers.slice(0, 4);
+    const radius = activeCenters.length <= 1 ? 3 : activeCenters.length === 2 ? 2 : 1;
+    const intervals = [
+      [0, Math.min(total - 1, 2)],
+      [Math.max(0, total - 3), total - 1]
+    ];
+    activeCenters.forEach((c) => {
+      intervals.push([Math.max(0, c - radius), Math.min(total - 1, c + radius)]);
+    });
+    intervals.sort((a, b) => a[0] - b[0]);
+    const merged = [];
+    for (const iv of intervals) {
+      const prev = merged[merged.length - 1];
+      if (!prev) {
+        merged.push([iv[0], iv[1]]);
+      } else if (iv[0] <= prev[1] + 2) {
+        prev[1] = Math.max(prev[1], iv[1]);
+      } else {
+        merged.push([iv[0], iv[1]]);
+      }
+    }
+    const out = [];
+    for (let s = 0; s < merged.length; s++) {
+      const curIv = merged[s];
+      if (!curIv) continue;
+      const [start, end] = curIv;
+      const prevIv = s > 0 ? merged[s - 1] : void 0;
+      if (prevIv) {
+        const prevEnd = prevIv[1];
+        const gapCount = start - prevEnd - 1;
+        if (gapCount > 0) {
+          out.push({ gap: true, count: gapCount, from: prevEnd + 1, to: start - 1 });
+        }
+      }
+      for (let idx = start; idx <= end; idx++) {
+        out.push({ idx, val: getAt(idx) });
+      }
+    }
+    return out;
+  }
+  function selectGridAxisIndices(total, focusIdx, maxCount = 8) {
+    if (total <= maxCount) {
+      return Array.from({ length: total }, (_, i) => i);
+    }
+    const set = /* @__PURE__ */ new Set([0, total - 1]);
+    const center = typeof focusIdx === "number" && Number.isInteger(focusIdx) && focusIdx >= 0 && focusIdx < total ? focusIdx : 1;
+    const innerQuota = Math.max(2, maxCount - 2);
+    let start = Math.max(1, center - Math.floor(innerQuota / 2));
+    let end = Math.min(total - 2, start + innerQuota - 1);
+    start = Math.max(1, end - innerQuota + 1);
+    for (let i = start; i <= end; i++) set.add(i);
+    return [...set].sort((a, b) => a - b);
+  }
+  function enrichFromNoteTextAccess(ds, safeV, text, evalIdx) {
+    const propRe = /\b([A-Za-z_$][\w$]*)\s*\.\s*([A-Za-z_$][\w$]*)\b/g;
+    let pm;
+    while (pm = propRe.exec(text)) {
+      const rawObj = pm[1] || "", propName = pm[2];
+      const objName = rawObj === "self" && !ds.self && ds.this ? "this" : rawObj;
+      const objItem = ds[objName];
+      if (objItem && (objItem.kind === "interface" || objItem.kind === "object")) {
+        objItem.hot = propName;
+        const ifaceName = objItem.interfaceName;
+        const ifaceItem = ifaceName ? ds[ifaceName] : void 0;
+        if (ifaceItem && ifaceItem.kind === "interface") {
+          ifaceItem.hot = propName;
+        }
+      }
+    }
+    const g = text.match(/\b([A-Za-z_$][\w$]*)\s*\[\s*([^[\]]+?)\s*\]\s*\[\s*([^[\]]+?)\s*\]/);
+    const gItem = g && g[1] ? ds[g[1]] : void 0;
+    if (g && g[1] && gItem && gItem.kind === "grid") {
+      const row = evalIdx(g[2]);
+      const col = evalIdx(g[3]);
+      if (typeof row === "number" && typeof col === "number") {
+        gItem.mark = [row, col];
+      }
+      const deps = [];
+      const re = /\b[A-Za-z_$][\w$]*\s*\[\s*([^[\]]+?)\s*\]\s*\[\s*([^[\]]+?)\s*\]/g;
+      let m;
+      while (m = re.exec(text)) {
+        const r = evalIdx(m[1]);
+        const c = evalIdx(m[2]);
+        if (typeof r === "number" && typeof c === "number") {
+          const curMark = gItem.mark;
+          if (!(Array.isArray(curMark) && curMark[0] === r && curMark[1] === c)) {
+            deps.push([r, c]);
+          }
+        }
+      }
+      gItem.deps = deps;
+    }
+    const subRe = /\b([A-Za-z_$][\w$]*)\s*\[\s*([^[\]]+?)\s*\](?!\s*\[)/g;
+    let sm;
+    while (sm = subRe.exec(text)) {
+      const varName = sm[1] || "";
+      const d = ds[varName];
+      if (!d || d.kind === "grid") continue;
+      let idx = evalIdx(sm[2]);
+      if (typeof idx === "number") {
+        const total = typeof d.total === "number" ? d.total : d.items ? d.items.length : 0;
+        if (idx < 0 && total > 0) idx = total + idx;
+        if (d.hot === void 0) {
+          d.hot = idx;
+        } else {
+          if (!d.__extraFocal) defineHidden(d, "__extraFocal", []);
+          if (d.__extraFocal) d.__extraFocal.push(idx);
+        }
+      }
+    }
+    const p = text.match(/\b([A-Za-z_$][\w$]*)\s*\.\s*(push|set|add|pop|shift|unshift|get|has)\s*\(\s*([^,)]*)/);
+    const pItem = p && p[1] ? ds[p[1]] : void 0;
+    if (p && p[1] && pItem) {
+      const d = pItem;
+      const method = p[2];
+      const firstArg = p[3] ? p[3].trim() : "";
+      if (method === "get" || method === "has" || method === "set" || method === "add") {
+        const argVal = firstArg ? safeEvalExpr(firstArg, safeV) : void 0;
+        if (d.kind === "map" && argVal !== void 0) {
+          d.hot = argVal;
+        } else if (d.kind === "set" && argVal !== void 0) {
+          d.hot = argVal;
+        }
+      }
+      if (method === "push" || method === "add" || method === "set" || method === "unshift") {
+        if (d.kind === "stack" || d.kind === "array" || d.kind === "queue" || d.kind === "heap") {
+          const total = typeof d.total === "number" ? d.total : d.items ? d.items.length : 0;
+          if (total > 0) d.hot = method === "unshift" ? 0 : total - 1;
+        } else if (d.kind === "map" && d.hot === void 0) {
+          if (d.entries && d.entries.length) {
+            const lastEntry = d.entries[d.entries.length - 1];
+            if (lastEntry) d.hot = lastEntry.k;
+          }
+        } else if (d.kind === "set" && d.hot === void 0) {
+          if (d.items && d.items.length) d.hot = d.items[d.items.length - 1];
+        }
+      }
+    }
+  }
+  function enrichFromNote(ds, v, note) {
+    if (!ds || typeof ds !== "object") return;
+    const safeV = v || {};
+    const text = String(note || "");
+    const evalIdx = (expr) => {
+      const t = String(expr || "").trim();
+      if (!t) return void 0;
+      if (/^\d+$/.test(t)) return +t;
+      const directVal = safeV[t];
+      if (t in safeV && typeof directVal === "number" && Number.isInteger(directVal)) return directVal;
+      const m = t.match(/^([A-Za-z_$][\w$]*)\s*([+-])\s*(\d+)$/);
+      if (m && m[1] && m[3] !== void 0) {
+        const baseVal = safeV[m[1]];
+        if (typeof baseVal === "number" && Number.isInteger(baseVal)) {
+          return m[2] === "+" ? baseVal + +m[3] : baseVal - +m[3];
+        }
+      }
+      const evaluated = safeEvalExpr(t, safeV);
+      return typeof evaluated === "number" && Number.isInteger(evaluated) ? evaluated : void 0;
+    };
+    const win = detectWindowRange(safeV);
+    if (win) {
+      Object.keys(ds).forEach((k) => {
+        const item = ds[k];
+        if (item && (item.kind === "array" || item.kind === "string")) {
+          item.win = win;
+        }
+      });
+    }
+    if (text) {
+      enrichFromNoteTextAccess(ds, safeV, text, evalIdx);
+    }
+    Object.keys(ds).forEach((varName) => {
+      const d = ds[varName];
+      if (!d || typeof d !== "object") return;
+      if (d.kind === "tree" && d.__nodeMap) {
+        for (const pName of POINTER_VAR_NAMES) {
+          const ref = safeV[pName];
+          if (ref && typeof ref === "object" && d.__nodeMap.has(ref)) {
+            const nodeIdx = d.__nodeMap.get(ref);
+            if (d.hot === void 0) d.hot = nodeIdx;
+            break;
+          }
+        }
+      }
+      if (d.kind === "list" && d.__rawNodes) {
+        const nodePtrs = {};
+        const focal = [];
+        for (const pName of POINTER_VAR_NAMES) {
+          const ref = safeV[pName];
+          if (ref && typeof ref === "object") {
+            const idx = d.__rawNodes.indexOf(ref);
+            if (idx >= 0) {
+              const ptrArr = nodePtrs[idx] || (nodePtrs[idx] = []);
+              if (!ptrArr.includes(pName)) ptrArr.push(pName);
+              if (d.hot === void 0) d.hot = idx;
+              focal.push(idx);
+            }
+          }
+        }
+        if (Object.keys(nodePtrs).length) d.pointers = nodePtrs;
+        const rawVals = d.__rawVals || [];
+        const total = d.total || rawVals.length;
+        if (total > 20) {
+          if (typeof d.hot === "number") focal.unshift(d.hot);
+          d.windowed = build1DFocalSlice(total, (idx) => cloneDeepBounded(rawVals[idx], 1), focal);
+        }
+      }
+      if (d.kind === "array" || d.kind === "queue" || d.kind === "heap" || d.kind === "uf" || d.kind === "string" || d.kind === "list" && !d.__rawNodes) {
+        const total = typeof d.total === "number" ? d.total : d.items ? d.items.length : 0;
+        if (total > 0) {
+          const ptrs = d.pointers || {};
+          const focal = [];
+          if (typeof d.hot === "number" && d.hot >= 0 && d.hot < total) focal.push(d.hot);
+          if (Array.isArray(d.__extraFocal)) {
+            d.__extraFocal.forEach((idx) => {
+              if (typeof idx === "number" && idx >= 0 && idx < total) focal.push(idx);
+            });
+          }
+          if (typeof d.mark === "number" && d.mark >= 0 && d.mark < total) focal.push(d.mark);
+          if (Array.isArray(d.win)) {
+            if (d.win[0] >= 0 && d.win[0] < total) focal.push(d.win[0]);
+            if (d.win[1] >= 0 && d.win[1] < total) focal.push(d.win[1]);
+          }
+          for (const pName of POINTER_VAR_NAMES) {
+            const val = safeV[pName];
+            if (typeof val === "number" && Number.isInteger(val) && val >= 0 && val < total) {
+              const pArr = ptrs[val] || (ptrs[val] = []);
+              if (!pArr.includes(pName)) pArr.push(pName);
+              focal.push(val);
+            }
+          }
+          if (Object.keys(ptrs).length) d.pointers = ptrs;
+          if (d.hot === void 0 && d.mark === void 0) {
+            if (typeof safeV.mid === "number" && Number.isInteger(safeV.mid) && safeV.mid >= 0 && safeV.mid < total) {
+              d.mark = safeV.mid;
+            } else if (typeof safeV.m === "number" && Number.isInteger(safeV.m) && safeV.m >= 0 && safeV.m < total) {
+              d.mark = safeV.m;
+            }
+          }
+          if (total > 20) {
+            const raw = d.__raw;
+            const pyMeta = d.__pyMeta;
+            const getAt = (idx) => {
+              if (pyMeta && pyMeta.sparse && pyMeta.sparse.has(idx)) {
+                return cloneDeepBounded(pyMeta.sparse.get(idx), 1);
+              }
+              if (typeof raw === "string") return raw[idx] ?? "";
+              if (Array.isArray(raw) && idx < raw.length) return cloneDeepBounded(raw[idx], 1);
+              if (d.items && idx < d.items.length) return d.items[idx];
+              return "\u2026";
+            };
+            d.windowed = build1DFocalSlice(total, getAt, focal);
+          }
+        }
+      }
+      if (d.kind === "map" && d.hot !== void 0 && d.__raw && isMapLike(d.__raw)) {
+        const rawMap = d.__raw;
+        const entries = d.entries || (d.entries = []);
+        const exists = entries.some((e) => e.k === d.hot);
+        if (!exists && rawMap.has(d.hot)) {
+          entries.push({ k: cloneDeepBounded(d.hot, 1), v: cloneDeepBounded(rawMap.get(d.hot), 1) });
+        }
+      }
+      if (d.kind === "set" && d.hot !== void 0 && d.__raw && isSetLike(d.__raw)) {
+        const rawSet = d.__raw;
+        const items = d.items || (d.items = []);
+        const exists = items.some((x) => x === d.hot);
+        if (!exists && rawSet.has(d.hot)) {
+          items.push(cloneDeepBounded(d.hot, 1));
+        }
+      }
+      if (d.kind === "grid") {
+        const totalRows = typeof d.totalRows === "number" ? d.totalRows : d.cells ? d.cells.length : 0;
+        const totalCols = typeof d.totalCols === "number" ? d.totalCols : d.cells && d.cells[0] ? d.cells[0].length : 0;
+        if (totalRows > 10 || totalCols > 10) {
+          const pyMeta = d.__pyMeta;
+          if (pyMeta && Array.isArray(pyMeta.rowIndices) && Array.isArray(pyMeta.colIndices) && Array.isArray(pyMeta.viewCells)) {
+            d.rowIndices = pyMeta.rowIndices;
+            d.colIndices = pyMeta.colIndices;
+            d.viewCells = pyMeta.viewCells;
+          } else {
+            let focusR = Array.isArray(d.mark) ? d.mark[0] : d.deps && d.deps[0] ? d.deps[0][0] : void 0;
+            let focusC = Array.isArray(d.mark) ? d.mark[1] : d.deps && d.deps[0] ? d.deps[0][1] : void 0;
+            if (focusR === void 0 || focusC === void 0) {
+              const coordPairs = [["i", "j"], ["r", "c"], ["row", "col"], ["x", "y"]];
+              for (const [rk, ck] of coordPairs) {
+                const rv = safeV[rk];
+                const cv = safeV[ck];
+                if (typeof rv === "number" && typeof cv === "number") {
+                  focusR = rv;
+                  focusC = cv;
+                  break;
+                }
+              }
+            }
+            const rowIndices = selectGridAxisIndices(totalRows, focusR, 8);
+            const colIndices = selectGridAxisIndices(totalCols, focusC, 8);
+            const rawGrid = Array.isArray(d.__raw) ? d.__raw : d.cells;
+            d.rowIndices = rowIndices;
+            d.colIndices = colIndices;
+            d.viewCells = rowIndices.map((r) => {
+              const rowArr = rawGrid && Array.isArray(rawGrid[r]) ? rawGrid[r] : [];
+              return colIndices.map((c) => cloneDeepBounded(rowArr[c], 2));
+            });
+          }
+        }
+      }
+      delete d.__raw;
+      delete d.__rawNodes;
+      delete d.__rawVals;
+      delete d.__nodeMap;
+      delete d.__pyMeta;
+      delete d.__extraFocal;
+    });
+  }
+  function formatShortVal(val) {
+    if (val === void 0) return "undefined";
+    if (val === null) return "null";
+    if (typeof val === "string") return JSON.stringify(val.length > 16 ? val.slice(0, 14) + "\u2026" : val);
+    if (typeof val === "number" || typeof val === "boolean") return String(val);
+    if (Array.isArray(val)) return "[" + val.slice(0, 4).map(formatShortVal).join(", ") + (val.length > 4 ? ", \u2026" : "") + "]";
+    if (isMapLike(val)) return "Map(" + val.size + ")";
+    if (isSetLike(val)) return "Set(" + val.size + ")";
+    if (typeof val === "object") {
+      const rec = val;
+      const keys = Object.keys(rec);
+      if (keys.length > 0 && keys.length <= 4 && keys.every((k) => rec[k] === null || typeof rec[k] !== "object")) {
+        return "{ " + keys.map((k) => k + ": " + formatShortVal(rec[k])).join(", ") + " }";
+      }
+    }
+    return "{\u2026}";
+  }
+  function safeEvalExpr(expr, v) {
+    if (!expr || !v) return void 0;
+    const clean = stripTypes(expr).trim();
+    if (!clean) return void 0;
+    if (/\.\s*(push|pop|shift|unshift|splice|set|add|delete|clear|fill|sort|reverse)\s*\(/.test(clean)) {
+      return void 0;
+    }
+    if (new RegExp("(?:\\+\\+|--|(?<![=!<>])=(?!=))").test(clean)) return void 0;
+    try {
+      const keys = Object.keys(v).filter((k) => /^[A-Za-z_$][\w$]*$/.test(k) && !RESERVED_WORDS.has(k));
+      const vals = keys.map((k) => v[k]);
+      const fn = new Function(...keys, "return (" + clean + ");");
+      const thisCtx = v && Object.prototype.hasOwnProperty.call(v, "this") ? v.this : void 0;
+      return fn.call(thisCtx, ...vals);
+    } catch {
+      return void 0;
+    }
+  }
+  function splitLogicalClauses(condExpr) {
+    const clauses = [];
+    let depth = 0, start = 0;
+    for (let i = 0; i < condExpr.length; i++) {
+      const ch = condExpr[i];
+      if (ch === '"' || ch === "'" || ch === "`") {
+        i = skipString(condExpr, i) - 1;
+        continue;
+      }
+      if (ch === "(" || ch === "[" || ch === "{") depth++;
+      else if (ch === ")" || ch === "]" || ch === "}") depth--;
+      else if (depth === 0 && (ch === "&" && condExpr[i + 1] === "&" || ch === "|" && condExpr[i + 1] === "|")) {
+        clauses.push({ expr: condExpr.slice(start, i).trim(), opAfter: ch + ch });
+        i++;
+        start = i + 1;
+      }
+    }
+    clauses.push({ expr: condExpr.slice(start).trim(), opAfter: null });
+    return clauses.filter((c) => c.expr);
+  }
+  function deriveAnimAndNote(rawLine, v, nextV) {
+    const clean = stripTypes(rawLine || "").trim().replace(/;$/, "");
+    if (!clean) return { anim: null, note: rawLine };
+    let condExpr = null;
+    const condMatch = clean.match(/^(?:}\s*)?(?:if|while|else\s+if)\s*\(([\s\S]+)\)\s*\{?$/);
+    if (condMatch && condMatch[1]) {
+      condExpr = condMatch[1].trim();
+    } else {
+      const forMatch = clean.match(/^for\s*\(([\s\S]+)\)\s*\{?$/);
+      if (forMatch && forMatch[1] !== void 0) {
+        const semiParts = splitTopLevelSemicolons(forMatch[1]);
+        if (semiParts.length === 3 && semiParts[1]?.trim()) {
+          condExpr = semiParts[1].trim();
+        }
+      }
+    }
+    if (condExpr !== null) {
+      const clauses = splitLogicalClauses(condExpr);
+      let activeClause = clauses[0] ? clauses[0].expr : condExpr;
+      let overallResult = safeEvalExpr(condExpr, v);
+      for (let i = 0; i < clauses.length; i++) {
+        const c = clauses[i];
+        if (!c) continue;
+        activeClause = c.expr;
+        const cVal = safeEvalExpr(c.expr, v);
+        if (typeof cVal === "boolean") {
+          if (c.opAfter === "&&" && !cVal) {
+            overallResult = false;
+            break;
+          }
+          if (c.opAfter === "||" && cVal) {
+            overallResult = true;
+            break;
+          }
+          if (!c.opAfter) overallResult = cVal;
+        }
+      }
+      const cmp = activeClause.match(/^(.+?)\s*(===|!==|<=|>=|==|!=|<|>)\s*(.+)$/);
+      if (cmp && cmp[1] && cmp[2] && cmp[3]) {
+        const lhs = cmp[1].trim(), op = cmp[2], rhs = cmp[3].trim();
+        const lhsVal = safeEvalExpr(lhs, v);
+        const rhsVal = safeEvalExpr(rhs, v);
+        const resVal = typeof overallResult === "boolean" ? overallResult : safeEvalExpr(activeClause, v);
+        if (typeof resVal === "boolean") {
+          const anim = {
+            type: "compare",
+            lhs,
+            rhs,
+            op,
+            lhsVal: formatShortVal(lhsVal),
+            rhsVal: formatShortVal(rhsVal),
+            result: resVal
+          };
+          const note = `${rawLine.trim()}  \u2192  ${anim.lhsVal} ${op} ${anim.rhsVal} (${resVal})`;
+          return { anim, note };
+        }
+      }
+      if (typeof overallResult === "boolean") {
+        const anim = {
+          type: "compare",
+          lhs: activeClause,
+          rhs: "",
+          op: "?",
+          lhsVal: formatShortVal(overallResult),
+          rhsVal: "",
+          result: overallResult
+        };
+        return { anim, note: `${rawLine.trim()}  \u2192  ${overallResult}` };
+      }
+    }
+    const ckptCall = clean.match(/^(?:checkpoint|断点)\s*\(([\s\S]*)\)$/);
+    if (ckptCall && ckptCall[1] !== void 0) {
+      const fnName = clean.startsWith("\u65AD\u70B9") ? "\u65AD\u70B9" : "checkpoint";
+      const args = splitTopLevel(ckptCall[1]).map((s) => s.trim()).filter(Boolean);
+      const ckptVals = nextV && Array.isArray(nextV.__ckptVals) ? nextV.__ckptVals : null;
+      const argVals = ckptVals && ckptVals.length === args.length ? ckptVals : args.map((a) => formatShortVal(safeEvalExpr(a, v)));
+      const anim = { type: "checkpoint", fn: fnName, args, argVals };
+      const detail = args.length ? args.map((a, idx) => argVals[idx] !== void 0 && argVals[idx] !== a ? `${a}=${argVals[idx]}` : a).join(", ") : "\u5DF2\u547D\u4E2D\u65AD\u70B9";
+      return { anim, note: `\u25C9 ${fnName}(${detail})`, isCheckpoint: true };
+    }
+    const callOnly = clean.match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\((.*)\)$/);
+    if (callOnly && callOnly[1] && callOnly[2] !== void 0) {
+      const fnName = callOnly[1];
+      const args = splitTopLevel(callOnly[2]).map((s) => s.trim()).filter(Boolean);
+      const argVals = args.map((a) => formatShortVal(safeEvalExpr(a, v)));
+      const anim = { type: "call", fn: fnName, args, argVals, result: null, to: null };
+      return { anim, note: `${fnName}(${argVals.join(", ")})` };
+    }
+    const compoundAssign = clean.match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\s*\[[^\]]+\])*)\s*(\+=|-=|\*=|\/=)\s*(.+)$/);
+    if (compoundAssign && compoundAssign[1] && compoundAssign[2] && compoundAssign[3]) {
+      const to = compoundAssign[1].trim();
+      const op = compoundAssign[2][0];
+      const rhs = compoundAssign[3].trim();
+      const from = `${to} ${op} ${rhs}`;
+      let val = safeEvalExpr(from, v);
+      if (val === void 0 && nextV) val = safeEvalExpr(to, nextV);
+      if (val !== void 0) {
+        const valStr = formatShortVal(val);
+        return { anim: { type: "assign", to, from: rhs, val: valStr }, note: `${to} \u2190 ${valStr}   (${rawLine.trim()})` };
+      }
+    }
+    const assignMatch = clean.match(/^(?:(?:const|let|var)\s+)?([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\s*\[[^\]]+\])*)\s*=\s*(?!=)(.+)$/);
+    if (assignMatch && assignMatch[1] && assignMatch[2]) {
+      const to = assignMatch[1].trim();
+      const from = assignMatch[2].trim();
+      const isSingleDecl = splitTopLevel(clean.replace(/^(?:const|let|var)\s+/, "")).length === 1;
+      if (isSingleDecl || !from.includes(",") || /^[\w$.]+\s*\([^)]*\)$/.test(from)) {
+        let val = safeEvalExpr(from, v);
+        if (val === void 0 && nextV) {
+          val = safeEvalExpr(to, nextV);
+        }
+        const valStr = val !== void 0 ? formatShortVal(val) : null;
+        const rhsCall = from.match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\((.*)\)$/);
+        if (rhsCall && rhsCall[1] && rhsCall[2] !== void 0 && valStr !== null) {
+          const fnName = rhsCall[1];
+          const args = splitTopLevel(rhsCall[2]).map((s) => s.trim()).filter(Boolean);
+          const argVals = args.map((a) => formatShortVal(safeEvalExpr(a, v)));
+          const anim = { type: "call", fn: fnName, args, argVals, result: valStr, to };
+          return { anim, note: `${to} = ${fnName}(${argVals.join(", ")})  \u2192  ${valStr}` };
+        }
+        if (valStr !== null) {
+          const anim = { type: "assign", to, from, val: valStr };
+          return { anim, note: `${to} \u2190 ${valStr}   (${rawLine.trim()})` };
+        }
+      }
+    }
+    const retMatch = clean.match(/^return\s+(.+)$/);
+    if (retMatch && retMatch[1]) {
+      const expr = retMatch[1].trim();
+      const val = safeEvalExpr(expr, v);
+      if (val !== void 0) {
+        const valStr = formatShortVal(val);
+        const anim = { type: "assign", to: "return", from: expr, val: valStr };
+        return { anim, note: `return ${expr}  \u2192  ${valStr}` };
+      }
+    }
+    return { anim: null, note: rawLine.trim() };
+  }
+
+  // src/viz/memory-graph.ts
+  function getActiveFrame(st) {
+    if (!st) return null;
+    const stack = Array.isArray(st.callStack) && st.callStack.length ? st.callStack : null;
+    if (!stack) {
+      return {
+        idx: 0,
+        total: 1,
+        isTop: true,
+        fn: "global",
+        label: "global",
+        line: st.line,
+        v: st.v || {},
+        ds: st.ds || {}
+      };
+    }
+    const topIdx = stack.length - 1;
+    const idx = SELECTED_FRAME_IDX !== null && SELECTED_FRAME_IDX >= 0 && SELECTED_FRAME_IDX < stack.length ? SELECTED_FRAME_IDX : topIdx;
+    const frame = stack[idx] || stack[topIdx];
+    return {
+      idx,
+      total: stack.length,
+      isTop: idx === topIdx,
+      fn: frame.fn || "global",
+      label: frame.label || "global",
+      line: frame.line || st.line,
+      v: frame.v || (idx === topIdx ? st.v : {}) || {},
+      ds: (frame.ds && Object.keys(frame.ds).length ? frame.ds : st.ds) || {}
+    };
+  }
+  function selectStackFrame(frameIdx) {
+    const st = TRACE.steps[cur];
+    if (!st || !Array.isArray(st.callStack) || !st.callStack.length) return;
+    const topIdx = st.callStack.length - 1;
+    const clamped = Math.max(0, Math.min(topIdx, Number(frameIdx) || 0));
+    SELECTED_FRAME_IDX = clamped === topIdx ? null : clamped;
+    renderStatic(cur, false);
+  }
+  function renderCallStack(st) {
+    if (!callStackBarEl) return;
+    if (!st) {
+      callStackBarEl.innerHTML = '<span class="cs-empty">\u672A\u5728\u8C03\u8BD5</span>';
+      if (callStackHintEl) callStackHintEl.textContent = "\u70B9\u51FB\u6808\u5E27\u53EF\u5207\u6362\u4F5C\u7528\u57DF";
+      return;
+    }
+    const stack = Array.isArray(st.callStack) && st.callStack.length ? st.callStack : [{ fn: "global", label: "global", line: st.line, v: st.v || {}, ds: st.ds || {} }];
+    const active = getActiveFrame(st);
+    const activeIdx = active ? active.idx : 0;
+    const activeIsTop = active ? active.isTop : true;
+    const activeLabel = active ? active.label : "global";
+    callStackBarEl.innerHTML = stack.map((f, fIdx) => {
+      const isSel = fIdx === activeIdx;
+      const isTop = fIdx === stack.length - 1;
+      const cls = "cs-crumb" + (isSel ? " active" : "") + (isTop ? " is-top" : "") + (!isTop && isSel ? " inspecting" : "");
+      const sep = fIdx > 0 ? '<span class="cs-sep">\u25B8</span>' : "";
+      return sep + `<button type="button" class="${cls}" data-frame-idx="${fIdx}" title="\u5207\u6362\u5230\u6808\u5E27 ${esc(f.label)} (\u7B2C ${f.line || st.line} \u884C)">${esc(f.label)}</button>`;
+    }).join("");
+    if (callStackHintEl) {
+      callStackHintEl.textContent = activeIsTop ? `\u6808\u6DF1 ${stack.length} \xB7 \u70B9\u51FB\u6808\u5E27\u53EF\u5207\u6362` : `\u6B63\u5728\u67E5\u770B\u6808\u5E27 ${activeIdx + 1}/${stack.length}: ${activeLabel}`;
+    }
+  }
+  function truncMap(arr, render, d) {
+    if (d && Array.isArray(d.windowed) && d.windowed.length) {
+      return d.windowed.map((entry) => {
+        if (entry && entry.gap) {
+          const tip = entry.from != null && entry.to != null ? ` title="\u7701\u7565\u4E0B\u6807 ${entry.from}..${entry.to}\uFF08\u5171 ${entry.count} \u9879\uFF09"` : "";
+          return '<div class="vmore"' + tip + '>\u2026<span class="vmore-cnt">+' + entry.count + "</span></div>";
+        }
+        return render(entry.val, entry.idx ?? 0);
+      }).join("");
+    }
+    const MAX = 20, HEAD = 10, TAIL = 5;
+    if (!arr || arr.length <= MAX) return (arr || []).map((x, i) => render(x, i)).join("");
+    const total = d && typeof d.total === "number" && d.total >= arr.length ? d.total : arr.length;
+    const hidden = Math.max(1, total - HEAD - TAIL);
+    const head = arr.slice(0, HEAD).map((x, i) => render(x, i)).join("");
+    const tailStart = total - TAIL;
+    const tail = arr.slice(arr.length - TAIL).map((x, i) => render(x, tailStart + i)).join("");
+    return head + '<div class="vmore" title="\u7701\u7565 ' + hidden + ' \u9879">\u2026<span class="vmore-cnt">+' + hidden + "</span></div>" + tail;
+  }
+  function vizArray(d) {
+    if (!d || !d.items || !d.items.length) return null;
+    const win = d.win;
+    const ptrs = d.pointers;
+    const cells = truncMap(d.items, (n, k) => {
+      let cls = "vcell vcell-idx";
+      if (win && k >= win[0] && k <= win[1]) cls += " win";
+      if (d.hot === k) cls += " hot";
+      else if (d.mark === k) cls += " mark";
+      const pTag = ptrs && ptrs[k] && ptrs[k].length ? '<span class="sub-tag ptr-tag">' + esc(ptrs[k].slice(0, 2).join(",")) + "</span>" : "";
+      return '<div class="' + cls + '">' + pTag + '<span class="val">' + esc(n) + '</span><span class="idx">' + k + "</span></div>";
+    }, d);
+    return '<div class="viz"><div class="viz-row varray-row">' + cells + "</div></div>";
+  }
+  function vizQueue(d) {
+    if (!d || !d.items || !d.items.length) return null;
+    const len = typeof d.total === "number" && d.total > 0 ? d.total : d.items.length;
+    const cells = truncMap(d.items, (n, k) => {
+      let cls = "vcell vcell-idx";
+      if (d.hot === k) cls += " hot";
+      else if (k === 0) cls += " mark";
+      const tag = k === 0 ? '<span class="sub-tag">front</span>' : k === len - 1 ? '<span class="sub-tag">back</span>' : "";
+      return '<div class="' + cls + '">' + tag + '<span class="val">' + esc(n) + '</span><span class="idx">' + k + "</span></div>";
+    }, d);
+    return '<div class="viz"><div class="viz-row varray-row">' + cells + "</div></div>";
+  }
+  function vizHeap(d) {
+    if (!d || !d.items || !d.items.length) return null;
+    const cells = truncMap(d.items, (n, k) => {
+      let cls = "vcell vcell-idx";
+      if (d.hot === k) cls += " hot";
+      else if (k === 0) cls += " mark";
+      const tag = k === 0 ? '<span class="sub-tag">top</span>' : "";
+      return '<div class="' + cls + '">' + tag + '<span class="val">' + esc(n) + '</span><span class="idx">' + k + "</span></div>";
+    }, d);
+    return '<div class="viz"><div class="viz-row varray-row">' + cells + '</div><div class="vmeta-hint">parent = (i - 1) &gt;&gt; 1 \xB7 left = 2i + 1</div></div>';
+  }
+  function vizUF(d) {
+    if (!d || !d.items || !d.items.length) return null;
+    const cells = truncMap(d.items, (p, k) => {
+      let cls = "vcell vcell-idx";
+      if (d.hot === k) cls += " hot";
+      else if (p === k) cls += " mark";
+      const tag = p === k ? '<span class="sub-tag">root</span>' : '<span class="sub-tag">p:' + esc(p) + "</span>";
+      return '<div class="' + cls + '">' + tag + '<span class="val">' + esc(p) + '</span><span class="idx">' + k + "</span></div>";
+    }, d);
+    return '<div class="viz"><div class="viz-row varray-row">' + cells + "</div></div>";
+  }
+  function vizMap(d) {
+    if (!d || !d.entries || !d.entries.length) return null;
+    return '<div class="viz"><div class="viz-row vmap-row">' + truncMap(
+      d.entries,
+      (e) => '<div class="vpair' + (d.hot === e.k ? " hot" : "") + '"><span class="vcell vk">' + esc(e.k) + '</span><span class="varr">\u2192</span><span class="vcell vv">' + esc(e.v) + "</span></div>",
+      d
+    ) + "</div></div>";
+  }
+  function vizSet(d) {
+    if (!d || !d.items || !d.items.length) return null;
+    return '<div class="viz"><div class="viz-row">' + truncMap(
+      d.items,
+      (x) => '<div class="vcell' + (d.hot === x ? " hot" : "") + '">' + esc(x) + "</div>",
+      d
+    ) + "</div></div>";
+  }
+  function vizStack(d) {
+    if (!d || !d.items || !d.items.length) return null;
+    const all = d.items, MAX = 6;
+    const total = typeof d.total === "number" && d.total >= all.length ? d.total : all.length;
+    const baseIdx = typeof d.baseIdx === "number" ? d.baseIdx : Math.max(0, total - all.length);
+    const sliceStart = Math.max(0, all.length - MAX);
+    const shown = all.slice(sliceStart);
+    const hiddenCount = Math.max(0, total - shown.length);
+    const rows = shown.map((x, k) => {
+      const abs = baseIdx + sliceStart + k;
+      const isTop = abs === total - 1;
+      return '<div class="vcell' + (d.hot === abs ? " hot" : isTop ? " mark" : "") + '"><span>' + esc(x) + "</span>" + (isTop ? '<span class="vtop">top</span>' : "") + "</div>";
+    }).join("");
+    return '<div class="viz"><div class="vcol">' + rows + "</div>" + (hiddenCount ? '<div class="vmore">\u2026+' + hiddenCount + "</div>" : "") + "</div>";
+  }
+  function vizString(d) {
+    if (!d || !d.items || !d.items.length) return null;
+    const win = d.win;
+    if (Array.isArray(d.windowed) && d.windowed.length) {
+      const cells = truncMap(d.items, (ch, k) => {
+        let cls = "ch";
+        if (win && k >= win[0] && k <= win[1]) cls += " win";
+        if (d.hot === k) cls += " hot";
+        else if (d.mark === k) cls += " mark";
+        return '<span class="' + cls + '" title="[' + k + ']">' + esc(ch) + "</span>";
+      }, d);
+      return '<div class="viz"><div class="vstr">' + cells + "</div></div>";
+    }
+    return '<div class="viz"><div class="vstr">' + d.items.map((ch, k) => {
+      let cls = "ch";
+      if (win && k >= win[0] && k <= win[1]) cls += " win";
+      if (d.hot === k) cls += " hot";
+      else if (d.mark === k) cls += " mark";
+      return '<span class="' + cls + '">' + esc(ch) + "</span>";
+    }).join("") + "</div></div>";
+  }
+  function vizGrid(d) {
+    if (!d || !d.cells || !d.cells.length) return null;
+    const depSet = new Set((d.deps || []).map((p) => p[0] + "," + p[1]));
+    if (Array.isArray(d.rowIndices) && Array.isArray(d.colIndices) && Array.isArray(d.viewCells)) {
+      const rIdxs = d.rowIndices;
+      const cIdxs = d.colIndices;
+      const colTracks = [];
+      for (let ci = 0; ci < cIdxs.length; ci++) {
+        const curC = cIdxs[ci] ?? 0;
+        const prevC = cIdxs[ci - 1] ?? 0;
+        if (ci > 0 && curC > prevC + 1) colTracks.push({ gap: true });
+        colTracks.push({ gap: false, c: curC, ci });
+      }
+      const gridCols = colTracks.length + 1;
+      let html2 = '<div class="ghead">r\\c</div>';
+      for (const ct of colTracks) {
+        if (ct.gap) {
+          html2 += '<div class="ggap">\u22EF</div>';
+        } else {
+          const isFocusCol = Array.isArray(d.mark) && d.mark[1] === ct.c;
+          html2 += '<div class="ghead' + (isFocusCol ? " focus" : "") + '">' + ct.c + "</div>";
+        }
+      }
+      for (let ri = 0; ri < rIdxs.length; ri++) {
+        const realR = rIdxs[ri];
+        if (ri > 0 && realR !== void 0 && realR > (rIdxs[ri - 1] ?? 0) + 1) {
+          html2 += '<div class="ggap">\u22EE</div>';
+          for (let gi = 0; gi < colTracks.length; gi++) {
+            html2 += '<div class="ggap">' + (colTracks[gi]?.gap ? "\u22F1" : "\u22EE") + "</div>";
+          }
+        }
+        const isFocusRow = Array.isArray(d.mark) && d.mark[0] === realR;
+        html2 += '<div class="ghead' + (isFocusRow ? " focus" : "") + '">' + realR + "</div>";
+        const rowVals = d.viewCells[ri] || [];
+        for (const ct of colTracks) {
+          if (ct.gap) {
+            html2 += '<div class="ggap">\u22EF</div>';
+          } else {
+            const realC = ct.c;
+            let cls = "gcell";
+            if (Array.isArray(d.mark) && d.mark[0] === realR && d.mark[1] === realC) cls += " hot";
+            else if (depSet.has(realR + "," + realC)) cls += " dep";
+            const val = rowVals[ct.ci];
+            html2 += '<div class="' + cls + '" title="[' + realR + "][" + realC + ']">' + (val === void 0 || val === null ? "\xB7" : esc(val)) + "</div>";
+          }
+        }
+      }
+      return '<div class="viz"><div class="vgrid-wrap"><div class="vgrid" style="grid-template-columns:repeat(' + gridCols + ',auto)">' + html2 + "</div></div></div>";
+    }
+    const cols = d.cells[0]?.length ?? 0;
+    let html = "";
+    for (let r = 0; r < d.cells.length; r++) {
+      for (let c = 0; c < cols; c++) {
+        let cls = "gcell";
+        if (Array.isArray(d.mark) && d.mark[0] === r && d.mark[1] === c) cls += " hot";
+        else if (depSet.has(r + "," + c)) cls += " dep";
+        const val = d.cells[r]?.[c];
+        html += '<div class="' + cls + '">' + (val === void 0 || val === null ? "\xB7" : esc(val)) + "</div>";
+      }
+    }
+    return '<div class="viz"><div class="vgrid" style="grid-template-columns:repeat(' + cols + ',auto)">' + html + "</div></div>";
+  }
+  function vizList(d) {
+    if (!d || !d.items || !d.items.length) return null;
+    const total = typeof d.total === "number" && d.total > 0 ? d.total : d.items.length;
+    const ptrs = d.pointers;
+    return '<div class="viz"><div class="viz-row">' + truncMap(d.items, (val, k) => {
+      const pTag = ptrs && ptrs[k] && ptrs[k].length ? '<span class="sub-tag ptr-tag">' + esc(ptrs[k].slice(0, 2).join(",")) + "</span>" : "";
+      return '<div class="vpair"><span class="vcell' + (d.hot === k ? " hot" : "") + '">' + pTag + esc(val) + "</span>" + (k < total - 1 ? '<span class="varr">\u2192</span>' : '<span class="varr">\u2192</span><span class="vempty">null</span>') + "</div>";
+    }, d) + "</div></div>";
+  }
+  function vizTree(d) {
+    if (!d || !d.nodes || !d.nodes.length) return null;
+    const nodes = d.nodes;
+    const root = d.root ?? 0;
+    const coords = /* @__PURE__ */ new Map();
+    let maxDepth = 0;
+    function layout(idx, depth, xMin, xMax) {
+      if (idx == null || !nodes[idx] || coords.has(idx) || depth > 5) return;
+      const node = nodes[idx];
+      if (!node) return;
+      maxDepth = Math.max(maxDepth, depth);
+      const x = (xMin + xMax) / 2;
+      const y = 20 + depth * 36;
+      coords.set(idx, { x, y, val: node.val, left: node.left, right: node.right });
+      layout(node.left, depth + 1, xMin, x);
+      layout(node.right, depth + 1, x, xMax);
+    }
+    layout(root, 0, 14, 226);
+    const h = Math.max(60, (maxDepth + 1) * 36 + 10);
+    let edgesSvg = "", nodesSvg = "";
+    coords.forEach((info, idx) => {
+      [info.left, info.right].forEach((ch) => {
+        if (ch != null && coords.has(ch)) {
+          const c = coords.get(ch);
+          if (c) edgesSvg += `<line class="vsvg-edge" x1="${info.x}" y1="${info.y}" x2="${c.x}" y2="${c.y}"/>`;
+        }
+      });
+      const cls = d.hot === idx ? "vsvg-node hot" : idx === root ? "vsvg-node mark" : "vsvg-node";
+      nodesSvg += `<g><circle class="${cls}" cx="${info.x}" cy="${info.y}" r="12"/><text class="vsvg-txt" x="${info.x}" y="${info.y}">${esc(info.val)}</text></g>`;
+    });
+    return `<div class="viz"><div class="vsvg-wrap"><svg viewBox="0 0 240 ${h}" width="240" height="${h}">${edgesSvg}${nodesSvg}</svg></div></div>`;
+  }
+  function vizGraph(d) {
+    if (!d || !d.nodes || !d.nodes.length) return null;
+    const byId = /* @__PURE__ */ new Map();
+    d.nodes.forEach((n, idx) => byId.set(n.id ?? idx, n));
+    let edgesSvg = "", nodesSvg = "";
+    (d.edges || []).forEach((e) => {
+      const e0 = Array.isArray(e) ? e[0] : e.from ?? 0;
+      const e1 = Array.isArray(e) ? e[1] : e.to ?? 0;
+      const a = byId.get(e0), b = byId.get(e1);
+      if (a && b) {
+        edgesSvg += `<line class="vsvg-edge" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"/>`;
+      }
+    });
+    d.nodes.forEach((n, idx) => {
+      const id = n.id ?? idx;
+      const cls = d.hot === id ? "vsvg-node hot" : "vsvg-node";
+      nodesSvg += `<g><circle class="${cls}" cx="${n.x}" cy="${n.y}" r="13"/><text class="vsvg-txt" x="${n.x}" y="${n.y}">${esc(n.label ?? id)}</text></g>`;
+    });
+    return `<div class="viz"><div class="vsvg-wrap"><svg viewBox="0 0 180 136" width="180" height="136">${edgesSvg}${nodesSvg}</svg></div></div>`;
+  }
+  function vizInterface(d) {
+    if (!d) return null;
+    const fields = d.fields || (d.entries ? d.entries.map((e) => ({ k: String(e.k), v: e.v, declaredType: typeof e.v })) : []);
+    if (!fields.length && !d.isClass) return null;
+    const ifaceTitle = d.interfaceName && d.interfaceName !== "object" ? d.interfaceName : "Object";
+    const kwTxt = d.isClass ? "class" : "interface";
+    const badgeTxt = d.isSchema ? d.instanceName ? `schema \xB7 \u7ED1\u5B9A ${d.instanceName}` : "schema" : "instance";
+    const rows = fields.length ? fields.slice(0, 12).map((f) => {
+      const isHot = d.hot === f.k;
+      const hasVal = f.v !== void 0;
+      const isStr = typeof f.v === "string";
+      const valDisplay = hasVal ? isStr ? JSON.stringify(f.v) : f.v !== null && typeof f.v === "object" ? safeJSONStringify(f.v) : String(f.v) : "\u672A\u5B9E\u4F8B\u5316";
+      return '<div class="viface-row' + (isHot ? " hot" : "") + '"><span class="viface-k">' + esc(f.k) + (f.optional ? '<span class="viface-opt">?</span>' : "") + "</span>" + (f.declaredType ? '<span class="viface-t">: ' + esc(f.declaredType) + "</span>" : "") + (hasVal ? '<span class="viface-eq">=</span><span class="viface-v' + (isStr ? " str" : "") + '">' + esc(valDisplay) + "</span>" : '<span class="viface-v schema-only">' + esc(valDisplay) + "</span>") + "</div>";
+    }).join("") : '<div class="viface-row"><span class="viface-v schema-only">\uFF08\u65E0\u5B9E\u4F8B\u5C5E\u6027\uFF09</span></div>';
+    return '<div class="viz"><div class="viface"><div class="viface-head"><span class="viface-kw">' + kwTxt + '</span><span class="viface-title">' + esc(ifaceTitle) + '</span><span class="viface-badge">' + esc(badgeTxt) + '</span></div><div class="viface-body">' + rows + "</div></div></div>";
+  }
+  function vizEventLoop(d) {
+    if (!d) return null;
+    const phaseMap = {
+      sync: { label: "Sync \xB7 \u540C\u6B65\u6808\u6267\u884C", cls: "sync" },
+      await_suspend: { label: "Await \xB7 \u534F\u7A0B\u6302\u8D77", cls: "suspend" },
+      await_resume: { label: "Await \xB7 \u534F\u7A0B\u6062\u590D", cls: "resume" },
+      microtask: { label: "Microtask \xB7 \u5FAE\u4EFB\u52A1\u51FA\u961F", cls: "micro" },
+      macrotask: { label: "Macrotask \xB7 \u5B8F\u4EFB\u52A1\u89E6\u53D1", cls: "macro" }
+    };
+    const ph = (d.phase ? phaseMap[d.phase] : void 0) || { label: d.phase || "Event Loop", cls: "sync" };
+    const nowMs = typeof d.now === "number" ? d.now : 0;
+    const coroutines = Array.isArray(d.coroutines) ? d.coroutines : [];
+    const coroHtml = coroutines.length ? coroutines.map((c) => {
+      const stCls = c.status === "running" ? "running" : c.status === "suspended" ? "suspended" : "completed";
+      const stLabel = c.status === "running" ? "\u25CF \u6267\u884C\u4E2D" : c.status === "suspended" ? `\u23F8 \u6302\u8D77 @L${c.line}` : "\u2713 \u5B8C\u6210";
+      const detail = c.status === "suspended" && c.awaitingExpr ? `<span class="vel-coro-expr">await ${esc(c.awaitingExpr)}</span>` : c.status === "completed" && c.returnVal !== void 0 ? `<span class="vel-coro-expr">\u21D2 ${esc(c.returnVal)}</span>` : "";
+      return `<div class="vel-chip coro-${stCls}"><span class="vel-chip-title">async ${esc(c.name)}()</span><span class="vel-chip-status">${esc(stLabel)}</span>` + detail + `</div>`;
+    }).join("") : '<span class="vel-empty">\u65E0\u6D3B\u8DC3\u534F\u7A0B</span>';
+    const microtasks = Array.isArray(d.microtasks) ? d.microtasks : [];
+    const microHtml = microtasks.length ? microtasks.map(
+      (m, idx) => `<div class="vel-qitem micro${idx === 0 ? " head" : ""}"><span class="vel-qidx">#${idx + 1}</span><span class="vel-qlabel">${esc(m.label)}</span>` + ((m.line ?? 0) > 0 ? `<span class="vel-qmeta">@L${m.line}</span>` : "") + `</div>`
+    ).join("") : '<span class="vel-empty">\u961F\u5217\u4E3A\u7A7A (0)</span>';
+    const macrotasks = Array.isArray(d.macrotasks) ? d.macrotasks : [];
+    const macroHtml = macrotasks.length ? macrotasks.map(
+      (t, idx) => `<div class="vel-qitem macro${idx === 0 ? " head" : ""}"><span class="vel-qidx">t=${t.due}ms</span><span class="vel-qlabel">${esc(t.label)}</span><span class="vel-qmeta">+${t.delay}ms</span></div>`
+    ).join("") : '<span class="vel-empty">\u65E0\u5F85\u89E6\u53D1\u5B9A\u65F6\u5668 (0)</span>';
+    const promises = Array.isArray(d.promises) ? d.promises : [];
+    const promHtml = promises.length ? promises.map((p) => {
+      const st = p.state || "pending";
+      const icon = st === "fulfilled" ? "\u2713" : st === "rejected" ? "\u2717" : "\u23F3";
+      const reactions = p.reactions ?? 0;
+      const valPart = st === "pending" ? reactions > 0 ? `<span class="vel-pval dim">${reactions} waiter${reactions > 1 ? "s" : ""}</span>` : '<span class="vel-pval dim">pending</span>' : `<span class="vel-pval">${esc(p.value)}</span>`;
+      return `<div class="vel-pcard ${esc(st)}"><span class="vel-phead"><span class="vel-picon">${icon}</span><span class="vel-pname">P#${p.id} \xB7 ${esc(p.label)}</span></span>` + valPart + `</div>`;
+    }).join("") : '<span class="vel-empty">\u6682\u65E0 Promise \u5B9E\u4F8B</span>';
+    return `<div class="viz"><div class="veventloop"><div class="vel-header"><span class="vel-phase ${ph.cls}">${esc(ph.label)}</span>` + (d.activeTask ? `<span class="vel-active">${esc(d.activeTask)}</span>` : "") + `<span class="vel-clock">\u23F1 \u865A\u62DF\u65F6\u949F ${nowMs}ms</span></div><div class="vel-grid"><div class="vel-lane"><div class="vel-lane-title">Async \u534F\u7A0B\u72B6\u6001</div><div class="vel-lane-body">` + coroHtml + '</div></div><div class="vel-lane"><div class="vel-lane-title">Microtask \u5FAE\u4EFB\u52A1\u961F\u5217 (FIFO)</div><div class="vel-lane-body">' + microHtml + '</div></div><div class="vel-lane"><div class="vel-lane-title">Macrotask \u5B8F\u4EFB\u52A1 / \u5B9A\u65F6\u5668</div><div class="vel-lane-body">' + macroHtml + '</div></div><div class="vel-lane"><div class="vel-lane-title">Promise \u72B6\u6001\u8868</div><div class="vel-lane-body vel-pgrid">' + promHtml + "</div></div></div></div></div>";
+  }
+  var VIZ = {
+    array: vizArray,
+    map: vizMap,
+    set: vizSet,
+    stack: vizStack,
+    string: vizString,
+    grid: vizGrid,
+    list: vizList,
+    heap: vizHeap,
+    queue: vizQueue,
+    tree: vizTree,
+    graph: vizGraph,
+    uf: vizUF,
+    interface: vizInterface,
+    object: vizInterface,
+    eventloop: vizEventLoop
+  };
+  function pressure(d) {
+    if (!d) return 0;
+    let n = 0;
+    if (typeof d.total === "number") n = d.total;
+    else if (d.items) n = d.items.length;
+    else if (d.fields) n = d.fields.length;
+    else if (d.entries) n = d.entries.length;
+    else if (d.nodes) n = d.nodes.length;
+    else if (d.cells) n = (d.totalRows || d.cells.length) * (d.totalCols || (d.cells[0] ? d.cells[0].length : 1));
+    switch (d.kind) {
+      case "eventloop":
+        return 1;
+      case "grid":
+        return Math.min(1, Math.max(0.5, n / 12));
+      case "array":
+      case "queue":
+      case "uf":
+        return Math.min(1, n / 11);
+      case "heap":
+        return Math.min(1, Math.max(0.46, n / 11));
+      case "list":
+        return Math.min(1, n / 7);
+      case "map":
+        return Math.min(1, n / 7);
+      case "interface":
+      case "object":
+        return Math.min(1, n / 6);
+      case "set":
+        return Math.min(1, n / 9);
+      case "string":
+        return Math.min(1, n / 18);
+      case "tree":
+        return n >= 6 ? 0.38 : 0.28;
+      case "graph":
+        return n >= 5 ? 0.36 : 0.26;
+      case "stack":
+        return Math.min(0.35, n / 16);
+      default:
+        return Math.min(1, n / 10);
+    }
+  }
+  var SPAN_UP = 0.45;
+  var SPAN_DOWN = 0.28;
+  function decideSpan(id, p) {
+    const curSpan = layoutSpan[id] || 1;
+    if (curSpan < 2 && p >= SPAN_UP) layoutSpan[id] = 2;
+    else if (curSpan > 1 && p <= SPAN_DOWN) layoutSpan[id] = 1;
+    return layoutSpan[id] || 1;
+  }
+  function allocateSlotSpans(vars, ds) {
+    const meta = vars.map((s, idx) => {
+      const d = ds[s.id];
+      const kind = d && d.kind || s.kind || "array";
+      const p = pressure(d);
+      const span = decideSpan(s.id, p);
+      return { s, d, kind, p, span, idx };
+    });
+    const oneColItems = meta.filter((m) => m.span === 1);
+    if (oneColItems.length % 2 === 1) {
+      let promote = oneColItems[0];
+      if (promote) {
+        for (let i = 1; i < oneColItems.length; i++) {
+          const candidate = oneColItems[i];
+          if (candidate && candidate.p >= promote.p) {
+            promote = candidate;
+          }
+        }
+        promote.span = 2;
+      }
+    }
+    return meta;
+  }
+  var _DISCOVER_CACHE = {
+    traceRef: null,
+    scannedSteps: 0,
+    map: /* @__PURE__ */ new Map(),
+    list: []
+  };
+  function discoverVars() {
+    const steps = TRACE && TRACE.steps || [];
+    if (_DISCOVER_CACHE.traceRef !== TRACE || steps.length < _DISCOVER_CACHE.scannedSteps) {
+      _DISCOVER_CACHE = { traceRef: TRACE, scannedSteps: 0, map: /* @__PURE__ */ new Map(), list: [] };
+    }
+    if (_DISCOVER_CACHE.scannedSteps < steps.length) {
+      let changed = false;
+      for (let i = _DISCOVER_CACHE.scannedSteps; i < steps.length; i++) {
+        const st = steps[i];
+        const ds = st && st.ds || {};
+        const keys = Object.keys(ds);
+        for (let k = 0; k < keys.length; k++) {
+          const name = keys[k];
+          const item = name ? ds[name] : void 0;
+          if (name && item && !_DISCOVER_CACHE.map.has(name)) {
+            _DISCOVER_CACHE.map.set(name, { id: name, name, kind: item.kind || name });
+            changed = true;
+          }
+        }
+      }
+      _DISCOVER_CACHE.scannedSteps = steps.length;
+      if (changed) _DISCOVER_CACHE.list = [..._DISCOVER_CACHE.map.values()];
+    }
+    return _DISCOVER_CACHE.list;
+  }
+  function renderPicker() {
+    const vars = discoverVars();
+    if (!vars.length) {
+      pickEl.innerHTML = '<span class="vempty">\u65E0\u7ED3\u6784\u53D8\u91CF</span>';
+      renderSlots();
+      return;
+    }
+    pickEl.innerHTML = vars.map(
+      (s) => '<div class="chip-pick' + (watched.has(s.id) ? " on" : "") + '" data-id="' + esc(s.id) + '">' + esc(s.name) + "</div>"
+    ).join("");
+    renderSlots();
+  }
+  function renderSlots() {
+    const stepAtCur = TRACE.steps[cur];
+    const st = stepAtCur || {};
+    const activeFrame = stepAtCur ? getActiveFrame(stepAtCur) : null;
+    const ds = Object.assign({}, activeFrame && activeFrame.ds || st.ds || {});
+    if (st.ds && st.ds.eventLoop && !ds.eventLoop) ds.eventLoop = st.ds.eventLoop;
+    const vars = discoverVars().filter((s) => watched.has(s.id) && ds[s.id] !== void 0);
+    if (slotsEl && slotsEl.classList && slotsEl.classList.toggle) {
+      slotsEl.classList.toggle("single-col", slotsEl.clientWidth > 0 && slotsEl.clientWidth < 420);
+    }
+    if (!vars.length) {
+      slotsEl.innerHTML = '<div class="slot" style="grid-column:1/-1"><div class="vempty">' + (TRACE.steps.length ? "\u70B9\u9009\u53D8\u91CF\u4EE5\u5173\u6CE8\uFF08\u6216\u672C\u6B65\u6682\u65E0\u7ED3\u6784\uFF09" : "\u751F\u6210\u8F68\u8FF9\u540E\u663E\u793A\u7ED3\u6784\u53EF\u89C6\u5316") + "</div></div>";
+      return;
+    }
+    const allocated = allocateSlotSpans(vars, ds);
+    slotsEl.innerHTML = allocated.map(({ s, d, kind, span }) => {
+      const fn = VIZ[kind];
+      const body = d ? fn ? fn(d) || '<div class="vempty">empty</div>' : '<div class="vempty">\u2026</div>' : '<div class="vempty">empty</div>';
+      const winTag = d && d.win ? `<span class="win-tag">[${d.win[0]}..${d.win[1]}]</span>` : "";
+      let sizeTag = "";
+      if (d) {
+        if (kind === "grid" && ((d.totalRows || 0) > 10 || (d.totalCols || 0) > 10)) {
+          sizeTag = `<span class="size-tag">${d.totalRows}\xD7${d.totalCols}</span>`;
+        } else if (typeof d.total === "number" && d.total > 20) {
+          sizeTag = `<span class="size-tag">\u5171 ${d.total} \u9879</span>`;
+        }
+      }
+      const isHotSlot = d && (d.hot !== void 0 || d.mark != null);
+      const kindPrefix = d && d.isClass ? "class" : "interface";
+      const kindBadge = kind === "interface" && d && d.interfaceName && d.interfaceName !== "object" && !d.isSchema ? `${kindPrefix} \xB7 ${d.interfaceName}` : kind === "interface" && d && d.isClass ? "class" : kind;
+      return '<div class="slot' + (span === 2 ? " span-2" : "") + (isHotSlot ? " pulse" : "") + '" data-var="' + esc(s.name) + '"><div class="name"><span>' + esc(s.name) + '</span><span class="kind">' + esc(kindBadge) + "</span>" + sizeTag + winTag + "</div>" + body + "</div>";
+    }).join("");
+  }
+  function updateControlButtons() {
+    const prevBtn = $("prev");
+    const nextBtn = $("next");
+    const ckptBtn = $("nextCheckpoint");
+    const autoBtn = $("auto");
+    const atEnd = Boolean(TRACE.steps.length > 0 && cur >= TRACE.steps.length - 1 && DEBUG_SESSION.finished);
+    if (prevBtn) prevBtn.disabled = !TRACE.steps.length || cur <= 0;
+    if (nextBtn) nextBtn.disabled = atEnd;
+    if (ckptBtn) ckptBtn.disabled = atEnd;
+    if (autoBtn) autoBtn.disabled = atEnd;
+  }
+  function renderStatic(i, withAnim = false) {
+    hideHoverTip();
+    const st = TRACE.steps[i];
+    const prevSt = i > 0 ? TRACE.steps[i - 1] : null;
+    if (!st) {
+      renderCallStack(null);
+      varsEl.innerHTML = "";
+      consoleEl.innerHTML = '<div><span class="p">\u203A</span><span class="dim">\u5F00\u542F Debug \u6A21\u5F0F\u540E\u5F53\u573A\u8BA1\u7B97\u5E76\u663E\u793A\u6BCF\u6B65\u6267\u884C\u8BE6\u60C5</span></div>';
+      cntEl.textContent = "\u672A\u5728\u8C03\u8BD5";
+      cntEl.className = "";
+      updateControlButtons();
+      renderSlots();
+      updateEditorChrome();
+      return;
+    }
+    renderCallStack(st);
+    const activeFrame = getActiveFrame(st);
+    const v = activeFrame && activeFrame.v || st.v || {};
+    const prevV = prevSt && prevSt.v || {};
+    const primEntries = Object.keys(v).map((k) => {
+      const val = v[k];
+      if (val !== null && typeof val === "object") return "";
+      const changed = Boolean(activeFrame && activeFrame.isTop && prevSt && prevV[k] !== val);
+      return '<div class="pair' + (changed ? " changed" : "") + '" data-var="' + esc(k) + '"><span class="k">' + esc(k) + '</span><span class="v">' + esc(val) + "</span></div>";
+    }).join("");
+    if (primEntries) {
+      varsEl.innerHTML = primEntries;
+    } else if (activeFrame && activeFrame.fn === "global") {
+      varsEl.innerHTML = '<div class="pair"><span class="k">scope</span><span class="v">global</span></div>' + (DEBUG_SESSION.callExpr && DEBUG_SESSION.callExpr !== "undefined" ? '<div class="pair"><span class="k">entry</span><span class="v">' + esc(DEBUG_SESSION.callExpr) + "</span></div>" : "");
+    } else {
+      varsEl.innerHTML = '<div class="vempty">\uFF08\u672C\u5E27\u65E0\u539F\u59CB\u7C7B\u578B\u5C40\u90E8\u53D8\u91CF\uFF09</div>';
+    }
+    let animDesc = "";
+    if (st.error) {
+      animDesc = `<div class="anim-desc" style="color:var(--red)">runtime error \xB7 \u5DF2\u505C\u6B62\u5728\u62A5\u9519\u884C (\u7B2C ${st.line} \u884C)</div>`;
+    } else if (st.anim) {
+      if (st.anim.type === "assign") animDesc = `<div class="anim-desc">assign \xB7 ${esc(st.anim.from)} \u2192 ${esc(st.anim.to)} = ${esc(st.anim.val)}</div>`;
+      else if (st.anim.type === "compare") animDesc = `<div class="anim-desc">compare \xB7 ${esc(st.anim.lhs)} ${esc(st.anim.op)} ${esc(st.anim.rhs)} \u21D2 ${esc(st.anim.result)}</div>`;
+      else if (st.anim.type === "call") animDesc = `<div class="anim-desc">call \xB7 ${esc(st.anim.fn)}(${esc((st.anim.argVals || []).join(", "))})</div>`;
+      else if (st.anim.type === "checkpoint") animDesc = `<div class="anim-desc" style="color:var(--cyan)">checkpoint \xB7 \u68C0\u67E5\u70B9\u5DF2\u547D\u4E2D (${esc((st.anim.argVals || []).join(", ") || "\u65E0\u53C2\u6570")})</div>`;
+    }
+    consoleEl.innerHTML = '<div><span class="p">\u203A</span>' + esc(st.note || "") + "</div>" + animDesc;
+    if (st.error) {
+      cntEl.textContent = "\u2717 \u8FD0\u884C\u65F6\u62A5\u9519";
+      cntEl.className = "err";
+    } else if (st.isCheckpoint) {
+      cntEl.textContent = "\u25C9 \u547D\u4E2D\u68C0\u67E5\u70B9";
+      cntEl.className = "ckpt";
+    } else if (DEBUG_SESSION.finished && i === TRACE.steps.length - 1) {
+      cntEl.textContent = "\u2713 \u6267\u884C\u5B8C\u6BD5";
+      cntEl.className = "done";
+    } else {
+      cntEl.textContent = "\u25CF \u8C03\u8BD5\u8FD0\u884C\u4E2D";
+      cntEl.className = "running";
+    }
+    updateControlButtons();
+    updateEditorChrome();
+    if (typeof VIEW_MODE !== "undefined" && VIEW_MODE === "notebook" && typeof globalThis.renderNotebookUI === "function") {
+      globalThis.renderNotebookUI(false);
+    } else {
+      scrollCodeTo(activeFrame ? activeFrame.line : st.line);
+    }
+    renderSlots();
+    if (withAnim && (typeof VIEW_MODE === "undefined" || VIEW_MODE !== "notebook")) {
+      playStepAnimation(st);
+    }
+  }
+  var renderMemory = renderSlots;
+  var renderAsyncQueues = vizEventLoop;
+  function drawArrows() {
+  }
+  function scheduleArrowRedraw() {
+  }
+
   // src/ui/controls.ts
   var controls_exports = {};
   __export(controls_exports, {
@@ -4352,9 +5910,519 @@ runAsyncDemo()
     roundRectPath: () => roundRectPath,
     tokenizeCodeForCanvas: () => tokenizeCodeForCanvas
   });
+
+  // src/ui/video-webm.ts
   var btnExportVideo = $("btnExportVideo");
   var btnExportVideoLabel = $("btnExportVideoLabel");
   var videoExportStatus = $("videoExportStatus");
+  function ebmlUintBytes(num) {
+    let v = Math.max(0, Math.floor(Number(num) || 0));
+    if (v === 0) return new Uint8Array([0]);
+    const bytes = [];
+    while (v > 0) {
+      bytes.unshift(v & 255);
+      v = Math.floor(v / 256);
+    }
+    return new Uint8Array(bytes);
+  }
+  function ebmlFloat64Bytes(val) {
+    const buf = new ArrayBuffer(8);
+    new DataView(buf).setFloat64(0, Number(val) || 0, false);
+    return new Uint8Array(buf);
+  }
+  function ebmlAsciiBytes(str) {
+    const s = String(str || "");
+    const out = new Uint8Array(s.length);
+    for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i) & 127;
+    return out;
+  }
+  function ebmlVintSize(len) {
+    const n = Math.max(0, Math.floor(len));
+    if (n < 127) return new Uint8Array([128 | n]);
+    if (n < 16383) return new Uint8Array([64 | n >> 8, n & 255]);
+    if (n < 2097151) return new Uint8Array([32 | n >> 16, n >> 8 & 255, n & 255]);
+    if (n < 268435455) {
+      return new Uint8Array([
+        16 | n >>> 24 & 15,
+        n >>> 16 & 255,
+        n >>> 8 & 255,
+        n & 255
+      ]);
+    }
+    const hi = Math.floor(n / 4294967296);
+    const lo = n >>> 0;
+    return new Uint8Array([
+      1,
+      hi >>> 16 & 255,
+      hi >>> 8 & 255,
+      hi & 255,
+      lo >>> 24 & 255,
+      lo >>> 16 & 255,
+      lo >>> 8 & 255,
+      lo & 255
+    ]);
+  }
+  function concatUint8Arrays(arrays) {
+    let total = 0;
+    for (const arr of arrays) total += arr.length;
+    const out = new Uint8Array(total);
+    let offset = 0;
+    for (const arr of arrays) {
+      out.set(arr, offset);
+      offset += arr.length;
+    }
+    return out;
+  }
+  function ebmlElement(idBytes, payload) {
+    const idArr = idBytes instanceof Uint8Array ? idBytes : new Uint8Array(idBytes);
+    const body = Array.isArray(payload) ? payload[0] instanceof Uint8Array ? concatUint8Arrays(payload) : new Uint8Array(payload) : payload instanceof Uint8Array ? payload : new Uint8Array(payload);
+    const sizeArr = ebmlVintSize(body.length);
+    return concatUint8Arrays([idArr, sizeArr, body]);
+  }
+  function muxWebmChunks(frames, durationMs, width = VIDEO_WIDTH, height = VIDEO_HEIGHT, fps = VIDEO_FPS, codecId = "V_VP8") {
+    const ebmlHeader = ebmlElement([26, 69, 223, 163], [
+      ebmlElement([66, 134], ebmlUintBytes(1)),
+      ebmlElement([66, 247], ebmlUintBytes(1)),
+      ebmlElement([66, 242], ebmlUintBytes(4)),
+      ebmlElement([66, 243], ebmlUintBytes(8)),
+      ebmlElement([66, 130], ebmlAsciiBytes("webm")),
+      ebmlElement([66, 135], ebmlUintBytes(4)),
+      ebmlElement([66, 133], ebmlUintBytes(2))
+    ]);
+    const infoElem = ebmlElement([21, 73, 169, 102], [
+      ebmlElement([42, 215, 177], ebmlUintBytes(1e6)),
+      ebmlElement([68, 137], ebmlFloat64Bytes(durationMs)),
+      ebmlElement([77, 128], ebmlAsciiBytes("TSPlaygroundVisual")),
+      ebmlElement([87, 65], ebmlAsciiBytes("TSPlaygroundVisual"))
+    ]);
+    const defaultDurNs = Math.round(1e9 / fps);
+    const tracksElem = ebmlElement([22, 84, 174, 107], [
+      ebmlElement([174], [
+        ebmlElement([215], ebmlUintBytes(1)),
+        ebmlElement([115, 197], ebmlUintBytes(1)),
+        ebmlElement([156], ebmlUintBytes(0)),
+        ebmlElement([34, 181, 156], ebmlAsciiBytes("und")),
+        ebmlElement([134], ebmlAsciiBytes(codecId)),
+        ebmlElement([131], ebmlUintBytes(1)),
+        ebmlElement([35, 227, 131], ebmlUintBytes(defaultDurNs)),
+        ebmlElement([224], [
+          ebmlElement([176], ebmlUintBytes(width)),
+          ebmlElement([186], ebmlUintBytes(height))
+        ])
+      ])
+    ]);
+    const clusters = [];
+    let curCluster = null;
+    for (const f of frames) {
+      const tMs = Math.max(0, Math.round(f.timestampMs));
+      if (!curCluster || f.isKey || tMs - curCluster.timecodeMs >= 2e3) {
+        curCluster = { timecodeMs: tMs, blocks: [] };
+        clusters.push(curCluster);
+      }
+      const relMs = Math.max(0, Math.min(32767, tMs - curCluster.timecodeMs));
+      const blockHeader = new Uint8Array([
+        129,
+        relMs >> 8 & 255,
+        relMs & 255,
+        f.isKey ? 128 : 0
+      ]);
+      const simpleBlock = ebmlElement([163], [blockHeader, f.data]);
+      curCluster.blocks.push(simpleBlock);
+    }
+    let segOffset = infoElem.length + tracksElem.length;
+    const clusterElems = [];
+    const cuePoints = [];
+    for (const cl of clusters) {
+      const tcElem = ebmlElement([231], ebmlUintBytes(cl.timecodeMs));
+      const clElem = ebmlElement([31, 67, 182, 117], [tcElem, ...cl.blocks]);
+      cuePoints.push(
+        ebmlElement([187], [
+          ebmlElement([179], ebmlUintBytes(cl.timecodeMs)),
+          ebmlElement([183], [
+            ebmlElement([247], ebmlUintBytes(1)),
+            ebmlElement([241], ebmlUintBytes(segOffset))
+          ])
+        ])
+      );
+      clusterElems.push(clElem);
+      segOffset += clElem.length;
+    }
+    const cuesElem = ebmlElement([28, 83, 187, 107], cuePoints);
+    const segmentBody = concatUint8Arrays([infoElem, tracksElem, ...clusterElems, cuesElem]);
+    const segmentSize8 = new Uint8Array([
+      1,
+      0,
+      0,
+      0,
+      segmentBody.length >>> 24 & 255,
+      segmentBody.length >>> 16 & 255,
+      segmentBody.length >>> 8 & 255,
+      segmentBody.length & 255
+    ]);
+    const segmentElem = concatUint8Arrays([new Uint8Array([24, 83, 128, 103]), segmentSize8, segmentBody]);
+    return new Blob([ebmlHeader, segmentElem], { type: "video/webm" });
+  }
+  async function fixWebmDuration(blob, durationMs) {
+    if (!blob || !(durationMs > 0)) return blob;
+    try {
+      const buf = await blob.arrayBuffer();
+      const bytes = new Uint8Array(buf);
+      const searchLimit = Math.min(bytes.length - 12, 16384);
+      let infoPos = -1;
+      let tracksPos = -1;
+      for (let i = 0; i < searchLimit; i++) {
+        if (infoPos < 0 && bytes[i] === 21 && bytes[i + 1] === 73 && bytes[i + 2] === 169 && bytes[i + 3] === 102) {
+          infoPos = i;
+        } else if (infoPos >= 0 && bytes[i] === 22 && bytes[i + 1] === 84 && bytes[i + 2] === 174 && bytes[i + 3] === 107) {
+          tracksPos = i;
+          break;
+        }
+      }
+      if (infoPos < 0) return blob;
+      const sizeIdx = infoPos + 4;
+      const firstByte = bytes[sizeIdx] ?? 0;
+      let vintLen = 1;
+      let mask = 128;
+      while (vintLen <= 8 && !(firstByte & mask)) {
+        mask >>= 1;
+        vintLen++;
+      }
+      if (vintLen > 8) return blob;
+      let parsedInfoSize = firstByte & mask - 1;
+      for (let k = 1; k < vintLen; k++) {
+        parsedInfoSize = parsedInfoSize * 256 + (bytes[sizeIdx + k] ?? 0);
+      }
+      const isUnknownInfoSize = vintLen === 8 && bytes[sizeIdx + 1] === 255 && bytes[sizeIdx + 2] === 255 || parsedInfoSize === Math.pow(2, 7 * vintLen) - 1;
+      const infoDataStart = sizeIdx + vintLen;
+      const infoDataEnd = tracksPos > infoDataStart ? tracksPos : !isUnknownInfoSize ? Math.min(bytes.length, infoDataStart + parsedInfoSize) : Math.min(bytes.length, infoDataStart + 64);
+      let existingDurUpdated = false;
+      for (let i = infoDataStart; i <= infoDataEnd - 11; i++) {
+        if (bytes[i] === 68 && bytes[i + 1] === 137 && bytes[i + 2] === 136) {
+          new DataView(bytes.buffer, bytes.byteOffset + i + 3, 8).setFloat64(0, durationMs, false);
+          existingDurUpdated = true;
+          break;
+        }
+      }
+      let outBytes = bytes;
+      let tailStartInOut = infoDataEnd;
+      if (!existingDurUpdated) {
+        const durElem = new Uint8Array(11);
+        durElem[0] = 68;
+        durElem[1] = 137;
+        durElem[2] = 136;
+        new DataView(durElem.buffer).setFloat64(3, durationMs, false);
+        const origInfoPayload = bytes.subarray(infoDataStart, infoDataEnd);
+        const newInfoPayloadLen = durElem.length + origInfoPayload.length;
+        const newSizeVint = new Uint8Array([
+          16 | newInfoPayloadLen >>> 24 & 15,
+          newInfoPayloadLen >>> 16 & 255,
+          newInfoPayloadLen >>> 8 & 255,
+          newInfoPayloadLen & 255
+        ]);
+        const head = bytes.subarray(0, infoPos + 4);
+        const tail = bytes.subarray(infoDataEnd);
+        outBytes = concatUint8Arrays([head, newSizeVint, durElem, origInfoPayload, tail]);
+        tailStartInOut = head.length + newSizeVint.length + durElem.length + origInfoPayload.length;
+      }
+      for (let i = 0; i < Math.min(infoPos, 128); i++) {
+        if (outBytes[i] === 24 && outBytes[i + 1] === 83 && outBytes[i + 2] === 128 && outBytes[i + 3] === 103) {
+          if (outBytes[i + 4] === 1 && outBytes[i + 5] === 255 && outBytes[i + 6] === 255) {
+            const segPayloadLen = outBytes.length - (i + 12);
+            outBytes[i + 4] = 1;
+            outBytes[i + 5] = 0;
+            outBytes[i + 6] = 0;
+            outBytes[i + 7] = 0;
+            outBytes[i + 8] = segPayloadLen >>> 24 & 255;
+            outBytes[i + 9] = segPayloadLen >>> 16 & 255;
+            outBytes[i + 10] = segPayloadLen >>> 8 & 255;
+            outBytes[i + 11] = segPayloadLen & 255;
+          }
+          break;
+        }
+      }
+      let firstClusterTc = null;
+      for (let i = tailStartInOut; i < outBytes.length - 16; i++) {
+        if (outBytes[i] === 31 && outBytes[i + 1] === 67 && outBytes[i + 2] === 182 && outBytes[i + 3] === 117) {
+          const b0 = outBytes[i + 4] ?? 0;
+          let vLen = 1, m = 128;
+          while (vLen <= 8 && !(b0 & m)) {
+            m >>= 1;
+            vLen++;
+          }
+          const tcPos = i + 4 + vLen;
+          if (tcPos + 2 < outBytes.length && outBytes[tcPos] === 231) {
+            const tcSizeByte = outBytes[tcPos + 1] ?? 0;
+            const tcLen = tcSizeByte & 127;
+            if (tcLen >= 1 && tcLen <= 8 && tcPos + 2 + tcLen <= outBytes.length) {
+              let val = 0;
+              for (let b = 0; b < tcLen; b++) {
+                val = val * 256 + (outBytes[tcPos + 2 + b] ?? 0);
+              }
+              if (firstClusterTc === null) {
+                firstClusterTc = val;
+              }
+              if (firstClusterTc > 0) {
+                let rebased = Math.max(0, Math.min(Math.round(durationMs), val - firstClusterTc));
+                for (let b = tcLen - 1; b >= 0; b--) {
+                  outBytes[tcPos + 2 + b] = rebased & 255;
+                  rebased = Math.floor(rebased / 256);
+                }
+              }
+            }
+          }
+        }
+      }
+      return new Blob([outBytes], { type: "video/webm" });
+    } catch (_) {
+      return blob;
+    }
+  }
+  async function encodeVideoFastWebCodecs(canvas, ctx, totalSteps, stepDurationMs, mult) {
+    if (typeof VideoEncoder !== "function" || typeof VideoFrame !== "function") return null;
+    const codecCandidates = [
+      { codec: "vp8", webmId: "V_VP8" },
+      { codec: "vp09.00.10.08", webmId: "V_VP9" }
+    ];
+    let chosen = null;
+    for (const c of codecCandidates) {
+      try {
+        const sup = await VideoEncoder.isConfigSupported({
+          codec: c.codec,
+          width: VIDEO_WIDTH,
+          height: VIDEO_HEIGHT,
+          bitrate: 8e6,
+          framerate: VIDEO_FPS,
+          latencyMode: "realtime"
+        });
+        if (sup && sup.supported) {
+          chosen = c;
+          break;
+        }
+      } catch (_) {
+      }
+    }
+    if (!chosen) return null;
+    const encodedFrames = [];
+    let encoderError = null;
+    const encoder = new VideoEncoder({
+      output: (chunk) => {
+        const data = new Uint8Array(chunk.byteLength);
+        chunk.copyTo(data);
+        encodedFrames.push({
+          data,
+          timestampMs: Math.max(0, Math.round(chunk.timestamp / 1e3)),
+          isKey: chunk.type === "key"
+        });
+      },
+      error: (err) => {
+        encoderError = err;
+      }
+    });
+    encoder.configure({
+      codec: chosen.codec,
+      width: VIDEO_WIDTH,
+      height: VIDEO_HEIGHT,
+      bitrate: 8e6,
+      framerate: VIDEO_FPS,
+      latencyMode: "realtime"
+    });
+    const frameDurMs = 1e3 / VIDEO_FPS;
+    const totalDurationMs = totalSteps * stepDurationMs;
+    const subFramesPerStep = 6;
+    for (let s = 0; s < totalSteps; s++) {
+      if (encoderError) throw encoderError;
+      if (videoExportStatus && (s % 2 === 0 || s === totalSteps - 1)) {
+        const pct = Math.round((s + 1) / totalSteps * 100);
+        videoExportStatus.textContent = `\u6B63\u5728\u6781\u901F\u7F16\u7801 1920\xD71080 60fps (${mult}x) \xB7 ${pct}%`;
+        await new Promise((r) => setTimeout(r, 0));
+      }
+      const stepStartMs = s * stepDurationMs;
+      for (let k = 0; k < subFramesPerStep; k++) {
+        const frac = k / subFramesPerStep;
+        const rawMs = stepStartMs + frac * stepDurationMs;
+        const tickIdx = Math.round(rawMs / frameDurMs);
+        const tMs = Math.min(totalDurationMs - 17, Math.round(tickIdx * frameDurMs));
+        const tUs = tMs * 1e3;
+        if (k === 0 || k === 3) {
+          renderVideoFrameToCanvas(ctx, s, frac, mult);
+        }
+        const vf = new VideoFrame(canvas, {
+          timestamp: tUs,
+          duration: Math.round(stepDurationMs / subFramesPerStep * 1e3)
+        });
+        encoder.encode(vf, { keyFrame: k === 0 });
+        vf.close();
+      }
+      if (s === totalSteps - 1) {
+        const endMs = Math.max(0, Math.round(totalDurationMs - frameDurMs));
+        const vfEnd = new VideoFrame(canvas, {
+          timestamp: endMs * 1e3,
+          duration: Math.round(frameDurMs * 1e3)
+        });
+        encoder.encode(vfEnd, { keyFrame: false });
+        vfEnd.close();
+      }
+      while (encoder.encodeQueueSize > 12) {
+        await new Promise((r) => setTimeout(r, 4));
+      }
+    }
+    await encoder.flush();
+    encoder.close();
+    if (encoderError || !encodedFrames.length) return null;
+    return {
+      blob: muxWebmChunks(encodedFrames, totalDurationMs, VIDEO_WIDTH, VIDEO_HEIGHT, VIDEO_FPS, chosen.webmId),
+      durationMs: totalDurationMs
+    };
+  }
+  async function exportVideo(speedMult = VIDEO_EXPORT_SPEED) {
+    if (IS_EXPORTING_VIDEO) return false;
+    const mult = setVideoExportSpeed(speedMult);
+    stopAuto();
+    const savedCur = cur;
+    if (!startDebug(0)) {
+      say("\u2717 \u4EE3\u7801\u7F16\u8BD1\u672A\u901A\u8FC7\uFF0C\u65E0\u6CD5\u5BFC\u51FA\u89C6\u9891", "err");
+      return false;
+    }
+    while (!DEBUG_SESSION.finished && TRACE.steps.length < MAX_STEPS) {
+      if (!computeAndAppendNextStep({ silent: true })) break;
+    }
+    initWatchedVars();
+    if (!TRACE.steps.length) {
+      say("\u2717 \u5F53\u524D\u4EE3\u7801\u672A\u4EA7\u751F\u53EF\u5F55\u5236\u7684\u8C03\u8BD5\u6B65\u9AA4", "err");
+      return false;
+    }
+    IS_EXPORTING_VIDEO = true;
+    if (btnExportVideo) btnExportVideo.disabled = true;
+    if (btnExportVideoLabel) btnExportVideoLabel.textContent = "\u23FA \u6B63\u5728\u6781\u901F\u5BFC\u51FA...";
+    if (videoExportStatus) {
+      videoExportStatus.classList.add("active");
+      videoExportStatus.textContent = `\u51C6\u5907\u6781\u901F\u5BFC\u51FA 1920\xD71080 @ ${VIDEO_FPS}fps (${mult}x \u500D\u901F)...`;
+    }
+    say(`\u{1F3AC} \u5F00\u59CB\u6781\u901F\u5BFC\u51FA\u89C6\u9891\uFF1A\u5206\u8FA8\u7387 ${VIDEO_WIDTH}\xD7${VIDEO_HEIGHT} \xB7 ${VIDEO_FPS}fps \xB7 \u500D\u901F ${mult}x`, "ok");
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = VIDEO_WIDTH;
+      canvas.height = VIDEO_HEIGHT;
+      const ctx = canvas.getContext("2d");
+      const stepDurationMs = Math.max(120, Math.round(AUTO_PLAY_MS / mult));
+      const totalSteps = TRACE.steps.length;
+      const targetTotalDurationMs = totalSteps * stepDurationMs;
+      const fastRes = ctx ? await encodeVideoFastWebCodecs(canvas, ctx, totalSteps, stepDurationMs, mult) : null;
+      if (fastRes && fastRes.blob) {
+        cur = Math.min(savedCur, Math.max(0, TRACE.steps.length - 1));
+        renderPicker();
+        renderStatic(cur, false);
+        const url2 = URL.createObjectURL(fastRes.blob);
+        const a2 = document.createElement("a");
+        a2.href = url2;
+        a2.download = `ts-playground-1080p-60fps-${mult}x.webm`;
+        document.body.appendChild(a2);
+        a2.click();
+        document.body.removeChild(a2);
+        URL.revokeObjectURL(url2);
+        const secTxt2 = (fastRes.durationMs / 1e3).toFixed(1) + "s";
+        if (videoExportStatus) {
+          videoExportStatus.textContent = `\u2713 \u5DF2\u6781\u901F\u5BFC\u51FA (${secTxt2}) ts-playground-1080p-60fps-${mult}x.webm`;
+        }
+        say(`\u2713 \u89C6\u9891\u6781\u901F\u5BFC\u51FA\u5B8C\u6210\uFF1Ats-playground-1080p-60fps-${mult}x.webm (1920\xD71080 \xB7 60fps \xB7 ${mult}x \u500D\u901F \xB7 \u7CBE\u786E\u65F6\u957F ${secTxt2})`, "ok");
+        return true;
+      }
+      if (typeof canvas.captureStream !== "function" || typeof MediaRecorder === "undefined") {
+        if (ctx) renderVideoFrameToCanvas(ctx, totalSteps - 1, 1, mult);
+        return true;
+      }
+      const mimeCandidates = [
+        "video/webm;codecs=vp8",
+        "video/webm;codecs=vp9",
+        "video/webm"
+      ];
+      let mimeType = "";
+      for (const m of mimeCandidates) {
+        if (typeof MediaRecorder.isTypeSupported === "function" && MediaRecorder.isTypeSupported(m)) {
+          mimeType = m;
+          break;
+        }
+      }
+      if (ctx) renderVideoFrameToCanvas(ctx, 0, 0, mult);
+      const stream = canvas.captureStream(VIDEO_FPS);
+      const videoTrack = stream.getVideoTracks && stream.getVideoTracks()[0];
+      const recorderOpts = { videoBitsPerSecond: 8e6 };
+      if (mimeType) recorderOpts.mimeType = mimeType;
+      const recorder = new MediaRecorder(stream, recorderOpts);
+      const chunks = [];
+      recorder.ondataavailable = (ev) => {
+        if (ev.data && ev.data.size > 0) chunks.push(ev.data);
+      };
+      const stoppedPromise = new Promise((resolve, reject) => {
+        recorder.onstop = resolve;
+        recorder.onerror = (ev) => reject(ev.error || new Error("MediaRecorder error"));
+      });
+      const recStartWall = performance.now();
+      recorder.start(100);
+      const frameIntervalMs = 1e3 / VIDEO_FPS;
+      for (let s = 0; s < totalSteps; s++) {
+        if (videoExportStatus && (s % 2 === 0 || s === totalSteps - 1)) {
+          const pct = Math.round((s + 1) / totalSteps * 100);
+          videoExportStatus.textContent = `\u6B63\u5728\u5408\u6210 1920\xD71080 60fps (${mult}x) \xB7 ${pct}%`;
+        }
+        const stepStart = performance.now();
+        if (ctx) renderVideoFrameToCanvas(ctx, s, 0.5, mult);
+        while (true) {
+          const now = performance.now();
+          const elapsedStep = now - stepStart;
+          if (elapsedStep >= stepDurationMs) break;
+          if (videoTrack && typeof videoTrack.requestFrame === "function") {
+            try {
+              videoTrack.requestFrame();
+            } catch (_) {
+            }
+          }
+          const waitMs = Math.max(1, Math.min(frameIntervalMs, stepDurationMs - elapsedStep));
+          await new Promise((r) => setTimeout(r, waitMs));
+        }
+      }
+      const actualDurationMs = Math.max(200, Math.round(performance.now() - recStartWall));
+      recorder.stop();
+      await stoppedPromise;
+      stream.getTracks().forEach((t) => t.stop());
+      cur = Math.min(savedCur, Math.max(0, TRACE.steps.length - 1));
+      renderPicker();
+      renderStatic(cur, false);
+      let blob = new Blob(chunks, { type: mimeType || "video/webm" });
+      blob = await fixWebmDuration(blob, actualDurationMs || targetTotalDurationMs);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `ts-playground-1080p-60fps-${mult}x.webm`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      const secTxt = (actualDurationMs / 1e3).toFixed(1) + "s";
+      if (videoExportStatus) {
+        videoExportStatus.textContent = `\u2713 \u5DF2\u5BFC\u51FA (${secTxt}) ts-playground-1080p-60fps-${mult}x.webm`;
+      }
+      say(`\u2713 \u89C6\u9891\u5BFC\u51FA\u5B8C\u6210\uFF1Ats-playground-1080p-60fps-${mult}x.webm (1920\xD71080 \xB7 60fps \xB7 ${mult}x \u500D\u901F \xB7 \u65F6\u957F ${secTxt})`, "ok");
+      return true;
+    } catch (err) {
+      const msg = err instanceof Error && err.message ? err.message : String(err);
+      if (videoExportStatus) videoExportStatus.textContent = "\u2717 \u5BFC\u51FA\u5931\u8D25: " + msg;
+      say("\u2717 \u89C6\u9891\u5BFC\u51FA\u5931\u8D25: " + msg, "err");
+      return false;
+    } finally {
+      IS_EXPORTING_VIDEO = false;
+      if (btnExportVideo) btnExportVideo.disabled = false;
+      if (btnExportVideoLabel) btnExportVideoLabel.textContent = "\u{1F3AC} \u5BFC\u51FA\u89C6\u9891";
+    }
+  }
+  if (btnExportVideo) {
+    btnExportVideo.onclick = (e) => {
+      e.stopPropagation();
+      exportVideo(VIDEO_EXPORT_SPEED);
+    };
+  }
+
+  // src/ui/share.ts
   function roundRectPath(ctx, x, y, w, h, r) {
     const rad = Math.max(0, Math.min(r, w / 2, h / 2));
     ctx.beginPath();
@@ -4886,515 +6954,6 @@ runAsyncDemo()
     ctx.font = '500 13px "Segoe UI", sans-serif';
     ctx.fillStyle = "#64748b";
     ctx.fillText(`TypeScript Playground \xB7 1920\xD71080 60fps \u89C6\u9891\u5BFC\u51FA (${speedMult}x \u500D\u901F)`, 184, mainBottom + 33);
-  }
-  function ebmlUintBytes(num) {
-    let v = Math.max(0, Math.floor(Number(num) || 0));
-    if (v === 0) return new Uint8Array([0]);
-    const bytes = [];
-    while (v > 0) {
-      bytes.unshift(v & 255);
-      v = Math.floor(v / 256);
-    }
-    return new Uint8Array(bytes);
-  }
-  function ebmlFloat64Bytes(val) {
-    const buf = new ArrayBuffer(8);
-    new DataView(buf).setFloat64(0, Number(val) || 0, false);
-    return new Uint8Array(buf);
-  }
-  function ebmlAsciiBytes(str) {
-    const s = String(str || "");
-    const out = new Uint8Array(s.length);
-    for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i) & 127;
-    return out;
-  }
-  function ebmlVintSize(len) {
-    const n = Math.max(0, Math.floor(len));
-    if (n < 127) return new Uint8Array([128 | n]);
-    if (n < 16383) return new Uint8Array([64 | n >> 8, n & 255]);
-    if (n < 2097151) return new Uint8Array([32 | n >> 16, n >> 8 & 255, n & 255]);
-    if (n < 268435455) {
-      return new Uint8Array([
-        16 | n >>> 24 & 15,
-        n >>> 16 & 255,
-        n >>> 8 & 255,
-        n & 255
-      ]);
-    }
-    const hi = Math.floor(n / 4294967296);
-    const lo = n >>> 0;
-    return new Uint8Array([
-      1,
-      hi >>> 16 & 255,
-      hi >>> 8 & 255,
-      hi & 255,
-      lo >>> 24 & 255,
-      lo >>> 16 & 255,
-      lo >>> 8 & 255,
-      lo & 255
-    ]);
-  }
-  function concatUint8Arrays(arrays) {
-    let total = 0;
-    for (const arr of arrays) total += arr.length;
-    const out = new Uint8Array(total);
-    let offset = 0;
-    for (const arr of arrays) {
-      out.set(arr, offset);
-      offset += arr.length;
-    }
-    return out;
-  }
-  function ebmlElement(idBytes, payload) {
-    const idArr = idBytes instanceof Uint8Array ? idBytes : new Uint8Array(idBytes);
-    const body = Array.isArray(payload) ? payload[0] instanceof Uint8Array ? concatUint8Arrays(payload) : new Uint8Array(payload) : payload instanceof Uint8Array ? payload : new Uint8Array(payload);
-    const sizeArr = ebmlVintSize(body.length);
-    return concatUint8Arrays([idArr, sizeArr, body]);
-  }
-  function muxWebmChunks(frames, durationMs, width = VIDEO_WIDTH, height = VIDEO_HEIGHT, fps = VIDEO_FPS, codecId = "V_VP8") {
-    const ebmlHeader = ebmlElement([26, 69, 223, 163], [
-      ebmlElement([66, 134], ebmlUintBytes(1)),
-      ebmlElement([66, 247], ebmlUintBytes(1)),
-      ebmlElement([66, 242], ebmlUintBytes(4)),
-      ebmlElement([66, 243], ebmlUintBytes(8)),
-      ebmlElement([66, 130], ebmlAsciiBytes("webm")),
-      ebmlElement([66, 135], ebmlUintBytes(4)),
-      ebmlElement([66, 133], ebmlUintBytes(2))
-    ]);
-    const infoElem = ebmlElement([21, 73, 169, 102], [
-      ebmlElement([42, 215, 177], ebmlUintBytes(1e6)),
-      // 1ms TimecodeScale
-      ebmlElement([68, 137], ebmlFloat64Bytes(durationMs)),
-      // Exact Duration in ms
-      ebmlElement([77, 128], ebmlAsciiBytes("TSPlaygroundVisual")),
-      ebmlElement([87, 65], ebmlAsciiBytes("TSPlaygroundVisual"))
-    ]);
-    const defaultDurNs = Math.round(1e9 / fps);
-    const tracksElem = ebmlElement([22, 84, 174, 107], [
-      ebmlElement([174], [
-        ebmlElement([215], ebmlUintBytes(1)),
-        ebmlElement([115, 197], ebmlUintBytes(1)),
-        ebmlElement([156], ebmlUintBytes(0)),
-        ebmlElement([34, 181, 156], ebmlAsciiBytes("und")),
-        ebmlElement([134], ebmlAsciiBytes(codecId)),
-        ebmlElement([131], ebmlUintBytes(1)),
-        ebmlElement([35, 227, 131], ebmlUintBytes(defaultDurNs)),
-        ebmlElement([224], [
-          ebmlElement([176], ebmlUintBytes(width)),
-          ebmlElement([186], ebmlUintBytes(height))
-        ])
-      ])
-    ]);
-    const clusters = [];
-    let curCluster = null;
-    for (const f of frames) {
-      const tMs = Math.max(0, Math.round(f.timestampMs));
-      if (!curCluster || f.isKey || tMs - curCluster.timecodeMs >= 2e3) {
-        curCluster = { timecodeMs: tMs, blocks: [] };
-        clusters.push(curCluster);
-      }
-      const relMs = Math.max(0, Math.min(32767, tMs - curCluster.timecodeMs));
-      const blockHeader = new Uint8Array([
-        129,
-        // Track 1
-        relMs >> 8 & 255,
-        relMs & 255,
-        f.isKey ? 128 : 0
-      ]);
-      const simpleBlock = ebmlElement([163], [blockHeader, f.data]);
-      curCluster.blocks.push(simpleBlock);
-    }
-    let segOffset = infoElem.length + tracksElem.length;
-    const clusterElems = [];
-    const cuePoints = [];
-    for (const cl of clusters) {
-      const tcElem = ebmlElement([231], ebmlUintBytes(cl.timecodeMs));
-      const clElem = ebmlElement([31, 67, 182, 117], [tcElem, ...cl.blocks]);
-      cuePoints.push(
-        ebmlElement([187], [
-          ebmlElement([179], ebmlUintBytes(cl.timecodeMs)),
-          ebmlElement([183], [
-            ebmlElement([247], ebmlUintBytes(1)),
-            ebmlElement([241], ebmlUintBytes(segOffset))
-          ])
-        ])
-      );
-      clusterElems.push(clElem);
-      segOffset += clElem.length;
-    }
-    const cuesElem = ebmlElement([28, 83, 187, 107], cuePoints);
-    const segmentBody = concatUint8Arrays([infoElem, tracksElem, ...clusterElems, cuesElem]);
-    const segmentSize8 = new Uint8Array([
-      1,
-      0,
-      0,
-      0,
-      segmentBody.length >>> 24 & 255,
-      segmentBody.length >>> 16 & 255,
-      segmentBody.length >>> 8 & 255,
-      segmentBody.length & 255
-    ]);
-    const segmentElem = concatUint8Arrays([new Uint8Array([24, 83, 128, 103]), segmentSize8, segmentBody]);
-    return new Blob([ebmlHeader, segmentElem], { type: "video/webm" });
-  }
-  async function fixWebmDuration(blob, durationMs) {
-    if (!blob || !(durationMs > 0)) return blob;
-    try {
-      const buf = await blob.arrayBuffer();
-      const bytes = new Uint8Array(buf);
-      const searchLimit = Math.min(bytes.length - 12, 16384);
-      let infoPos = -1;
-      let tracksPos = -1;
-      for (let i = 0; i < searchLimit; i++) {
-        if (infoPos < 0 && bytes[i] === 21 && bytes[i + 1] === 73 && bytes[i + 2] === 169 && bytes[i + 3] === 102) {
-          infoPos = i;
-        } else if (infoPos >= 0 && bytes[i] === 22 && bytes[i + 1] === 84 && bytes[i + 2] === 174 && bytes[i + 3] === 107) {
-          tracksPos = i;
-          break;
-        }
-      }
-      if (infoPos < 0) return blob;
-      const sizeIdx = infoPos + 4;
-      const firstByte = bytes[sizeIdx] ?? 0;
-      let vintLen = 1;
-      let mask = 128;
-      while (vintLen <= 8 && !(firstByte & mask)) {
-        mask >>= 1;
-        vintLen++;
-      }
-      if (vintLen > 8) return blob;
-      let parsedInfoSize = firstByte & mask - 1;
-      for (let k = 1; k < vintLen; k++) {
-        parsedInfoSize = parsedInfoSize * 256 + (bytes[sizeIdx + k] ?? 0);
-      }
-      const isUnknownInfoSize = vintLen === 8 && bytes[sizeIdx + 1] === 255 && bytes[sizeIdx + 2] === 255 || parsedInfoSize === Math.pow(2, 7 * vintLen) - 1;
-      const infoDataStart = sizeIdx + vintLen;
-      const infoDataEnd = tracksPos > infoDataStart ? tracksPos : !isUnknownInfoSize ? Math.min(bytes.length, infoDataStart + parsedInfoSize) : Math.min(bytes.length, infoDataStart + 64);
-      let existingDurUpdated = false;
-      for (let i = infoDataStart; i <= infoDataEnd - 11; i++) {
-        if (bytes[i] === 68 && bytes[i + 1] === 137 && bytes[i + 2] === 136) {
-          new DataView(bytes.buffer, bytes.byteOffset + i + 3, 8).setFloat64(0, durationMs, false);
-          existingDurUpdated = true;
-          break;
-        }
-      }
-      let outBytes = bytes;
-      let tailStartInOut = infoDataEnd;
-      if (!existingDurUpdated) {
-        const durElem = new Uint8Array(11);
-        durElem[0] = 68;
-        durElem[1] = 137;
-        durElem[2] = 136;
-        new DataView(durElem.buffer).setFloat64(3, durationMs, false);
-        const origInfoPayload = bytes.subarray(infoDataStart, infoDataEnd);
-        const newInfoPayloadLen = durElem.length + origInfoPayload.length;
-        const newSizeVint = new Uint8Array([
-          16 | newInfoPayloadLen >>> 24 & 15,
-          newInfoPayloadLen >>> 16 & 255,
-          newInfoPayloadLen >>> 8 & 255,
-          newInfoPayloadLen & 255
-        ]);
-        const head = bytes.subarray(0, infoPos + 4);
-        const tail = bytes.subarray(infoDataEnd);
-        outBytes = concatUint8Arrays([head, newSizeVint, durElem, origInfoPayload, tail]);
-        tailStartInOut = head.length + newSizeVint.length + durElem.length + origInfoPayload.length;
-      }
-      for (let i = 0; i < Math.min(infoPos, 128); i++) {
-        if (outBytes[i] === 24 && outBytes[i + 1] === 83 && outBytes[i + 2] === 128 && outBytes[i + 3] === 103) {
-          if (outBytes[i + 4] === 1 && outBytes[i + 5] === 255 && outBytes[i + 6] === 255) {
-            const segPayloadLen = outBytes.length - (i + 12);
-            outBytes[i + 4] = 1;
-            outBytes[i + 5] = 0;
-            outBytes[i + 6] = 0;
-            outBytes[i + 7] = 0;
-            outBytes[i + 8] = segPayloadLen >>> 24 & 255;
-            outBytes[i + 9] = segPayloadLen >>> 16 & 255;
-            outBytes[i + 10] = segPayloadLen >>> 8 & 255;
-            outBytes[i + 11] = segPayloadLen & 255;
-          }
-          break;
-        }
-      }
-      let firstClusterTc = null;
-      for (let i = tailStartInOut; i < outBytes.length - 16; i++) {
-        if (outBytes[i] === 31 && outBytes[i + 1] === 67 && outBytes[i + 2] === 182 && outBytes[i + 3] === 117) {
-          const b0 = outBytes[i + 4] ?? 0;
-          let vLen = 1, m = 128;
-          while (vLen <= 8 && !(b0 & m)) {
-            m >>= 1;
-            vLen++;
-          }
-          const tcPos = i + 4 + vLen;
-          if (tcPos + 2 < outBytes.length && outBytes[tcPos] === 231) {
-            const tcSizeByte = outBytes[tcPos + 1] ?? 0;
-            const tcLen = tcSizeByte & 127;
-            if (tcLen >= 1 && tcLen <= 8 && tcPos + 2 + tcLen <= outBytes.length) {
-              let val = 0;
-              for (let b = 0; b < tcLen; b++) {
-                val = val * 256 + (outBytes[tcPos + 2 + b] ?? 0);
-              }
-              if (firstClusterTc === null) {
-                firstClusterTc = val;
-              }
-              if (firstClusterTc > 0) {
-                let rebased = Math.max(0, Math.min(Math.round(durationMs), val - firstClusterTc));
-                for (let b = tcLen - 1; b >= 0; b--) {
-                  outBytes[tcPos + 2 + b] = rebased & 255;
-                  rebased = Math.floor(rebased / 256);
-                }
-              }
-            }
-          }
-        }
-      }
-      return new Blob([outBytes], { type: "video/webm" });
-    } catch (_) {
-      return blob;
-    }
-  }
-  async function encodeVideoFastWebCodecs(canvas, ctx, totalSteps, stepDurationMs, mult) {
-    if (typeof VideoEncoder !== "function" || typeof VideoFrame !== "function") return null;
-    const codecCandidates = [
-      { codec: "vp8", webmId: "V_VP8" },
-      { codec: "vp09.00.10.08", webmId: "V_VP9" }
-    ];
-    let chosen = null;
-    for (const c of codecCandidates) {
-      try {
-        const sup = await VideoEncoder.isConfigSupported({
-          codec: c.codec,
-          width: VIDEO_WIDTH,
-          height: VIDEO_HEIGHT,
-          bitrate: 8e6,
-          framerate: VIDEO_FPS,
-          latencyMode: "realtime"
-        });
-        if (sup && sup.supported) {
-          chosen = c;
-          break;
-        }
-      } catch (_) {
-      }
-    }
-    if (!chosen) return null;
-    const encodedFrames = [];
-    let encoderError = null;
-    const encoder = new VideoEncoder({
-      output: (chunk) => {
-        const data = new Uint8Array(chunk.byteLength);
-        chunk.copyTo(data);
-        encodedFrames.push({
-          data,
-          timestampMs: Math.max(0, Math.round(chunk.timestamp / 1e3)),
-          isKey: chunk.type === "key"
-        });
-      },
-      error: (err) => {
-        encoderError = err;
-      }
-    });
-    encoder.configure({
-      codec: chosen.codec,
-      width: VIDEO_WIDTH,
-      height: VIDEO_HEIGHT,
-      bitrate: 8e6,
-      framerate: VIDEO_FPS,
-      latencyMode: "realtime"
-    });
-    const frameDurMs = 1e3 / VIDEO_FPS;
-    const totalDurationMs = totalSteps * stepDurationMs;
-    const subFramesPerStep = 6;
-    for (let s = 0; s < totalSteps; s++) {
-      if (encoderError) throw encoderError;
-      if (videoExportStatus && (s % 2 === 0 || s === totalSteps - 1)) {
-        const pct = Math.round((s + 1) / totalSteps * 100);
-        videoExportStatus.textContent = `\u6B63\u5728\u6781\u901F\u7F16\u7801 1920\xD71080 60fps (${mult}x) \xB7 ${pct}%`;
-        await new Promise((r) => setTimeout(r, 0));
-      }
-      const stepStartMs = s * stepDurationMs;
-      for (let k = 0; k < subFramesPerStep; k++) {
-        const frac = k / subFramesPerStep;
-        const rawMs = stepStartMs + frac * stepDurationMs;
-        const tickIdx = Math.round(rawMs / frameDurMs);
-        const tMs = Math.min(totalDurationMs - 17, Math.round(tickIdx * frameDurMs));
-        const tUs = tMs * 1e3;
-        if (k === 0 || k === 3) {
-          renderVideoFrameToCanvas(ctx, s, frac, mult);
-        }
-        const vf = new VideoFrame(canvas, {
-          timestamp: tUs,
-          duration: Math.round(stepDurationMs / subFramesPerStep * 1e3)
-        });
-        encoder.encode(vf, { keyFrame: k === 0 });
-        vf.close();
-      }
-      if (s === totalSteps - 1) {
-        const endMs = Math.max(0, Math.round(totalDurationMs - frameDurMs));
-        const vfEnd = new VideoFrame(canvas, {
-          timestamp: endMs * 1e3,
-          duration: Math.round(frameDurMs * 1e3)
-        });
-        encoder.encode(vfEnd, { keyFrame: false });
-        vfEnd.close();
-      }
-      while (encoder.encodeQueueSize > 12) {
-        await new Promise((r) => setTimeout(r, 4));
-      }
-    }
-    await encoder.flush();
-    encoder.close();
-    if (encoderError || !encodedFrames.length) return null;
-    return {
-      blob: muxWebmChunks(encodedFrames, totalDurationMs, VIDEO_WIDTH, VIDEO_HEIGHT, VIDEO_FPS, chosen.webmId),
-      durationMs: totalDurationMs
-    };
-  }
-  async function exportVideo(speedMult = VIDEO_EXPORT_SPEED) {
-    if (IS_EXPORTING_VIDEO) return false;
-    const mult = setVideoExportSpeed(speedMult);
-    stopAuto();
-    const savedCur = cur;
-    if (!startDebug(0)) {
-      say("\u2717 \u4EE3\u7801\u7F16\u8BD1\u672A\u901A\u8FC7\uFF0C\u65E0\u6CD5\u5BFC\u51FA\u89C6\u9891", "err");
-      return false;
-    }
-    while (!DEBUG_SESSION.finished && TRACE.steps.length < MAX_STEPS) {
-      if (!computeAndAppendNextStep({ silent: true })) break;
-    }
-    initWatchedVars();
-    if (!TRACE.steps.length) {
-      say("\u2717 \u5F53\u524D\u4EE3\u7801\u672A\u4EA7\u751F\u53EF\u5F55\u5236\u7684\u8C03\u8BD5\u6B65\u9AA4", "err");
-      return false;
-    }
-    IS_EXPORTING_VIDEO = true;
-    if (btnExportVideo) btnExportVideo.disabled = true;
-    if (btnExportVideoLabel) btnExportVideoLabel.textContent = "\u23FA \u6B63\u5728\u6781\u901F\u5BFC\u51FA...";
-    if (videoExportStatus) {
-      videoExportStatus.classList.add("active");
-      videoExportStatus.textContent = `\u51C6\u5907\u6781\u901F\u5BFC\u51FA 1920\xD71080 @ ${VIDEO_FPS}fps (${mult}x \u500D\u901F)...`;
-    }
-    say(`\u{1F3AC} \u5F00\u59CB\u6781\u901F\u5BFC\u51FA\u89C6\u9891\uFF1A\u5206\u8FA8\u7387 ${VIDEO_WIDTH}\xD7${VIDEO_HEIGHT} \xB7 ${VIDEO_FPS}fps \xB7 \u500D\u901F ${mult}x`, "ok");
-    try {
-      const canvas = document.createElement("canvas");
-      canvas.width = VIDEO_WIDTH;
-      canvas.height = VIDEO_HEIGHT;
-      const ctx = canvas.getContext("2d");
-      const stepDurationMs = Math.max(120, Math.round(AUTO_PLAY_MS / mult));
-      const totalSteps = TRACE.steps.length;
-      const targetTotalDurationMs = totalSteps * stepDurationMs;
-      const fastRes = ctx ? await encodeVideoFastWebCodecs(canvas, ctx, totalSteps, stepDurationMs, mult) : null;
-      if (fastRes && fastRes.blob) {
-        cur = Math.min(savedCur, Math.max(0, TRACE.steps.length - 1));
-        renderPicker();
-        renderStatic(cur, false);
-        const url2 = URL.createObjectURL(fastRes.blob);
-        const a2 = document.createElement("a");
-        a2.href = url2;
-        a2.download = `ts-playground-1080p-60fps-${mult}x.webm`;
-        document.body.appendChild(a2);
-        a2.click();
-        document.body.removeChild(a2);
-        URL.revokeObjectURL(url2);
-        const secTxt2 = (fastRes.durationMs / 1e3).toFixed(1) + "s";
-        if (videoExportStatus) {
-          videoExportStatus.textContent = `\u2713 \u5DF2\u6781\u901F\u5BFC\u51FA (${secTxt2}) ts-playground-1080p-60fps-${mult}x.webm`;
-        }
-        say(`\u2713 \u89C6\u9891\u6781\u901F\u5BFC\u51FA\u5B8C\u6210\uFF1Ats-playground-1080p-60fps-${mult}x.webm (1920\xD71080 \xB7 60fps \xB7 ${mult}x \u500D\u901F \xB7 \u7CBE\u786E\u65F6\u957F ${secTxt2})`, "ok");
-        return true;
-      }
-      if (typeof canvas.captureStream !== "function" || typeof MediaRecorder === "undefined") {
-        if (ctx) renderVideoFrameToCanvas(ctx, totalSteps - 1, 1, mult);
-        return true;
-      }
-      const mimeCandidates = [
-        "video/webm;codecs=vp8",
-        "video/webm;codecs=vp9",
-        "video/webm"
-      ];
-      let mimeType = "";
-      for (const m of mimeCandidates) {
-        if (typeof MediaRecorder.isTypeSupported === "function" && MediaRecorder.isTypeSupported(m)) {
-          mimeType = m;
-          break;
-        }
-      }
-      if (ctx) renderVideoFrameToCanvas(ctx, 0, 0, mult);
-      const stream = canvas.captureStream(VIDEO_FPS);
-      const videoTrack = stream.getVideoTracks && stream.getVideoTracks()[0];
-      const recorderOpts = { videoBitsPerSecond: 8e6 };
-      if (mimeType) recorderOpts.mimeType = mimeType;
-      const recorder = new MediaRecorder(stream, recorderOpts);
-      const chunks = [];
-      recorder.ondataavailable = (ev) => {
-        if (ev.data && ev.data.size > 0) chunks.push(ev.data);
-      };
-      const stoppedPromise = new Promise((resolve, reject) => {
-        recorder.onstop = resolve;
-        recorder.onerror = (ev) => reject(ev.error || new Error("MediaRecorder error"));
-      });
-      const recStartWall = performance.now();
-      recorder.start(100);
-      const frameIntervalMs = 1e3 / VIDEO_FPS;
-      for (let s = 0; s < totalSteps; s++) {
-        if (videoExportStatus && (s % 2 === 0 || s === totalSteps - 1)) {
-          const pct = Math.round((s + 1) / totalSteps * 100);
-          videoExportStatus.textContent = `\u6B63\u5728\u5408\u6210 1920\xD71080 60fps (${mult}x) \xB7 ${pct}%`;
-        }
-        const stepStart = performance.now();
-        if (ctx) renderVideoFrameToCanvas(ctx, s, 0.5, mult);
-        while (true) {
-          const now = performance.now();
-          const elapsedStep = now - stepStart;
-          if (elapsedStep >= stepDurationMs) break;
-          if (videoTrack && typeof videoTrack.requestFrame === "function") {
-            try {
-              videoTrack.requestFrame();
-            } catch (_) {
-            }
-          }
-          const waitMs = Math.max(1, Math.min(frameIntervalMs, stepDurationMs - elapsedStep));
-          await new Promise((r) => setTimeout(r, waitMs));
-        }
-      }
-      const actualDurationMs = Math.max(200, Math.round(performance.now() - recStartWall));
-      recorder.stop();
-      await stoppedPromise;
-      stream.getTracks().forEach((t) => t.stop());
-      cur = Math.min(savedCur, Math.max(0, TRACE.steps.length - 1));
-      renderPicker();
-      renderStatic(cur, false);
-      let blob = new Blob(chunks, { type: mimeType || "video/webm" });
-      blob = await fixWebmDuration(blob, actualDurationMs || targetTotalDurationMs);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `ts-playground-1080p-60fps-${mult}x.webm`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      const secTxt = (actualDurationMs / 1e3).toFixed(1) + "s";
-      if (videoExportStatus) {
-        videoExportStatus.textContent = `\u2713 \u5DF2\u5BFC\u51FA (${secTxt}) ts-playground-1080p-60fps-${mult}x.webm`;
-      }
-      say(`\u2713 \u89C6\u9891\u5BFC\u51FA\u5B8C\u6210\uFF1Ats-playground-1080p-60fps-${mult}x.webm (1920\xD71080 \xB7 60fps \xB7 ${mult}x \u500D\u901F \xB7 \u65F6\u957F ${secTxt})`, "ok");
-      return true;
-    } catch (err) {
-      const msg = err instanceof Error && err.message ? err.message : String(err);
-      if (videoExportStatus) videoExportStatus.textContent = "\u2717 \u5BFC\u51FA\u5931\u8D25: " + msg;
-      say("\u2717 \u89C6\u9891\u5BFC\u51FA\u5931\u8D25: " + msg, "err");
-      return false;
-    } finally {
-      IS_EXPORTING_VIDEO = false;
-      if (btnExportVideo) btnExportVideo.disabled = false;
-      if (btnExportVideoLabel) btnExportVideoLabel.textContent = "\u{1F3AC} \u5BFC\u51FA\u89C6\u9891";
-    }
-  }
-  if (btnExportVideo) {
-    btnExportVideo.onclick = (e) => {
-      e.stopPropagation();
-      exportVideo(VIDEO_EXPORT_SPEED);
-    };
   }
   function loadSample(key) {
     if (LANG === "python") {
@@ -6198,127 +7757,165 @@ runAsyncDemo()
     say(msg, cls);
   }
 
-  // src/runtime/event-loop.ts
-  function say(msg, cls, line) {
-    const d = document.createElement("div");
-    if (cls) d.className = cls;
-    if (line) {
-      d.className = (cls ? cls + " " : "") + "diag";
-      if (d.setAttribute) {
-        d.setAttribute("data-line", String(line));
-        d.setAttribute("title", "\u70B9\u51FB\u5B9A\u4F4D\u5230\u7B2C " + line + " \u884C");
+  // src/runtime/event-loop-env.ts
+  function rethrowIfControlSignal(err) {
+    const ctrl = err && typeof err === "object" ? err : null;
+    if (err === PAUSE_SIGNAL || ctrl && (ctrl.__debugPause || ctrl.__timeout)) {
+      throw err;
+    }
+  }
+  function getOrCreateVfsApi() {
+    if (globalThis.__VFS__) return globalThis.__VFS__;
+    const fallbackFiles = /* @__PURE__ */ new Map();
+    const resolveFallbackWorkspacePath = (rawPath, allowEmptyRoot = false) => {
+      const s = String(rawPath ?? "").trim().replace(/\\/g, "/");
+      if (!s) {
+        if (allowEmptyRoot) return "";
+        throw new Error(`ENOENT: no such file or directory, open ''`);
       }
-    }
-    d.textContent = msg;
-    logEl.appendChild(d);
-    logEl.scrollTop = logEl.scrollHeight;
-  }
-  if (logEl && logEl.addEventListener) {
-    logEl.addEventListener("click", (e) => {
-      const el = e && e.target;
-      const target = el && el.closest ? el.closest(".diag") : null;
-      if (!target || !target.getAttribute) return;
-      revealErrorLine(parseInt(target.getAttribute("data-line") || "0", 10), true);
-    });
-  }
-  function clearLog(msg) {
-    logEl.innerHTML = "";
-    if (msg) say(msg, "dim");
-  }
-  function anonStackLine(stack) {
-    const re = /,\s*<anonymous>:(\d+):\d+/g;
-    const m = re.exec(String(stack || ""));
-    return m && m[1] ? parseInt(m[1], 10) : 0;
-  }
-  var FN_BODY_LINE_OFFSET = null;
-  function fnBodyLineOffset() {
-    if (FN_BODY_LINE_OFFSET !== null) return FN_BODY_LINE_OFFSET;
-    let off = 2;
-    try {
-      new Function('throw new Error("probe")')();
-    } catch (e) {
-      const line = anonStackLine(e instanceof Error ? e.stack : void 0);
-      if (line > 0) off = Math.max(1, line - 1);
-    }
-    FN_BODY_LINE_OFFSET = off;
-    return off;
-  }
-  function sourceLineFromStack(stack, lineCount) {
-    const stackLine = anonStackLine(stack);
-    if (!stackLine) return 0;
-    const line = stackLine - fnBodyLineOffset() - 1;
-    if (!isFinite(line) || line < 1) return 0;
-    if (lineCount && line > lineCount) return 0;
-    return line;
-  }
-  function safeJSONStringify(val) {
-    if (val === void 0) return "(undefined)";
-    try {
-      const seen = /* @__PURE__ */ new WeakSet();
-      return JSON.stringify(val, (_k, v) => {
-        if (v !== null && typeof v === "object") {
-          if (seen.has(v)) return "[Circular]";
-          seen.add(v);
-          if (Array.isArray(v) && v.length > 60) {
-            return [
-              ...v.slice(0, 20),
-              `\u2026 (\u5171 ${v.length} \u9879)`,
-              ...v.slice(v.length - 5)
-            ];
-          }
+      if (/^[A-Za-z]:/.test(s) || s.startsWith("~")) {
+        throw new Error(`EACCES: permission denied, access '${rawPath}' (outside workspace is not allowed)`);
+      }
+      let rel = s;
+      if (s.startsWith("/")) {
+        if (s === "/" || s === "/workspace" || s === "/workspace/") {
+          rel = "";
+        } else if (s.startsWith("/workspace/")) {
+          rel = s.slice("/workspace/".length);
+        } else {
+          throw new Error(`EACCES: permission denied, access '${rawPath}' (outside workspace is not allowed)`);
         }
-        return v;
-      });
-    } catch (_) {
-      try {
-        return String(val);
-      } catch (__) {
-        return "[Object]";
+      } else if (s === "workspace" || s === "workspace/") {
+        rel = "";
+      } else if (s.startsWith("workspace/")) {
+        rel = s.slice("workspace/".length);
       }
-    }
-  }
-  function hasAsyncConstructs(src) {
-    if (!src || typeof src !== "string") return false;
-    const clean = blankStrings(src);
-    return /\b(?:async|await|Promise|setTimeout|queueMicrotask|sleep)\b/.test(clean);
-  }
-  function createVirtualEventLoop(__t, getCurLine = () => 1, onSuspendFrame, onResumeFrame) {
-    let promiseSeq = 0;
-    let microSeq = 0;
-    let macroSeq = 0;
-    let coroSeq = 0;
-    const loop = {
-      used: false,
-      virtualTime: 0,
-      phase: "sync",
-      // 'sync' | 'microtask' | 'macrotask' | 'idle'
-      activeTaskLabel: "\u4E3B\u7EBF\u7A0B\u540C\u6B65\u6808 (Sync)",
-      coroutines: [],
-      microtasks: [],
-      macrotasks: [],
-      promises: [],
-      globalSnapFn: null
+      const rawParts = rel.split("/");
+      const resolved = [];
+      for (const part of rawParts) {
+        if (!part || part === ".") continue;
+        if (part === "..") {
+          if (resolved.length === 0) {
+            throw new Error(`EACCES: permission denied, access '${rawPath}' (outside workspace is not allowed)`);
+          }
+          resolved.pop();
+          continue;
+        }
+        resolved.push(part);
+      }
+      if (resolved.length === 0 && !allowEmptyRoot) {
+        throw new Error(`EISDIR: illegal operation on a directory, open '${rawPath}'`);
+      }
+      return resolved.join("/");
     };
-    function rethrowIfControlSignal(err) {
-      const ctrl = err && typeof err === "object" ? err : null;
-      if (err === PAUSE_SIGNAL || ctrl && (ctrl.__debugPause || ctrl.__timeout)) {
-        throw err;
+    const ensureParentFolders = (norm) => {
+      const parts = norm.split("/").filter(Boolean);
+      let acc = "";
+      for (let idx = 0; idx < parts.length - 1; idx++) {
+        const seg = parts[idx] || "";
+        acc = acc ? `${acc}/${seg}` : seg;
+        if (!fallbackFiles.has(acc)) {
+          fallbackFiles.set(acc, { type: "folder", content: "", mtime: Date.now() });
+        }
       }
-    }
-    function enqueueMicrotask(item) {
-      loop.used = true;
-      const task = {
-        id: ++microSeq,
-        label: item.label || "microtask#" + microSeq,
-        line: item.line || getCurLine() || 1,
-        status: "queued",
-        isInternalAwait: Boolean(item.isInternalAwait),
-        run: item.run,
-        rawCb: item.rawCb || null
-      };
-      loop.microtasks.push(task);
-      return task;
-    }
+    };
+    const api = {
+      resolveWorkspacePath(rawPath, allowEmptyRoot = false) {
+        return resolveFallbackWorkspacePath(rawPath, allowEmptyRoot);
+      },
+      readFile(p) {
+        const norm = resolveFallbackWorkspacePath(p, false);
+        const node = fallbackFiles.get(norm);
+        if (!node) throw new Error(`ENOENT: no such file or directory, open '${p}'`);
+        if (node.type === "folder") throw new Error(`EISDIR: illegal operation on a directory, read '${p}'`);
+        return node.content;
+      },
+      writeFile(p, data) {
+        const norm = resolveFallbackWorkspacePath(p, false);
+        ensureParentFolders(norm);
+        const str = typeof data === "string" ? data : JSON.stringify(data, null, 2);
+        fallbackFiles.set(norm, { type: "file", content: str, mtime: Date.now() });
+        return true;
+      },
+      appendFile(p, data) {
+        const norm = resolveFallbackWorkspacePath(p, false);
+        ensureParentFolders(norm);
+        const prev = fallbackFiles.get(norm)?.content ?? "";
+        const str = typeof data === "string" ? data : JSON.stringify(data);
+        fallbackFiles.set(norm, { type: "file", content: prev + str, mtime: Date.now() });
+        return true;
+      },
+      exists(p) {
+        const norm = resolveFallbackWorkspacePath(p, true);
+        if (!norm) return true;
+        return fallbackFiles.has(norm);
+      },
+      listFiles(p) {
+        const norm = resolveFallbackWorkspacePath(p || ".", true);
+        const prefix = norm ? norm + "/" : "";
+        const out = /* @__PURE__ */ new Set();
+        fallbackFiles.forEach((_v, k) => {
+          if (!prefix) {
+            const first = k.split("/")[0];
+            if (first) out.add(first);
+          } else if (k.startsWith(prefix)) {
+            const rest = k.slice(prefix.length).split("/")[0];
+            if (rest) out.add(rest);
+          }
+        });
+        return Array.from(out).sort();
+      },
+      readdir(p) {
+        return api.listFiles(p);
+      },
+      mkdir(p) {
+        const norm = resolveFallbackWorkspacePath(p, true);
+        if (!norm) return true;
+        ensureParentFolders(norm);
+        fallbackFiles.set(norm, { type: "folder", content: "", mtime: Date.now() });
+        return true;
+      },
+      deleteFile(p) {
+        const norm = resolveFallbackWorkspacePath(p, false);
+        const existed = fallbackFiles.delete(norm);
+        Array.from(fallbackFiles.keys()).forEach((k) => {
+          if (k.startsWith(norm + "/")) fallbackFiles.delete(k);
+        });
+        return existed;
+      },
+      unlink(p) {
+        return api.deleteFile(p);
+      },
+      stat(p) {
+        const norm = resolveFallbackWorkspacePath(p, true);
+        if (!norm) {
+          return {
+            size: 0,
+            isFile: () => false,
+            isDirectory: () => true
+          };
+        }
+        const node = fallbackFiles.get(norm);
+        if (!node) throw new Error(`ENOENT: no such file or directory, stat '${p}'`);
+        return {
+          size: node.type === "file" ? node.content.length : 0,
+          isFile: () => node.type === "file",
+          isDirectory: () => node.type === "folder"
+        };
+      },
+      listAll() {
+        return Array.from(fallbackFiles.keys()).sort();
+      },
+      clear() {
+        fallbackFiles.clear();
+      }
+    };
+    globalThis.__VFS__ = api;
+    globalThis.vfs = api;
+    return api;
+  }
+  function createVirtualPromiseAndFsEnv(opts) {
+    const { loop, getCurLine, nextPromiseId, enqueueMicrotask, __t } = opts;
     class VirtualPromise {
       __isVirtualPromise;
       id;
@@ -6333,7 +7930,7 @@ runAsyncDemo()
       constructor(executor, label) {
         loop.used = true;
         this.__isVirtualPromise = true;
-        this.id = ++promiseSeq;
+        this.id = nextPromiseId();
         this.label = label || "Promise#" + this.id;
         this.state = "pending";
         this.value = void 0;
@@ -6484,158 +8081,8 @@ runAsyncDemo()
         }, "Promise.race");
       }
     }
-    const getVfsApi = () => {
-      if (globalThis.__VFS__) return globalThis.__VFS__;
-      const fallbackFiles = /* @__PURE__ */ new Map();
-      const resolveFallbackWorkspacePath = (rawPath, allowEmptyRoot = false) => {
-        const s = String(rawPath ?? "").trim().replace(/\\/g, "/");
-        if (!s) {
-          if (allowEmptyRoot) return "";
-          throw new Error(`ENOENT: no such file or directory, open ''`);
-        }
-        if (/^[A-Za-z]:/.test(s) || s.startsWith("~")) {
-          throw new Error(`EACCES: permission denied, access '${rawPath}' (outside workspace is not allowed)`);
-        }
-        let rel = s;
-        if (s.startsWith("/")) {
-          if (s === "/" || s === "/workspace" || s === "/workspace/") {
-            rel = "";
-          } else if (s.startsWith("/workspace/")) {
-            rel = s.slice("/workspace/".length);
-          } else {
-            throw new Error(`EACCES: permission denied, access '${rawPath}' (outside workspace is not allowed)`);
-          }
-        } else if (s === "workspace" || s === "workspace/") {
-          rel = "";
-        } else if (s.startsWith("workspace/")) {
-          rel = s.slice("workspace/".length);
-        }
-        const rawParts = rel.split("/");
-        const resolved = [];
-        for (const part of rawParts) {
-          if (!part || part === ".") continue;
-          if (part === "..") {
-            if (resolved.length === 0) {
-              throw new Error(`EACCES: permission denied, access '${rawPath}' (outside workspace is not allowed)`);
-            }
-            resolved.pop();
-            continue;
-          }
-          resolved.push(part);
-        }
-        if (resolved.length === 0 && !allowEmptyRoot) {
-          throw new Error(`EISDIR: illegal operation on a directory, open '${rawPath}'`);
-        }
-        return resolved.join("/");
-      };
-      const ensureParentFolders = (norm) => {
-        const parts = norm.split("/").filter(Boolean);
-        let acc = "";
-        for (let idx = 0; idx < parts.length - 1; idx++) {
-          const seg = parts[idx] || "";
-          acc = acc ? `${acc}/${seg}` : seg;
-          if (!fallbackFiles.has(acc)) {
-            fallbackFiles.set(acc, { type: "folder", content: "", mtime: Date.now() });
-          }
-        }
-      };
-      const api = {
-        resolveWorkspacePath(rawPath, allowEmptyRoot = false) {
-          return resolveFallbackWorkspacePath(rawPath, allowEmptyRoot);
-        },
-        readFile(p) {
-          const norm = resolveFallbackWorkspacePath(p, false);
-          const node = fallbackFiles.get(norm);
-          if (!node) throw new Error(`ENOENT: no such file or directory, open '${p}'`);
-          if (node.type === "folder") throw new Error(`EISDIR: illegal operation on a directory, read '${p}'`);
-          return node.content;
-        },
-        writeFile(p, data) {
-          const norm = resolveFallbackWorkspacePath(p, false);
-          ensureParentFolders(norm);
-          const str = typeof data === "string" ? data : JSON.stringify(data, null, 2);
-          fallbackFiles.set(norm, { type: "file", content: str, mtime: Date.now() });
-          return true;
-        },
-        appendFile(p, data) {
-          const norm = resolveFallbackWorkspacePath(p, false);
-          ensureParentFolders(norm);
-          const prev = fallbackFiles.get(norm)?.content ?? "";
-          const str = typeof data === "string" ? data : JSON.stringify(data);
-          fallbackFiles.set(norm, { type: "file", content: prev + str, mtime: Date.now() });
-          return true;
-        },
-        exists(p) {
-          const norm = resolveFallbackWorkspacePath(p, true);
-          if (!norm) return true;
-          return fallbackFiles.has(norm);
-        },
-        listFiles(p) {
-          const norm = resolveFallbackWorkspacePath(p || ".", true);
-          const prefix = norm ? norm + "/" : "";
-          const out = /* @__PURE__ */ new Set();
-          fallbackFiles.forEach((_v, k) => {
-            if (!prefix) {
-              const first = k.split("/")[0];
-              if (first) out.add(first);
-            } else if (k.startsWith(prefix)) {
-              const rest = k.slice(prefix.length).split("/")[0];
-              if (rest) out.add(rest);
-            }
-          });
-          return Array.from(out).sort();
-        },
-        readdir(p) {
-          return api.listFiles(p);
-        },
-        mkdir(p) {
-          const norm = resolveFallbackWorkspacePath(p, true);
-          if (!norm) return true;
-          ensureParentFolders(norm);
-          fallbackFiles.set(norm, { type: "folder", content: "", mtime: Date.now() });
-          return true;
-        },
-        deleteFile(p) {
-          const norm = resolveFallbackWorkspacePath(p, false);
-          const existed = fallbackFiles.delete(norm);
-          Array.from(fallbackFiles.keys()).forEach((k) => {
-            if (k.startsWith(norm + "/")) fallbackFiles.delete(k);
-          });
-          return existed;
-        },
-        unlink(p) {
-          return api.deleteFile(p);
-        },
-        stat(p) {
-          const norm = resolveFallbackWorkspacePath(p, true);
-          if (!norm) {
-            return {
-              size: 0,
-              isFile: () => false,
-              isDirectory: () => true
-            };
-          }
-          const node = fallbackFiles.get(norm);
-          if (!node) throw new Error(`ENOENT: no such file or directory, stat '${p}'`);
-          return {
-            size: node.type === "file" ? node.content.length : 0,
-            isFile: () => node.type === "file",
-            isDirectory: () => node.type === "folder"
-          };
-        },
-        listAll() {
-          return Array.from(fallbackFiles.keys()).sort();
-        },
-        clear() {
-          fallbackFiles.clear();
-        }
-      };
-      globalThis.__VFS__ = api;
-      globalThis.vfs = api;
-      return api;
-    };
     const readRequiredVfsFile = (p) => {
-      const content = getVfsApi().readFile(p);
+      const content = getOrCreateVfsApi().readFile(p);
       if (content === null) {
         throw new Error(`ENOENT: no such file or directory, open '${p}'`);
       }
@@ -6656,7 +8103,7 @@ runAsyncDemo()
         loop.used = true;
         return new VirtualPromise((resolve, reject) => {
           try {
-            getVfsApi().writeFile(p, typeof data === "string" ? data : String(data ?? ""));
+            getOrCreateVfsApi().writeFile(p, typeof data === "string" ? data : String(data ?? ""));
             resolve(void 0);
           } catch (e) {
             reject(e);
@@ -6667,7 +8114,7 @@ runAsyncDemo()
         loop.used = true;
         return new VirtualPromise((resolve, reject) => {
           try {
-            getVfsApi().appendFile(p, typeof data === "string" ? data : String(data ?? ""));
+            getOrCreateVfsApi().appendFile(p, typeof data === "string" ? data : String(data ?? ""));
             resolve(void 0);
           } catch (e) {
             reject(e);
@@ -6678,7 +8125,7 @@ runAsyncDemo()
         loop.used = true;
         return new VirtualPromise((resolve, reject) => {
           try {
-            resolve(getVfsApi().readdir(p));
+            resolve(getOrCreateVfsApi().readdir(p));
           } catch (e) {
             reject(e);
           }
@@ -6688,7 +8135,7 @@ runAsyncDemo()
         loop.used = true;
         return new VirtualPromise((resolve, reject) => {
           try {
-            getVfsApi().mkdir(p);
+            getOrCreateVfsApi().mkdir(p);
             resolve(void 0);
           } catch (e) {
             reject(e);
@@ -6699,7 +8146,7 @@ runAsyncDemo()
         loop.used = true;
         return new VirtualPromise((resolve, reject) => {
           try {
-            getVfsApi().unlink(p);
+            getOrCreateVfsApi().unlink(p);
             resolve(void 0);
           } catch (e) {
             reject(e);
@@ -6710,7 +8157,7 @@ runAsyncDemo()
         loop.used = true;
         return new VirtualPromise((resolve, reject) => {
           try {
-            getVfsApi().unlink(p);
+            getOrCreateVfsApi().unlink(p);
             resolve(void 0);
           } catch (e) {
             reject(e);
@@ -6721,7 +8168,7 @@ runAsyncDemo()
         loop.used = true;
         return new VirtualPromise((resolve, reject) => {
           try {
-            resolve(getVfsApi().stat(p));
+            resolve(getOrCreateVfsApi().stat(p));
           } catch (e) {
             reject(e);
           }
@@ -6731,7 +8178,7 @@ runAsyncDemo()
         loop.used = true;
         return new VirtualPromise((resolve, reject) => {
           try {
-            resolve(getVfsApi().exists(p));
+            resolve(getOrCreateVfsApi().exists(p));
           } catch (e) {
             reject(e);
           }
@@ -6741,7 +8188,7 @@ runAsyncDemo()
         loop.used = true;
         return new VirtualPromise((resolve, reject) => {
           try {
-            getVfsApi().stat(p);
+            getOrCreateVfsApi().stat(p);
             resolve(void 0);
           } catch (e) {
             reject(e);
@@ -6753,7 +8200,7 @@ runAsyncDemo()
         return new VirtualPromise((resolve, reject) => {
           try {
             const content = readRequiredVfsFile(srcPath);
-            getVfsApi().writeFile(destPath, content);
+            getOrCreateVfsApi().writeFile(destPath, content);
             resolve(void 0);
           } catch (e) {
             reject(e);
@@ -6765,8 +8212,8 @@ runAsyncDemo()
         return new VirtualPromise((resolve, reject) => {
           try {
             const content = readRequiredVfsFile(oldPath);
-            getVfsApi().writeFile(newPath, content);
-            getVfsApi().unlink(oldPath);
+            getOrCreateVfsApi().writeFile(newPath, content);
+            getOrCreateVfsApi().unlink(oldPath);
             resolve(void 0);
           } catch (e) {
             reject(e);
@@ -6780,43 +8227,167 @@ runAsyncDemo()
         return readRequiredVfsFile(p);
       },
       writeFileSync(p, data, _encoding) {
-        getVfsApi().writeFile(p, typeof data === "string" ? data : String(data ?? ""));
+        getOrCreateVfsApi().writeFile(p, typeof data === "string" ? data : String(data ?? ""));
       },
       appendFileSync(p, data, _encoding) {
-        getVfsApi().appendFile(p, typeof data === "string" ? data : String(data ?? ""));
+        getOrCreateVfsApi().appendFile(p, typeof data === "string" ? data : String(data ?? ""));
       },
       existsSync(p) {
         try {
-          return getVfsApi().exists(p);
+          return getOrCreateVfsApi().exists(p);
         } catch (_) {
           return false;
         }
       },
       readdirSync(p) {
-        return getVfsApi().readdir(p);
+        return getOrCreateVfsApi().readdir(p);
       },
       mkdirSync(p, _options) {
-        getVfsApi().mkdir(p);
+        getOrCreateVfsApi().mkdir(p);
       },
       unlinkSync(p) {
-        getVfsApi().unlink(p);
+        getOrCreateVfsApi().unlink(p);
       },
       rmSync(p, _options) {
-        getVfsApi().unlink(p);
+        getOrCreateVfsApi().unlink(p);
       },
       statSync(p) {
-        return getVfsApi().stat(p);
+        return getOrCreateVfsApi().stat(p);
       },
       copyFileSync(srcPath, destPath) {
         const content = readRequiredVfsFile(srcPath);
-        getVfsApi().writeFile(destPath, content);
+        getOrCreateVfsApi().writeFile(destPath, content);
       },
       renameSync(oldPath, newPath) {
         const content = readRequiredVfsFile(oldPath);
-        getVfsApi().writeFile(newPath, content);
-        getVfsApi().unlink(oldPath);
+        getOrCreateVfsApi().writeFile(newPath, content);
+        getOrCreateVfsApi().unlink(oldPath);
       }
     };
+    return { VirtualPromise, fsModuleEnv };
+  }
+
+  // src/runtime/event-loop.ts
+  function say(msg, cls, line) {
+    const d = document.createElement("div");
+    if (cls) d.className = cls;
+    if (line) {
+      d.className = (cls ? cls + " " : "") + "diag";
+      if (d.setAttribute) {
+        d.setAttribute("data-line", String(line));
+        d.setAttribute("title", "\u70B9\u51FB\u5B9A\u4F4D\u5230\u7B2C " + line + " \u884C");
+      }
+    }
+    d.textContent = msg;
+    logEl.appendChild(d);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  if (logEl && logEl.addEventListener) {
+    logEl.addEventListener("click", (e) => {
+      const el = e && e.target;
+      const target = el && el.closest ? el.closest(".diag") : null;
+      if (!target || !target.getAttribute) return;
+      revealErrorLine(parseInt(target.getAttribute("data-line") || "0", 10), true);
+    });
+  }
+  function clearLog(msg) {
+    logEl.innerHTML = "";
+    if (msg) say(msg, "dim");
+  }
+  function anonStackLine(stack) {
+    const re = /,\s*<anonymous>:(\d+):\d+/g;
+    const m = re.exec(String(stack || ""));
+    return m && m[1] ? parseInt(m[1], 10) : 0;
+  }
+  var FN_BODY_LINE_OFFSET = null;
+  function fnBodyLineOffset() {
+    if (FN_BODY_LINE_OFFSET !== null) return FN_BODY_LINE_OFFSET;
+    let off = 2;
+    try {
+      new Function('throw new Error("probe")')();
+    } catch (e) {
+      const line = anonStackLine(e instanceof Error ? e.stack : void 0);
+      if (line > 0) off = Math.max(1, line - 1);
+    }
+    FN_BODY_LINE_OFFSET = off;
+    return off;
+  }
+  function sourceLineFromStack(stack, lineCount) {
+    const stackLine = anonStackLine(stack);
+    if (!stackLine) return 0;
+    const line = stackLine - fnBodyLineOffset() - 1;
+    if (!isFinite(line) || line < 1) return 0;
+    if (lineCount && line > lineCount) return 0;
+    return line;
+  }
+  function safeJSONStringify(val) {
+    if (val === void 0) return "(undefined)";
+    try {
+      const seen = /* @__PURE__ */ new WeakSet();
+      return JSON.stringify(val, (_k, v) => {
+        if (v !== null && typeof v === "object") {
+          if (seen.has(v)) return "[Circular]";
+          seen.add(v);
+          if (Array.isArray(v) && v.length > 60) {
+            return [
+              ...v.slice(0, 20),
+              `\u2026 (\u5171 ${v.length} \u9879)`,
+              ...v.slice(v.length - 5)
+            ];
+          }
+        }
+        return v;
+      });
+    } catch (_) {
+      try {
+        return String(val);
+      } catch (__) {
+        return "[Object]";
+      }
+    }
+  }
+  function hasAsyncConstructs(src) {
+    if (!src || typeof src !== "string") return false;
+    const clean = blankStrings(src);
+    return /\b(?:async|await|Promise|setTimeout|queueMicrotask|sleep)\b/.test(clean);
+  }
+  function createVirtualEventLoop(__t, getCurLine = () => 1, onSuspendFrame, onResumeFrame) {
+    let promiseSeq = 0;
+    let microSeq = 0;
+    let macroSeq = 0;
+    let coroSeq = 0;
+    const loop = {
+      used: false,
+      virtualTime: 0,
+      phase: "sync",
+      activeTaskLabel: "\u4E3B\u7EBF\u7A0B\u540C\u6B65\u6808 (Sync)",
+      coroutines: [],
+      microtasks: [],
+      macrotasks: [],
+      promises: [],
+      globalSnapFn: null
+    };
+    function enqueueMicrotask(item) {
+      loop.used = true;
+      const task = {
+        id: ++microSeq,
+        label: item.label || "microtask#" + microSeq,
+        line: item.line || getCurLine() || 1,
+        status: "queued",
+        isInternalAwait: Boolean(item.isInternalAwait),
+        run: item.run,
+        rawCb: item.rawCb || null
+      };
+      loop.microtasks.push(task);
+      return task;
+    }
+    const { VirtualPromise, fsModuleEnv } = createVirtualPromiseAndFsEnv({
+      loop,
+      getCurLine,
+      nextPromiseId: () => ++promiseSeq,
+      enqueueMicrotask,
+      __t
+    });
     const env = {
       Promise: VirtualPromise,
       fs: fsModuleEnv,
@@ -7111,1530 +8682,148 @@ runAsyncDemo()
     updateEditorChrome();
   }
 
-  // src/viz/memory-graph.ts
-  function isMapLike(v) {
-    return Object.prototype.toString.call(v) === "[object Map]";
-  }
-  function isSetLike(v) {
-    return Object.prototype.toString.call(v) === "[object Set]";
-  }
-  function defineHidden(obj, key, val) {
-    if (!obj || typeof obj !== "object") return;
-    try {
-      Object.defineProperty(obj, key, {
-        value: val,
-        enumerable: false,
-        configurable: true,
-        writable: true
-      });
-    } catch (_) {
+  // src/compiler/tc-types.ts
+  var BUILTIN_TS_GLOBALS = /* @__PURE__ */ new Set([
+    "Math",
+    "JSON",
+    "Number",
+    "String",
+    "Boolean",
+    "Array",
+    "Object",
+    "Map",
+    "Set",
+    "WeakMap",
+    "WeakSet",
+    "Date",
+    "RegExp",
+    "Error",
+    "TypeError",
+    "RangeError",
+    "SyntaxError",
+    "ReferenceError",
+    "URIError",
+    "EvalError",
+    "AggregateError",
+    "Promise",
+    "Symbol",
+    "BigInt",
+    "Intl",
+    "Reflect",
+    "Proxy",
+    "Generator",
+    "AsyncGenerator",
+    "Iterator",
+    "AsyncIterator",
+    "Iterable",
+    "AsyncIterable",
+    "ArrayBuffer",
+    "SharedArrayBuffer",
+    "DataView",
+    "Int8Array",
+    "Uint8Array",
+    "Uint8ClampedArray",
+    "Int16Array",
+    "Uint16Array",
+    "Int32Array",
+    "Uint32Array",
+    "Float32Array",
+    "Float64Array",
+    "BigInt64Array",
+    "BigUint64Array",
+    "parseInt",
+    "parseFloat",
+    "isNaN",
+    "isFinite",
+    "encodeURI",
+    "decodeURI",
+    "encodeURIComponent",
+    "decodeURIComponent",
+    "structuredClone",
+    "atob",
+    "btoa",
+    "console",
+    "window",
+    "globalThis",
+    "self",
+    "document",
+    "navigator",
+    "location",
+    "performance",
+    "setTimeout",
+    "clearTimeout",
+    "setInterval",
+    "clearInterval",
+    "requestAnimationFrame",
+    "cancelAnimationFrame",
+    "queueMicrotask",
+    "sleep",
+    "Infinity",
+    "NaN",
+    "undefined",
+    "null",
+    "true",
+    "false",
+    "this",
+    "super",
+    "arguments",
+    "checkpoint",
+    "\u65AD\u70B9"
+  ]);
+  function createTypeCheckContext(src) {
+    const lines = src.replace(/\r\n?/g, "\n").split("\n");
+    const diagnostics = [];
+    const fns = /* @__PURE__ */ new Map();
+    const typeAliases = /* @__PURE__ */ new Map();
+    const genericTypeAliases = /* @__PURE__ */ new Map();
+    const interfaceTypeParams = /* @__PURE__ */ new Map();
+    const interfaces = /* @__PURE__ */ new Map();
+    const classParents = /* @__PURE__ */ new Map();
+    const classImplements = /* @__PURE__ */ new Map();
+    const abstractClasses = /* @__PURE__ */ new Set();
+    const enumsSet = /* @__PURE__ */ new Set();
+    const enumMembers = /* @__PURE__ */ new Map();
+    const enumValueTypes = /* @__PURE__ */ new Map();
+    const env = /* @__PURE__ */ new Map();
+    const activeTypeParams = /* @__PURE__ */ new Map();
+    function getKnownNominalTypes() {
+      const s = /* @__PURE__ */ new Set();
+      enumsSet.forEach((k) => s.add(k));
+      interfaces.forEach((_, k) => s.add(k));
+      typeAliases.forEach((_, k) => s.add(k));
+      activeTypeParams.forEach((_, k) => s.delete(k));
+      return s;
     }
-  }
-  function cloneDeepBounded(val, depth = 0) {
-    if (val === null || typeof val !== "object") return val;
-    const obj = val;
-    if (obj.__isVirtualPromise) {
-      if (obj.state === "pending") return "Promise <pending>";
-      if (obj.state === "fulfilled") return "Promise <fulfilled: " + formatShortVal(obj.value) + ">";
-      return "Promise <rejected: " + formatShortVal(obj.reason) + ">";
+    function isKnownIdentifier(name) {
+      if (!name || !/^[A-Za-z_$][\w$]*$/.test(name)) return true;
+      return env.has(name) || fns.has(name) || interfaces.has(name) || typeAliases.has(name) || genericTypeAliases.has(name) || activeTypeParams.has(name) || enumsSet.has(name) || BUILTIN_TS_GLOBALS.has(name) || RESERVED_WORDS.has(name);
     }
-    if (depth >= 4) return String(val);
-    if (Array.isArray(val)) return val.slice(0, 40).map((x) => cloneDeepBounded(x, depth + 1));
-    if (isMapLike(val)) {
-      const entries = [];
-      for (const [k, v] of val) {
-        if (entries.length >= 40) break;
-        entries.push({ k: cloneDeepBounded(k, depth + 1), v: cloneDeepBounded(v, depth + 1) });
-      }
-      return entries;
-    }
-    if (isSetLike(val)) {
-      const items = [];
-      for (const v of val) {
-        if (items.length >= 40) break;
-        items.push(cloneDeepBounded(v, depth + 1));
-      }
-      return items;
-    }
-    const out = {};
-    const clsName = obj.__py_cls__ || (val.constructor && val.constructor !== Object && val.constructor.name ? val.constructor.name : "");
-    if (clsName) {
-      defineHidden(out, "__py_cls__", clsName);
-    }
-    Object.keys(obj).slice(0, 20).forEach((k) => {
-      out[k] = cloneDeepBounded(obj[k], depth + 1);
-    });
-    return out;
-  }
-  function normalizeTree(value) {
-    if (value && Array.isArray(value.nodes)) {
-      return {
-        kind: "tree",
-        total: value.total || value.nodes.length,
-        nodes: value.nodes.slice(0, 31).map((n) => ({
-          val: n.val !== void 0 ? n.val : n.id,
-          left: n.left ?? null,
-          right: n.right ?? null
-        })),
-        root: value.root ?? 0
-      };
-    }
-    const nodes = [];
-    const seen = /* @__PURE__ */ new Set();
-    const nodeMap = /* @__PURE__ */ new Map();
-    function walk(node) {
-      if (!node || typeof node !== "object" || seen.has(node)) return null;
-      seen.add(node);
-      if (nodes.length >= 31) {
-        if (seen.size < 2e3) {
-          walk(node.left);
-          walk(node.right);
-        }
-        return null;
-      }
-      const idx = nodes.length;
-      nodeMap.set(node, idx);
-      const item = {
-        val: node.val !== void 0 ? node.val : node.value,
-        left: null,
-        right: null
-      };
-      nodes.push(item);
-      item.left = walk(node.left);
-      item.right = walk(node.right);
-      return idx;
-    }
-    const root = walk(value);
-    const out = { kind: "tree", nodes, root: root ?? 0, total: seen.size };
-    defineHidden(out, "__nodeMap", nodeMap);
-    return out;
-  }
-  function normalizeList(value) {
-    const pyMeta = value && typeof value === "object" && "__py_meta__" in value ? value.__py_meta__ || null : null;
-    if (Array.isArray(value)) {
-      const total = pyMeta && typeof pyMeta.total === "number" ? pyMeta.total : value.length;
-      const out2 = { kind: "list", items: value.slice(0, 30).map((x) => cloneDeepBounded(x, 1)), total };
-      if (total > 20) {
-        defineHidden(out2, "__raw", value);
-        if (pyMeta) defineHidden(out2, "__pyMeta", pyMeta);
-      }
-      return out2;
-    }
-    const items = [];
-    const rawNodes = [];
-    const rawVals = [];
-    const seen = /* @__PURE__ */ new Set();
-    let curNode = value;
-    while (curNode && typeof curNode === "object" && !seen.has(curNode) && rawNodes.length < 5e3) {
-      seen.add(curNode);
-      const v = curNode.val !== void 0 ? curNode.val : curNode.value;
-      rawNodes.push(curNode);
-      rawVals.push(v);
-      if (items.length < 30) items.push(cloneDeepBounded(v, 1));
-      curNode = curNode.next;
-    }
-    const out = { kind: "list", items, total: rawNodes.length };
-    if (rawNodes.length > 0) {
-      defineHidden(out, "__rawNodes", rawNodes);
-      defineHidden(out, "__rawVals", rawVals);
-    }
-    return out;
-  }
-  function normalizeGraph(value) {
-    if (value && Array.isArray(value.nodes) && Array.isArray(value.edges)) {
-      const rawNodes = value.nodes.slice(0, 16);
-      const count = rawNodes.length || 1;
-      const nodes = rawNodes.map((n, idx) => {
-        const angle = 2 * Math.PI * idx / count - Math.PI / 2;
-        const id = n && typeof n === "object" ? n.id ?? idx : n;
-        const label = n && typeof n === "object" ? n.label ?? n.val ?? id : String(n);
-        const x = n && typeof n.x === "number" ? n.x : Math.round(90 + 62 * Math.cos(angle));
-        const y = n && typeof n.y === "number" ? n.y : Math.round(68 + 48 * Math.sin(angle));
-        return { id, label: String(label), x, y };
-      });
-      const edges = value.edges.slice(0, 32).map(
-        (e) => Array.isArray(e) ? [e[0], e[1]] : [e.from ?? 0, e.to ?? 0]
-      );
-      return { kind: "graph", nodes, edges, totalNodes: value.nodes.length, totalEdges: value.edges.length };
-    }
-    return { kind: "graph", nodes: [], edges: [] };
-  }
-  function snapshot(kind, value, extra) {
-    const recVal = value && typeof value === "object" ? value : null;
-    const pyMeta = recVal && recVal.__py_meta__ ? recVal.__py_meta__ : null;
-    if (kind === "stack") {
-      const arr = Array.isArray(value) ? value : [];
-      const total = pyMeta && typeof pyMeta.total === "number" ? pyMeta.total : arr.length;
-      let items;
-      let baseIdx = 0;
-      if (pyMeta && Array.isArray(pyMeta.tail) && total > arr.length) {
-        items = pyMeta.tail.map((x) => cloneDeepBounded(x, 1));
-        baseIdx = Math.max(0, total - items.length);
-      } else if (arr.length > 40) {
-        baseIdx = arr.length - 40;
-        items = arr.slice(baseIdx).map((x) => cloneDeepBounded(x, 1));
-      } else {
-        items = arr.slice(0, 40).map((x) => cloneDeepBounded(x, 1));
-      }
-      return Object.assign({ kind, items, total, baseIdx }, extra || {});
-    }
-    if (kind === "array" || kind === "heap" || kind === "queue" || kind === "uf") {
-      const arr = Array.isArray(value) ? value : [];
-      const total = pyMeta && typeof pyMeta.total === "number" ? pyMeta.total : arr.length;
-      const items = arr.slice(0, 40).map((x) => cloneDeepBounded(x, 1));
-      const out = Object.assign({ kind, items, total }, extra || {});
-      if (total > 20) {
-        defineHidden(out, "__raw", arr);
-        if (pyMeta) defineHidden(out, "__pyMeta", pyMeta);
-      }
-      return out;
-    }
-    if (kind === "list") {
-      return Object.assign(normalizeList(value), extra || {});
-    }
-    if (kind === "tree") {
-      return Object.assign(normalizeTree(value), extra || {});
-    }
-    if (kind === "graph") {
-      return Object.assign(normalizeGraph(value), extra || {});
-    }
-    if (kind === "string") {
-      const s = String(value);
-      const total = s.length;
-      const items = s.slice(0, 40).split("");
-      const out = Object.assign({ kind, items, total }, extra || {});
-      if (total > 20) {
-        defineHidden(out, "__raw", s);
-      }
-      return out;
-    }
-    if (kind === "map") {
-      const entries = [];
-      let total = 0;
-      if (isMapLike(value)) {
-        const mapVal = value;
-        total = pyMeta && typeof pyMeta.total === "number" ? pyMeta.total : mapVal.size;
-        for (const [k, v] of mapVal) {
-          if (entries.length >= 40) break;
-          entries.push({ k: cloneDeepBounded(k, 1), v: cloneDeepBounded(v, 1) });
-        }
-      } else if (recVal && typeof recVal.forEach === "function") {
-        recVal.forEach((v, k) => {
-          total++;
-          if (entries.length < 40) entries.push({ k: cloneDeepBounded(k, 1), v: cloneDeepBounded(v, 1) });
-        });
-      } else if (recVal) {
-        const keys = Object.keys(recVal);
-        total = keys.length;
-        keys.slice(0, 40).forEach((k) => entries.push({ k, v: cloneDeepBounded(recVal[k], 1) }));
-      }
-      const out = Object.assign({ kind, entries, total }, extra || {});
-      if (total > 20) defineHidden(out, "__raw", value);
-      return out;
-    }
-    if (kind === "set") {
-      const items = [];
-      let total = 0;
-      if (isSetLike(value)) {
-        const setVal = value;
-        total = pyMeta && typeof pyMeta.total === "number" ? pyMeta.total : setVal.size;
-        for (const v of setVal) {
-          if (items.length >= 40) break;
-          items.push(cloneDeepBounded(v, 1));
-        }
-      } else if (recVal && typeof recVal.forEach === "function") {
-        recVal.forEach((v) => {
-          total++;
-          if (items.length < 40) items.push(cloneDeepBounded(v, 1));
-        });
-      }
-      const out = Object.assign({ kind, items, total }, extra || {});
-      if (total > 20) defineHidden(out, "__raw", value);
-      return out;
-    }
-    if (kind === "grid") {
-      const totalRows = pyMeta && typeof pyMeta.totalRows === "number" ? pyMeta.totalRows : Array.isArray(value) ? value.length : 0;
-      const totalCols = pyMeta && typeof pyMeta.totalCols === "number" ? pyMeta.totalCols : Array.isArray(value) && Array.isArray(value[0]) ? value[0].length : 0;
-      const cloned = Array.isArray(value) ? value.slice(0, 30).map((r) => Array.isArray(r) ? r.slice(0, 30).map((c) => cloneDeepBounded(c, 2)) : r) : [[0]];
-      const out = Object.assign({ kind, cells: cloned, mark: null, deps: [], totalRows, totalCols }, extra || {});
-      if (totalRows > 10 || totalCols > 10) {
-        defineHidden(out, "__raw", value);
-        if (pyMeta) defineHidden(out, "__pyMeta", pyMeta);
-      }
-      return out;
-    }
-    if (kind === "interface" || kind === "object") {
-      return Object.assign({ kind: "interface", fields: [], entries: [] }, extra || {});
-    }
-    return { kind: "array", items: [] };
-  }
-  function classifyValue(name, value) {
-    if (value == null) return null;
-    const n = String(name);
-    if (Array.isArray(value)) {
-      if (value.length > 0 && Array.isArray(value[0])) return snapshot("grid", value);
-      if (/^(parent|uf|fa|dsu)\b/i.test(n)) return snapshot("uf", value);
-      if (/stack|stk/i.test(n)) return snapshot("stack", value);
-      if (/queue|deque/i.test(n)) return snapshot("queue", value);
-      if (/heap|pq/i.test(n)) return snapshot("heap", value);
-      if (/^list$/i.test(n)) return snapshot("list", value);
-      return snapshot("array", value);
-    }
-    if (isMapLike(value)) return snapshot("map", value);
-    if (isSetLike(value)) return snapshot("set", value);
-    if (typeof value === "string") {
-      if (value.length > 0) return snapshot("string", value);
-      return null;
-    }
-    if (typeof value === "object") {
-      const obj = value;
-      if (obj.__isVirtualPromise) return null;
-      if (Array.isArray(obj.nodes) && Array.isArray(obj.edges)) return snapshot("graph", obj);
-      if (Array.isArray(obj.nodes) && "root" in obj) return snapshot("tree", obj);
-      if (n !== "this") {
-        if (("val" in obj || "value" in obj) && ("left" in obj || "right" in obj)) return snapshot("tree", obj);
-        if (("val" in obj || "value" in obj) && "next" in obj) return snapshot("list", obj);
-      }
-      const ifaceDef = matchInterfaceForObject(n, obj);
-      const annotType = CURRENT_TS_META.varTypes.get(n);
-      const ifaceName = ifaceDef ? ifaceDef.name : annotType || obj.__py_cls__ || "object";
-      const isClass = Boolean(ifaceDef && ifaceDef.isClass || obj.__py_cls__);
-      const fieldMap = /* @__PURE__ */ new Map();
-      if (ifaceDef) {
-        ifaceDef.fields.forEach((f) => {
-          const fk = f.k || f.name || "";
-          fieldMap.set(fk, {
-            k: fk,
-            v: fk in obj ? cloneDeepBounded(obj[fk], 1) : void 0,
-            declaredType: f.declaredType,
-            optional: Boolean(f.optional)
-          });
-        });
-      }
-      Object.keys(obj).slice(0, 20).forEach((k) => {
-        if (!fieldMap.has(k)) {
-          fieldMap.set(k, {
-            k,
-            v: cloneDeepBounded(obj[k], 1),
-            declaredType: inferRuntimeTsType(obj[k]),
-            optional: false
-          });
-        }
-      });
-      const fields = [...fieldMap.values()];
-      if (fields.length > 0 || isClass) {
-        return snapshot("interface", obj, {
-          interfaceName: ifaceName,
-          isClass,
-          isSchema: false,
-          fields,
-          entries: fields.map((f) => ({ k: f.k, v: f.v }))
-        });
+    function addDiag(line, code, message) {
+      if (!diagnostics.some((d) => d.line === line && d.code === code && d.message === message)) {
+        diagnostics.push({ line, code, message });
       }
     }
-    return null;
-  }
-  function populateInterfaceSchemas(ds) {
-    const { interfaces, varTypes } = CURRENT_TS_META;
-    if (!interfaces || !interfaces.size) return;
-    interfaces.forEach((iface) => {
-      if (iface.isClass && (!iface.fields || !iface.fields.length)) return;
-      const prefix = iface.isClass ? "class " : "interface ";
-      const slotKey = iface.name in ds ? prefix + iface.name : iface.name;
-      let boundInstance = null;
-      let boundVarName = null;
-      Object.keys(ds).forEach((k) => {
-        const item = ds[k];
-        if (!boundInstance && item && item.kind === "interface" && !item.isSchema && item.interfaceName === iface.name) {
-          boundInstance = item;
-          boundVarName = k;
-        }
-      });
-      if (!boundVarName && varTypes) {
-        Object.keys(ds).forEach((k) => {
-          if (!boundVarName && varTypes.get(k) === iface.name) {
-            boundVarName = k;
-          }
-        });
-      }
-      const fields = iface.fields.map((f) => {
-        const key = f.k || f.name || "";
-        const instField = boundInstance && boundInstance.fields ? boundInstance.fields.find((x) => x.k === key) : null;
-        return {
-          k: key,
-          declaredType: f.declaredType,
-          optional: Boolean(f.optional),
-          v: instField ? instField.v : void 0
-        };
-      });
-      ds[slotKey] = {
-        kind: "interface",
-        interfaceName: iface.name,
-        isClass: Boolean(iface.isClass),
-        isSchema: true,
-        instanceName: boundVarName,
-        fields,
-        entries: fields.map((f) => ({ k: f.k, v: f.v !== void 0 ? f.v : f.declaredType }))
-      };
-    });
-  }
-  function detectWindowRange(v) {
-    if (!v) return null;
-    const pairs = [["l", "r"], ["left", "right"], ["lo", "hi"], ["start", "end"]];
-    for (const [lk, rk] of pairs) {
-      const lv = v[lk];
-      const rv = v[rk];
-      if (typeof lv === "number" && typeof rv === "number" && lv >= 0 && rv >= lv) {
-        return [lv, rv];
-      }
-    }
-    return null;
-  }
-  var POINTER_VAR_NAMES = [
-    "mid",
-    "m",
-    "i",
-    "j",
-    "k",
-    "idx",
-    "p",
-    "q",
-    "cur",
-    "curr",
-    "slow",
-    "fast",
-    "pivot",
-    "l",
-    "r",
-    "left",
-    "right",
-    "lo",
-    "hi",
-    "low",
-    "high",
-    "start",
-    "end"
-  ];
-  function build1DFocalSlice(total, getAt, focalCenters) {
-    if (total <= 20) return null;
-    const centers = [];
-    const seenC = /* @__PURE__ */ new Set();
-    (focalCenters || []).forEach((c) => {
-      if (typeof c === "number" && Number.isInteger(c) && c >= 0 && c < total && !seenC.has(c)) {
-        seenC.add(c);
-        centers.push(c);
-      }
-    });
-    const activeCenters = centers.slice(0, 4);
-    const radius = activeCenters.length <= 1 ? 3 : activeCenters.length === 2 ? 2 : 1;
-    const intervals = [
-      [0, Math.min(total - 1, 2)],
-      [Math.max(0, total - 3), total - 1]
-    ];
-    activeCenters.forEach((c) => {
-      intervals.push([Math.max(0, c - radius), Math.min(total - 1, c + radius)]);
-    });
-    intervals.sort((a, b) => a[0] - b[0]);
-    const merged = [];
-    for (const iv of intervals) {
-      const prev = merged[merged.length - 1];
-      if (!prev) {
-        merged.push([iv[0], iv[1]]);
-      } else if (iv[0] <= prev[1] + 2) {
-        prev[1] = Math.max(prev[1], iv[1]);
-      } else {
-        merged.push([iv[0], iv[1]]);
-      }
-    }
-    const out = [];
-    for (let s = 0; s < merged.length; s++) {
-      const curIv = merged[s];
-      if (!curIv) continue;
-      const [start, end] = curIv;
-      const prevIv = s > 0 ? merged[s - 1] : void 0;
-      if (prevIv) {
-        const prevEnd = prevIv[1];
-        const gapCount = start - prevEnd - 1;
-        if (gapCount > 0) {
-          out.push({ gap: true, count: gapCount, from: prevEnd + 1, to: start - 1 });
-        }
-      }
-      for (let idx = start; idx <= end; idx++) {
-        out.push({ idx, val: getAt(idx) });
-      }
-    }
-    return out;
-  }
-  function selectGridAxisIndices(total, focusIdx, maxCount = 8) {
-    if (total <= maxCount) {
-      return Array.from({ length: total }, (_, i) => i);
-    }
-    const set = /* @__PURE__ */ new Set([0, total - 1]);
-    const center = typeof focusIdx === "number" && Number.isInteger(focusIdx) && focusIdx >= 0 && focusIdx < total ? focusIdx : 1;
-    const innerQuota = Math.max(2, maxCount - 2);
-    let start = Math.max(1, center - Math.floor(innerQuota / 2));
-    let end = Math.min(total - 2, start + innerQuota - 1);
-    start = Math.max(1, end - innerQuota + 1);
-    for (let i = start; i <= end; i++) set.add(i);
-    return [...set].sort((a, b) => a - b);
-  }
-  function enrichFromNote(ds, v, note) {
-    if (!ds || typeof ds !== "object") return;
-    const safeV = v || {};
-    const text = String(note || "");
-    const evalIdx = (expr) => {
-      const t = String(expr || "").trim();
-      if (!t) return void 0;
-      if (/^\d+$/.test(t)) return +t;
-      const directVal = safeV[t];
-      if (t in safeV && typeof directVal === "number" && Number.isInteger(directVal)) return directVal;
-      const m = t.match(/^([A-Za-z_$][\w$]*)\s*([+-])\s*(\d+)$/);
-      if (m && m[1] && m[3] !== void 0) {
-        const baseVal = safeV[m[1]];
-        if (typeof baseVal === "number" && Number.isInteger(baseVal)) {
-          return m[2] === "+" ? baseVal + +m[3] : baseVal - +m[3];
-        }
-      }
-      const evaluated = safeEvalExpr(t, safeV);
-      return typeof evaluated === "number" && Number.isInteger(evaluated) ? evaluated : void 0;
-    };
-    const win = detectWindowRange(safeV);
-    if (win) {
-      Object.keys(ds).forEach((k) => {
-        const item = ds[k];
-        if (item && (item.kind === "array" || item.kind === "string")) {
-          item.win = win;
-        }
-      });
-    }
-    if (text) {
-      const propRe = /\b([A-Za-z_$][\w$]*)\s*\.\s*([A-Za-z_$][\w$]*)\b/g;
-      let pm;
-      while (pm = propRe.exec(text)) {
-        const rawObj = pm[1] || "", propName = pm[2];
-        const objName = rawObj === "self" && !ds.self && ds.this ? "this" : rawObj;
-        const objItem = ds[objName];
-        if (objItem && (objItem.kind === "interface" || objItem.kind === "object")) {
-          objItem.hot = propName;
-          const ifaceName = objItem.interfaceName;
-          const ifaceItem = ifaceName ? ds[ifaceName] : void 0;
-          if (ifaceItem && ifaceItem.kind === "interface") {
-            ifaceItem.hot = propName;
-          }
-        }
-      }
-      const g = text.match(/\b([A-Za-z_$][\w$]*)\s*\[\s*([^[\]]+?)\s*\]\s*\[\s*([^[\]]+?)\s*\]/);
-      const gItem = g && g[1] ? ds[g[1]] : void 0;
-      if (g && g[1] && gItem && gItem.kind === "grid") {
-        const row = evalIdx(g[2]);
-        const col = evalIdx(g[3]);
-        if (typeof row === "number" && typeof col === "number") {
-          gItem.mark = [row, col];
-        }
-        const deps = [];
-        const re = /\b[A-Za-z_$][\w$]*\s*\[\s*([^[\]]+?)\s*\]\s*\[\s*([^[\]]+?)\s*\]/g;
-        let m;
-        while (m = re.exec(text)) {
-          const r = evalIdx(m[1]);
-          const c = evalIdx(m[2]);
-          if (typeof r === "number" && typeof c === "number") {
-            const curMark = gItem.mark;
-            if (!(Array.isArray(curMark) && curMark[0] === r && curMark[1] === c)) {
-              deps.push([r, c]);
-            }
-          }
-        }
-        gItem.deps = deps;
-      }
-      const subRe = /\b([A-Za-z_$][\w$]*)\s*\[\s*([^[\]]+?)\s*\](?!\s*\[)/g;
-      let sm;
-      while (sm = subRe.exec(text)) {
-        const varName = sm[1] || "";
-        const d = ds[varName];
-        if (!d || d.kind === "grid") continue;
-        let idx = evalIdx(sm[2]);
-        if (typeof idx === "number") {
-          const total = typeof d.total === "number" ? d.total : d.items ? d.items.length : 0;
-          if (idx < 0 && total > 0) idx = total + idx;
-          if (d.hot === void 0) {
-            d.hot = idx;
-          } else {
-            if (!d.__extraFocal) defineHidden(d, "__extraFocal", []);
-            if (d.__extraFocal) d.__extraFocal.push(idx);
-          }
-        }
-      }
-      const p = text.match(/\b([A-Za-z_$][\w$]*)\s*\.\s*(push|set|add|pop|shift|unshift|get|has)\s*\(\s*([^,)]*)/);
-      const pItem = p && p[1] ? ds[p[1]] : void 0;
-      if (p && p[1] && pItem) {
-        const d = pItem;
-        const method = p[2];
-        const firstArg = p[3] ? p[3].trim() : "";
-        if (method === "get" || method === "has" || method === "set" || method === "add") {
-          const argVal = firstArg ? safeEvalExpr(firstArg, safeV) : void 0;
-          if (d.kind === "map" && argVal !== void 0) {
-            d.hot = argVal;
-          } else if (d.kind === "set" && argVal !== void 0) {
-            d.hot = argVal;
-          }
-        }
-        if (method === "push" || method === "add" || method === "set" || method === "unshift") {
-          if (d.kind === "stack" || d.kind === "array" || d.kind === "queue" || d.kind === "heap") {
-            const total = typeof d.total === "number" ? d.total : d.items ? d.items.length : 0;
-            if (total > 0) d.hot = method === "unshift" ? 0 : total - 1;
-          } else if (d.kind === "map" && d.hot === void 0) {
-            if (d.entries && d.entries.length) {
-              const lastEntry = d.entries[d.entries.length - 1];
-              if (lastEntry) d.hot = lastEntry.k;
-            }
-          } else if (d.kind === "set" && d.hot === void 0) {
-            if (d.items && d.items.length) d.hot = d.items[d.items.length - 1];
-          }
-        }
-      }
-    }
-    Object.keys(ds).forEach((varName) => {
-      const d = ds[varName];
-      if (!d || typeof d !== "object") return;
-      if (d.kind === "tree" && d.__nodeMap) {
-        for (const pName of POINTER_VAR_NAMES) {
-          const ref = safeV[pName];
-          if (ref && typeof ref === "object" && d.__nodeMap.has(ref)) {
-            const nodeIdx = d.__nodeMap.get(ref);
-            if (d.hot === void 0) d.hot = nodeIdx;
-            break;
-          }
-        }
-      }
-      if (d.kind === "list" && d.__rawNodes) {
-        const nodePtrs = {};
-        const focal = [];
-        for (const pName of POINTER_VAR_NAMES) {
-          const ref = safeV[pName];
-          if (ref && typeof ref === "object") {
-            const idx = d.__rawNodes.indexOf(ref);
-            if (idx >= 0) {
-              const ptrArr = nodePtrs[idx] || (nodePtrs[idx] = []);
-              if (!ptrArr.includes(pName)) ptrArr.push(pName);
-              if (d.hot === void 0) d.hot = idx;
-              focal.push(idx);
-            }
-          }
-        }
-        if (Object.keys(nodePtrs).length) d.pointers = nodePtrs;
-        const rawVals = d.__rawVals || [];
-        const total = d.total || rawVals.length;
-        if (total > 20) {
-          if (typeof d.hot === "number") focal.unshift(d.hot);
-          d.windowed = build1DFocalSlice(total, (idx) => cloneDeepBounded(rawVals[idx], 1), focal);
-        }
-      }
-      if (d.kind === "array" || d.kind === "queue" || d.kind === "heap" || d.kind === "uf" || d.kind === "string" || d.kind === "list" && !d.__rawNodes) {
-        const total = typeof d.total === "number" ? d.total : d.items ? d.items.length : 0;
-        if (total > 0) {
-          const ptrs = d.pointers || {};
-          const focal = [];
-          if (typeof d.hot === "number" && d.hot >= 0 && d.hot < total) focal.push(d.hot);
-          if (Array.isArray(d.__extraFocal)) {
-            d.__extraFocal.forEach((idx) => {
-              if (typeof idx === "number" && idx >= 0 && idx < total) focal.push(idx);
-            });
-          }
-          if (typeof d.mark === "number" && d.mark >= 0 && d.mark < total) focal.push(d.mark);
-          if (Array.isArray(d.win)) {
-            if (d.win[0] >= 0 && d.win[0] < total) focal.push(d.win[0]);
-            if (d.win[1] >= 0 && d.win[1] < total) focal.push(d.win[1]);
-          }
-          for (const pName of POINTER_VAR_NAMES) {
-            const val = safeV[pName];
-            if (typeof val === "number" && Number.isInteger(val) && val >= 0 && val < total) {
-              const pArr = ptrs[val] || (ptrs[val] = []);
-              if (!pArr.includes(pName)) pArr.push(pName);
-              focal.push(val);
-            }
-          }
-          if (Object.keys(ptrs).length) d.pointers = ptrs;
-          if (d.hot === void 0 && d.mark === void 0) {
-            if (typeof safeV.mid === "number" && Number.isInteger(safeV.mid) && safeV.mid >= 0 && safeV.mid < total) {
-              d.mark = safeV.mid;
-            } else if (typeof safeV.m === "number" && Number.isInteger(safeV.m) && safeV.m >= 0 && safeV.m < total) {
-              d.mark = safeV.m;
-            }
-          }
-          if (total > 20) {
-            const raw = d.__raw;
-            const pyMeta = d.__pyMeta;
-            const getAt = (idx) => {
-              if (pyMeta && pyMeta.sparse && pyMeta.sparse.has(idx)) {
-                return cloneDeepBounded(pyMeta.sparse.get(idx), 1);
-              }
-              if (typeof raw === "string") return raw[idx] ?? "";
-              if (Array.isArray(raw) && idx < raw.length) return cloneDeepBounded(raw[idx], 1);
-              if (d.items && idx < d.items.length) return d.items[idx];
-              return "\u2026";
-            };
-            d.windowed = build1DFocalSlice(total, getAt, focal);
-          }
-        }
-      }
-      if (d.kind === "map" && d.hot !== void 0 && d.__raw && isMapLike(d.__raw)) {
-        const rawMap = d.__raw;
-        const entries = d.entries || (d.entries = []);
-        const exists = entries.some((e) => e.k === d.hot);
-        if (!exists && rawMap.has(d.hot)) {
-          entries.push({ k: cloneDeepBounded(d.hot, 1), v: cloneDeepBounded(rawMap.get(d.hot), 1) });
-        }
-      }
-      if (d.kind === "set" && d.hot !== void 0 && d.__raw && isSetLike(d.__raw)) {
-        const rawSet = d.__raw;
-        const items = d.items || (d.items = []);
-        const exists = items.some((x) => x === d.hot);
-        if (!exists && rawSet.has(d.hot)) {
-          items.push(cloneDeepBounded(d.hot, 1));
-        }
-      }
-      if (d.kind === "grid") {
-        const totalRows = typeof d.totalRows === "number" ? d.totalRows : d.cells ? d.cells.length : 0;
-        const totalCols = typeof d.totalCols === "number" ? d.totalCols : d.cells && d.cells[0] ? d.cells[0].length : 0;
-        if (totalRows > 10 || totalCols > 10) {
-          const pyMeta = d.__pyMeta;
-          if (pyMeta && Array.isArray(pyMeta.rowIndices) && Array.isArray(pyMeta.colIndices) && Array.isArray(pyMeta.viewCells)) {
-            d.rowIndices = pyMeta.rowIndices;
-            d.colIndices = pyMeta.colIndices;
-            d.viewCells = pyMeta.viewCells;
-          } else {
-            let focusR = Array.isArray(d.mark) ? d.mark[0] : d.deps && d.deps[0] ? d.deps[0][0] : void 0;
-            let focusC = Array.isArray(d.mark) ? d.mark[1] : d.deps && d.deps[0] ? d.deps[0][1] : void 0;
-            if (focusR === void 0 || focusC === void 0) {
-              const coordPairs = [["i", "j"], ["r", "c"], ["row", "col"], ["x", "y"]];
-              for (const [rk, ck] of coordPairs) {
-                const rv = safeV[rk];
-                const cv = safeV[ck];
-                if (typeof rv === "number" && typeof cv === "number") {
-                  focusR = rv;
-                  focusC = cv;
-                  break;
-                }
-              }
-            }
-            const rowIndices = selectGridAxisIndices(totalRows, focusR, 8);
-            const colIndices = selectGridAxisIndices(totalCols, focusC, 8);
-            const rawGrid = Array.isArray(d.__raw) ? d.__raw : d.cells;
-            d.rowIndices = rowIndices;
-            d.colIndices = colIndices;
-            d.viewCells = rowIndices.map((r) => {
-              const rowArr = rawGrid && Array.isArray(rawGrid[r]) ? rawGrid[r] : [];
-              return colIndices.map((c) => cloneDeepBounded(rowArr[c], 2));
-            });
-          }
-        }
-      }
-      delete d.__raw;
-      delete d.__rawNodes;
-      delete d.__rawVals;
-      delete d.__nodeMap;
-      delete d.__pyMeta;
-      delete d.__extraFocal;
-    });
-  }
-  function formatShortVal(val) {
-    if (val === void 0) return "undefined";
-    if (val === null) return "null";
-    if (typeof val === "string") return JSON.stringify(val.length > 16 ? val.slice(0, 14) + "\u2026" : val);
-    if (typeof val === "number" || typeof val === "boolean") return String(val);
-    if (Array.isArray(val)) return "[" + val.slice(0, 4).map(formatShortVal).join(", ") + (val.length > 4 ? ", \u2026" : "") + "]";
-    if (isMapLike(val)) return "Map(" + val.size + ")";
-    if (isSetLike(val)) return "Set(" + val.size + ")";
-    if (typeof val === "object") {
-      const rec = val;
-      const keys = Object.keys(rec);
-      if (keys.length > 0 && keys.length <= 4 && keys.every((k) => rec[k] === null || typeof rec[k] !== "object")) {
-        return "{ " + keys.map((k) => k + ": " + formatShortVal(rec[k])).join(", ") + " }";
-      }
-    }
-    return "{\u2026}";
-  }
-  function safeEvalExpr(expr, v) {
-    if (!expr || !v) return void 0;
-    const clean = stripTypes(expr).trim();
-    if (!clean) return void 0;
-    if (/\.\s*(push|pop|shift|unshift|splice|set|add|delete|clear|fill|sort|reverse)\s*\(/.test(clean)) {
-      return void 0;
-    }
-    if (new RegExp("(?:\\+\\+|--|(?<![=!<>])=(?!=))").test(clean)) return void 0;
-    try {
-      const keys = Object.keys(v).filter((k) => /^[A-Za-z_$][\w$]*$/.test(k) && !RESERVED_WORDS.has(k));
-      const vals = keys.map((k) => v[k]);
-      const fn = new Function(...keys, "return (" + clean + ");");
-      const thisCtx = v && Object.prototype.hasOwnProperty.call(v, "this") ? v.this : void 0;
-      return fn.call(thisCtx, ...vals);
-    } catch {
-      return void 0;
-    }
-  }
-  function splitLogicalClauses(condExpr) {
-    const clauses = [];
-    let depth = 0, start = 0;
-    for (let i = 0; i < condExpr.length; i++) {
-      const ch = condExpr[i];
-      if (ch === '"' || ch === "'" || ch === "`") {
-        i = skipString(condExpr, i) - 1;
-        continue;
-      }
-      if (ch === "(" || ch === "[" || ch === "{") depth++;
-      else if (ch === ")" || ch === "]" || ch === "}") depth--;
-      else if (depth === 0 && (ch === "&" && condExpr[i + 1] === "&" || ch === "|" && condExpr[i + 1] === "|")) {
-        clauses.push({ expr: condExpr.slice(start, i).trim(), opAfter: ch + ch });
-        i++;
-        start = i + 1;
-      }
-    }
-    clauses.push({ expr: condExpr.slice(start).trim(), opAfter: null });
-    return clauses.filter((c) => c.expr);
-  }
-  function deriveAnimAndNote(rawLine, v, nextV) {
-    const clean = stripTypes(rawLine || "").trim().replace(/;$/, "");
-    if (!clean) return { anim: null, note: rawLine };
-    let condExpr = null;
-    const condMatch = clean.match(/^(?:}\s*)?(?:if|while|else\s+if)\s*\(([\s\S]+)\)\s*\{?$/);
-    if (condMatch && condMatch[1]) {
-      condExpr = condMatch[1].trim();
-    } else {
-      const forMatch = clean.match(/^for\s*\(([\s\S]+)\)\s*\{?$/);
-      if (forMatch && forMatch[1] !== void 0) {
-        const semiParts = splitTopLevelSemicolons(forMatch[1]);
-        if (semiParts.length === 3 && semiParts[1]?.trim()) {
-          condExpr = semiParts[1].trim();
-        }
-      }
-    }
-    if (condExpr !== null) {
-      const clauses = splitLogicalClauses(condExpr);
-      let activeClause = clauses[0] ? clauses[0].expr : condExpr;
-      let overallResult = safeEvalExpr(condExpr, v);
-      for (let i = 0; i < clauses.length; i++) {
-        const c = clauses[i];
-        if (!c) continue;
-        activeClause = c.expr;
-        const cVal = safeEvalExpr(c.expr, v);
-        if (typeof cVal === "boolean") {
-          if (c.opAfter === "&&" && !cVal) {
-            overallResult = false;
-            break;
-          }
-          if (c.opAfter === "||" && cVal) {
-            overallResult = true;
-            break;
-          }
-          if (!c.opAfter) overallResult = cVal;
-        }
-      }
-      const cmp = activeClause.match(/^(.+?)\s*(===|!==|<=|>=|==|!=|<|>)\s*(.+)$/);
-      if (cmp && cmp[1] && cmp[2] && cmp[3]) {
-        const lhs = cmp[1].trim(), op = cmp[2], rhs = cmp[3].trim();
-        const lhsVal = safeEvalExpr(lhs, v);
-        const rhsVal = safeEvalExpr(rhs, v);
-        const resVal = typeof overallResult === "boolean" ? overallResult : safeEvalExpr(activeClause, v);
-        if (typeof resVal === "boolean") {
-          const anim = {
-            type: "compare",
-            lhs,
-            rhs,
-            op,
-            lhsVal: formatShortVal(lhsVal),
-            rhsVal: formatShortVal(rhsVal),
-            result: resVal
-          };
-          const note = `${rawLine.trim()}  \u2192  ${anim.lhsVal} ${op} ${anim.rhsVal} (${resVal})`;
-          return { anim, note };
-        }
-      }
-      if (typeof overallResult === "boolean") {
-        const anim = {
-          type: "compare",
-          lhs: activeClause,
-          rhs: "",
-          op: "?",
-          lhsVal: formatShortVal(overallResult),
-          rhsVal: "",
-          result: overallResult
-        };
-        return { anim, note: `${rawLine.trim()}  \u2192  ${overallResult}` };
-      }
-    }
-    const ckptCall = clean.match(/^(?:checkpoint|断点)\s*\(([\s\S]*)\)$/);
-    if (ckptCall && ckptCall[1] !== void 0) {
-      const fnName = clean.startsWith("\u65AD\u70B9") ? "\u65AD\u70B9" : "checkpoint";
-      const args = splitTopLevel(ckptCall[1]).map((s) => s.trim()).filter(Boolean);
-      const ckptVals = nextV && Array.isArray(nextV.__ckptVals) ? nextV.__ckptVals : null;
-      const argVals = ckptVals && ckptVals.length === args.length ? ckptVals : args.map((a) => formatShortVal(safeEvalExpr(a, v)));
-      const anim = { type: "checkpoint", fn: fnName, args, argVals };
-      const detail = args.length ? args.map((a, idx) => argVals[idx] !== void 0 && argVals[idx] !== a ? `${a}=${argVals[idx]}` : a).join(", ") : "\u5DF2\u547D\u4E2D\u65AD\u70B9";
-      return { anim, note: `\u25C9 ${fnName}(${detail})`, isCheckpoint: true };
-    }
-    const callOnly = clean.match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\((.*)\)$/);
-    if (callOnly && callOnly[1] && callOnly[2] !== void 0) {
-      const fnName = callOnly[1];
-      const args = splitTopLevel(callOnly[2]).map((s) => s.trim()).filter(Boolean);
-      const argVals = args.map((a) => formatShortVal(safeEvalExpr(a, v)));
-      const anim = { type: "call", fn: fnName, args, argVals, result: null, to: null };
-      return { anim, note: `${fnName}(${argVals.join(", ")})` };
-    }
-    const compoundAssign = clean.match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\s*\[[^\]]+\])*)\s*(\+=|-=|\*=|\/=)\s*(.+)$/);
-    if (compoundAssign && compoundAssign[1] && compoundAssign[2] && compoundAssign[3]) {
-      const to = compoundAssign[1].trim();
-      const op = compoundAssign[2][0];
-      const rhs = compoundAssign[3].trim();
-      const from = `${to} ${op} ${rhs}`;
-      let val = safeEvalExpr(from, v);
-      if (val === void 0 && nextV) val = safeEvalExpr(to, nextV);
-      if (val !== void 0) {
-        const valStr = formatShortVal(val);
-        return { anim: { type: "assign", to, from: rhs, val: valStr }, note: `${to} \u2190 ${valStr}   (${rawLine.trim()})` };
-      }
-    }
-    const assignMatch = clean.match(/^(?:(?:const|let|var)\s+)?([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\s*\[[^\]]+\])*)\s*=\s*(?!=)(.+)$/);
-    if (assignMatch && assignMatch[1] && assignMatch[2]) {
-      const to = assignMatch[1].trim();
-      const from = assignMatch[2].trim();
-      const isSingleDecl = splitTopLevel(clean.replace(/^(?:const|let|var)\s+/, "")).length === 1;
-      if (isSingleDecl || !from.includes(",") || /^[\w$.]+\s*\([^)]*\)$/.test(from)) {
-        let val = safeEvalExpr(from, v);
-        if (val === void 0 && nextV) {
-          val = safeEvalExpr(to, nextV);
-        }
-        const valStr = val !== void 0 ? formatShortVal(val) : null;
-        const rhsCall = from.match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\((.*)\)$/);
-        if (rhsCall && rhsCall[1] && rhsCall[2] !== void 0 && valStr !== null) {
-          const fnName = rhsCall[1];
-          const args = splitTopLevel(rhsCall[2]).map((s) => s.trim()).filter(Boolean);
-          const argVals = args.map((a) => formatShortVal(safeEvalExpr(a, v)));
-          const anim = { type: "call", fn: fnName, args, argVals, result: valStr, to };
-          return { anim, note: `${to} = ${fnName}(${argVals.join(", ")})  \u2192  ${valStr}` };
-        }
-        if (valStr !== null) {
-          const anim = { type: "assign", to, from, val: valStr };
-          return { anim, note: `${to} \u2190 ${valStr}   (${rawLine.trim()})` };
-        }
-      }
-    }
-    const retMatch = clean.match(/^return\s+(.+)$/);
-    if (retMatch && retMatch[1]) {
-      const expr = retMatch[1].trim();
-      const val = safeEvalExpr(expr, v);
-      if (val !== void 0) {
-        const valStr = formatShortVal(val);
-        const anim = { type: "assign", to: "return", from: expr, val: valStr };
-        return { anim, note: `return ${expr}  \u2192  ${valStr}` };
-      }
-    }
-    return { anim: null, note: rawLine.trim() };
-  }
-  function getActiveFrame(st) {
-    if (!st) return null;
-    const stack = Array.isArray(st.callStack) && st.callStack.length ? st.callStack : null;
-    if (!stack) {
-      return {
-        idx: 0,
-        total: 1,
-        isTop: true,
-        fn: "global",
-        label: "global",
-        line: st.line,
-        v: st.v || {},
-        ds: st.ds || {}
-      };
-    }
-    const topIdx = stack.length - 1;
-    const idx = SELECTED_FRAME_IDX !== null && SELECTED_FRAME_IDX >= 0 && SELECTED_FRAME_IDX < stack.length ? SELECTED_FRAME_IDX : topIdx;
-    const frame = stack[idx] || stack[topIdx];
     return {
-      idx,
-      total: stack.length,
-      isTop: idx === topIdx,
-      fn: frame.fn || "global",
-      label: frame.label || "global",
-      line: frame.line || st.line,
-      v: frame.v || (idx === topIdx ? st.v : {}) || {},
-      ds: (frame.ds && Object.keys(frame.ds).length ? frame.ds : st.ds) || {}
+      lines,
+      diagnostics,
+      fns,
+      typeAliases,
+      genericTypeAliases,
+      interfaceTypeParams,
+      interfaces,
+      classParents,
+      classImplements,
+      abstractClasses,
+      enumsSet,
+      enumMembers,
+      enumValueTypes,
+      env,
+      activeTypeParams,
+      addDiag,
+      getKnownNominalTypes,
+      isKnownIdentifier
     };
   }
-  function selectStackFrame(frameIdx) {
-    const st = TRACE.steps[cur];
-    if (!st || !Array.isArray(st.callStack) || !st.callStack.length) return;
-    const topIdx = st.callStack.length - 1;
-    const clamped = Math.max(0, Math.min(topIdx, Number(frameIdx) || 0));
-    SELECTED_FRAME_IDX = clamped === topIdx ? null : clamped;
-    renderStatic(cur, false);
-  }
-  function renderCallStack(st) {
-    if (!callStackBarEl) return;
-    if (!st) {
-      callStackBarEl.innerHTML = '<span class="cs-empty">\u672A\u5728\u8C03\u8BD5</span>';
-      if (callStackHintEl) callStackHintEl.textContent = "\u70B9\u51FB\u6808\u5E27\u53EF\u5207\u6362\u4F5C\u7528\u57DF";
-      return;
-    }
-    const stack = Array.isArray(st.callStack) && st.callStack.length ? st.callStack : [{ fn: "global", label: "global", line: st.line, v: st.v || {}, ds: st.ds || {} }];
-    const active = getActiveFrame(st);
-    const activeIdx = active ? active.idx : 0;
-    const activeIsTop = active ? active.isTop : true;
-    const activeLabel = active ? active.label : "global";
-    callStackBarEl.innerHTML = stack.map((f, fIdx) => {
-      const isSel = fIdx === activeIdx;
-      const isTop = fIdx === stack.length - 1;
-      const cls = "cs-crumb" + (isSel ? " active" : "") + (isTop ? " is-top" : "") + (!isTop && isSel ? " inspecting" : "");
-      const sep = fIdx > 0 ? '<span class="cs-sep">\u25B8</span>' : "";
-      return sep + `<button type="button" class="${cls}" data-frame-idx="${fIdx}" title="\u5207\u6362\u5230\u6808\u5E27 ${esc(f.label)} (\u7B2C ${f.line || st.line} \u884C)">${esc(f.label)}</button>`;
-    }).join("");
-    if (callStackHintEl) {
-      callStackHintEl.textContent = activeIsTop ? `\u6808\u6DF1 ${stack.length} \xB7 \u70B9\u51FB\u6808\u5E27\u53EF\u5207\u6362` : `\u6B63\u5728\u67E5\u770B\u6808\u5E27 ${activeIdx + 1}/${stack.length}: ${activeLabel}`;
-    }
-  }
-  function truncMap(arr, render, d) {
-    if (d && Array.isArray(d.windowed) && d.windowed.length) {
-      return d.windowed.map((entry) => {
-        if (entry && entry.gap) {
-          const tip = entry.from != null && entry.to != null ? ` title="\u7701\u7565\u4E0B\u6807 ${entry.from}..${entry.to}\uFF08\u5171 ${entry.count} \u9879\uFF09"` : "";
-          return '<div class="vmore"' + tip + '>\u2026<span class="vmore-cnt">+' + entry.count + "</span></div>";
-        }
-        return render(entry.val, entry.idx ?? 0);
-      }).join("");
-    }
-    const MAX = 20, HEAD = 10, TAIL = 5;
-    if (!arr || arr.length <= MAX) return (arr || []).map((x, i) => render(x, i)).join("");
-    const total = d && typeof d.total === "number" && d.total >= arr.length ? d.total : arr.length;
-    const hidden = Math.max(1, total - HEAD - TAIL);
-    const head = arr.slice(0, HEAD).map((x, i) => render(x, i)).join("");
-    const tailStart = total - TAIL;
-    const tail = arr.slice(arr.length - TAIL).map((x, i) => render(x, tailStart + i)).join("");
-    return head + '<div class="vmore" title="\u7701\u7565 ' + hidden + ' \u9879">\u2026<span class="vmore-cnt">+' + hidden + "</span></div>" + tail;
-  }
-  function vizArray(d) {
-    if (!d || !d.items || !d.items.length) return null;
-    const win = d.win;
-    const ptrs = d.pointers;
-    const cells = truncMap(d.items, (n, k) => {
-      let cls = "vcell vcell-idx";
-      if (win && k >= win[0] && k <= win[1]) cls += " win";
-      if (d.hot === k) cls += " hot";
-      else if (d.mark === k) cls += " mark";
-      const pTag = ptrs && ptrs[k] && ptrs[k].length ? '<span class="sub-tag ptr-tag">' + esc(ptrs[k].slice(0, 2).join(",")) + "</span>" : "";
-      return '<div class="' + cls + '">' + pTag + '<span class="val">' + esc(n) + '</span><span class="idx">' + k + "</span></div>";
-    }, d);
-    return '<div class="viz"><div class="viz-row varray-row">' + cells + "</div></div>";
-  }
-  function vizQueue(d) {
-    if (!d || !d.items || !d.items.length) return null;
-    const len = typeof d.total === "number" && d.total > 0 ? d.total : d.items.length;
-    const cells = truncMap(d.items, (n, k) => {
-      let cls = "vcell vcell-idx";
-      if (d.hot === k) cls += " hot";
-      else if (k === 0) cls += " mark";
-      const tag = k === 0 ? '<span class="sub-tag">front</span>' : k === len - 1 ? '<span class="sub-tag">back</span>' : "";
-      return '<div class="' + cls + '">' + tag + '<span class="val">' + esc(n) + '</span><span class="idx">' + k + "</span></div>";
-    }, d);
-    return '<div class="viz"><div class="viz-row varray-row">' + cells + "</div></div>";
-  }
-  function vizHeap(d) {
-    if (!d || !d.items || !d.items.length) return null;
-    const cells = truncMap(d.items, (n, k) => {
-      let cls = "vcell vcell-idx";
-      if (d.hot === k) cls += " hot";
-      else if (k === 0) cls += " mark";
-      const tag = k === 0 ? '<span class="sub-tag">top</span>' : "";
-      return '<div class="' + cls + '">' + tag + '<span class="val">' + esc(n) + '</span><span class="idx">' + k + "</span></div>";
-    }, d);
-    return '<div class="viz"><div class="viz-row varray-row">' + cells + '</div><div class="vmeta-hint">parent = (i - 1) &gt;&gt; 1 \xB7 left = 2i + 1</div></div>';
-  }
-  function vizUF(d) {
-    if (!d || !d.items || !d.items.length) return null;
-    const cells = truncMap(d.items, (p, k) => {
-      let cls = "vcell vcell-idx";
-      if (d.hot === k) cls += " hot";
-      else if (p === k) cls += " mark";
-      const tag = p === k ? '<span class="sub-tag">root</span>' : '<span class="sub-tag">p:' + esc(p) + "</span>";
-      return '<div class="' + cls + '">' + tag + '<span class="val">' + esc(p) + '</span><span class="idx">' + k + "</span></div>";
-    }, d);
-    return '<div class="viz"><div class="viz-row varray-row">' + cells + "</div></div>";
-  }
-  function vizMap(d) {
-    if (!d || !d.entries || !d.entries.length) return null;
-    return '<div class="viz"><div class="viz-row vmap-row">' + truncMap(
-      d.entries,
-      (e) => '<div class="vpair' + (d.hot === e.k ? " hot" : "") + '"><span class="vcell vk">' + esc(e.k) + '</span><span class="varr">\u2192</span><span class="vcell vv">' + esc(e.v) + "</span></div>",
-      d
-    ) + "</div></div>";
-  }
-  function vizSet(d) {
-    if (!d || !d.items || !d.items.length) return null;
-    return '<div class="viz"><div class="viz-row">' + truncMap(
-      d.items,
-      (x) => '<div class="vcell' + (d.hot === x ? " hot" : "") + '">' + esc(x) + "</div>",
-      d
-    ) + "</div></div>";
-  }
-  function vizStack(d) {
-    if (!d || !d.items || !d.items.length) return null;
-    const all = d.items, MAX = 6;
-    const total = typeof d.total === "number" && d.total >= all.length ? d.total : all.length;
-    const baseIdx = typeof d.baseIdx === "number" ? d.baseIdx : Math.max(0, total - all.length);
-    const sliceStart = Math.max(0, all.length - MAX);
-    const shown = all.slice(sliceStart);
-    const hiddenCount = Math.max(0, total - shown.length);
-    const rows = shown.map((x, k) => {
-      const abs = baseIdx + sliceStart + k;
-      const isTop = abs === total - 1;
-      return '<div class="vcell' + (d.hot === abs ? " hot" : isTop ? " mark" : "") + '"><span>' + esc(x) + "</span>" + (isTop ? '<span class="vtop">top</span>' : "") + "</div>";
-    }).join("");
-    return '<div class="viz"><div class="vcol">' + rows + "</div>" + (hiddenCount ? '<div class="vmore">\u2026+' + hiddenCount + "</div>" : "") + "</div>";
-  }
-  function vizString(d) {
-    if (!d || !d.items || !d.items.length) return null;
-    const win = d.win;
-    if (Array.isArray(d.windowed) && d.windowed.length) {
-      const cells = truncMap(d.items, (ch, k) => {
-        let cls = "ch";
-        if (win && k >= win[0] && k <= win[1]) cls += " win";
-        if (d.hot === k) cls += " hot";
-        else if (d.mark === k) cls += " mark";
-        return '<span class="' + cls + '" title="[' + k + ']">' + esc(ch) + "</span>";
-      }, d);
-      return '<div class="viz"><div class="vstr">' + cells + "</div></div>";
-    }
-    return '<div class="viz"><div class="vstr">' + d.items.map((ch, k) => {
-      let cls = "ch";
-      if (win && k >= win[0] && k <= win[1]) cls += " win";
-      if (d.hot === k) cls += " hot";
-      else if (d.mark === k) cls += " mark";
-      return '<span class="' + cls + '">' + esc(ch) + "</span>";
-    }).join("") + "</div></div>";
-  }
-  function vizGrid(d) {
-    if (!d || !d.cells || !d.cells.length) return null;
-    const depSet = new Set((d.deps || []).map((p) => p[0] + "," + p[1]));
-    if (Array.isArray(d.rowIndices) && Array.isArray(d.colIndices) && Array.isArray(d.viewCells)) {
-      const rIdxs = d.rowIndices;
-      const cIdxs = d.colIndices;
-      const colTracks = [];
-      for (let ci = 0; ci < cIdxs.length; ci++) {
-        const curC = cIdxs[ci] ?? 0;
-        const prevC = cIdxs[ci - 1] ?? 0;
-        if (ci > 0 && curC > prevC + 1) colTracks.push({ gap: true });
-        colTracks.push({ gap: false, c: curC, ci });
-      }
-      const gridCols = colTracks.length + 1;
-      let html2 = '<div class="ghead">r\\c</div>';
-      for (const ct of colTracks) {
-        if (ct.gap) {
-          html2 += '<div class="ggap">\u22EF</div>';
-        } else {
-          const isFocusCol = Array.isArray(d.mark) && d.mark[1] === ct.c;
-          html2 += '<div class="ghead' + (isFocusCol ? " focus" : "") + '">' + ct.c + "</div>";
-        }
-      }
-      for (let ri = 0; ri < rIdxs.length; ri++) {
-        const realR = rIdxs[ri];
-        if (ri > 0 && realR !== void 0 && realR > (rIdxs[ri - 1] ?? 0) + 1) {
-          html2 += '<div class="ggap">\u22EE</div>';
-          for (let gi = 0; gi < colTracks.length; gi++) {
-            html2 += '<div class="ggap">' + (colTracks[gi]?.gap ? "\u22F1" : "\u22EE") + "</div>";
-          }
-        }
-        const isFocusRow = Array.isArray(d.mark) && d.mark[0] === realR;
-        html2 += '<div class="ghead' + (isFocusRow ? " focus" : "") + '">' + realR + "</div>";
-        const rowVals = d.viewCells[ri] || [];
-        for (const ct of colTracks) {
-          if (ct.gap) {
-            html2 += '<div class="ggap">\u22EF</div>';
-          } else {
-            const realC = ct.c;
-            let cls = "gcell";
-            if (Array.isArray(d.mark) && d.mark[0] === realR && d.mark[1] === realC) cls += " hot";
-            else if (depSet.has(realR + "," + realC)) cls += " dep";
-            const val = rowVals[ct.ci];
-            html2 += '<div class="' + cls + '" title="[' + realR + "][" + realC + ']">' + (val === void 0 || val === null ? "\xB7" : esc(val)) + "</div>";
-          }
-        }
-      }
-      return '<div class="viz"><div class="vgrid-wrap"><div class="vgrid" style="grid-template-columns:repeat(' + gridCols + ',auto)">' + html2 + "</div></div></div>";
-    }
-    const cols = d.cells[0]?.length ?? 0;
-    let html = "";
-    for (let r = 0; r < d.cells.length; r++) {
-      for (let c = 0; c < cols; c++) {
-        let cls = "gcell";
-        if (Array.isArray(d.mark) && d.mark[0] === r && d.mark[1] === c) cls += " hot";
-        else if (depSet.has(r + "," + c)) cls += " dep";
-        const val = d.cells[r]?.[c];
-        html += '<div class="' + cls + '">' + (val === void 0 || val === null ? "\xB7" : esc(val)) + "</div>";
-      }
-    }
-    return '<div class="viz"><div class="vgrid" style="grid-template-columns:repeat(' + cols + ',auto)">' + html + "</div></div>";
-  }
-  function vizList(d) {
-    if (!d || !d.items || !d.items.length) return null;
-    const total = typeof d.total === "number" && d.total > 0 ? d.total : d.items.length;
-    const ptrs = d.pointers;
-    return '<div class="viz"><div class="viz-row">' + truncMap(d.items, (val, k) => {
-      const pTag = ptrs && ptrs[k] && ptrs[k].length ? '<span class="sub-tag ptr-tag">' + esc(ptrs[k].slice(0, 2).join(",")) + "</span>" : "";
-      return '<div class="vpair"><span class="vcell' + (d.hot === k ? " hot" : "") + '">' + pTag + esc(val) + "</span>" + (k < total - 1 ? '<span class="varr">\u2192</span>' : '<span class="varr">\u2192</span><span class="vempty">null</span>') + "</div>";
-    }, d) + "</div></div>";
-  }
-  function vizTree(d) {
-    if (!d || !d.nodes || !d.nodes.length) return null;
-    const nodes = d.nodes;
-    const root = d.root ?? 0;
-    const coords = /* @__PURE__ */ new Map();
-    let maxDepth = 0;
-    function layout(idx, depth, xMin, xMax) {
-      if (idx == null || !nodes[idx] || coords.has(idx) || depth > 5) return;
-      const node = nodes[idx];
-      if (!node) return;
-      maxDepth = Math.max(maxDepth, depth);
-      const x = (xMin + xMax) / 2;
-      const y = 20 + depth * 36;
-      coords.set(idx, { x, y, val: node.val, left: node.left, right: node.right });
-      layout(node.left, depth + 1, xMin, x);
-      layout(node.right, depth + 1, x, xMax);
-    }
-    layout(root, 0, 14, 226);
-    const h = Math.max(60, (maxDepth + 1) * 36 + 10);
-    let edgesSvg = "", nodesSvg = "";
-    coords.forEach((info, idx) => {
-      [info.left, info.right].forEach((ch) => {
-        if (ch != null && coords.has(ch)) {
-          const c = coords.get(ch);
-          if (c) edgesSvg += `<line class="vsvg-edge" x1="${info.x}" y1="${info.y}" x2="${c.x}" y2="${c.y}"/>`;
-        }
-      });
-      const cls = d.hot === idx ? "vsvg-node hot" : idx === root ? "vsvg-node mark" : "vsvg-node";
-      nodesSvg += `<g><circle class="${cls}" cx="${info.x}" cy="${info.y}" r="12"/><text class="vsvg-txt" x="${info.x}" y="${info.y}">${esc(info.val)}</text></g>`;
-    });
-    return `<div class="viz"><div class="vsvg-wrap"><svg viewBox="0 0 240 ${h}" width="240" height="${h}">${edgesSvg}${nodesSvg}</svg></div></div>`;
-  }
-  function vizGraph(d) {
-    if (!d || !d.nodes || !d.nodes.length) return null;
-    const byId = /* @__PURE__ */ new Map();
-    d.nodes.forEach((n, idx) => byId.set(n.id ?? idx, n));
-    let edgesSvg = "", nodesSvg = "";
-    (d.edges || []).forEach((e) => {
-      const e0 = Array.isArray(e) ? e[0] : e.from ?? 0;
-      const e1 = Array.isArray(e) ? e[1] : e.to ?? 0;
-      const a = byId.get(e0), b = byId.get(e1);
-      if (a && b) {
-        edgesSvg += `<line class="vsvg-edge" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"/>`;
-      }
-    });
-    d.nodes.forEach((n, idx) => {
-      const id = n.id ?? idx;
-      const cls = d.hot === id ? "vsvg-node hot" : "vsvg-node";
-      nodesSvg += `<g><circle class="${cls}" cx="${n.x}" cy="${n.y}" r="13"/><text class="vsvg-txt" x="${n.x}" y="${n.y}">${esc(n.label ?? id)}</text></g>`;
-    });
-    return `<div class="viz"><div class="vsvg-wrap"><svg viewBox="0 0 180 136" width="180" height="136">${edgesSvg}${nodesSvg}</svg></div></div>`;
-  }
-  function vizInterface(d) {
-    if (!d) return null;
-    const fields = d.fields || (d.entries ? d.entries.map((e) => ({ k: String(e.k), v: e.v, declaredType: typeof e.v })) : []);
-    if (!fields.length && !d.isClass) return null;
-    const ifaceTitle = d.interfaceName && d.interfaceName !== "object" ? d.interfaceName : "Object";
-    const kwTxt = d.isClass ? "class" : "interface";
-    const badgeTxt = d.isSchema ? d.instanceName ? `schema \xB7 \u7ED1\u5B9A ${d.instanceName}` : "schema" : "instance";
-    const rows = fields.length ? fields.slice(0, 12).map((f) => {
-      const isHot = d.hot === f.k;
-      const hasVal = f.v !== void 0;
-      const isStr = typeof f.v === "string";
-      const valDisplay = hasVal ? isStr ? JSON.stringify(f.v) : f.v !== null && typeof f.v === "object" ? safeJSONStringify(f.v) : String(f.v) : "\u672A\u5B9E\u4F8B\u5316";
-      return '<div class="viface-row' + (isHot ? " hot" : "") + '"><span class="viface-k">' + esc(f.k) + (f.optional ? '<span class="viface-opt">?</span>' : "") + "</span>" + (f.declaredType ? '<span class="viface-t">: ' + esc(f.declaredType) + "</span>" : "") + (hasVal ? '<span class="viface-eq">=</span><span class="viface-v' + (isStr ? " str" : "") + '">' + esc(valDisplay) + "</span>" : '<span class="viface-v schema-only">' + esc(valDisplay) + "</span>") + "</div>";
-    }).join("") : '<div class="viface-row"><span class="viface-v schema-only">\uFF08\u65E0\u5B9E\u4F8B\u5C5E\u6027\uFF09</span></div>';
-    return '<div class="viz"><div class="viface"><div class="viface-head"><span class="viface-kw">' + kwTxt + '</span><span class="viface-title">' + esc(ifaceTitle) + '</span><span class="viface-badge">' + esc(badgeTxt) + '</span></div><div class="viface-body">' + rows + "</div></div></div>";
-  }
-  function vizEventLoop(d) {
-    if (!d) return null;
-    const phaseMap = {
-      sync: { label: "Sync \xB7 \u540C\u6B65\u6808\u6267\u884C", cls: "sync" },
-      await_suspend: { label: "Await \xB7 \u534F\u7A0B\u6302\u8D77", cls: "suspend" },
-      await_resume: { label: "Await \xB7 \u534F\u7A0B\u6062\u590D", cls: "resume" },
-      microtask: { label: "Microtask \xB7 \u5FAE\u4EFB\u52A1\u51FA\u961F", cls: "micro" },
-      macrotask: { label: "Macrotask \xB7 \u5B8F\u4EFB\u52A1\u89E6\u53D1", cls: "macro" }
-    };
-    const ph = (d.phase ? phaseMap[d.phase] : void 0) || { label: d.phase || "Event Loop", cls: "sync" };
-    const nowMs = typeof d.now === "number" ? d.now : 0;
-    const coroutines = Array.isArray(d.coroutines) ? d.coroutines : [];
-    const coroHtml = coroutines.length ? coroutines.map((c) => {
-      const stCls = c.status === "running" ? "running" : c.status === "suspended" ? "suspended" : "completed";
-      const stLabel = c.status === "running" ? "\u25CF \u6267\u884C\u4E2D" : c.status === "suspended" ? `\u23F8 \u6302\u8D77 @L${c.line}` : "\u2713 \u5B8C\u6210";
-      const detail = c.status === "suspended" && c.awaitingExpr ? `<span class="vel-coro-expr">await ${esc(c.awaitingExpr)}</span>` : c.status === "completed" && c.returnVal !== void 0 ? `<span class="vel-coro-expr">\u21D2 ${esc(c.returnVal)}</span>` : "";
-      return `<div class="vel-chip coro-${stCls}"><span class="vel-chip-title">async ${esc(c.name)}()</span><span class="vel-chip-status">${esc(stLabel)}</span>` + detail + `</div>`;
-    }).join("") : '<span class="vel-empty">\u65E0\u6D3B\u8DC3\u534F\u7A0B</span>';
-    const microtasks = Array.isArray(d.microtasks) ? d.microtasks : [];
-    const microHtml = microtasks.length ? microtasks.map(
-      (m, idx) => `<div class="vel-qitem micro${idx === 0 ? " head" : ""}"><span class="vel-qidx">#${idx + 1}</span><span class="vel-qlabel">${esc(m.label)}</span>` + ((m.line ?? 0) > 0 ? `<span class="vel-qmeta">@L${m.line}</span>` : "") + `</div>`
-    ).join("") : '<span class="vel-empty">\u961F\u5217\u4E3A\u7A7A (0)</span>';
-    const macrotasks = Array.isArray(d.macrotasks) ? d.macrotasks : [];
-    const macroHtml = macrotasks.length ? macrotasks.map(
-      (t, idx) => `<div class="vel-qitem macro${idx === 0 ? " head" : ""}"><span class="vel-qidx">t=${t.due}ms</span><span class="vel-qlabel">${esc(t.label)}</span><span class="vel-qmeta">+${t.delay}ms</span></div>`
-    ).join("") : '<span class="vel-empty">\u65E0\u5F85\u89E6\u53D1\u5B9A\u65F6\u5668 (0)</span>';
-    const promises = Array.isArray(d.promises) ? d.promises : [];
-    const promHtml = promises.length ? promises.map((p) => {
-      const st = p.state || "pending";
-      const icon = st === "fulfilled" ? "\u2713" : st === "rejected" ? "\u2717" : "\u23F3";
-      const reactions = p.reactions ?? 0;
-      const valPart = st === "pending" ? reactions > 0 ? `<span class="vel-pval dim">${reactions} waiter${reactions > 1 ? "s" : ""}</span>` : '<span class="vel-pval dim">pending</span>' : `<span class="vel-pval">${esc(p.value)}</span>`;
-      return `<div class="vel-pcard ${esc(st)}"><span class="vel-phead"><span class="vel-picon">${icon}</span><span class="vel-pname">P#${p.id} \xB7 ${esc(p.label)}</span></span>` + valPart + `</div>`;
-    }).join("") : '<span class="vel-empty">\u6682\u65E0 Promise \u5B9E\u4F8B</span>';
-    return `<div class="viz"><div class="veventloop"><div class="vel-header"><span class="vel-phase ${ph.cls}">${esc(ph.label)}</span>` + (d.activeTask ? `<span class="vel-active">${esc(d.activeTask)}</span>` : "") + `<span class="vel-clock">\u23F1 \u865A\u62DF\u65F6\u949F ${nowMs}ms</span></div><div class="vel-grid"><div class="vel-lane"><div class="vel-lane-title">Async \u534F\u7A0B\u72B6\u6001</div><div class="vel-lane-body">` + coroHtml + '</div></div><div class="vel-lane"><div class="vel-lane-title">Microtask \u5FAE\u4EFB\u52A1\u961F\u5217 (FIFO)</div><div class="vel-lane-body">' + microHtml + '</div></div><div class="vel-lane"><div class="vel-lane-title">Macrotask \u5B8F\u4EFB\u52A1 / \u5B9A\u65F6\u5668</div><div class="vel-lane-body">' + macroHtml + '</div></div><div class="vel-lane"><div class="vel-lane-title">Promise \u72B6\u6001\u8868</div><div class="vel-lane-body vel-pgrid">' + promHtml + "</div></div></div></div></div>";
-  }
-  var VIZ = {
-    array: vizArray,
-    map: vizMap,
-    set: vizSet,
-    stack: vizStack,
-    string: vizString,
-    grid: vizGrid,
-    list: vizList,
-    heap: vizHeap,
-    queue: vizQueue,
-    tree: vizTree,
-    graph: vizGraph,
-    uf: vizUF,
-    interface: vizInterface,
-    object: vizInterface,
-    eventloop: vizEventLoop
-  };
-  function pressure(d) {
-    if (!d) return 0;
-    let n = 0;
-    if (typeof d.total === "number") n = d.total;
-    else if (d.items) n = d.items.length;
-    else if (d.fields) n = d.fields.length;
-    else if (d.entries) n = d.entries.length;
-    else if (d.nodes) n = d.nodes.length;
-    else if (d.cells) n = (d.totalRows || d.cells.length) * (d.totalCols || (d.cells[0] ? d.cells[0].length : 1));
-    switch (d.kind) {
-      case "eventloop":
-        return 1;
-      case "grid":
-        return Math.min(1, Math.max(0.5, n / 12));
-      case "array":
-      case "queue":
-      case "uf":
-        return Math.min(1, n / 11);
-      case "heap":
-        return Math.min(1, Math.max(0.46, n / 11));
-      case "list":
-        return Math.min(1, n / 7);
-      case "map":
-        return Math.min(1, n / 7);
-      case "interface":
-      case "object":
-        return Math.min(1, n / 6);
-      case "set":
-        return Math.min(1, n / 9);
-      case "string":
-        return Math.min(1, n / 18);
-      case "tree":
-        return n >= 6 ? 0.38 : 0.28;
-      case "graph":
-        return n >= 5 ? 0.36 : 0.26;
-      case "stack":
-        return Math.min(0.35, n / 16);
-      default:
-        return Math.min(1, n / 10);
-    }
-  }
-  var SPAN_UP = 0.45;
-  var SPAN_DOWN = 0.28;
-  function decideSpan(id, p) {
-    const curSpan = layoutSpan[id] || 1;
-    if (curSpan < 2 && p >= SPAN_UP) layoutSpan[id] = 2;
-    else if (curSpan > 1 && p <= SPAN_DOWN) layoutSpan[id] = 1;
-    return layoutSpan[id] || 1;
-  }
-  function allocateSlotSpans(vars, ds) {
-    const meta = vars.map((s, idx) => {
-      const d = ds[s.id];
-      const kind = d && d.kind || s.kind || "array";
-      const p = pressure(d);
-      const span = decideSpan(s.id, p);
-      return { s, d, kind, p, span, idx };
-    });
-    const oneColItems = meta.filter((m) => m.span === 1);
-    if (oneColItems.length % 2 === 1) {
-      let promote = oneColItems[0];
-      if (promote) {
-        for (let i = 1; i < oneColItems.length; i++) {
-          const candidate = oneColItems[i];
-          if (candidate && candidate.p >= promote.p) {
-            promote = candidate;
-          }
-        }
-        promote.span = 2;
-      }
-    }
-    return meta;
-  }
-  var _DISCOVER_CACHE = {
-    traceRef: null,
-    scannedSteps: 0,
-    map: /* @__PURE__ */ new Map(),
-    list: []
-  };
-  function discoverVars() {
-    const steps = TRACE && TRACE.steps || [];
-    if (_DISCOVER_CACHE.traceRef !== TRACE || steps.length < _DISCOVER_CACHE.scannedSteps) {
-      _DISCOVER_CACHE = { traceRef: TRACE, scannedSteps: 0, map: /* @__PURE__ */ new Map(), list: [] };
-    }
-    if (_DISCOVER_CACHE.scannedSteps < steps.length) {
-      let changed = false;
-      for (let i = _DISCOVER_CACHE.scannedSteps; i < steps.length; i++) {
-        const st = steps[i];
-        const ds = st && st.ds || {};
-        const keys = Object.keys(ds);
-        for (let k = 0; k < keys.length; k++) {
-          const name = keys[k];
-          const item = name ? ds[name] : void 0;
-          if (name && item && !_DISCOVER_CACHE.map.has(name)) {
-            _DISCOVER_CACHE.map.set(name, { id: name, name, kind: item.kind || name });
-            changed = true;
-          }
-        }
-      }
-      _DISCOVER_CACHE.scannedSteps = steps.length;
-      if (changed) _DISCOVER_CACHE.list = [..._DISCOVER_CACHE.map.values()];
-    }
-    return _DISCOVER_CACHE.list;
-  }
-  function renderPicker() {
-    const vars = discoverVars();
-    if (!vars.length) {
-      pickEl.innerHTML = '<span class="vempty">\u65E0\u7ED3\u6784\u53D8\u91CF</span>';
-      renderSlots();
-      return;
-    }
-    pickEl.innerHTML = vars.map(
-      (s) => '<div class="chip-pick' + (watched.has(s.id) ? " on" : "") + '" data-id="' + esc(s.id) + '">' + esc(s.name) + "</div>"
-    ).join("");
-    renderSlots();
-  }
-  function renderSlots() {
-    const stepAtCur = TRACE.steps[cur];
-    const st = stepAtCur || {};
-    const activeFrame = stepAtCur ? getActiveFrame(stepAtCur) : null;
-    const ds = Object.assign({}, activeFrame && activeFrame.ds || st.ds || {});
-    if (st.ds && st.ds.eventLoop && !ds.eventLoop) ds.eventLoop = st.ds.eventLoop;
-    const vars = discoverVars().filter((s) => watched.has(s.id) && ds[s.id] !== void 0);
-    if (slotsEl && slotsEl.classList && slotsEl.classList.toggle) {
-      slotsEl.classList.toggle("single-col", slotsEl.clientWidth > 0 && slotsEl.clientWidth < 420);
-    }
-    if (!vars.length) {
-      slotsEl.innerHTML = '<div class="slot" style="grid-column:1/-1"><div class="vempty">' + (TRACE.steps.length ? "\u70B9\u9009\u53D8\u91CF\u4EE5\u5173\u6CE8\uFF08\u6216\u672C\u6B65\u6682\u65E0\u7ED3\u6784\uFF09" : "\u751F\u6210\u8F68\u8FF9\u540E\u663E\u793A\u7ED3\u6784\u53EF\u89C6\u5316") + "</div></div>";
-      return;
-    }
-    const allocated = allocateSlotSpans(vars, ds);
-    slotsEl.innerHTML = allocated.map(({ s, d, kind, span }) => {
-      const fn = VIZ[kind];
-      const body = d ? fn ? fn(d) || '<div class="vempty">empty</div>' : '<div class="vempty">\u2026</div>' : '<div class="vempty">empty</div>';
-      const winTag = d && d.win ? `<span class="win-tag">[${d.win[0]}..${d.win[1]}]</span>` : "";
-      let sizeTag = "";
-      if (d) {
-        if (kind === "grid" && ((d.totalRows || 0) > 10 || (d.totalCols || 0) > 10)) {
-          sizeTag = `<span class="size-tag">${d.totalRows}\xD7${d.totalCols}</span>`;
-        } else if (typeof d.total === "number" && d.total > 20) {
-          sizeTag = `<span class="size-tag">\u5171 ${d.total} \u9879</span>`;
-        }
-      }
-      const isHotSlot = d && (d.hot !== void 0 || d.mark != null);
-      const kindPrefix = d && d.isClass ? "class" : "interface";
-      const kindBadge = kind === "interface" && d && d.interfaceName && d.interfaceName !== "object" && !d.isSchema ? `${kindPrefix} \xB7 ${d.interfaceName}` : kind === "interface" && d && d.isClass ? "class" : kind;
-      return '<div class="slot' + (span === 2 ? " span-2" : "") + (isHotSlot ? " pulse" : "") + '" data-var="' + esc(s.name) + '"><div class="name"><span>' + esc(s.name) + '</span><span class="kind">' + esc(kindBadge) + "</span>" + sizeTag + winTag + "</div>" + body + "</div>";
-    }).join("");
-  }
-  function updateControlButtons() {
-    const prevBtn = $("prev");
-    const nextBtn = $("next");
-    const ckptBtn = $("nextCheckpoint");
-    const autoBtn = $("auto");
-    const atEnd = Boolean(TRACE.steps.length > 0 && cur >= TRACE.steps.length - 1 && DEBUG_SESSION.finished);
-    if (prevBtn) prevBtn.disabled = !TRACE.steps.length || cur <= 0;
-    if (nextBtn) nextBtn.disabled = atEnd;
-    if (ckptBtn) ckptBtn.disabled = atEnd;
-    if (autoBtn) autoBtn.disabled = atEnd;
-  }
-  function renderStatic(i, withAnim = false) {
-    hideHoverTip();
-    const st = TRACE.steps[i];
-    const prevSt = i > 0 ? TRACE.steps[i - 1] : null;
-    if (!st) {
-      renderCallStack(null);
-      varsEl.innerHTML = "";
-      consoleEl.innerHTML = '<div><span class="p">\u203A</span><span class="dim">\u5F00\u542F Debug \u6A21\u5F0F\u540E\u5F53\u573A\u8BA1\u7B97\u5E76\u663E\u793A\u6BCF\u6B65\u6267\u884C\u8BE6\u60C5</span></div>';
-      cntEl.textContent = "\u672A\u5728\u8C03\u8BD5";
-      cntEl.className = "";
-      updateControlButtons();
-      renderSlots();
-      updateEditorChrome();
-      return;
-    }
-    renderCallStack(st);
-    const activeFrame = getActiveFrame(st);
-    const v = activeFrame && activeFrame.v || st.v || {};
-    const prevV = prevSt && prevSt.v || {};
-    const primEntries = Object.keys(v).map((k) => {
-      const val = v[k];
-      if (val !== null && typeof val === "object") return "";
-      const changed = Boolean(activeFrame && activeFrame.isTop && prevSt && prevV[k] !== val);
-      return '<div class="pair' + (changed ? " changed" : "") + '" data-var="' + esc(k) + '"><span class="k">' + esc(k) + '</span><span class="v">' + esc(val) + "</span></div>";
-    }).join("");
-    if (primEntries) {
-      varsEl.innerHTML = primEntries;
-    } else if (activeFrame && activeFrame.fn === "global") {
-      varsEl.innerHTML = '<div class="pair"><span class="k">scope</span><span class="v">global</span></div>' + (DEBUG_SESSION.callExpr && DEBUG_SESSION.callExpr !== "undefined" ? '<div class="pair"><span class="k">entry</span><span class="v">' + esc(DEBUG_SESSION.callExpr) + "</span></div>" : "");
-    } else {
-      varsEl.innerHTML = '<div class="vempty">\uFF08\u672C\u5E27\u65E0\u539F\u59CB\u7C7B\u578B\u5C40\u90E8\u53D8\u91CF\uFF09</div>';
-    }
-    let animDesc = "";
-    if (st.error) {
-      animDesc = `<div class="anim-desc" style="color:var(--red)">runtime error \xB7 \u5DF2\u505C\u6B62\u5728\u62A5\u9519\u884C (\u7B2C ${st.line} \u884C)</div>`;
-    } else if (st.anim) {
-      if (st.anim.type === "assign") animDesc = `<div class="anim-desc">assign \xB7 ${esc(st.anim.from)} \u2192 ${esc(st.anim.to)} = ${esc(st.anim.val)}</div>`;
-      else if (st.anim.type === "compare") animDesc = `<div class="anim-desc">compare \xB7 ${esc(st.anim.lhs)} ${esc(st.anim.op)} ${esc(st.anim.rhs)} \u21D2 ${esc(st.anim.result)}</div>`;
-      else if (st.anim.type === "call") animDesc = `<div class="anim-desc">call \xB7 ${esc(st.anim.fn)}(${esc((st.anim.argVals || []).join(", "))})</div>`;
-      else if (st.anim.type === "checkpoint") animDesc = `<div class="anim-desc" style="color:var(--cyan)">checkpoint \xB7 \u68C0\u67E5\u70B9\u5DF2\u547D\u4E2D (${esc((st.anim.argVals || []).join(", ") || "\u65E0\u53C2\u6570")})</div>`;
-    }
-    consoleEl.innerHTML = '<div><span class="p">\u203A</span>' + esc(st.note || "") + "</div>" + animDesc;
-    if (st.error) {
-      cntEl.textContent = "\u2717 \u8FD0\u884C\u65F6\u62A5\u9519";
-      cntEl.className = "err";
-    } else if (st.isCheckpoint) {
-      cntEl.textContent = "\u25C9 \u547D\u4E2D\u68C0\u67E5\u70B9";
-      cntEl.className = "ckpt";
-    } else if (DEBUG_SESSION.finished && i === TRACE.steps.length - 1) {
-      cntEl.textContent = "\u2713 \u6267\u884C\u5B8C\u6BD5";
-      cntEl.className = "done";
-    } else {
-      cntEl.textContent = "\u25CF \u8C03\u8BD5\u8FD0\u884C\u4E2D";
-      cntEl.className = "running";
-    }
-    updateControlButtons();
-    updateEditorChrome();
-    if (typeof VIEW_MODE !== "undefined" && VIEW_MODE === "notebook" && typeof globalThis.renderNotebookUI === "function") {
-      globalThis.renderNotebookUI(false);
-    } else {
-      scrollCodeTo(activeFrame ? activeFrame.line : st.line);
-    }
-    renderSlots();
-    if (withAnim && (typeof VIEW_MODE === "undefined" || VIEW_MODE !== "notebook")) {
-      playStepAnimation(st);
-    }
-  }
-  var renderMemory = renderSlots;
-  var renderAsyncQueues = vizEventLoop;
-  function drawArrows() {
-  }
-  function scheduleArrowRedraw() {
-  }
-
-  // src/compiler/type-checker.ts
   function inferRuntimeTsType(val) {
     if (val === null) return "null";
     if (Array.isArray(val)) {
@@ -9114,303 +9303,249 @@ runAsyncDemo()
     }
     return false;
   }
-  var _TYPECHECK_CACHE = { src: null, strict: null, diags: [] };
-  function typecheckTS(src, strict = STRICT_TS) {
-    extractTsInterfaceMetadata(src);
-    if (!strict) return [];
-    if (typeof src === "string" && _TYPECHECK_CACHE.src === src && _TYPECHECK_CACHE.strict === strict) {
-      return _TYPECHECK_CACHE.diags.map((d) => ({ ...d }));
-    }
-    const diagnostics = [];
-    const lines = src.replace(/\r\n?/g, "\n").split("\n");
-    const fns = /* @__PURE__ */ new Map();
-    const typeAliases = /* @__PURE__ */ new Map();
-    const genericTypeAliases = /* @__PURE__ */ new Map();
-    const interfaceTypeParams = /* @__PURE__ */ new Map();
-    const interfaces = /* @__PURE__ */ new Map();
-    const classParents = /* @__PURE__ */ new Map();
-    const classImplements = /* @__PURE__ */ new Map();
-    const abstractClasses = /* @__PURE__ */ new Set();
-    const enumsSet = /* @__PURE__ */ new Set();
-    const enumMembers = /* @__PURE__ */ new Map();
-    const enumValueTypes = /* @__PURE__ */ new Map();
-    const env = /* @__PURE__ */ new Map();
-    const activeTypeParams = /* @__PURE__ */ new Map();
-    const BUILTIN_TS_GLOBALS = /* @__PURE__ */ new Set([
-      "Math",
-      "JSON",
-      "Number",
-      "String",
-      "Boolean",
-      "Array",
-      "Object",
-      "Map",
-      "Set",
-      "WeakMap",
-      "WeakSet",
-      "Date",
-      "RegExp",
-      "Error",
-      "TypeError",
-      "RangeError",
-      "SyntaxError",
-      "ReferenceError",
-      "URIError",
-      "EvalError",
-      "AggregateError",
-      "Promise",
-      "Symbol",
-      "BigInt",
-      "Intl",
-      "Reflect",
-      "Proxy",
-      "Generator",
-      "AsyncGenerator",
-      "Iterator",
-      "AsyncIterator",
-      "Iterable",
-      "AsyncIterable",
-      "ArrayBuffer",
-      "SharedArrayBuffer",
-      "DataView",
-      "Int8Array",
-      "Uint8Array",
-      "Uint8ClampedArray",
-      "Int16Array",
-      "Uint16Array",
-      "Int32Array",
-      "Uint32Array",
-      "Float32Array",
-      "Float64Array",
-      "BigInt64Array",
-      "BigUint64Array",
-      "parseInt",
-      "parseFloat",
-      "isNaN",
-      "isFinite",
-      "encodeURI",
-      "decodeURI",
-      "encodeURIComponent",
-      "decodeURIComponent",
-      "structuredClone",
-      "atob",
-      "btoa",
-      "console",
-      "window",
-      "globalThis",
-      "self",
-      "document",
-      "navigator",
-      "location",
-      "performance",
-      "setTimeout",
-      "clearTimeout",
-      "setInterval",
-      "clearInterval",
-      "requestAnimationFrame",
-      "cancelAnimationFrame",
-      "queueMicrotask",
-      "sleep",
-      "Infinity",
-      "NaN",
-      "undefined",
-      "null",
-      "true",
-      "false",
-      "this",
-      "super",
-      "arguments",
-      "checkpoint",
-      "\u65AD\u70B9"
-    ]);
-    function getKnownNominalTypes() {
-      const s = /* @__PURE__ */ new Set();
-      enumsSet.forEach((k) => s.add(k));
-      interfaces.forEach((_, k) => s.add(k));
-      typeAliases.forEach((_, k) => s.add(k));
-      activeTypeParams.forEach((_, k) => s.delete(k));
-      return s;
-    }
-    function isKnownIdentifier(name) {
-      if (!name || !/^[A-Za-z_$][\w$]*$/.test(name)) return true;
-      return env.has(name) || fns.has(name) || interfaces.has(name) || typeAliases.has(name) || genericTypeAliases.has(name) || activeTypeParams.has(name) || enumsSet.has(name) || BUILTIN_TS_GLOBALS.has(name) || RESERVED_WORDS.has(name);
-    }
-    function addDiag(line, code, message) {
-      if (!diagnostics.some((d) => d.line === line && d.code === code && d.message === message)) {
-        diagnostics.push({ line, code, message });
+  function splitTopLevelDecl(s) {
+    const parts = [];
+    let depth = 0, angleDepth = 0, cur2 = "";
+    for (let i = 0; i < s.length; i++) {
+      const ch = s[i];
+      if (ch === '"' || ch === "'" || ch === "`") {
+        const end = skipString(s, i);
+        cur2 += s.slice(i, end);
+        i = end - 1;
+        continue;
+      }
+      if (ch === "(" || ch === "[" || ch === "{") depth++;
+      else if (ch === ")" || ch === "]" || ch === "}") depth = Math.max(0, depth - 1);
+      else if (ch === "<" && s.indexOf(">", i + 1) > i) angleDepth++;
+      else if (ch === ">" && angleDepth > 0 && s[i - 1] !== "=") angleDepth--;
+      if (ch === "," && depth === 0 && angleDepth === 0) {
+        parts.push(cur2);
+        cur2 = "";
+      } else {
+        cur2 += ch;
       }
     }
-    function splitTopLevelDecl(s) {
-      const parts = [];
-      let depth = 0, angleDepth = 0, cur2 = "";
+    if (cur2) parts.push(cur2);
+    return parts;
+  }
+  function parseTypeParams(typeParamStr) {
+    if (!typeParamStr) return [];
+    let inner = typeParamStr.trim();
+    if (inner.startsWith("<") && inner.endsWith(">")) inner = inner.slice(1, -1).trim();
+    if (!inner) return [];
+    const rawItems = splitTopLevelDecl(inner);
+    const out = [];
+    rawItems.forEach((item) => {
+      let s = item.trim().replace(/^(?:const|in|out)\s+/, "");
+      if (!s) return;
+      let defaultType = null;
+      let d = 0, ad = 0, eqIdx = -1;
       for (let i = 0; i < s.length; i++) {
         const ch = s[i];
         if (ch === '"' || ch === "'" || ch === "`") {
-          const end = skipString(s, i);
-          cur2 += s.slice(i, end);
-          i = end - 1;
-          continue;
-        }
-        if (ch === "(" || ch === "[" || ch === "{") depth++;
-        else if (ch === ")" || ch === "]" || ch === "}") depth = Math.max(0, depth - 1);
-        else if (ch === "<" && s.indexOf(">", i + 1) > i) angleDepth++;
-        else if (ch === ">" && angleDepth > 0 && s[i - 1] !== "=") angleDepth--;
-        if (ch === "," && depth === 0 && angleDepth === 0) {
-          parts.push(cur2);
-          cur2 = "";
-        } else {
-          cur2 += ch;
-        }
-      }
-      if (cur2) parts.push(cur2);
-      return parts;
-    }
-    function parseTypeParams(typeParamStr) {
-      if (!typeParamStr) return [];
-      let inner = typeParamStr.trim();
-      if (inner.startsWith("<") && inner.endsWith(">")) inner = inner.slice(1, -1).trim();
-      if (!inner) return [];
-      const rawItems = splitTopLevelDecl(inner);
-      const out = [];
-      rawItems.forEach((item) => {
-        let s = item.trim().replace(/^(?:const|in|out)\s+/, "");
-        if (!s) return;
-        let defaultType = null;
-        let d = 0, ad = 0, eqIdx = -1;
-        for (let i = 0; i < s.length; i++) {
-          const ch = s[i];
-          if (ch === '"' || ch === "'" || ch === "`") {
-            i = skipString(s, i) - 1;
-            continue;
-          }
-          if (ch === "(" || ch === "[" || ch === "{") d++;
-          else if (ch === ")" || ch === "]" || ch === "}") d = Math.max(0, d - 1);
-          else if (ch === "<") ad++;
-          else if (ch === ">" && s[i - 1] !== "=") ad = Math.max(0, ad - 1);
-          else if (ch === "=" && s[i + 1] !== ">" && d === 0 && ad === 0) {
-            eqIdx = i;
-            break;
-          }
-        }
-        if (eqIdx > 0) {
-          defaultType = s.slice(eqIdx + 1).trim();
-          s = s.slice(0, eqIdx).trim();
-        }
-        const extM = s.match(/^([A-Za-z_$][\w$]*)(?:\s+extends\s+([\s\S]+))?$/);
-        if (extM && extM[1]) {
-          out.push({
-            name: extM[1],
-            constraint: extM[2] ? extM[2].trim() : null,
-            defaultType
-          });
-        }
-      });
-      return out;
-    }
-    function substituteTypeParamsInStr(typeStr, typeEnv) {
-      if (!typeStr || !typeEnv || typeEnv.size === 0) return typeStr;
-      let out = "";
-      let i = 0;
-      while (i < typeStr.length) {
-        const ch = typeStr[i];
-        if (ch === '"' || ch === "'" || ch === "`") {
-          const end = skipString(typeStr, i);
-          if (ch === "`") {
-            let tpl = "`";
-            let k = i + 1;
-            while (k < end - 1) {
-              if (typeStr[k] === "$" && typeStr[k + 1] === "{") {
-                const closeIdx = typeStr.indexOf("}", k + 2);
-                if (closeIdx > k && closeIdx < end) {
-                  const innerExpr = typeStr.slice(k + 2, closeIdx);
-                  tpl += "${" + substituteTypeParamsInStr(innerExpr, typeEnv) + "}";
-                  k = closeIdx + 1;
-                  continue;
-                }
-              }
-              tpl += typeStr[k++];
-            }
-            tpl += "`";
-            out += tpl;
-          } else {
-            out += typeStr.slice(i, end);
-          }
-          i = end;
-          continue;
-        }
-        if (isIdentStart(ch)) {
-          const id = readIdent(typeStr, i);
-          if (!id) {
-            out += ch;
-            i++;
-            continue;
-          }
-          const word = id.name;
-          const prevCh = i > 0 ? typeStr[i - 1] || "" : "";
-          let afterIdx = id.end;
-          while (afterIdx < typeStr.length && isWS(typeStr[afterIdx])) afterIdx++;
-          const isPropKey = (typeStr[afterIdx] === ":" || typeStr[afterIdx] === "?" && typeStr[afterIdx + 1] === ":") && (prevCh === "{" || prevCh === ";" || prevCh === "," || /\s/.test(prevCh));
-          const isAfterInfer = out.trimEnd().endsWith("infer");
-          if (!isPropKey && !isAfterInfer && prevCh !== "." && typeEnv.has(word)) {
-            out += typeEnv.get(word);
-          } else {
-            out += word;
-          }
-          i = id.end;
-          continue;
-        }
-        out += ch;
-        i++;
-      }
-      return out;
-    }
-    function parseTopLevelConditional(typeStr) {
-      let d = 0, ad = 0;
-      let extPos = -1, extLen = 7, qPos = -1, cPos = -1;
-      let qDepth = 0;
-      for (let i = 0; i < typeStr.length; i++) {
-        const ch = typeStr[i];
-        if (ch === '"' || ch === "'" || ch === "`") {
-          i = skipString(typeStr, i) - 1;
+          i = skipString(s, i) - 1;
           continue;
         }
         if (ch === "(" || ch === "[" || ch === "{") d++;
         else if (ch === ")" || ch === "]" || ch === "}") d = Math.max(0, d - 1);
         else if (ch === "<") ad++;
-        else if (ch === ">" && typeStr[i - 1] !== "=") ad = Math.max(0, ad - 1);
-        else if (d === 0 && ad === 0) {
-          if (extPos < 0 && (i === 0 || /[\s>)\]]/.test(typeStr[i - 1] || ""))) {
-            const extM = typeStr.slice(i).match(/^extends(?:\s+|(?=[(\[{"'`]))/);
-            if (extM) {
-              extPos = i;
-              extLen = extM[0].length;
-              i += extLen - 1;
-              continue;
+        else if (ch === ">" && s[i - 1] !== "=") ad = Math.max(0, ad - 1);
+        else if (ch === "=" && s[i + 1] !== ">" && d === 0 && ad === 0) {
+          eqIdx = i;
+          break;
+        }
+      }
+      if (eqIdx > 0) {
+        defaultType = s.slice(eqIdx + 1).trim();
+        s = s.slice(0, eqIdx).trim();
+      }
+      const extM = s.match(/^([A-Za-z_$][\w$]*)(?:\s+extends\s+([\s\S]+))?$/);
+      if (extM && extM[1]) {
+        out.push({
+          name: extM[1],
+          constraint: extM[2] ? extM[2].trim() : null,
+          defaultType
+        });
+      }
+    });
+    return out;
+  }
+  function substituteTypeParamsInStr(typeStr, typeEnv) {
+    if (!typeStr || !typeEnv || typeEnv.size === 0) return typeStr;
+    let out = "";
+    let i = 0;
+    while (i < typeStr.length) {
+      const ch = typeStr[i];
+      if (ch === '"' || ch === "'" || ch === "`") {
+        const end = skipString(typeStr, i);
+        if (ch === "`") {
+          let tpl = "`";
+          let k = i + 1;
+          while (k < end - 1) {
+            if (typeStr[k] === "$" && typeStr[k + 1] === "{") {
+              const closeIdx = typeStr.indexOf("}", k + 2);
+              if (closeIdx > k && closeIdx < end) {
+                const innerExpr = typeStr.slice(k + 2, closeIdx);
+                tpl += "${" + substituteTypeParamsInStr(innerExpr, typeEnv) + "}";
+                k = closeIdx + 1;
+                continue;
+              }
             }
+            tpl += typeStr[k++];
           }
-          if (extPos >= 0 && ch === "?") {
-            if (qPos < 0) qPos = i;
-            else qDepth++;
-          } else if (extPos >= 0 && qPos >= 0 && ch === ":") {
-            if (qDepth === 0) {
-              cPos = i;
-              break;
-            } else {
-              qDepth--;
-            }
+          tpl += "`";
+          out += tpl;
+        } else {
+          out += typeStr.slice(i, end);
+        }
+        i = end;
+        continue;
+      }
+      if (isIdentStart(ch)) {
+        const id = readIdent(typeStr, i);
+        if (!id) {
+          out += ch;
+          i++;
+          continue;
+        }
+        const word = id.name;
+        const prevCh = i > 0 ? typeStr[i - 1] || "" : "";
+        let afterIdx = id.end;
+        while (afterIdx < typeStr.length && isWS(typeStr[afterIdx])) afterIdx++;
+        const isPropKey = (typeStr[afterIdx] === ":" || typeStr[afterIdx] === "?" && typeStr[afterIdx + 1] === ":") && (prevCh === "{" || prevCh === ";" || prevCh === "," || /\s/.test(prevCh));
+        const isAfterInfer = out.trimEnd().endsWith("infer");
+        if (!isPropKey && !isAfterInfer && prevCh !== "." && typeEnv.has(word)) {
+          out += typeEnv.get(word);
+        } else {
+          out += word;
+        }
+        i = id.end;
+        continue;
+      }
+      out += ch;
+      i++;
+    }
+    return out;
+  }
+  function parseTopLevelConditional(typeStr) {
+    let d = 0, ad = 0;
+    let extPos = -1, extLen = 7, qPos = -1, cPos = -1;
+    let qDepth = 0;
+    for (let i = 0; i < typeStr.length; i++) {
+      const ch = typeStr[i];
+      if (ch === '"' || ch === "'" || ch === "`") {
+        i = skipString(typeStr, i) - 1;
+        continue;
+      }
+      if (ch === "(" || ch === "[" || ch === "{") d++;
+      else if (ch === ")" || ch === "]" || ch === "}") d = Math.max(0, d - 1);
+      else if (ch === "<") ad++;
+      else if (ch === ">" && typeStr[i - 1] !== "=") ad = Math.max(0, ad - 1);
+      else if (d === 0 && ad === 0) {
+        if (extPos < 0 && (i === 0 || /[\s>)\]]/.test(typeStr[i - 1] || ""))) {
+          const extM = typeStr.slice(i).match(/^extends(?:\s+|(?=[(\[{"'`]))/);
+          if (extM) {
+            extPos = i;
+            extLen = extM[0].length;
+            i += extLen - 1;
+            continue;
+          }
+        }
+        if (extPos >= 0 && ch === "?") {
+          if (qPos < 0) qPos = i;
+          else qDepth++;
+        } else if (extPos >= 0 && qPos >= 0 && ch === ":") {
+          if (qDepth === 0) {
+            cPos = i;
+            break;
+          } else {
+            qDepth--;
           }
         }
       }
-      if (extPos > 0 && qPos > extPos && cPos > qPos) {
-        return {
-          checkType: typeStr.slice(0, extPos).trim(),
-          extendsType: typeStr.slice(extPos + extLen, qPos).trim(),
-          trueType: typeStr.slice(qPos + 1, cPos).trim(),
-          falseType: typeStr.slice(cPos + 1).trim()
-        };
-      }
-      return null;
     }
+    if (extPos > 0 && qPos > extPos && cPos > qPos) {
+      return {
+        checkType: typeStr.slice(0, extPos).trim(),
+        extendsType: typeStr.slice(extPos + extLen, qPos).trim(),
+        trueType: typeStr.slice(qPos + 1, cPos).trim(),
+        falseType: typeStr.slice(cPos + 1).trim()
+      };
+    }
+    return null;
+  }
+  function inferLiteralType(expr) {
+    if (!expr) return null;
+    const s = expr.trim();
+    if (s.startsWith('"') && s.endsWith('"') || s.startsWith("'") && s.endsWith("'")) {
+      return '"' + s.slice(1, -1).replace(/"/g, '\\"') + '"';
+    }
+    if (/^[+-]?\d+(?:\.\d+)?$/.test(s)) return s;
+    if (s === "true" || s === "false") return s;
+    return null;
+  }
+  function parseObjectLiteralEntries(expr) {
+    const s = expr.trim();
+    if (!s.startsWith("{") || !s.endsWith("}") || findBalancedParen(s, 0) !== s.length - 1) return null;
+    const inner = s.slice(1, -1).trim();
+    const entries = /* @__PURE__ */ new Map();
+    if (!inner) return entries;
+    const parts = splitTopLevel(inner);
+    parts.forEach((part) => {
+      const p = part.trim();
+      if (!p) return;
+      const getterLitM = p.match(/^get\s+([A-Za-z_$][\w$]*)\s*\(\s*\)\s*(?::\s*([^{]+?))?\s*\{([\s\S]*)\}$/);
+      if (getterLitM && getterLitM[1]) {
+        const gRet = getterLitM[2] ? getterLitM[2].trim() : "0";
+        entries.set(getterLitM[1], `undefined as ${gRet}`);
+        return;
+      }
+      const methodLitM = p.match(/^(?:async\s+)?([A-Za-z_$][\w$]*)\s*\(([^)]*)\)\s*(?::\s*([^{]+?))?\s*\{([\s\S]*)\}$/);
+      if (methodLitM && methodLitM[1]) {
+        entries.set(methodLitM[1], `(${methodLitM[2] || ""}) => undefined`);
+        return;
+      }
+      let colonIdx = -1, d = 0;
+      for (let i = 0; i < p.length; i++) {
+        const ch = p[i];
+        if (ch === '"' || ch === "'" || ch === "`") {
+          i = skipString(p, i) - 1;
+          continue;
+        }
+        if (ch === "(" && d === 0) break;
+        if (ch === "(" || ch === "[" || ch === "{") d++;
+        else if (ch === ")" || ch === "]" || ch === "}") d--;
+        else if (d === 0 && ch === ":") {
+          colonIdx = i;
+          break;
+        }
+      }
+      if (colonIdx > 0) {
+        const keyRaw = p.slice(0, colonIdx).trim().replace(/^["']|["']$/g, "");
+        const valExpr = p.slice(colonIdx + 1).trim();
+        entries.set(keyRaw, valExpr);
+      } else if (/^[A-Za-z_$][\w$]*$/.test(p)) {
+        entries.set(p, p);
+      }
+    });
+    return entries;
+  }
+
+  // src/compiler/tc-eval.ts
+  function createTypeEvalEngine(ctx) {
+    const {
+      fns,
+      typeAliases,
+      genericTypeAliases,
+      interfaceTypeParams,
+      interfaces,
+      classParents,
+      enumsSet,
+      enumValueTypes,
+      env,
+      activeTypeParams,
+      getKnownNominalTypes
+    } = ctx;
     function matchConditionalExtends(checkT, extT, typeEnv, depth) {
       const inferred = /* @__PURE__ */ new Map();
       const cNorm = evaluateType(checkT, typeEnv, depth + 1);
@@ -9611,7 +9746,7 @@ runAsyncDemo()
     }
     function evaluateType(rawType, typeEnv = /* @__PURE__ */ new Map(), depth = 0, expanding = /* @__PURE__ */ new Set()) {
       if (!rawType || depth > 24) return "any";
-      let t = normalizeTsType(rawType);
+      const t = normalizeTsType(rawType);
       if (!t || t === "any" || t === "unknown" || t === "never" || t === "void" || t === "number" || t === "string" || t === "boolean" || t === "null" || t === "undefined" || t === "object" || t === "symbol" || t === "bigint") {
         return t || "any";
       }
@@ -9881,8 +10016,7 @@ runAsyncDemo()
         const arg0 = rawArgs[0] || "any";
         const arg1 = rawArgs[1] || "any";
         if (baseName === "Array" || baseName === "ReadonlyArray") {
-          const elem = arg0;
-          return elem.includes("|") ? `(${elem})[]` : `${elem}[]`;
+          return arg0.includes("|") ? `(${arg0})[]` : `${arg0}[]`;
         }
         if (baseName === "Partial" && rawArgs.length === 1) {
           const shape = getInterfaceShape(arg0);
@@ -9953,14 +10087,12 @@ runAsyncDemo()
         }
         if (baseName === "Exclude" && rawArgs.length === 2) {
           const uParts = splitTopLevelUnion(arg0);
-          const excl = arg1;
-          const kept = uParts.filter((p) => !isTypeCompatible(p, excl));
+          const kept = uParts.filter((p) => !isTypeCompatible(p, arg1));
           return kept.length ? kept.join("|") : "never";
         }
         if (baseName === "Extract" && rawArgs.length === 2) {
           const uParts = splitTopLevelUnion(arg0);
-          const target = arg1;
-          const kept = uParts.filter((p) => isTypeCompatible(p, target));
+          const kept = uParts.filter((p) => isTypeCompatible(p, arg1));
           return kept.length ? kept.join("|") : "never";
         }
         if (baseName === "NonNullable" && rawArgs.length === 1) {
@@ -9968,17 +10100,15 @@ runAsyncDemo()
           return uParts.length ? uParts.join("|") : "never";
         }
         if (baseName === "ReturnType" && rawArgs.length === 1) {
-          const fnT = arg0;
-          const arrowIdx = fnT.lastIndexOf("=>");
-          if (arrowIdx > 0) return evaluateType(fnT.slice(arrowIdx + 2).trim(), typeEnv, depth + 1, expanding);
+          const arrowIdx = arg0.lastIndexOf("=>");
+          if (arrowIdx > 0) return evaluateType(arg0.slice(arrowIdx + 2).trim(), typeEnv, depth + 1, expanding);
           return "any";
         }
         if (baseName === "Parameters" && rawArgs.length === 1) {
-          const fnT = arg0;
-          if (fnT.startsWith("(")) {
-            const closeP = findBalancedParen(fnT, 0);
+          if (arg0.startsWith("(")) {
+            const closeP = findBalancedParen(arg0, 0);
             if (closeP > 0) {
-              const pInner = fnT.slice(1, closeP).trim();
+              const pInner = arg0.slice(1, closeP).trim();
               const pTypes = pInner ? splitTopLevelDecl(pInner).map((p) => {
                 const colon = p.indexOf(":");
                 return colon >= 0 ? evaluateType(p.slice(colon + 1).trim(), typeEnv, depth + 1, expanding) : "any";
@@ -9999,9 +10129,8 @@ runAsyncDemo()
           return cur2;
         }
         if ((baseName === "Uppercase" || baseName === "Lowercase" || baseName === "Capitalize" || baseName === "Uncapitalize") && rawArgs.length === 1) {
-          const sArg = arg0;
-          if (sArg.startsWith('"') && sArg.endsWith('"')) {
-            const inner = sArg.slice(1, -1);
+          if (arg0.startsWith('"') && arg0.endsWith('"')) {
+            const inner = arg0.slice(1, -1);
             if (baseName === "Uppercase") return `"${inner.toUpperCase()}"`;
             if (baseName === "Lowercase") return `"${inner.toLowerCase()}"`;
             if (baseName === "Capitalize") return `"${inner.charAt(0).toUpperCase() + inner.slice(1)}"`;
@@ -10173,16 +10302,6 @@ runAsyncDemo()
       }
       return null;
     }
-    function inferLiteralType(expr) {
-      if (!expr) return null;
-      const s = expr.trim();
-      if (s.startsWith('"') && s.endsWith('"') || s.startsWith("'") && s.endsWith("'")) {
-        return '"' + s.slice(1, -1).replace(/"/g, '\\"') + '"';
-      }
-      if (/^[+-]?\d+(?:\.\d+)?$/.test(s)) return s;
-      if (s === "true" || s === "false") return s;
-      return null;
-    }
     function isTypeCompatible(actualType, expectedType, seenPairs = /* @__PURE__ */ new Set()) {
       if (!actualType || !expectedType) return true;
       const a = evaluateType(actualType, activeTypeParams);
@@ -10271,6 +10390,42 @@ runAsyncDemo()
       }
       return false;
     }
+    return {
+      evaluateType,
+      resolveAlias,
+      matchConditionalExtends,
+      resolveIndexedAccess,
+      parseObjectShapeLiteral,
+      getInterfaceShape,
+      getClassMethodSig,
+      isTypeCompatible
+    };
+  }
+
+  // src/compiler/tc-infer.ts
+  function createTypeInferEngine(ctx, evalEngine) {
+    const {
+      diagnostics,
+      fns,
+      interfaceTypeParams,
+      interfaces,
+      abstractClasses,
+      enumsSet,
+      enumMembers,
+      env,
+      activeTypeParams,
+      addDiag,
+      isKnownIdentifier
+    } = ctx;
+    const {
+      evaluateType,
+      resolveAlias,
+      matchConditionalExtends,
+      resolveIndexedAccess,
+      getInterfaceShape,
+      getClassMethodSig,
+      isTypeCompatible
+    } = evalEngine;
     function isExpressionAssignable(expr, actualType, expectedType, lineNum) {
       const e = evaluateType(expectedType, activeTypeParams);
       const a = evaluateType(actualType, activeTypeParams);
@@ -10336,52 +10491,6 @@ runAsyncDemo()
         }
       }
       return false;
-    }
-    function parseObjectLiteralEntries(expr) {
-      const s = expr.trim();
-      if (!s.startsWith("{") || !s.endsWith("}") || findBalancedParen(s, 0) !== s.length - 1) return null;
-      const inner = s.slice(1, -1).trim();
-      const entries = /* @__PURE__ */ new Map();
-      if (!inner) return entries;
-      const parts = splitTopLevel(inner);
-      parts.forEach((part) => {
-        const p = part.trim();
-        if (!p) return;
-        const getterLitM = p.match(/^get\s+([A-Za-z_$][\w$]*)\s*\(\s*\)\s*(?::\s*([^{]+?))?\s*\{([\s\S]*)\}$/);
-        if (getterLitM && getterLitM[1]) {
-          const gRet = getterLitM[2] ? getterLitM[2].trim() : "0";
-          entries.set(getterLitM[1], `undefined as ${gRet}`);
-          return;
-        }
-        const methodLitM = p.match(/^(?:async\s+)?([A-Za-z_$][\w$]*)\s*\(([^)]*)\)\s*(?::\s*([^{]+?))?\s*\{([\s\S]*)\}$/);
-        if (methodLitM && methodLitM[1]) {
-          entries.set(methodLitM[1], `(${methodLitM[2] || ""}) => undefined`);
-          return;
-        }
-        let colonIdx = -1, d = 0;
-        for (let i = 0; i < p.length; i++) {
-          const ch = p[i];
-          if (ch === '"' || ch === "'" || ch === "`") {
-            i = skipString(p, i) - 1;
-            continue;
-          }
-          if (ch === "(" && d === 0) break;
-          if (ch === "(" || ch === "[" || ch === "{") d++;
-          else if (ch === ")" || ch === "]" || ch === "}") d--;
-          else if (d === 0 && ch === ":") {
-            colonIdx = i;
-            break;
-          }
-        }
-        if (colonIdx > 0) {
-          const keyRaw = p.slice(0, colonIdx).trim().replace(/^["']|["']$/g, "");
-          const valExpr = p.slice(colonIdx + 1).trim();
-          entries.set(keyRaw, valExpr);
-        } else if (/^[A-Za-z_$][\w$]*$/.test(p)) {
-          entries.set(p, p);
-        }
-      });
-      return entries;
     }
     function checkObjectLiteralAgainstShape(objExpr, expectedType, lineNum, contextDesc) {
       const nonNullExpected = stripNullableFromType(stripNullableFromType(evaluateType(expectedType, activeTypeParams), "null"), "undefined");
@@ -10943,25 +11052,15 @@ runAsyncDemo()
             const t0 = explicitTypeArgs[0] ? evaluateType(explicitTypeArgs[0]) : argTypes[0] || "void";
             return `Promise<${t0}>`;
           }
-          if (callee === "Promise.reject") {
-            return "Promise<never>";
-          }
-          if (callee === "Promise.all") {
-            return "Promise<any[]>";
-          }
-          if (callee === "Promise.race") {
-            return "Promise<any>";
-          }
+          if (callee === "Promise.reject") return "Promise<never>";
+          if (callee === "Promise.all") return "Promise<any[]>";
+          if (callee === "Promise.race") return "Promise<any>";
           if (callee === "sleep") {
             const sleepT = explicitTypeArgs[0] ? evaluateType(explicitTypeArgs[0]) : argTypes[1] || "void";
             return `Promise<${sleepT}>`;
           }
-          if (callee === "setTimeout") {
-            return "number";
-          }
-          if (callee === "clearTimeout" || callee === "queueMicrotask") {
-            return "void";
-          }
+          if (callee === "setTimeout") return "number";
+          if (callee === "clearTimeout" || callee === "queueMicrotask") return "void";
           const dotIdx = callee.lastIndexOf(".");
           if (dotIdx > 0) {
             const isOptChain = callee[dotIdx - 1] === "?";
@@ -11256,17 +11355,17 @@ runAsyncDemo()
             }
           } else if (actT && actT !== "any") {
             let patWithInfer = rawPT;
-            let replacedAny = false;
+            let replacedSome = false;
             tpNames.forEach((tpName) => {
               if (!callEnv.has(tpName)) {
                 const rx = new RegExp(`\\b${tpName}\\b`, "g");
                 if (rx.test(patWithInfer)) {
                   patWithInfer = patWithInfer.replace(rx, `infer ${tpName}`);
-                  replacedAny = true;
+                  replacedSome = true;
                 }
               }
             });
-            if (replacedAny) {
+            if (replacedSome) {
               const m = matchConditionalExtends(actT, patWithInfer, callEnv, 0);
               if (m.matched) {
                 m.inferred.forEach((v, k) => {
@@ -11329,7 +11428,7 @@ runAsyncDemo()
         }
       });
     }
-    function parseParamList(paramStr, lineNum, checkImplicitAny = true) {
+    function parseParamList(paramStr, lineNum, checkUntypedParams = true) {
       const rawParams = paramStr ? splitTopLevelDecl(paramStr) : [];
       const params = [];
       let minArgs = 0;
@@ -11347,7 +11446,7 @@ runAsyncDemo()
             pType = inferType(pm[5].trim(), lineNum);
           }
           if (!pType) {
-            if (checkImplicitAny) {
+            if (checkUntypedParams) {
               addDiag(lineNum, "TS7006", `\u53C2\u6570 "${pName}" \u9690\u5F0F\u5177\u6709 "any" \u7C7B\u578B\uFF08\u4E25\u683C\u6A21\u5F0F\u4E0B\u8BF7\u663E\u5F0F\u6DFB\u52A0\u7C7B\u578B\u6CE8\u89E3\uFF0C\u5982 ${pName}: number\uFF09`);
             }
             pType = isRest ? "any[]" : "any";
@@ -11479,6 +11578,44 @@ runAsyncDemo()
         propMap.set(initM[1], { type: infT, rawType: infT, optional: false });
       }
     }
+    return {
+      inferType,
+      isExpressionAssignable,
+      checkObjectLiteralAgainstShape,
+      checkTemplateInterpolations,
+      instantiateAndCheckCall,
+      checkArrayElementsAgainst,
+      parseParamList,
+      parseClassTopMember
+    };
+  }
+
+  // src/compiler/type-checker.ts
+  var _TYPECHECK_CACHE = { src: null, strict: null, diags: [] };
+  function collectPass1Declarations(ctx, evalEngine, inferEngine) {
+    const {
+      lines,
+      fns,
+      typeAliases,
+      genericTypeAliases,
+      interfaceTypeParams,
+      interfaces,
+      classParents,
+      classImplements,
+      abstractClasses,
+      enumsSet,
+      enumMembers,
+      enumValueTypes,
+      addDiag
+    } = ctx;
+    const {
+      evaluateType,
+      resolveAlias,
+      parseObjectShapeLiteral,
+      getInterfaceShape,
+      getClassMethodSig
+    } = evalEngine;
+    const { parseParamList, parseClassTopMember } = inferEngine;
     let activeInterface = null;
     let activeInterfaceName = "";
     let activeInterfaceIsClass = false;
@@ -11806,6 +11943,26 @@ runAsyncDemo()
         });
       });
     });
+  }
+  function checkPass2Statements(ctx, evalEngine, inferEngine) {
+    const {
+      lines,
+      fns,
+      interfaceTypeParams,
+      interfaces,
+      env,
+      activeTypeParams,
+      addDiag,
+      isKnownIdentifier
+    } = ctx;
+    const { resolveAlias, getInterfaceShape } = evalEngine;
+    const {
+      inferType,
+      isExpressionAssignable,
+      checkObjectLiteralAgainstShape,
+      checkArrayElementsAgainst,
+      parseParamList
+    } = inferEngine;
     let currentFn = null;
     const fnScopeStack = [];
     const switchStack = [];
@@ -11921,7 +12078,7 @@ runAsyncDemo()
         let fullT = trimmed;
         while (i + 1 < lines.length) {
           let d = 0, ad = 0;
-          let eqPos = fullT.indexOf("=");
+          const eqPos = fullT.indexOf("=");
           for (let k = eqPos >= 0 ? eqPos + 1 : 0; k < fullT.length; k++) {
             const ch = fullT[k];
             if (ch === '"' || ch === "'" || ch === "`") {
@@ -12764,6 +12921,19 @@ runAsyncDemo()
         }
       }
     }
+  }
+  function typecheckTS(src, strict = STRICT_TS) {
+    extractTsInterfaceMetadata(src);
+    if (!strict) return [];
+    if (typeof src === "string" && _TYPECHECK_CACHE.src === src && _TYPECHECK_CACHE.strict === strict) {
+      return _TYPECHECK_CACHE.diags.map((d) => ({ ...d }));
+    }
+    const ctx = createTypeCheckContext(src);
+    const evalEngine = createTypeEvalEngine(ctx);
+    const inferEngine = createTypeInferEngine(ctx, evalEngine);
+    collectPass1Declarations(ctx, evalEngine, inferEngine);
+    checkPass2Statements(ctx, evalEngine, inferEngine);
+    const { diagnostics } = ctx;
     if (_TS_WORKER_STATE.lastSrc === src && Array.isArray(_TS_WORKER_STATE.lastDiags)) {
       _TS_WORKER_STATE.lastDiags.forEach((wd) => {
         if (!diagnostics.some((d) => d.line === wd.line && d.code === wd.code)) {
@@ -12857,21 +13027,41 @@ runAsyncDemo()
   // src/ui/notebook.ts
   var notebook_exports = {};
   __export(notebook_exports, {
+    PY_SAMPLE_METADATA: () => PY_SAMPLE_METADATA,
+    SCRIPT_TABS: () => SCRIPT_TABS,
+    TS_SAMPLE_METADATA: () => TS_SAMPLE_METADATA,
+    VFS_EXPANDED_FOLDERS: () => VFS_EXPANDED_FOLDERS,
+    VFS_NODES: () => VFS_NODES,
+    VFS_STORAGE_KEY: () => VFS_STORAGE_KEY,
+    bindGlobalVfsApi: () => bindGlobalVfsApi,
     copyNotebookCell: () => copyNotebookCell,
     cutNotebookCell: () => cutNotebookCell,
     debugNotebookCell: () => debugNotebookCell,
     deleteNotebookCell: () => deleteNotebookCell,
     duplicateNotebookCell: () => duplicateNotebookCell,
+    ensureLangNotebooks: () => ensureLangNotebooks,
+    ensureParentFoldersExist: () => ensureParentFoldersExist,
+    ensureScriptTabsForLang: () => ensureScriptTabsForLang,
+    ensureVfsInitialized: () => ensureVfsInitialized,
     exportActiveNotebookIpynb: () => exportActiveNotebookIpynb,
     getActiveCell: () => getActiveCell,
     getActiveNotebook: () => getActiveNotebook,
     getActiveScriptTab: () => getActiveScriptTab,
+    getPySamplesDict: () => getPySamplesDict,
     importNotebookFromJson: () => importNotebookFromJson,
     initNotebookUI: () => initNotebookUI,
+    initScriptTabsAndImportEvents: () => initScriptTabsAndImportEvents,
+    initVfsSidebarEvents: () => initVfsSidebarEvents,
     insertNotebookCell: () => insertNotebookCell,
+    isScriptTabSyncing: () => isScriptTabSyncing,
     moveNotebookCell: () => moveNotebookCell,
+    nextCellId: () => nextCellId,
+    nextDocId: () => nextDocId,
+    nextScriptTabId: () => nextScriptTabId,
     openSampleScriptTab: () => openSampleScriptTab,
+    openVfsFile: () => openVfsFile,
     pasteNotebookCell: () => pasteNotebookCell,
+    persistVfsToClientStorage: () => persistVfsToClientStorage,
     renderImportSampleMenu: () => renderImportSampleMenu,
     renderMarkdownHtml: () => renderMarkdownHtml,
     renderNotebookUI: () => renderNotebookUI,
@@ -12881,12 +13071,1085 @@ runAsyncDemo()
     restartNotebookKernel: () => restartNotebookKernel,
     runAllNotebookCells: () => runAllNotebookCells,
     runNotebookCell: () => runNotebookCell,
+    setScriptTabSyncing: () => setScriptTabSyncing,
     setViewMode: () => setViewMode,
     syncActiveScriptTabFromFileName: () => syncActiveScriptTabFromFileName,
     syncActiveScriptTabSource: () => syncActiveScriptTabSource,
     syncNotebookGlobalsToSidePanel: () => syncNotebookGlobalsToSidePanel,
     typecheckNotebookCellTS: () => typecheckNotebookCellTS
   });
+
+  // src/ui/script-tabs.ts
+  var scriptTabSeq = 1;
+  var syncingScriptTab = false;
+  function nextScriptTabId() {
+    return "stab_" + ++scriptTabSeq;
+  }
+  function isScriptTabSyncing() {
+    return syncingScriptTab;
+  }
+  function setScriptTabSyncing(val) {
+    syncingScriptTab = val;
+  }
+  var SCRIPT_TABS = {
+    ts: { activeTabId: "", tabs: [] },
+    python: { activeTabId: "", tabs: [] }
+  };
+  var TS_SAMPLE_METADATA = [
+    { key: "showcase", label: "showcase.ts \xB7 \u7EFC\u5408\u6F14\u793A", desc: "\u6ED1\u52A8\u7A97\u53E3 + \u5355\u8C03\u6808 + Map + \u6811\u4E0E\u56FE" },
+    { key: "mergesort", label: "mergesort.ts \xB7 \u5F52\u5E76\u6392\u5E8F", desc: "\u5206\u6CBB\u9012\u5F52\u4E0E\u5DE6\u53F3\u5B50\u6570\u7EC4\u5F52\u5E76" },
+    { key: "debug_crash", label: "debug_crash.ts \xB7 \u8D8A\u754C\u6392\u9519", desc: "\u4E8C\u5206\u67E5\u627E <= \u8D8A\u754C Bug \u73B0\u573A\u5B9A\u4F4D" },
+    { key: "lcs", label: "lcs.ts \xB7 \u6700\u957F\u516C\u5171\u5B50\u5E8F\u5217", desc: "\u4E8C\u7EF4 DP \u7F51\u683C\u89C4\u5212" },
+    { key: "analyze", label: "analyze.ts \xB7 \u9891\u7387\u7EDF\u8BA1", desc: "\u6570\u7EC4\u4E0E Map \u54C8\u5E0C\u7EDF\u8BA1" },
+    { key: "window", label: "window.ts \xB7 \u6ED1\u52A8\u7A97\u53E3", desc: "\u53CC\u6307\u9488\u5B9A\u957F\u6ED1\u52A8\u7A97\u53E3" },
+    { key: "structures", label: "structures.ts \xB7 \u6570\u636E\u7ED3\u6784\u5168\u5BB6\u6876", desc: "\u6808 / \u961F\u5217 / \u5806 / \u5E76\u67E5\u96C6 / \u6811 / \u56FE" },
+    { key: "counter", label: "counter.ts \xB7 \u95ED\u5305\u8BA1\u6570\u5668", desc: "\u9AD8\u9636\u51FD\u6570\u4E0E\u8BCD\u6CD5\u4F5C\u7528\u57DF\u95ED\u5305" },
+    { key: "classes", label: "classes.ts \xB7 \u7C7B\u4E0E\u7EE7\u627F", desc: "class / extends / super \u5B9E\u4F8B\u65B9\u6CD5" },
+    { key: "async_loop", label: "async_loop.ts \xB7 \u4E8B\u4EF6\u5FAA\u73AF", desc: "async / await \u4E0E\u5FAE\u4EFB\u52A1\u961F\u5217" }
+  ];
+  var PY_SAMPLE_METADATA = [
+    { key: "quickstart", label: "quickstart.py \xB7 \u5192\u6CE1\u6392\u5E8F", desc: "Python \u5217\u8868\u539F\u5730\u4EA4\u6362\u4E0E\u53CC\u5C42\u5FAA\u73AF" },
+    { key: "binary_search", label: "binary_search.py \xB7 \u4E8C\u5206\u67E5\u627E", desc: "\u53CC\u6307\u9488\u6298\u534A\u641C\u7D22\u4E0E checkpoint()" },
+    { key: "bfs", label: "bfs.py \xB7 BFS \u5E7F\u5EA6\u4F18\u5148\u641C\u7D22", desc: "deque \u961F\u5217\u4E0E\u96C6\u5408\u8BBF\u95EE\u6807\u8BB0" },
+    { key: "lcs", label: "lcs.py \xB7 DP \u6700\u957F\u516C\u5171\u5B50\u5E8F\u5217", desc: "\u4E8C\u7EF4\u5217\u8868\u63A8\u5BFC\u5F0F\u4E0E\u52A8\u6001\u89C4\u5212" },
+    { key: "structures", label: "structures.py \xB7 \u7ED3\u6784\u96C6\u5408", desc: "TreeNode / ListNode / \u5B57\u5178 / \u96C6\u5408" },
+    { key: "classes", label: "classes.py \xB7 \u7C7B\u4E0E\u5B9E\u4F8B", desc: "Counter \u7C7B\u6784\u9020\u4E0E\u5B9E\u4F8B\u5C5E\u6027\u8FFD\u8E2A" }
+  ];
+  function getPySamplesDict() {
+    const eng = typeof PY_ENGINE !== "undefined" ? PY_ENGINE : null;
+    return eng && eng.samples ? eng.samples : {};
+  }
+  function ensureScriptTabsForLang(lang) {
+    ensureVfsInitialized();
+    const store = SCRIPT_TABS[lang];
+    if (store.tabs.length === 0) {
+      const defaultTitle = lang === "python" ? LANG === "python" && FILE_NAME ? FILE_NAME : "quickstart.py" : LANG !== "python" && FILE_NAME ? FILE_NAME : "showcase.ts";
+      const defaultSrc = lang === "python" ? LANG === "python" && editor && editor.value ? editor.value : getPySamplesDict().quickstart || "" : LANG !== "python" && editor && editor.value ? editor.value : SAMPLES.showcase || "";
+      const tabId = nextScriptTabId();
+      store.tabs.push({
+        id: tabId,
+        title: defaultTitle,
+        lang,
+        source: defaultSrc,
+        vfsPath: "",
+        isSample: true
+      });
+      store.activeTabId = tabId;
+    }
+    const firstTab = store.tabs[0];
+    if (firstTab && !store.tabs.some((t) => t.id === store.activeTabId)) {
+      store.activeTabId = firstTab.id;
+    }
+    return store;
+  }
+  function getActiveScriptTab(lang) {
+    const targetLang = lang || (LANG === "python" ? "python" : "ts");
+    const store = ensureScriptTabsForLang(targetLang);
+    const found = store.tabs.find((t) => t.id === store.activeTabId) ?? store.tabs[0];
+    if (found) return found;
+    return {
+      id: "stab_0",
+      title: targetLang === "python" ? "quickstart.py" : "showcase.ts",
+      lang: targetLang,
+      source: "",
+      vfsPath: "",
+      isSample: true
+    };
+  }
+  function openSampleScriptTab(title, source, lang) {
+    const targetLang = lang || (LANG === "python" ? "python" : "ts");
+    if (editor && editor.value) {
+      syncActiveScriptTabSource(editor.value);
+    }
+    const store = ensureScriptTabsForLang(targetLang);
+    let tab = store.tabs.find((t) => (t.isSample || !t.vfsPath) && t.title === title);
+    if (!tab) {
+      tab = {
+        id: nextScriptTabId(),
+        title,
+        lang: targetLang,
+        source,
+        vfsPath: "",
+        isSample: true
+      };
+      store.tabs.push(tab);
+    } else {
+      tab.source = source;
+      tab.vfsPath = "";
+      tab.isSample = true;
+    }
+    store.activeTabId = tab.id;
+    syncingScriptTab = true;
+    if (editor) editor.value = source;
+    setFileName(title);
+    syncingScriptTab = false;
+    renderScriptTabsUI();
+    renderVfsTreeUI();
+  }
+  function syncActiveScriptTabFromFileName(newFileName) {
+    if (syncingScriptTab) return;
+    const lang = LANG === "python" ? "python" : "ts";
+    const store = ensureScriptTabsForLang(lang);
+    const activeTab = store.tabs.find((t) => t.id === store.activeTabId);
+    if (!activeTab) return;
+    const oldPath = activeTab.vfsPath;
+    activeTab.title = newFileName;
+    activeTab.source = editor ? editor.value : activeTab.source;
+    if (!activeTab.isSample && oldPath && VFS_NODES.has(oldPath)) {
+      activeTab.vfsPath = newFileName;
+      VFS_NODES.delete(oldPath);
+      VFS_NODES.set(activeTab.vfsPath, {
+        path: activeTab.vfsPath,
+        name: newFileName,
+        type: "file",
+        parentPath: "",
+        content: activeTab.source
+      });
+      persistVfsToClientStorage();
+    }
+    renderScriptTabsUI();
+    renderVfsTreeUI();
+  }
+  function syncActiveScriptTabSource(src) {
+    const lang = LANG === "python" ? "python" : "ts";
+    const activeTab = getActiveScriptTab(lang);
+    if (!activeTab) return;
+    activeTab.source = src;
+    if (!activeTab.isSample && activeTab.vfsPath) {
+      const node = VFS_NODES.get(activeTab.vfsPath);
+      if (node && node.type === "file") {
+        node.content = src;
+        persistVfsToClientStorage();
+      }
+    }
+  }
+  function renderScriptTabsUI() {
+    const tabsEl = $("scriptTabsList");
+    if (!tabsEl) return;
+    const lang = LANG === "python" ? "python" : "ts";
+    const store = ensureScriptTabsForLang(lang);
+    const activeTab = getActiveScriptTab(lang);
+    tabsEl.innerHTML = store.tabs.map((t) => {
+      const isAct = t.id === activeTab.id;
+      const iconCls = lang === "python" ? "py-icon" : "ts-icon";
+      return `<div class="nb-tab${isAct ? " active" : ""}" data-script-tab-id="${esc(t.id)}" title="\u5355\u51FB\u5207\u6362\u6807\u7B7E\u9875 \xB7 \u53CC\u51FB\u6587\u4EF6\u540D\u91CD\u547D\u540D"><span class="nb-tab-icon ${iconCls}" aria-hidden="true"></span><span class="nb-tab-title">${esc(t.title)}</span>` + (store.tabs.length > 1 ? `<button type="button" class="nb-tab-close" data-close-script-tab="${esc(t.id)}" title="\u5173\u95ED\u6807\u7B7E\u9875">\xD7</button>` : "") + `</div>`;
+    }).join("") + `<button type="button" class="nb-tab-add" id="scriptBtnNewTab" title="\u65B0\u5EFA\u4EE3\u7801\u6587\u4EF6\u6807\u7B7E\u9875">\uFF0B</button>`;
+  }
+  function renderImportSampleMenu() {
+    const listEl = $("importSampleList");
+    if (!listEl) return;
+    const isPy = LANG === "python";
+    const items = isPy ? PY_SAMPLE_METADATA : TS_SAMPLE_METADATA;
+    const folderPrefix = isPy ? "examples/python/" : "examples/ts/";
+    const nbItemHtml = `<button type="button" class="import-sample-item" data-import-sample-notebook="Intro.ipynb"><span class="import-sample-name">\u{1F4D3} Intro.ipynb \xB7 \u4EA4\u4E92\u5F0F\u7B14\u8BB0\u672C\u793A\u4F8B</span><span class="import-sample-path">examples/notebooks/</span></button>`;
+    listEl.innerHTML = (VIEW_MODE === "notebook" ? nbItemHtml : "") + items.map(
+      (item) => `<button type="button" class="import-sample-item" data-import-sample-key="${esc(item.key)}" title="${esc(item.desc)}"><span class="import-sample-name">${esc(item.label)}</span><span class="import-sample-path">${esc(folderPrefix + item.key + (isPy ? ".py" : ".ts"))}</span></button>`
+    ).join("") + (VIEW_MODE !== "notebook" ? nbItemHtml : "");
+  }
+  function initScriptTabsAndImportEvents() {
+    const importMenuWrap = $("importMenuWrap");
+    const btnImport = $("btnImport");
+    const btnUploadLocalFile = $("btnUploadLocalFile");
+    const importSampleList = $("importSampleList");
+    const fileInput = $("fileInput");
+    if (btnImport && importMenuWrap) {
+      btnImport.onclick = (e) => {
+        if (e && typeof e.stopPropagation === "function") e.stopPropagation();
+        renderImportSampleMenu();
+        if (importMenuWrap.classList) {
+          importMenuWrap.classList.toggle("open");
+        }
+      };
+      addEventListener("click", (e) => {
+        if (!importMenuWrap.classList || !importMenuWrap.classList.contains("open")) return;
+        if (importMenuWrap.contains && importMenuWrap.contains(e.target)) return;
+        importMenuWrap.classList.remove("open");
+      });
+    }
+    if (btnUploadLocalFile && fileInput) {
+      btnUploadLocalFile.onclick = (e) => {
+        if (e && typeof e.stopPropagation === "function") e.stopPropagation();
+        if (importMenuWrap && importMenuWrap.classList) importMenuWrap.classList.remove("open");
+        fileInput.click();
+      };
+    }
+    if (importSampleList && importSampleList.addEventListener) {
+      importSampleList.addEventListener("click", (e) => {
+        const target = e.target;
+        const btn = target && target.closest ? target.closest(".import-sample-item") : null;
+        if (!btn) return;
+        if (importMenuWrap && importMenuWrap.classList) importMenuWrap.classList.remove("open");
+        const nbFile = btn.getAttribute("data-import-sample-notebook");
+        if (nbFile) {
+          setViewMode("notebook");
+          say(`\u2713 \u5DF2\u52A0\u8F7D\u5185\u7F6E\u793A\u4F8B\u7B14\u8BB0\u672C ${nbFile}`, "ok");
+          return;
+        }
+        const sampleKey = btn.getAttribute("data-import-sample-key");
+        if (sampleKey) {
+          if (VIEW_MODE === "notebook") {
+            const code = LANG === "python" ? getPySamplesDict()[sampleKey] || "" : SAMPLES[sampleKey] || "";
+            if (code) {
+              const doc = getActiveNotebook();
+              const newCell = {
+                id: nextCellId(),
+                type: "code",
+                source: code.trim(),
+                executionCount: null,
+                status: "idle",
+                output: null
+              };
+              doc.cells.push(newCell);
+              doc.activeCellId = newCell.id;
+              renderNotebookUI(true);
+              say(`\u2713 \u5DF2\u5C06\u793A\u4F8B ${sampleKey} \u5BFC\u5165\u5230\u5F53\u524D Notebook \u65B0\u5355\u5143\u683C`, "ok");
+            }
+            return;
+          }
+          loadSample(sampleKey);
+        }
+      });
+    }
+    const scriptTabsEl = $("scriptTabsList");
+    if (scriptTabsEl && scriptTabsEl.addEventListener) {
+      scriptTabsEl.addEventListener("click", (e) => {
+        const target = e.target;
+        if (!target) return;
+        const lang = LANG === "python" ? "python" : "ts";
+        const store = ensureScriptTabsForLang(lang);
+        const closeBtn = target.closest ? target.closest("[data-close-script-tab]") : null;
+        if (closeBtn) {
+          e.stopPropagation();
+          const closeId = closeBtn.getAttribute("data-close-script-tab");
+          if (store.tabs.length <= 1) return;
+          const idx = store.tabs.findIndex((t) => t.id === closeId);
+          if (idx >= 0) {
+            store.tabs.splice(idx, 1);
+            if (store.activeTabId === closeId) {
+              const fallbackTab = store.tabs[Math.max(0, idx - 1)];
+              if (fallbackTab) store.activeTabId = fallbackTab.id;
+              const nextTab = getActiveScriptTab(lang);
+              syncingScriptTab = true;
+              editor.value = nextTab.source;
+              setFileName(nextTab.title);
+              syncingScriptTab = false;
+              resetTraceState();
+              updateEditorChrome();
+            }
+            renderScriptTabsUI();
+            renderVfsTreeUI();
+          }
+          return;
+        }
+        const newBtn = target.closest ? target.closest("#scriptBtnNewTab") : null;
+        if (newBtn) {
+          syncActiveScriptTabSource(editor ? editor.value : "");
+          const ext = lang === "python" ? ".py" : ".ts";
+          const newTitle = `untitled-${store.tabs.length + 1}${ext}`;
+          const newTab = {
+            id: nextScriptTabId(),
+            title: newTitle,
+            lang,
+            source: lang === "python" ? "# \u65B0\u5EFA Python \u811A\u672C\n" : "// \u65B0\u5EFA TypeScript \u811A\u672C\n",
+            vfsPath: "",
+            isSample: false
+          };
+          store.tabs.push(newTab);
+          store.activeTabId = newTab.id;
+          syncingScriptTab = true;
+          editor.value = newTab.source;
+          setFileName(newTab.title);
+          syncingScriptTab = false;
+          resetTraceState();
+          updateEditorChrome();
+          renderScriptTabsUI();
+          renderVfsTreeUI();
+          if (editor && typeof editor.focus === "function") editor.focus();
+          return;
+        }
+        const tabEl = target.closest ? target.closest("[data-script-tab-id]") : null;
+        if (tabEl) {
+          const tabId = tabEl.getAttribute("data-script-tab-id");
+          if (tabId && store.activeTabId !== tabId) {
+            syncActiveScriptTabSource(editor ? editor.value : "");
+            store.activeTabId = tabId;
+            const nextTab = getActiveScriptTab(lang);
+            syncingScriptTab = true;
+            editor.value = nextTab.source;
+            setFileName(nextTab.title);
+            syncingScriptTab = false;
+            resetTraceState();
+            updateEditorChrome();
+            renderScriptTabsUI();
+            renderVfsTreeUI();
+          }
+        }
+      });
+      scriptTabsEl.addEventListener("dblclick", (e) => {
+        const target = e.target;
+        const tabEl = target && target.closest ? target.closest("[data-script-tab-id]") : null;
+        if (!tabEl) return;
+        const tabId = tabEl.getAttribute("data-script-tab-id");
+        const lang = LANG === "python" ? "python" : "ts";
+        const store = ensureScriptTabsForLang(lang);
+        const targetTab = store.tabs.find((t) => t.id === tabId);
+        if (!targetTab) return;
+        const titleSpan = tabEl.querySelector ? tabEl.querySelector(".nb-tab-title") : null;
+        if (!titleSpan) return;
+        const input = document.createElement("input");
+        input.type = "text";
+        input.className = "nb-tab-rename-input";
+        input.value = targetTab.title;
+        titleSpan.replaceWith(input);
+        input.focus();
+        input.select();
+        let committed = false;
+        const commit = () => {
+          if (committed) return;
+          committed = true;
+          const rawVal = input.value.trim();
+          if (rawVal) {
+            const ext = lang === "python" ? ".py" : ".ts";
+            const nextName = /\.[A-Za-z0-9]{1,12}$/.test(rawVal) ? rawVal : rawVal + ext;
+            const oldPath = targetTab.vfsPath;
+            targetTab.title = nextName;
+            if (!targetTab.isSample && oldPath && VFS_NODES.has(oldPath)) {
+              targetTab.vfsPath = nextName;
+              VFS_NODES.delete(oldPath);
+              VFS_NODES.set(targetTab.vfsPath, {
+                path: targetTab.vfsPath,
+                name: nextName,
+                type: "file",
+                parentPath: "",
+                content: targetTab.source
+              });
+              persistVfsToClientStorage();
+            }
+            if (store.activeTabId === targetTab.id) {
+              syncingScriptTab = true;
+              setFileName(nextName);
+              syncingScriptTab = false;
+            }
+            say(`\u2713 \u6587\u4EF6\u5DF2\u91CD\u547D\u540D\u4E3A ${nextName}`, "ok");
+          }
+          renderScriptTabsUI();
+          renderVfsTreeUI();
+        };
+        input.addEventListener("blur", commit);
+        input.addEventListener("keydown", (ev) => {
+          if (ev.key === "Enter") {
+            ev.preventDefault();
+            input.blur();
+          } else if (ev.key === "Escape") {
+            committed = true;
+            renderScriptTabsUI();
+          }
+        });
+      });
+    }
+    if (editor && editor.addEventListener) {
+      editor.addEventListener("input", () => {
+        syncActiveScriptTabSource(editor.value);
+      });
+    }
+  }
+
+  // src/ui/vfs.ts
+  var VFS_STORAGE_KEY = "ts-visual-vfs-workspace-v2";
+  var vfsBootInitialized = false;
+  var pendingVfsDeletePath = null;
+  var VFS_EXPANDED_FOLDERS = /* @__PURE__ */ new Set();
+  var VFS_NODES = /* @__PURE__ */ new Map();
+  function resolveWorkspacePath(rawPath, allowEmptyRoot = false) {
+    const raw = String(rawPath ?? "").trim().replace(/\\/g, "/");
+    if (!raw || raw === "." || raw === "./" || raw === "workspace" || raw === "/workspace" || raw === "workspace/" || raw === "/workspace/") {
+      if (allowEmptyRoot) return "";
+      throw new Error(`EISDIR: illegal operation on workspace root directory '${rawPath}'`);
+    }
+    if (/^[A-Za-z]:/.test(raw) || raw.startsWith("~")) {
+      throw new Error(`EACCES: permission denied, file operations outside workspace are not allowed: '${rawPath}'`);
+    }
+    if (raw.startsWith("/")) {
+      if (raw !== "/workspace" && !raw.startsWith("/workspace/")) {
+        throw new Error(`EACCES: permission denied, file operations outside workspace are not allowed: '${rawPath}'`);
+      }
+    }
+    let stripped = raw;
+    if (stripped.startsWith("/workspace/")) {
+      stripped = stripped.slice("/workspace/".length);
+    } else if (stripped.startsWith("workspace/")) {
+      stripped = stripped.slice("workspace/".length);
+    } else if (stripped.startsWith("./")) {
+      stripped = stripped.slice(2);
+    }
+    const rawSegments = stripped.split("/");
+    const resolved = [];
+    for (const seg of rawSegments) {
+      if (!seg || seg === ".") continue;
+      if (seg === "..") {
+        if (resolved.length === 0) {
+          throw new Error(`EACCES: permission denied, file operations outside workspace are not allowed: '${rawPath}'`);
+        }
+        resolved.pop();
+        continue;
+      }
+      resolved.push(seg);
+    }
+    const firstSeg = resolved[0] || "";
+    if (firstSeg === "examples" || firstSeg === "notebooks") {
+      throw new Error(`EACCES: permission denied, file operations outside workspace are not allowed: '${rawPath}'`);
+    }
+    const finalPath = resolved.join("/");
+    if (!finalPath && !allowEmptyRoot) {
+      throw new Error(`EISDIR: illegal operation on workspace root directory '${rawPath}'`);
+    }
+    return finalPath;
+  }
+  function ensureVfsInitialized() {
+    if (vfsBootInitialized) return;
+    vfsBootInitialized = true;
+    VFS_NODES.clear();
+    try {
+      if (typeof localStorage !== "undefined") {
+        localStorage.removeItem("ts-visual-vfs-v1");
+        const raw = localStorage.getItem(VFS_STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            for (const item of parsed) {
+              if (item && typeof item === "object" && typeof item.path === "string" && typeof item.name === "string" && (item.type === "file" || item.type === "folder")) {
+                const node = item;
+                VFS_NODES.set(node.path, {
+                  path: node.path,
+                  name: node.name,
+                  type: node.type,
+                  parentPath: typeof node.parentPath === "string" ? node.parentPath : "",
+                  content: typeof node.content === "string" ? node.content : void 0,
+                  readonly: Boolean(node.readonly)
+                });
+              }
+            }
+          }
+        }
+      }
+    } catch (_) {
+    }
+  }
+  function persistVfsToClientStorage() {
+    try {
+      if (typeof localStorage === "undefined") return;
+      const customNodes = [];
+      VFS_NODES.forEach((node) => {
+        customNodes.push(node);
+      });
+      localStorage.setItem(VFS_STORAGE_KEY, JSON.stringify(customNodes));
+    } catch (_) {
+    }
+  }
+  function ensureParentFoldersExist(relPath) {
+    const parts = relPath.split("/").filter(Boolean);
+    if (parts.length <= 1) return;
+    let acc = "";
+    for (let i = 0; i < parts.length - 1; i++) {
+      const folderName = parts[i] || "";
+      const parentPath = acc;
+      acc = acc ? `${acc}/${folderName}` : folderName;
+      if (!VFS_NODES.has(acc)) {
+        VFS_NODES.set(acc, {
+          path: acc,
+          name: folderName,
+          type: "folder",
+          parentPath
+        });
+        VFS_EXPANDED_FOLDERS.add(acc);
+      }
+    }
+  }
+  function renderVfsTreeUI() {
+    const treeEl = $("vfsTreeList");
+    if (!treeEl) return;
+    ensureVfsInitialized();
+    const activePath = VIEW_MODE === "notebook" ? getActiveNotebook().title : getActiveScriptTab().vfsPath;
+    const childrenOf = (parentPath) => {
+      const list = [];
+      VFS_NODES.forEach((node) => {
+        if (node.parentPath === parentPath) list.push(node);
+      });
+      return list.sort((a, b) => {
+        if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      });
+    };
+    const buildConfirmHtml = (node) => {
+      if (pendingVfsDeletePath !== node.path) return "";
+      return `<div class="vfs-del-confirm" data-vfs-confirm-box="${esc(node.path)}"><span class="vfs-del-confirm-text">\u786E\u8BA4\u5220\u9664 ${esc(node.name)}\uFF1F</span><span class="vfs-del-confirm-actions"><button type="button" class="vfs-confirm-btn danger" data-vfs-confirm-del="${esc(node.path)}">\u786E\u8BA4</button><button type="button" class="vfs-confirm-btn" data-vfs-cancel-del="${esc(node.path)}">\u53D6\u6D88</button></span></div>`;
+    };
+    const renderNode = (node, depth) => {
+      const padLeft = 8 + depth * 14;
+      const canDel = !node.readonly;
+      const delBtnHtml = canDel ? `<span class="vfs-row-actions"><button type="button" class="vfs-del-btn" data-vfs-del="${esc(node.path)}" title="\u5220\u9664">\u274C</button></span>` : "";
+      if (node.type === "folder") {
+        const isOpen = VFS_EXPANDED_FOLDERS.has(node.path);
+        const kids = childrenOf(node.path);
+        return `<div class="vfs-folder-row" data-vfs-folder="${esc(node.path)}" style="padding-left:${padLeft}px" title="\u5355\u51FB\u5C55\u5F00/\u6298\u53E0\u76EE\u5F55 \xB7 \u53CC\u51FB\u91CD\u547D\u540D\u76EE\u5F55"><span class="vfs-caret">${isOpen ? "\u25BE" : "\u25B8"}</span><span class="vfs-icon">\u{1F4C1}</span><span class="vfs-name">${esc(node.name)}/</span>` + delBtnHtml + `</div>` + buildConfirmHtml(node) + (isOpen ? `<div class="vfs-folder-children">${kids.map((k) => renderNode(k, depth + 1)).join("")}</div>` : "");
+      }
+      const isAct = Boolean(activePath && node.path === activePath);
+      const ext = (node.name.split(".").pop() || "").toLowerCase();
+      const icon = ext === "ipynb" ? "\u{1F4D3}" : ext === "py" ? "\u{1F40D}" : ext === "ts" ? "\u{1F4D8}" : ext === "json" ? "\u{1F5C2}" : "\u{1F4C4}";
+      return `<div class="vfs-file-row${isAct ? " active" : ""}" data-vfs-file="${esc(node.path)}" style="padding-left:${padLeft}px" title="${esc(node.path)}\uFF08\u5355\u51FB\u6253\u5F00 \xB7 \u53CC\u51FB\u91CD\u547D\u540D\uFF09"><span class="vfs-icon">${icon}</span><span class="vfs-name">${esc(node.name)}</span>` + delBtnHtml + `</div>` + buildConfirmHtml(node);
+    };
+    const roots = childrenOf("");
+    if (roots.length === 0) {
+      treeEl.innerHTML = `<div class="vfs-empty-hint" style="padding:14px 10px;color:#64748b;font-size:11.5px;text-align:center;">\u7A7A\u76EE\u5F55</div>`;
+    } else {
+      treeEl.innerHTML = roots.map((r) => renderNode(r, 0)).join("");
+    }
+    const footEl = $("vfsFootStatus");
+    if (footEl) {
+      let fileCount = 0;
+      let totalBytes = 0;
+      VFS_NODES.forEach((n) => {
+        if (n.type === "file") {
+          fileCount++;
+          totalBytes += (n.content || "").length;
+        }
+      });
+      const kb = (totalBytes / 1024).toFixed(1);
+      footEl.textContent = `${fileCount} \u4E2A\u6587\u4EF6 (${kb} KB)`;
+    }
+  }
+  function openVfsFile(rawPath) {
+    ensureVfsInitialized();
+    let path = rawPath;
+    try {
+      path = resolveWorkspacePath(rawPath, false);
+    } catch (err) {
+      say(`\u2717 ${err instanceof Error ? err.message : String(err)}`, "err");
+      return;
+    }
+    const node = VFS_NODES.get(path);
+    if (!node || node.type !== "file") return;
+    if (node.name.endsWith(".ipynb")) {
+      const lang2 = LANG === "python" ? "python" : "ts";
+      const store2 = ensureLangNotebooks(lang2);
+      const existing = store2.docs.find((d) => d.title === node.name);
+      if (existing) {
+        store2.activeDocId = existing.id;
+        setViewMode("notebook");
+        renderNotebookUI();
+        return;
+      }
+      if (node.content && importNotebookFromJson(node.content, node.name)) {
+        return;
+      }
+      setViewMode("notebook");
+      return;
+    }
+    const isPyFile = node.name.endsWith(".py");
+    if (isPyFile && LANG !== "python" && typeof PY_ENGINE !== "undefined" && PY_ENGINE.setLang) {
+      PY_ENGINE.setLang("python");
+    } else if (node.name.endsWith(".ts") && LANG === "python" && typeof PY_ENGINE !== "undefined" && PY_ENGINE.setLang) {
+      PY_ENGINE.setLang("ts");
+    }
+    setViewMode("script");
+    const lang = LANG === "python" ? "python" : "ts";
+    if (editor && editor.value) {
+      syncActiveScriptTabSource(editor.value);
+    }
+    const store = ensureScriptTabsForLang(lang);
+    let tab = store.tabs.find((t) => !t.isSample && t.vfsPath === node.path);
+    if (!tab) {
+      tab = {
+        id: nextScriptTabId(),
+        title: node.name,
+        lang,
+        source: node.content || "",
+        vfsPath: node.path,
+        isSample: false
+      };
+      store.tabs.push(tab);
+    } else {
+      tab.source = node.content ?? tab.source;
+      tab.vfsPath = node.path;
+      tab.isSample = false;
+    }
+    store.activeTabId = tab.id;
+    setScriptTabSyncing(true);
+    editor.value = tab.source;
+    setFileName(tab.title);
+    setScriptTabSyncing(false);
+    resetTraceState();
+    updateEditorChrome();
+    renderScriptTabsUI();
+    renderVfsTreeUI();
+    say(`\u{1F4C2} \u5DF2\u6253\u5F00 ${node.path}`, "ok");
+  }
+  function serializeFsData(data) {
+    if (typeof data === "string") return data;
+    if (data instanceof Uint8Array) {
+      return typeof TextDecoder !== "undefined" ? new TextDecoder().decode(data) : String(data);
+    }
+    if (data !== null && typeof data === "object") {
+      try {
+        return JSON.stringify(data, null, 2);
+      } catch (_) {
+        return String(data);
+      }
+    }
+    return String(data ?? "");
+  }
+  function createVfsCoreApi() {
+    const api = {
+      resolveWorkspacePath(rawPath, allowEmptyRoot = false) {
+        return resolveWorkspacePath(rawPath, allowEmptyRoot);
+      },
+      readFile(path) {
+        ensureVfsInitialized();
+        const rel = resolveWorkspacePath(path, false);
+        const node = VFS_NODES.get(rel);
+        if (!node) return null;
+        if (node.type === "folder") {
+          throw new Error(`EISDIR: illegal operation on a directory, read '${path}'`);
+        }
+        return node.content ?? "";
+      },
+      writeFile(path, content) {
+        ensureVfsInitialized();
+        const rel = resolveWorkspacePath(path, false);
+        const existing = VFS_NODES.get(rel);
+        if (existing && existing.type === "folder") {
+          throw new Error(`EISDIR: illegal operation on a directory, open '${path}'`);
+        }
+        ensureParentFoldersExist(rel);
+        const parts = rel.split("/");
+        const name = parts.pop() || rel;
+        const parentPath = parts.join("/");
+        VFS_NODES.set(rel, {
+          path: rel,
+          name,
+          type: "file",
+          parentPath,
+          content: serializeFsData(content)
+        });
+        persistVfsToClientStorage();
+        renderVfsTreeUI();
+        return true;
+      },
+      appendFile(path, content) {
+        ensureVfsInitialized();
+        const rel = resolveWorkspacePath(path, false);
+        const existing = VFS_NODES.get(rel);
+        if (existing && existing.type === "folder") {
+          throw new Error(`EISDIR: illegal operation on a directory, open '${path}'`);
+        }
+        const prev = existing && existing.type === "file" ? existing.content ?? "" : "";
+        return api.writeFile(rel, prev + serializeFsData(content));
+      },
+      listFiles(dirPath = "") {
+        ensureVfsInitialized();
+        const rel = resolveWorkspacePath(dirPath, true);
+        if (rel !== "") {
+          const dirNode = VFS_NODES.get(rel);
+          if (!dirNode) {
+            throw new Error(`ENOENT: no such file or directory, scandir '${dirPath}'`);
+          }
+          if (dirNode.type !== "folder") {
+            throw new Error(`ENOTDIR: not a directory, scandir '${dirPath}'`);
+          }
+        }
+        const out = [];
+        VFS_NODES.forEach((node) => {
+          if (node.parentPath === rel) out.push(node.name);
+        });
+        return out;
+      },
+      readdir(dirPath = "") {
+        return api.listFiles(dirPath);
+      },
+      listAll() {
+        ensureVfsInitialized();
+        return Array.from(VFS_NODES.keys()).sort();
+      },
+      exists(path) {
+        ensureVfsInitialized();
+        const rel = resolveWorkspacePath(path, true);
+        if (rel === "") return true;
+        return VFS_NODES.has(rel);
+      },
+      deleteFile(path) {
+        ensureVfsInitialized();
+        const rel = resolveWorkspacePath(path, false);
+        const node = VFS_NODES.get(rel);
+        if (!node) {
+          throw new Error(`ENOENT: no such file or directory, unlink '${path}'`);
+        }
+        const prefix = rel + "/";
+        Array.from(VFS_NODES.keys()).forEach((k) => {
+          if (k === rel || k.startsWith(prefix)) {
+            VFS_NODES.delete(k);
+          }
+        });
+        persistVfsToClientStorage();
+        renderVfsTreeUI();
+        return true;
+      },
+      unlink(path) {
+        return api.deleteFile(path);
+      },
+      mkdir(path) {
+        ensureVfsInitialized();
+        const rel = resolveWorkspacePath(path, true);
+        if (!rel) return true;
+        ensureParentFoldersExist(rel + "/_");
+        persistVfsToClientStorage();
+        renderVfsTreeUI();
+        return true;
+      },
+      stat(path) {
+        ensureVfsInitialized();
+        const rel = resolveWorkspacePath(path, true);
+        if (rel === "") {
+          return {
+            size: 0,
+            isFile: () => false,
+            isDirectory: () => true
+          };
+        }
+        const node = VFS_NODES.get(rel);
+        if (!node) {
+          throw new Error(`ENOENT: no such file or directory, stat '${path}'`);
+        }
+        const isDir = node.type === "folder";
+        const size = isDir ? 0 : (node.content ?? "").length;
+        return {
+          size,
+          isFile: () => !isDir,
+          isDirectory: () => isDir
+        };
+      },
+      clear() {
+        ensureVfsInitialized();
+        VFS_NODES.clear();
+        persistVfsToClientStorage();
+        renderVfsTreeUI();
+      }
+    };
+    return api;
+  }
+  function bindGlobalVfsApi() {
+    const api = createVfsCoreApi();
+    const fsPromises = {
+      async readFile(path, _options) {
+        const content = api.readFile(path);
+        if (content === null) {
+          throw new Error(`ENOENT: no such file or directory, open '${path}'`);
+        }
+        return content;
+      },
+      async writeFile(path, data, _options) {
+        api.writeFile(path, serializeFsData(data));
+      },
+      async appendFile(path, data, _options) {
+        api.appendFile(path, serializeFsData(data));
+      },
+      async unlink(path) {
+        api.deleteFile(path);
+      },
+      async rm(path, _options) {
+        api.deleteFile(path);
+      },
+      async readdir(path = "", _options) {
+        return api.listFiles(path);
+      },
+      async mkdir(path, _options) {
+        api.mkdir(path);
+        return void 0;
+      },
+      async rmdir(path, _options) {
+        api.deleteFile(path);
+      },
+      async stat(path) {
+        return api.stat(path);
+      },
+      async access(path, _mode) {
+        if (!api.exists(path)) {
+          throw new Error(`ENOENT: no such file or directory, access '${path}'`);
+        }
+      },
+      async exists(path) {
+        return api.exists(path);
+      },
+      async copyFile(src, dest) {
+        const content = api.readFile(src);
+        if (content === null) {
+          throw new Error(`ENOENT: no such file or directory, copyfile '${src}'`);
+        }
+        api.writeFile(dest, content);
+      },
+      async rename(oldPath, newPath) {
+        const content = api.readFile(oldPath);
+        if (content === null) {
+          throw new Error(`ENOENT: no such file or directory, rename '${oldPath}'`);
+        }
+        api.writeFile(newPath, content);
+        api.deleteFile(oldPath);
+      }
+    };
+    const fsShim = {
+      promises: fsPromises,
+      readFileSync(path, _options) {
+        const content = api.readFile(path);
+        if (content === null) {
+          throw new Error(`ENOENT: no such file or directory, open '${path}'`);
+        }
+        return content;
+      },
+      writeFileSync(path, data, _options) {
+        api.writeFile(path, serializeFsData(data));
+      },
+      appendFileSync(path, data, _options) {
+        api.appendFile(path, serializeFsData(data));
+      },
+      existsSync(path) {
+        return api.exists(path);
+      },
+      unlinkSync(path) {
+        api.deleteFile(path);
+      },
+      rmSync(path, _options) {
+        api.deleteFile(path);
+      },
+      readdirSync(path = "") {
+        return api.listFiles(path);
+      },
+      mkdirSync(path, _options) {
+        api.mkdir(path);
+        return void 0;
+      },
+      rmdirSync(path, _options) {
+        api.deleteFile(path);
+      },
+      statSync(path) {
+        return api.stat(path);
+      },
+      copyFileSync(src, dest) {
+        const content = api.readFile(src);
+        if (content === null) {
+          throw new Error(`ENOENT: no such file or directory, copyfile '${src}'`);
+        }
+        api.writeFile(dest, content);
+      },
+      renameSync(oldPath, newPath) {
+        const content = api.readFile(oldPath);
+        if (content === null) {
+          throw new Error(`ENOENT: no such file or directory, rename '${oldPath}'`);
+        }
+        api.writeFile(newPath, content);
+        api.deleteFile(oldPath);
+      }
+    };
+    globalThis.__VFS__ = api;
+    globalThis.vfs = api;
+    globalThis.__FS_SHIM__ = fsShim;
+  }
+  function initVfsSidebarEvents() {
+    const fileInput = $("fileInput");
+    const vfsSidebar = $("vfsSidebar");
+    const b1 = $("btnToggleVfs");
+    const b2 = $("nbBtnToggleVfs");
+    if (vfsSidebar) {
+      vfsSidebar.hidden = true;
+    }
+    if (b1 && b1.classList) b1.classList.remove("active");
+    if (b2 && b2.classList) b2.classList.remove("active");
+    const toggleVfsSidebar = () => {
+      if (!vfsSidebar) return;
+      vfsSidebar.hidden = !vfsSidebar.hidden;
+      const isVisible = !vfsSidebar.hidden;
+      if (b1 && b1.classList) b1.classList.toggle("active", isVisible);
+      if (b2 && b2.classList) b2.classList.toggle("active", isVisible);
+    };
+    if (b1) b1.onclick = toggleVfsSidebar;
+    if (b2) b2.onclick = toggleVfsSidebar;
+    const btnNewFile = $("vfsBtnNewFile");
+    if (btnNewFile) {
+      btnNewFile.onclick = () => {
+        ensureVfsInitialized();
+        const ext = LANG === "python" ? ".py" : ".ts";
+        let idx = 1;
+        while (VFS_NODES.has(`file_${idx}${ext}`)) idx++;
+        const name = `file_${idx}${ext}`;
+        const path = name;
+        const content = LANG === "python" ? `# ${name}
+` : `// ${name}
+`;
+        VFS_NODES.set(path, {
+          path,
+          name,
+          type: "file",
+          parentPath: "",
+          content
+        });
+        persistVfsToClientStorage();
+        openVfsFile(path);
+      };
+    }
+    const btnNewFolder = $("vfsBtnNewFolder");
+    if (btnNewFolder) {
+      btnNewFolder.onclick = () => {
+        ensureVfsInitialized();
+        let idx = 1;
+        while (VFS_NODES.has(`folder_${idx}`)) idx++;
+        const name = `folder_${idx}`;
+        const path = name;
+        VFS_NODES.set(path, {
+          path,
+          name,
+          type: "folder",
+          parentPath: ""
+        });
+        VFS_EXPANDED_FOLDERS.add(path);
+        persistVfsToClientStorage();
+        renderVfsTreeUI();
+        say(`\u{1F4C1} \u5DF2\u521B\u5EFA\u6587\u4EF6\u5939 ${path}/\uFF08\u53CC\u51FB\u53EF\u91CD\u547D\u540D\uFF09`, "ok");
+      };
+    }
+    const btnUpload = $("vfsBtnUpload");
+    if (btnUpload && fileInput) {
+      btnUpload.onclick = () => fileInput.click();
+    }
+    const vfsTreeList = $("vfsTreeList");
+    if (!vfsTreeList || !vfsTreeList.addEventListener) return;
+    vfsTreeList.addEventListener("click", (e) => {
+      const target = e.target;
+      if (!target) return;
+      const confirmDelBtn = target.closest ? target.closest("[data-vfs-confirm-del]") : null;
+      if (confirmDelBtn) {
+        e.stopPropagation();
+        const delPath = confirmDelBtn.getAttribute("data-vfs-confirm-del");
+        pendingVfsDeletePath = null;
+        if (delPath && VFS_NODES.has(delPath)) {
+          const prefix = delPath + "/";
+          Array.from(VFS_NODES.keys()).forEach((k) => {
+            if (k === delPath || k.startsWith(prefix)) {
+              VFS_NODES.delete(k);
+            }
+          });
+          ["ts", "python"].forEach((l) => {
+            const st = SCRIPT_TABS[l];
+            st.tabs.forEach((t) => {
+              if (t.vfsPath === delPath || t.vfsPath.startsWith(prefix)) {
+                t.vfsPath = "";
+              }
+            });
+          });
+          persistVfsToClientStorage();
+          renderScriptTabsUI();
+          renderVfsTreeUI();
+          say(`\u{1F5D1} \u5DF2\u4ECE\u6587\u4EF6\u76EE\u5F55\u79FB\u9664 ${delPath}`, "dim");
+        } else {
+          renderVfsTreeUI();
+        }
+        return;
+      }
+      const cancelDelBtn = target.closest ? target.closest("[data-vfs-cancel-del]") : null;
+      if (cancelDelBtn) {
+        e.stopPropagation();
+        pendingVfsDeletePath = null;
+        renderVfsTreeUI();
+        return;
+      }
+      const delBtn = target.closest ? target.closest("[data-vfs-del]") : null;
+      if (delBtn) {
+        e.stopPropagation();
+        const delPath = delBtn.getAttribute("data-vfs-del");
+        if (delPath && VFS_NODES.has(delPath)) {
+          pendingVfsDeletePath = pendingVfsDeletePath === delPath ? null : delPath;
+          renderVfsTreeUI();
+        }
+        return;
+      }
+      const folderRow = target.closest ? target.closest("[data-vfs-folder]") : null;
+      if (folderRow) {
+        const folderPath = folderRow.getAttribute("data-vfs-folder");
+        if (folderPath) {
+          if (VFS_EXPANDED_FOLDERS.has(folderPath)) VFS_EXPANDED_FOLDERS.delete(folderPath);
+          else VFS_EXPANDED_FOLDERS.add(folderPath);
+          renderVfsTreeUI();
+        }
+        return;
+      }
+      const fileRow = target.closest ? target.closest("[data-vfs-file]") : null;
+      if (fileRow) {
+        const filePath = fileRow.getAttribute("data-vfs-file");
+        if (filePath) {
+          const curActivePath = VIEW_MODE === "notebook" ? getActiveNotebook().title : getActiveScriptTab().vfsPath;
+          if (filePath !== curActivePath || editor.value !== (VFS_NODES.get(filePath)?.content ?? "")) {
+            openVfsFile(filePath);
+          }
+        }
+      }
+    });
+    vfsTreeList.addEventListener("dblclick", (e) => {
+      const target = e.target;
+      const row = target && target.closest ? target.closest("[data-vfs-file], [data-vfs-folder]") : null;
+      if (!row) return;
+      const oldPath = row.getAttribute("data-vfs-file") || row.getAttribute("data-vfs-folder");
+      if (!oldPath) return;
+      const node = VFS_NODES.get(oldPath);
+      if (!node || node.readonly) return;
+      const nameSpan = row.querySelector ? row.querySelector(".vfs-name") : null;
+      if (!nameSpan) return;
+      const input = document.createElement("input");
+      input.type = "text";
+      input.className = "vfs-rename-input";
+      input.value = node.name;
+      nameSpan.replaceWith(input);
+      input.focus();
+      input.select();
+      let committed = false;
+      const commit = () => {
+        if (committed) return;
+        committed = true;
+        const nextName = input.value.trim().replace(/[\\/:*?"<>|]/g, "");
+        if (nextName && nextName !== node.name) {
+          const nextPath = node.parentPath ? `${node.parentPath}/${nextName}` : nextName;
+          VFS_NODES.delete(oldPath);
+          node.name = nextName;
+          node.path = nextPath;
+          VFS_NODES.set(nextPath, node);
+          persistVfsToClientStorage();
+          const lang = LANG === "python" ? "python" : "ts";
+          const store = ensureScriptTabsForLang(lang);
+          const matchingTab = store.tabs.find((t) => t.vfsPath === oldPath);
+          if (matchingTab) {
+            matchingTab.title = nextName;
+            matchingTab.vfsPath = nextPath;
+            if (store.activeTabId === matchingTab.id) {
+              setScriptTabSyncing(true);
+              setFileName(nextName);
+              setScriptTabSyncing(false);
+            }
+            renderScriptTabsUI();
+          }
+          say(`\u2713 \u5DF2\u91CD\u547D\u540D\u4E3A ${nextPath}`, "ok");
+        }
+        renderVfsTreeUI();
+      };
+      input.addEventListener("blur", commit);
+      input.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter") {
+          ev.preventDefault();
+          input.blur();
+        } else if (ev.key === "Escape") {
+          committed = true;
+          renderVfsTreeUI();
+        }
+      });
+    });
+  }
+
+  // src/ui/notebook.ts
   var nbClipboardCell = null;
   var nbCellSeq = 100;
   var nbDocSeq = 10;
@@ -13252,106 +14515,78 @@ runAsyncDemo()
       cntEl.className = "";
     }
   }
-  async function runNotebookCell(cellId, advanceToNext = false) {
-    const doc = getActiveNotebook();
-    const cell = cellId ? doc.cells.find((c) => c.id === cellId) : getActiveCell(doc);
-    if (!cell) return false;
-    doc.activeCellId = cell.id;
-    ACTIVE_NB_CELL_ID = cell.id;
-    if (doc.debuggingCellId) {
-      doc.debuggingCellId = null;
-      stopAuto();
-      clearFlyLayer();
-    }
-    if (cell.type === "markdown") {
-      cell.markdownRendered = true;
-      cell.status = "idle";
-      if (advanceToNext) moveFocusToNextCell(doc, cell.id, true);
-      renderNotebookUI();
-      return true;
-    }
-    const rawSrc = cell.source.replace(/\r\n?/g, "\n");
-    if (!rawSrc.trim()) {
-      cell.executionCount = null;
-      cell.status = "idle";
-      cell.output = null;
-      if (advanceToNext) moveFocusToNextCell(doc, cell.id, true);
-      renderNotebookUI();
-      return true;
-    }
-    cell.status = "running";
-    renderNotebookUI();
-    if (LANG === "python") {
-      try {
-        const payload = await PY_ENGINE.run(rawSrc, {
-          trace: false,
-          useNotebookKernel: true,
-          timeLimit: 6
-        });
-        if (payload.syntaxError) {
-          const err = payload.syntaxError;
-          const msg = `SyntaxError (\u7B2C ${err.line || 1} \u884C): ${err.msg || "\u8BED\u6CD5\u9519\u8BEF"}`;
-          cell.status = "error";
-          cell.output = { logs: [], returnValue: null, error: msg, errorLine: err.line || 1 };
-          say(`\u2717 [${doc.title}] ${msg}`, "err");
-          renderNotebookUI();
-          return false;
-        }
-        doc.execCounter += 1;
-        cell.executionCount = doc.execCounter;
-        const logs2 = payload.stdout ? String(payload.stdout).replace(/\n$/, "").split("\n") : [];
-        const rvHydrated = PY_ENGINE.hydrate(payload.returnValue);
-        const hasReturn = rvHydrated !== void 0 && rvHydrated !== null && payload.entryExpr;
-        const rvStr = hasReturn ? PY_ENGINE.fmtReturn(rvHydrated) : null;
-        if (payload.meta) {
-          PY_ENGINE.applyMeta(payload.meta);
-        }
-        const vRaw = PY_ENGINE.hydrateVars(payload.finalVars || {});
-        const v = PY_ENGINE.cloneVars(vRaw);
-        const ds = {};
-        Object.keys(vRaw).forEach((name) => {
-          const d = classifyValue(name, vRaw[name]);
-          if (d) ds[name] = d;
-        });
-        populateInterfaceSchemas(ds);
-        doc.lastGlobalVars = v;
-        doc.lastGlobalDs = ds;
-        if (payload.error) {
-          cell.status = "error";
-          cell.output = {
-            logs: logs2,
-            returnValue: null,
-            error: payload.error,
-            errorLine: payload.errorLine || 1
-          };
-          say(`\u2717 [Cell ${cell.executionCount}] \u7B2C ${payload.errorLine || 1} \u884C\u62A5\u9519: ${payload.error}`, "err");
-        } else {
-          cell.status = "success";
-          cell.output = {
-            logs: logs2,
-            returnValue: rvStr,
-            error: null
-          };
-          doc.executedHistory = doc.executedHistory.filter((h) => h.cellId !== cell.id);
-          doc.executedHistory.push({ cellId: cell.id, execCount: cell.executionCount, source: rawSrc });
-          say(
-            `\u2713 [Cell ${cell.executionCount}] \u6267\u884C\u5B8C\u6210` + (logs2.length ? ` \xB7 \u8F93\u51FA: ${logs2.join(" | ")}` : "") + (rvStr ? `  \u2192  ${rvStr}` : ""),
-            "ok"
-          );
-        }
-        syncNotebookGlobalsToSidePanel(doc);
-        if (advanceToNext && !payload.error) {
-          moveFocusToNextCell(doc, cell.id, true);
-        }
-        renderNotebookUI();
-        return !payload.error;
-      } catch (err) {
+  async function runPythonNotebookCell(doc, cell, rawSrc, advanceToNext) {
+    try {
+      const payload = await PY_ENGINE.run(rawSrc, {
+        trace: false,
+        useNotebookKernel: true,
+        timeLimit: 6
+      });
+      if (payload.syntaxError) {
+        const err = payload.syntaxError;
+        const msg = `SyntaxError (\u7B2C ${err.line || 1} \u884C): ${err.msg || "\u8BED\u6CD5\u9519\u8BEF"}`;
         cell.status = "error";
-        cell.output = { logs: [], returnValue: null, error: err instanceof Error && err.message || String(err) };
+        cell.output = { logs: [], returnValue: null, error: msg, errorLine: err.line || 1 };
+        say(`\u2717 [${doc.title}] ${msg}`, "err");
         renderNotebookUI();
         return false;
       }
+      doc.execCounter += 1;
+      cell.executionCount = doc.execCounter;
+      const logs = payload.stdout ? String(payload.stdout).replace(/\n$/, "").split("\n") : [];
+      const rvHydrated = PY_ENGINE.hydrate(payload.returnValue);
+      const hasReturn = rvHydrated !== void 0 && rvHydrated !== null && payload.entryExpr;
+      const rvStr = hasReturn ? PY_ENGINE.fmtReturn(rvHydrated) : null;
+      if (payload.meta) {
+        PY_ENGINE.applyMeta(payload.meta);
+      }
+      const vRaw = PY_ENGINE.hydrateVars(payload.finalVars || {});
+      const v = PY_ENGINE.cloneVars(vRaw);
+      const ds = {};
+      Object.keys(vRaw).forEach((name) => {
+        const d = classifyValue(name, vRaw[name]);
+        if (d) ds[name] = d;
+      });
+      populateInterfaceSchemas(ds);
+      doc.lastGlobalVars = v;
+      doc.lastGlobalDs = ds;
+      if (payload.error) {
+        cell.status = "error";
+        cell.output = {
+          logs,
+          returnValue: null,
+          error: payload.error,
+          errorLine: payload.errorLine || 1
+        };
+        say(`\u2717 [Cell ${cell.executionCount}] \u7B2C ${payload.errorLine || 1} \u884C\u62A5\u9519: ${payload.error}`, "err");
+      } else {
+        cell.status = "success";
+        cell.output = {
+          logs,
+          returnValue: rvStr,
+          error: null
+        };
+        doc.executedHistory = doc.executedHistory.filter((h) => h.cellId !== cell.id);
+        doc.executedHistory.push({ cellId: cell.id, execCount: cell.executionCount, source: rawSrc });
+        say(
+          `\u2713 [Cell ${cell.executionCount}] \u6267\u884C\u5B8C\u6210` + (logs.length ? ` \xB7 \u8F93\u51FA: ${logs.join(" | ")}` : "") + (rvStr ? `  \u2192  ${rvStr}` : ""),
+          "ok"
+        );
+      }
+      syncNotebookGlobalsToSidePanel(doc);
+      if (advanceToNext && !payload.error) {
+        moveFocusToNextCell(doc, cell.id, true);
+      }
+      renderNotebookUI();
+      return !payload.error;
+    } catch (err) {
+      cell.status = "error";
+      cell.output = { logs: [], returnValue: null, error: err instanceof Error && err.message || String(err) };
+      renderNotebookUI();
+      return false;
     }
+  }
+  function runTsNotebookCell(doc, cell, rawSrc, advanceToNext) {
     const t0 = Date.now();
     const { combinedTs } = buildTsTypecheckContext(doc, cell);
     const cellDiags = typecheckNotebookCellTS(doc, cell);
@@ -13481,99 +14716,121 @@ runAsyncDemo()
       return false;
     }
   }
-  async function debugNotebookCell(cellId) {
+  async function runNotebookCell(cellId, advanceToNext = false) {
     const doc = getActiveNotebook();
     const cell = cellId ? doc.cells.find((c) => c.id === cellId) : getActiveCell(doc);
-    if (!cell || cell.type !== "code") return false;
+    if (!cell) return false;
     doc.activeCellId = cell.id;
     ACTIVE_NB_CELL_ID = cell.id;
+    if (doc.debuggingCellId) {
+      doc.debuggingCellId = null;
+      stopAuto();
+      clearFlyLayer();
+    }
+    if (cell.type === "markdown") {
+      cell.markdownRendered = true;
+      cell.status = "idle";
+      if (advanceToNext) moveFocusToNextCell(doc, cell.id, true);
+      renderNotebookUI();
+      return true;
+    }
     const rawSrc = cell.source.replace(/\r\n?/g, "\n");
     if (!rawSrc.trim()) {
-      say("\u26A0 \u5F53\u524D\u5355\u5143\u683C\u4E3A\u7A7A\uFF0C\u8BF7\u5148\u8F93\u5165\u4EE3\u7801\u540E\u518D\u542F\u52A8\u5355\u6B65\u8C03\u8BD5", "dim");
-      return false;
-    }
-    stopAuto();
-    clearFlyLayer();
-    if (LANG === "python") {
-      cell.status = "debugging";
-      doc.debuggingCellId = cell.id;
+      cell.executionCount = null;
+      cell.status = "idle";
+      cell.output = null;
+      if (advanceToNext) moveFocusToNextCell(doc, cell.id, true);
       renderNotebookUI();
-      try {
-        say(`\u2026 \u6B63\u5728\u5F55\u5236\u5355\u5143\u683C [${cell.executionCount || " "}] \u7684 Python \u5355\u6B65\u8F68\u8FF9\u2026`, "dim");
-        const payload = await PY_ENGINE.run(rawSrc, {
-          trace: true,
-          useNotebookKernel: true,
-          maxSteps: 2e3,
-          timeLimit: 6
-        });
-        if (payload.syntaxError) {
-          const err = payload.syntaxError;
-          cell.status = "error";
-          doc.debuggingCellId = null;
-          cell.output = {
-            logs: [],
-            returnValue: null,
-            error: `SyntaxError (\u7B2C ${err.line || 1} \u884C): ${err.msg || "\u8BED\u6CD5\u9519\u8BEF"}`,
-            errorLine: err.line || 1
-          };
-          renderNotebookUI();
-          return false;
-        }
-        doc.execCounter += 1;
-        cell.executionCount = doc.execCounter;
-        const sourceLines = rawSrc.split("\n");
-        PY_ENGINE.applyMeta(payload.meta || {});
-        payload.__returnValueHydrated = PY_ENGINE.hydrate(payload.returnValue);
-        payload.__callExpr = payload.entryExpr || "";
-        const steps = PY_ENGINE.buildSteps(payload, sourceLines);
-        resetTraceState();
-        TRACE = { title: `${doc.title} \xB7 Cell [${cell.executionCount}]`, code: sourceLines, steps };
-        DEBUG_SESSION = {
-          active: true,
-          finished: true,
-          crashed: Boolean(payload.error),
-          error: payload.error || null,
-          errorLine: payload.errorLine || -1,
-          returnValue: payload.__returnValueHydrated,
-          compiledFn: null,
-          originalLines: sourceLines,
-          callExpr: payload.entryExpr || "undefined"
-        };
-        const vRaw = PY_ENGINE.hydrateVars(payload.finalVars || {});
-        const v = PY_ENGINE.cloneVars(vRaw);
-        const ds = {};
-        Object.keys(vRaw).forEach((name) => {
-          const d = classifyValue(name, vRaw[name]);
-          if (d) ds[name] = d;
-        });
-        populateInterfaceSchemas(ds);
-        doc.lastGlobalVars = v;
-        doc.lastGlobalDs = ds;
-        const logs = payload.stdout ? String(payload.stdout).replace(/\n$/, "").split("\n") : [];
-        cell.output = {
-          logs,
-          returnValue: payload.__returnValueHydrated !== void 0 && payload.__returnValueHydrated !== null && payload.entryExpr ? PY_ENGINE.fmtReturn(payload.__returnValueHydrated) : null,
-          error: payload.error || null,
-          errorLine: payload.errorLine || null
-        };
-        cur = 0;
-        SELECTED_FRAME_IDX = null;
-        watched = /* @__PURE__ */ new Set();
-        SEEN_VARS_EVER = /* @__PURE__ */ new Set();
-        layoutSpan = /* @__PURE__ */ Object.create(null);
-        initWatchedVars();
-        renderPicker();
-        renderStatic(cur, false);
-        renderNotebookUI();
-        say(`\u2713 [Cell ${cell.executionCount}] \u5DF2\u8FDB\u5165\u5355\u6B65\u8C03\u8BD5\u6A21\u5F0F\uFF08\u5171 ${steps.length} \u6B65\uFF0C\u53EF\u4F7F\u7528\u5E95\u90E8\u63A7\u5236\u680F\u9010\u6B65\u89C2\u5BDF\uFF09`, "ok");
-        return true;
-      } catch (_err) {
+      return true;
+    }
+    cell.status = "running";
+    renderNotebookUI();
+    if (LANG === "python") {
+      return runPythonNotebookCell(doc, cell, rawSrc, advanceToNext);
+    }
+    return runTsNotebookCell(doc, cell, rawSrc, advanceToNext);
+  }
+  async function debugPythonNotebookCell(doc, cell, rawSrc) {
+    cell.status = "debugging";
+    doc.debuggingCellId = cell.id;
+    renderNotebookUI();
+    try {
+      say(`\u2026 \u6B63\u5728\u5F55\u5236\u5355\u5143\u683C [${cell.executionCount || " "}] \u7684 Python \u5355\u6B65\u8F68\u8FF9\u2026`, "dim");
+      const payload = await PY_ENGINE.run(rawSrc, {
+        trace: true,
+        useNotebookKernel: true,
+        maxSteps: 2e3,
+        timeLimit: 6
+      });
+      if (payload.syntaxError) {
+        const err = payload.syntaxError;
         cell.status = "error";
         doc.debuggingCellId = null;
+        cell.output = {
+          logs: [],
+          returnValue: null,
+          error: `SyntaxError (\u7B2C ${err.line || 1} \u884C): ${err.msg || "\u8BED\u6CD5\u9519\u8BEF"}`,
+          errorLine: err.line || 1
+        };
         renderNotebookUI();
         return false;
       }
+      doc.execCounter += 1;
+      cell.executionCount = doc.execCounter;
+      const sourceLines = rawSrc.split("\n");
+      PY_ENGINE.applyMeta(payload.meta || {});
+      payload.__returnValueHydrated = PY_ENGINE.hydrate(payload.returnValue);
+      payload.__callExpr = payload.entryExpr || "";
+      const steps = PY_ENGINE.buildSteps(payload, sourceLines);
+      resetTraceState();
+      TRACE = { title: `${doc.title} \xB7 Cell [${cell.executionCount}]`, code: sourceLines, steps };
+      DEBUG_SESSION = {
+        active: true,
+        finished: true,
+        crashed: Boolean(payload.error),
+        error: payload.error || null,
+        errorLine: payload.errorLine || -1,
+        returnValue: payload.__returnValueHydrated,
+        compiledFn: null,
+        originalLines: sourceLines,
+        callExpr: payload.entryExpr || "undefined"
+      };
+      const vRaw = PY_ENGINE.hydrateVars(payload.finalVars || {});
+      const v = PY_ENGINE.cloneVars(vRaw);
+      const ds = {};
+      Object.keys(vRaw).forEach((name) => {
+        const d = classifyValue(name, vRaw[name]);
+        if (d) ds[name] = d;
+      });
+      populateInterfaceSchemas(ds);
+      doc.lastGlobalVars = v;
+      doc.lastGlobalDs = ds;
+      const logs = payload.stdout ? String(payload.stdout).replace(/\n$/, "").split("\n") : [];
+      cell.output = {
+        logs,
+        returnValue: payload.__returnValueHydrated !== void 0 && payload.__returnValueHydrated !== null && payload.entryExpr ? PY_ENGINE.fmtReturn(payload.__returnValueHydrated) : null,
+        error: payload.error || null,
+        errorLine: payload.errorLine || null
+      };
+      cur = 0;
+      SELECTED_FRAME_IDX = null;
+      watched = /* @__PURE__ */ new Set();
+      SEEN_VARS_EVER = /* @__PURE__ */ new Set();
+      layoutSpan = /* @__PURE__ */ Object.create(null);
+      initWatchedVars();
+      renderPicker();
+      renderStatic(cur, false);
+      renderNotebookUI();
+      say(`\u2713 [Cell ${cell.executionCount}] \u5DF2\u8FDB\u5165\u5355\u6B65\u8C03\u8BD5\u6A21\u5F0F\uFF08\u5171 ${steps.length} \u6B65\uFF0C\u53EF\u4F7F\u7528\u5E95\u90E8\u63A7\u5236\u680F\u9010\u6B65\u89C2\u5BDF\uFF09`, "ok");
+      return true;
+    } catch (_err) {
+      cell.status = "error";
+      doc.debuggingCellId = null;
+      renderNotebookUI();
+      return false;
     }
+  }
+  function debugTsNotebookCell(doc, cell, rawSrc) {
     const { combinedTs } = buildTsTypecheckContext(doc, cell);
     const cellDiags = typecheckNotebookCellTS(doc, cell);
     if (cellDiags.length > 0) {
@@ -13669,6 +14926,24 @@ runAsyncDemo()
     renderNotebookUI();
     say(`\u2713 [Cell ${cell.executionCount}] \u5DF2\u5F00\u542F\u5355\u6B65\u8C03\u8BD5 \xB7 \u53EF\u4F7F\u7528\u5E95\u90E8\u300C\u4E0B\u4E00\u6B65 \u203A\u300D\u6216\u300C\u23ED \u8FD0\u884C\u5230\u4E0B\u4E00\u4E2A\u68C0\u67E5\u70B9\u300D\u9010\u6B65\u63A8\u5BFC`, "ok");
     return true;
+  }
+  async function debugNotebookCell(cellId) {
+    const doc = getActiveNotebook();
+    const cell = cellId ? doc.cells.find((c) => c.id === cellId) : getActiveCell(doc);
+    if (!cell || cell.type !== "code") return false;
+    doc.activeCellId = cell.id;
+    ACTIVE_NB_CELL_ID = cell.id;
+    const rawSrc = cell.source.replace(/\r\n?/g, "\n");
+    if (!rawSrc.trim()) {
+      say("\u26A0 \u5F53\u524D\u5355\u5143\u683C\u4E3A\u7A7A\uFF0C\u8BF7\u5148\u8F93\u5165\u4EE3\u7801\u540E\u518D\u542F\u52A8\u5355\u6B65\u8C03\u8BD5", "dim");
+      return false;
+    }
+    stopAuto();
+    clearFlyLayer();
+    if (LANG === "python") {
+      return debugPythonNotebookCell(doc, cell, rawSrc);
+    }
+    return debugTsNotebookCell(doc, cell, rawSrc);
   }
   async function restartNotebookKernel(silent = false) {
     const doc = getActiveNotebook();
@@ -14136,637 +15411,295 @@ runAsyncDemo()
       debugNotebookCell(cell.id);
     }
   }
-  var VFS_STORAGE_KEY = "ts-visual-vfs-workspace-v2";
-  var scriptTabSeq = 1;
-  var syncingScriptTab = false;
-  var vfsBootInitialized = false;
-  var pendingVfsDeletePath = null;
-  var SCRIPT_TABS = {
-    ts: { activeTabId: "", tabs: [] },
-    python: { activeTabId: "", tabs: [] }
-  };
-  var VFS_EXPANDED_FOLDERS = /* @__PURE__ */ new Set();
-  var VFS_NODES = /* @__PURE__ */ new Map();
-  var TS_SAMPLE_METADATA = [
-    { key: "showcase", label: "showcase.ts \xB7 \u7EFC\u5408\u6F14\u793A", desc: "\u6ED1\u52A8\u7A97\u53E3 + \u5355\u8C03\u6808 + Map + \u6811\u4E0E\u56FE" },
-    { key: "mergesort", label: "mergesort.ts \xB7 \u5F52\u5E76\u6392\u5E8F", desc: "\u5206\u6CBB\u9012\u5F52\u4E0E\u5DE6\u53F3\u5B50\u6570\u7EC4\u5F52\u5E76" },
-    { key: "debug_crash", label: "debug_crash.ts \xB7 \u8D8A\u754C\u6392\u9519", desc: "\u4E8C\u5206\u67E5\u627E <= \u8D8A\u754C Bug \u73B0\u573A\u5B9A\u4F4D" },
-    { key: "lcs", label: "lcs.ts \xB7 \u6700\u957F\u516C\u5171\u5B50\u5E8F\u5217", desc: "\u4E8C\u7EF4 DP \u7F51\u683C\u89C4\u5212" },
-    { key: "analyze", label: "analyze.ts \xB7 \u9891\u7387\u7EDF\u8BA1", desc: "\u6570\u7EC4\u4E0E Map \u54C8\u5E0C\u7EDF\u8BA1" },
-    { key: "window", label: "window.ts \xB7 \u6ED1\u52A8\u7A97\u53E3", desc: "\u53CC\u6307\u9488\u5B9A\u957F\u6ED1\u52A8\u7A97\u53E3" },
-    { key: "structures", label: "structures.ts \xB7 \u6570\u636E\u7ED3\u6784\u5168\u5BB6\u6876", desc: "\u6808 / \u961F\u5217 / \u5806 / \u5E76\u67E5\u96C6 / \u6811 / \u56FE" },
-    { key: "counter", label: "counter.ts \xB7 \u95ED\u5305\u8BA1\u6570\u5668", desc: "\u9AD8\u9636\u51FD\u6570\u4E0E\u8BCD\u6CD5\u4F5C\u7528\u57DF\u95ED\u5305" },
-    { key: "classes", label: "classes.ts \xB7 \u7C7B\u4E0E\u7EE7\u627F", desc: "class / extends / super \u5B9E\u4F8B\u65B9\u6CD5" },
-    { key: "async_loop", label: "async_loop.ts \xB7 \u4E8B\u4EF6\u5FAA\u73AF", desc: "async / await \u4E0E\u5FAE\u4EFB\u52A1\u961F\u5217" }
-  ];
-  var PY_SAMPLE_METADATA = [
-    { key: "quickstart", label: "quickstart.py \xB7 \u5192\u6CE1\u6392\u5E8F", desc: "Python \u5217\u8868\u539F\u5730\u4EA4\u6362\u4E0E\u53CC\u5C42\u5FAA\u73AF" },
-    { key: "binary_search", label: "binary_search.py \xB7 \u4E8C\u5206\u67E5\u627E", desc: "\u53CC\u6307\u9488\u6298\u534A\u641C\u7D22\u4E0E checkpoint()" },
-    { key: "bfs", label: "bfs.py \xB7 BFS \u5E7F\u5EA6\u4F18\u5148\u641C\u7D22", desc: "deque \u961F\u5217\u4E0E\u96C6\u5408\u8BBF\u95EE\u6807\u8BB0" },
-    { key: "lcs", label: "lcs.py \xB7 DP \u6700\u957F\u516C\u5171\u5B50\u5E8F\u5217", desc: "\u4E8C\u7EF4\u5217\u8868\u63A8\u5BFC\u5F0F\u4E0E\u52A8\u6001\u89C4\u5212" },
-    { key: "structures", label: "structures.py \xB7 \u7ED3\u6784\u96C6\u5408", desc: "TreeNode / ListNode / \u5B57\u5178 / \u96C6\u5408" },
-    { key: "classes", label: "classes.py \xB7 \u7C7B\u4E0E\u5B9E\u4F8B", desc: "Counter \u7C7B\u6784\u9020\u4E0E\u5B9E\u4F8B\u5C5E\u6027\u8FFD\u8E2A" }
-  ];
-  function getPySamplesDict() {
-    const eng = typeof PY_ENGINE !== "undefined" ? PY_ENGINE : null;
-    return eng && eng.samples ? eng.samples : {};
-  }
-  function resolveWorkspacePath(rawPath, allowEmptyRoot = false) {
-    const raw = String(rawPath ?? "").trim().replace(/\\/g, "/");
-    if (!raw || raw === "." || raw === "./" || raw === "workspace" || raw === "/workspace" || raw === "workspace/" || raw === "/workspace/") {
-      if (allowEmptyRoot) return "";
-      throw new Error(`EISDIR: illegal operation on workspace root directory '${rawPath}'`);
-    }
-    if (/^[A-Za-z]:/.test(raw) || raw.startsWith("~")) {
-      throw new Error(`EACCES: permission denied, file operations outside workspace are not allowed: '${rawPath}'`);
-    }
-    if (raw.startsWith("/")) {
-      if (raw !== "/workspace" && !raw.startsWith("/workspace/")) {
-        throw new Error(`EACCES: permission denied, file operations outside workspace are not allowed: '${rawPath}'`);
-      }
-    }
-    let stripped = raw;
-    if (stripped.startsWith("/workspace/")) {
-      stripped = stripped.slice("/workspace/".length);
-    } else if (stripped.startsWith("workspace/")) {
-      stripped = stripped.slice("workspace/".length);
-    } else if (stripped.startsWith("./")) {
-      stripped = stripped.slice(2);
-    }
-    const rawSegments = stripped.split("/");
-    const resolved = [];
-    for (const seg of rawSegments) {
-      if (!seg || seg === ".") continue;
-      if (seg === "..") {
-        if (resolved.length === 0) {
-          throw new Error(`EACCES: permission denied, file operations outside workspace are not allowed: '${rawPath}'`);
+  function initNotebookTabsEvents() {
+    const tabsEl = $("nbTabsList");
+    if (!tabsEl || !tabsEl.addEventListener) return;
+    tabsEl.addEventListener("click", (e) => {
+      const target = e.target;
+      if (!target) return;
+      const closeBtn = target.closest ? target.closest("[data-close-doc]") : null;
+      const lang = LANG === "python" ? "python" : "ts";
+      const store = ensureLangNotebooks(lang);
+      if (closeBtn) {
+        e.stopPropagation();
+        const closeId = closeBtn.getAttribute("data-close-doc");
+        if (store.docs.length <= 1) return;
+        const idx = store.docs.findIndex((d) => d.id === closeId);
+        if (idx >= 0) {
+          store.docs.splice(idx, 1);
+          if (store.activeDocId === closeId) {
+            const fallbackDoc = store.docs[Math.max(0, idx - 1)];
+            if (fallbackDoc) store.activeDocId = fallbackDoc.id;
+          }
+          syncNotebookGlobalsToSidePanel();
+          renderNotebookUI();
+          renderVfsTreeUI();
         }
-        resolved.pop();
-        continue;
-      }
-      resolved.push(seg);
-    }
-    const firstSeg = resolved[0] || "";
-    if (firstSeg === "examples" || firstSeg === "notebooks") {
-      throw new Error(`EACCES: permission denied, file operations outside workspace are not allowed: '${rawPath}'`);
-    }
-    const finalPath = resolved.join("/");
-    if (!finalPath && !allowEmptyRoot) {
-      throw new Error(`EISDIR: illegal operation on workspace root directory '${rawPath}'`);
-    }
-    return finalPath;
-  }
-  function ensureVfsInitialized() {
-    if (vfsBootInitialized) return;
-    vfsBootInitialized = true;
-    VFS_NODES.clear();
-    try {
-      if (typeof localStorage !== "undefined") {
-        localStorage.removeItem("ts-visual-vfs-v1");
-        localStorage.removeItem(VFS_STORAGE_KEY);
-      }
-    } catch (_) {
-    }
-  }
-  function persistVfsToClientStorage() {
-    try {
-      if (typeof localStorage === "undefined") return;
-      const customNodes = [];
-      VFS_NODES.forEach((node) => {
-        customNodes.push(node);
-      });
-      localStorage.setItem(VFS_STORAGE_KEY, JSON.stringify(customNodes));
-    } catch (_) {
-    }
-  }
-  function ensureParentFoldersExist(relPath) {
-    const parts = relPath.split("/").filter(Boolean);
-    if (parts.length <= 1) return;
-    let acc = "";
-    for (let i = 0; i < parts.length - 1; i++) {
-      const folderName = parts[i] || "";
-      const parentPath = acc;
-      acc = acc ? `${acc}/${folderName}` : folderName;
-      if (!VFS_NODES.has(acc)) {
-        VFS_NODES.set(acc, {
-          path: acc,
-          name: folderName,
-          type: "folder",
-          parentPath
-        });
-        VFS_EXPANDED_FOLDERS.add(acc);
-      }
-    }
-  }
-  function ensureScriptTabsForLang(lang) {
-    ensureVfsInitialized();
-    const store = SCRIPT_TABS[lang];
-    if (store.tabs.length === 0) {
-      const defaultTitle = lang === "python" ? LANG === "python" && FILE_NAME ? FILE_NAME : "quickstart.py" : LANG !== "python" && FILE_NAME ? FILE_NAME : "showcase.ts";
-      const defaultSrc = lang === "python" ? LANG === "python" && editor && editor.value ? editor.value : getPySamplesDict().quickstart || "" : LANG !== "python" && editor && editor.value ? editor.value : SAMPLES.showcase || "";
-      const tabId = "stab_" + ++scriptTabSeq;
-      store.tabs.push({
-        id: tabId,
-        title: defaultTitle,
-        lang,
-        source: defaultSrc,
-        vfsPath: "",
-        isSample: true
-      });
-      store.activeTabId = tabId;
-    }
-    const firstTab = store.tabs[0];
-    if (firstTab && !store.tabs.some((t) => t.id === store.activeTabId)) {
-      store.activeTabId = firstTab.id;
-    }
-    return store;
-  }
-  function getActiveScriptTab(lang) {
-    const targetLang = lang || (LANG === "python" ? "python" : "ts");
-    const store = ensureScriptTabsForLang(targetLang);
-    const found = store.tabs.find((t) => t.id === store.activeTabId) ?? store.tabs[0];
-    if (found) return found;
-    return {
-      id: "stab_0",
-      title: targetLang === "python" ? "quickstart.py" : "showcase.ts",
-      lang: targetLang,
-      source: "",
-      vfsPath: "",
-      isSample: true
-    };
-  }
-  function openSampleScriptTab(title, source, lang) {
-    const targetLang = lang || (LANG === "python" ? "python" : "ts");
-    if (editor && editor.value) {
-      syncActiveScriptTabSource(editor.value);
-    }
-    const store = ensureScriptTabsForLang(targetLang);
-    let tab = store.tabs.find((t) => (t.isSample || !t.vfsPath) && t.title === title);
-    if (!tab) {
-      tab = {
-        id: "stab_" + ++scriptTabSeq,
-        title,
-        lang: targetLang,
-        source,
-        vfsPath: "",
-        isSample: true
-      };
-      store.tabs.push(tab);
-    } else {
-      tab.source = source;
-      tab.vfsPath = "";
-      tab.isSample = true;
-    }
-    store.activeTabId = tab.id;
-    syncingScriptTab = true;
-    if (editor) editor.value = source;
-    setFileName(title);
-    syncingScriptTab = false;
-    renderScriptTabsUI();
-    renderVfsTreeUI();
-  }
-  function syncActiveScriptTabFromFileName(newFileName) {
-    if (syncingScriptTab) return;
-    const lang = LANG === "python" ? "python" : "ts";
-    const store = ensureScriptTabsForLang(lang);
-    const activeTab = store.tabs.find((t) => t.id === store.activeTabId);
-    if (!activeTab) return;
-    const oldPath = activeTab.vfsPath;
-    activeTab.title = newFileName;
-    activeTab.source = editor ? editor.value : activeTab.source;
-    if (!activeTab.isSample && oldPath && VFS_NODES.has(oldPath)) {
-      activeTab.vfsPath = newFileName;
-      VFS_NODES.delete(oldPath);
-      VFS_NODES.set(activeTab.vfsPath, {
-        path: activeTab.vfsPath,
-        name: newFileName,
-        type: "file",
-        parentPath: "",
-        content: activeTab.source
-      });
-      persistVfsToClientStorage();
-    }
-    renderScriptTabsUI();
-    renderVfsTreeUI();
-  }
-  function syncActiveScriptTabSource(src) {
-    const lang = LANG === "python" ? "python" : "ts";
-    const activeTab = getActiveScriptTab(lang);
-    if (!activeTab) return;
-    activeTab.source = src;
-    if (!activeTab.isSample && activeTab.vfsPath) {
-      const node = VFS_NODES.get(activeTab.vfsPath);
-      if (node && node.type === "file") {
-        node.content = src;
-        persistVfsToClientStorage();
-      }
-    }
-  }
-  function renderScriptTabsUI() {
-    const tabsEl = $("scriptTabsList");
-    if (!tabsEl) return;
-    const lang = LANG === "python" ? "python" : "ts";
-    const store = ensureScriptTabsForLang(lang);
-    const activeTab = getActiveScriptTab(lang);
-    tabsEl.innerHTML = store.tabs.map((t) => {
-      const isAct = t.id === activeTab.id;
-      const iconCls = lang === "python" ? "py-icon" : "ts-icon";
-      return `<div class="nb-tab${isAct ? " active" : ""}" data-script-tab-id="${esc(t.id)}" title="\u5355\u51FB\u5207\u6362\u6807\u7B7E\u9875 \xB7 \u53CC\u51FB\u6587\u4EF6\u540D\u91CD\u547D\u540D"><span class="nb-tab-icon ${iconCls}" aria-hidden="true"></span><span class="nb-tab-title">${esc(t.title)}</span>` + (store.tabs.length > 1 ? `<button type="button" class="nb-tab-close" data-close-script-tab="${esc(t.id)}" title="\u5173\u95ED\u6807\u7B7E\u9875">\xD7</button>` : "") + `</div>`;
-    }).join("") + `<button type="button" class="nb-tab-add" id="scriptBtnNewTab" title="\u65B0\u5EFA\u4EE3\u7801\u6587\u4EF6\u6807\u7B7E\u9875">\uFF0B</button>`;
-  }
-  function renderImportSampleMenu() {
-    const listEl = $("importSampleList");
-    if (!listEl) return;
-    const isPy = LANG === "python";
-    const items = isPy ? PY_SAMPLE_METADATA : TS_SAMPLE_METADATA;
-    const folderPrefix = isPy ? "examples/python/" : "examples/ts/";
-    const nbItemHtml = `<button type="button" class="import-sample-item" data-import-sample-notebook="Intro.ipynb"><span class="import-sample-name">\u{1F4D3} Intro.ipynb \xB7 \u4EA4\u4E92\u5F0F\u7B14\u8BB0\u672C\u793A\u4F8B</span><span class="import-sample-path">examples/notebooks/</span></button>`;
-    listEl.innerHTML = (VIEW_MODE === "notebook" ? nbItemHtml : "") + items.map(
-      (item) => `<button type="button" class="import-sample-item" data-import-sample-key="${esc(item.key)}" title="${esc(item.desc)}"><span class="import-sample-name">${esc(item.label)}</span><span class="import-sample-path">${esc(folderPrefix + item.key + (isPy ? ".py" : ".ts"))}</span></button>`
-    ).join("") + (VIEW_MODE !== "notebook" ? nbItemHtml : "");
-  }
-  function renderVfsTreeUI() {
-    const treeEl = $("vfsTreeList");
-    if (!treeEl) return;
-    ensureVfsInitialized();
-    const activePath = VIEW_MODE === "notebook" ? getActiveNotebook().title : getActiveScriptTab().vfsPath;
-    const childrenOf = (parentPath) => {
-      const list = [];
-      VFS_NODES.forEach((node) => {
-        if (node.parentPath === parentPath) list.push(node);
-      });
-      return list.sort((a, b) => {
-        if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
-        return a.name.localeCompare(b.name);
-      });
-    };
-    const buildConfirmHtml = (node) => {
-      if (pendingVfsDeletePath !== node.path) return "";
-      return `<div class="vfs-del-confirm" data-vfs-confirm-box="${esc(node.path)}"><span class="vfs-del-confirm-text">\u786E\u8BA4\u5220\u9664 ${esc(node.name)}\uFF1F</span><span class="vfs-del-confirm-actions"><button type="button" class="vfs-confirm-btn danger" data-vfs-confirm-del="${esc(node.path)}">\u786E\u8BA4</button><button type="button" class="vfs-confirm-btn" data-vfs-cancel-del="${esc(node.path)}">\u53D6\u6D88</button></span></div>`;
-    };
-    const renderNode = (node, depth) => {
-      const padLeft = 8 + depth * 14;
-      const canDel = !node.readonly;
-      const delBtnHtml = canDel ? `<span class="vfs-row-actions"><button type="button" class="vfs-del-btn" data-vfs-del="${esc(node.path)}" title="\u5220\u9664">\u274C</button></span>` : "";
-      if (node.type === "folder") {
-        const isOpen = VFS_EXPANDED_FOLDERS.has(node.path);
-        const kids = childrenOf(node.path);
-        return `<div class="vfs-folder-row" data-vfs-folder="${esc(node.path)}" style="padding-left:${padLeft}px" title="\u5355\u51FB\u5C55\u5F00/\u6298\u53E0\u76EE\u5F55 \xB7 \u53CC\u51FB\u91CD\u547D\u540D\u76EE\u5F55"><span class="vfs-caret">${isOpen ? "\u25BE" : "\u25B8"}</span><span class="vfs-icon">\u{1F4C1}</span><span class="vfs-name">${esc(node.name)}/</span>` + delBtnHtml + `</div>` + buildConfirmHtml(node) + (isOpen ? `<div class="vfs-folder-children">${kids.map((k) => renderNode(k, depth + 1)).join("")}</div>` : "");
-      }
-      const isAct = Boolean(activePath && node.path === activePath);
-      const ext = (node.name.split(".").pop() || "").toLowerCase();
-      const icon = ext === "ipynb" ? "\u{1F4D3}" : ext === "py" ? "\u{1F40D}" : ext === "ts" ? "\u{1F4D8}" : ext === "json" ? "\u{1F5C2}" : "\u{1F4C4}";
-      return `<div class="vfs-file-row${isAct ? " active" : ""}" data-vfs-file="${esc(node.path)}" style="padding-left:${padLeft}px" title="${esc(node.path)}\uFF08\u5355\u51FB\u6253\u5F00 \xB7 \u53CC\u51FB\u91CD\u547D\u540D\uFF09"><span class="vfs-icon">${icon}</span><span class="vfs-name">${esc(node.name)}</span>` + delBtnHtml + `</div>` + buildConfirmHtml(node);
-    };
-    const roots = childrenOf("");
-    if (roots.length === 0) {
-      treeEl.innerHTML = `<div class="vfs-empty-hint" style="padding:14px 10px;color:#64748b;font-size:11.5px;text-align:center;">\u7A7A\u76EE\u5F55</div>`;
-    } else {
-      treeEl.innerHTML = roots.map((r) => renderNode(r, 0)).join("");
-    }
-    const footEl = $("vfsFootStatus");
-    if (footEl) {
-      let fileCount = 0;
-      let totalBytes = 0;
-      VFS_NODES.forEach((n) => {
-        if (n.type === "file") {
-          fileCount++;
-          totalBytes += (n.content || "").length;
-        }
-      });
-      const kb = (totalBytes / 1024).toFixed(1);
-      footEl.textContent = `${fileCount} \u4E2A\u6587\u4EF6 (${kb} KB)`;
-    }
-  }
-  function openVfsFile(rawPath) {
-    ensureVfsInitialized();
-    let path = rawPath;
-    try {
-      path = resolveWorkspacePath(rawPath, false);
-    } catch (err) {
-      say(`\u2717 ${err instanceof Error ? err.message : String(err)}`, "err");
-      return;
-    }
-    const node = VFS_NODES.get(path);
-    if (!node || node.type !== "file") return;
-    if (node.name.endsWith(".ipynb")) {
-      const lang2 = LANG === "python" ? "python" : "ts";
-      const store2 = ensureLangNotebooks(lang2);
-      const existing = store2.docs.find((d) => d.title === node.name);
-      if (existing) {
-        store2.activeDocId = existing.id;
-        setViewMode("notebook");
-        renderNotebookUI();
         return;
       }
-      if (node.content && importNotebookFromJson(node.content, node.name)) {
-        return;
-      }
-      setViewMode("notebook");
-      return;
-    }
-    const isPyFile = node.name.endsWith(".py");
-    if (isPyFile && LANG !== "python" && typeof PY_ENGINE !== "undefined" && PY_ENGINE.setLang) {
-      PY_ENGINE.setLang("python");
-    } else if (node.name.endsWith(".ts") && LANG === "python" && typeof PY_ENGINE !== "undefined" && PY_ENGINE.setLang) {
-      PY_ENGINE.setLang("ts");
-    }
-    setViewMode("script");
-    const lang = LANG === "python" ? "python" : "ts";
-    if (editor && editor.value) {
-      syncActiveScriptTabSource(editor.value);
-    }
-    const store = ensureScriptTabsForLang(lang);
-    let tab = store.tabs.find((t) => !t.isSample && t.vfsPath === node.path);
-    if (!tab) {
-      tab = {
-        id: "stab_" + ++scriptTabSeq,
-        title: node.name,
-        lang,
-        source: node.content || "",
-        vfsPath: node.path,
-        isSample: false
-      };
-      store.tabs.push(tab);
-    } else {
-      tab.source = node.content ?? tab.source;
-      tab.vfsPath = node.path;
-      tab.isSample = false;
-    }
-    store.activeTabId = tab.id;
-    syncingScriptTab = true;
-    editor.value = tab.source;
-    setFileName(tab.title);
-    syncingScriptTab = false;
-    resetTraceState();
-    updateEditorChrome();
-    renderScriptTabsUI();
-    renderVfsTreeUI();
-    say(`\u{1F4C2} \u5DF2\u6253\u5F00 ${node.path}`, "ok");
-  }
-  function serializeFsData(data) {
-    if (typeof data === "string") return data;
-    if (data instanceof Uint8Array) {
-      return typeof TextDecoder !== "undefined" ? new TextDecoder().decode(data) : String(data);
-    }
-    if (data !== null && typeof data === "object") {
-      try {
-        return JSON.stringify(data, null, 2);
-      } catch (_) {
-        return String(data);
-      }
-    }
-    return String(data ?? "");
-  }
-  function bindGlobalVfsApi() {
-    const api = {
-      resolveWorkspacePath(rawPath, allowEmptyRoot = false) {
-        return resolveWorkspacePath(rawPath, allowEmptyRoot);
-      },
-      readFile(path) {
-        ensureVfsInitialized();
-        const rel = resolveWorkspacePath(path, false);
-        const node = VFS_NODES.get(rel);
-        if (!node) return null;
-        if (node.type === "folder") {
-          throw new Error(`EISDIR: illegal operation on a directory, read '${path}'`);
-        }
-        return node.content ?? "";
-      },
-      writeFile(path, content) {
-        ensureVfsInitialized();
-        const rel = resolveWorkspacePath(path, false);
-        const existing = VFS_NODES.get(rel);
-        if (existing && existing.type === "folder") {
-          throw new Error(`EISDIR: illegal operation on a directory, open '${path}'`);
-        }
-        ensureParentFoldersExist(rel);
-        const parts = rel.split("/");
-        const name = parts.pop() || rel;
-        const parentPath = parts.join("/");
-        VFS_NODES.set(rel, {
-          path: rel,
-          name,
-          type: "file",
-          parentPath,
-          content: serializeFsData(content)
-        });
-        persistVfsToClientStorage();
-        renderVfsTreeUI();
-        return true;
-      },
-      appendFile(path, content) {
-        ensureVfsInitialized();
-        const rel = resolveWorkspacePath(path, false);
-        const existing = VFS_NODES.get(rel);
-        if (existing && existing.type === "folder") {
-          throw new Error(`EISDIR: illegal operation on a directory, open '${path}'`);
-        }
-        const prev = existing && existing.type === "file" ? existing.content ?? "" : "";
-        return api.writeFile(rel, prev + serializeFsData(content));
-      },
-      listFiles(dirPath = "") {
-        ensureVfsInitialized();
-        const rel = resolveWorkspacePath(dirPath, true);
-        if (rel !== "") {
-          const dirNode = VFS_NODES.get(rel);
-          if (!dirNode) {
-            throw new Error(`ENOENT: no such file or directory, scandir '${dirPath}'`);
-          }
-          if (dirNode.type !== "folder") {
-            throw new Error(`ENOTDIR: not a directory, scandir '${dirPath}'`);
-          }
-        }
-        const out = [];
-        VFS_NODES.forEach((node) => {
-          if (node.parentPath === rel) out.push(node.name);
-        });
-        return out;
-      },
-      readdir(dirPath = "") {
-        return api.listFiles(dirPath);
-      },
-      listAll() {
-        ensureVfsInitialized();
-        return Array.from(VFS_NODES.keys()).sort();
-      },
-      exists(path) {
-        ensureVfsInitialized();
-        const rel = resolveWorkspacePath(path, true);
-        if (rel === "") return true;
-        return VFS_NODES.has(rel);
-      },
-      deleteFile(path) {
-        ensureVfsInitialized();
-        const rel = resolveWorkspacePath(path, false);
-        const node = VFS_NODES.get(rel);
-        if (!node) {
-          throw new Error(`ENOENT: no such file or directory, unlink '${path}'`);
-        }
-        const prefix = rel + "/";
-        Array.from(VFS_NODES.keys()).forEach((k) => {
-          if (k === rel || k.startsWith(prefix)) {
-            VFS_NODES.delete(k);
-          }
-        });
-        persistVfsToClientStorage();
-        renderVfsTreeUI();
-        return true;
-      },
-      unlink(path) {
-        return api.deleteFile(path);
-      },
-      mkdir(path) {
-        ensureVfsInitialized();
-        const rel = resolveWorkspacePath(path, true);
-        if (!rel) return true;
-        ensureParentFoldersExist(rel + "/_");
-        persistVfsToClientStorage();
-        renderVfsTreeUI();
-        return true;
-      },
-      stat(path) {
-        ensureVfsInitialized();
-        const rel = resolveWorkspacePath(path, true);
-        if (rel === "") {
-          return {
-            size: 0,
-            isFile: () => false,
-            isDirectory: () => true
-          };
-        }
-        const node = VFS_NODES.get(rel);
-        if (!node) {
-          throw new Error(`ENOENT: no such file or directory, stat '${path}'`);
-        }
-        const isDir = node.type === "folder";
-        const size = isDir ? 0 : (node.content ?? "").length;
-        return {
-          size,
-          isFile: () => !isDir,
-          isDirectory: () => isDir
+      const newBtn = target.closest ? target.closest("#nbBtnNewTab") : null;
+      if (newBtn) {
+        const cId = nextCellId();
+        const newDoc = {
+          id: nextDocId(),
+          title: `Untitled-${store.docs.length + 1}.ipynb`,
+          lang,
+          execCounter: 0,
+          activeCellId: cId,
+          debuggingCellId: null,
+          cells: [
+            {
+              id: cId,
+              type: "code",
+              source: "",
+              executionCount: null,
+              status: "idle",
+              output: null
+            }
+          ],
+          executedHistory: [],
+          lastGlobalVars: {},
+          lastGlobalDs: {}
         };
-      },
-      clear() {
-        ensureVfsInitialized();
-        VFS_NODES.clear();
-        persistVfsToClientStorage();
+        store.docs.push(newDoc);
+        store.activeDocId = newDoc.id;
+        syncNotebookGlobalsToSidePanel(newDoc);
+        renderNotebookUI(true);
         renderVfsTreeUI();
+        return;
       }
-    };
-    const fsPromises = {
-      async readFile(path, _options) {
-        const content = api.readFile(path);
-        if (content === null) {
-          throw new Error(`ENOENT: no such file or directory, open '${path}'`);
+      const tab = target.closest ? target.closest(".nb-tab") : null;
+      if (tab && tab.dataset.docId) {
+        if (store.activeDocId !== tab.dataset.docId) {
+          store.activeDocId = tab.dataset.docId;
+          syncNotebookGlobalsToSidePanel();
+          renderNotebookUI();
+          renderVfsTreeUI();
         }
-        return content;
-      },
-      async writeFile(path, data, _options) {
-        api.writeFile(path, serializeFsData(data));
-      },
-      async appendFile(path, data, _options) {
-        api.appendFile(path, serializeFsData(data));
-      },
-      async unlink(path) {
-        api.deleteFile(path);
-      },
-      async rm(path, _options) {
-        api.deleteFile(path);
-      },
-      async readdir(path = "", _options) {
-        return api.listFiles(path);
-      },
-      async mkdir(path, _options) {
-        api.mkdir(path);
-        return void 0;
-      },
-      async rmdir(path, _options) {
-        api.deleteFile(path);
-      },
-      async stat(path) {
-        return api.stat(path);
-      },
-      async access(path, _mode) {
-        if (!api.exists(path)) {
-          throw new Error(`ENOENT: no such file or directory, access '${path}'`);
-        }
-      },
-      async exists(path) {
-        return api.exists(path);
-      },
-      async copyFile(src, dest) {
-        const content = api.readFile(src);
-        if (content === null) {
-          throw new Error(`ENOENT: no such file or directory, copyfile '${src}'`);
-        }
-        api.writeFile(dest, content);
-      },
-      async rename(oldPath, newPath) {
-        const content = api.readFile(oldPath);
-        if (content === null) {
-          throw new Error(`ENOENT: no such file or directory, rename '${oldPath}'`);
-        }
-        api.writeFile(newPath, content);
-        api.deleteFile(oldPath);
       }
-    };
-    const fsShim = {
-      promises: fsPromises,
-      readFileSync(path, _options) {
-        const content = api.readFile(path);
-        if (content === null) {
-          throw new Error(`ENOENT: no such file or directory, open '${path}'`);
+    });
+    tabsEl.addEventListener("dblclick", (e) => {
+      const target = e.target;
+      const tab = target && target.closest ? target.closest(".nb-tab") : null;
+      if (!tab || !tab.dataset.docId) return;
+      const lang = LANG === "python" ? "python" : "ts";
+      const store = ensureLangNotebooks(lang);
+      const targetDoc = store.docs.find((d) => d.id === tab.dataset.docId) || getActiveNotebook();
+      const titleSpan = tab.querySelector ? tab.querySelector(".nb-tab-title") : null;
+      if (!titleSpan) return;
+      const input = document.createElement("input");
+      input.type = "text";
+      input.className = "nb-tab-rename-input";
+      input.value = targetDoc.title;
+      titleSpan.replaceWith(input);
+      input.focus();
+      input.select();
+      let committed = false;
+      const commit = () => {
+        if (committed) return;
+        committed = true;
+        const val = input.value.trim();
+        if (val) {
+          const oldPath = `notebooks/${targetDoc.title}`;
+          targetDoc.title = val.endsWith(".ipynb") ? val : val + ".ipynb";
+          if (oldPath !== `notebooks/${targetDoc.title}`) {
+            VFS_NODES.delete(oldPath);
+          }
+          say(`\u2713 \u7B14\u8BB0\u672C\u5DF2\u91CD\u547D\u540D\u4E3A ${targetDoc.title}`, "ok");
         }
-        return content;
-      },
-      writeFileSync(path, data, _options) {
-        api.writeFile(path, serializeFsData(data));
-      },
-      appendFileSync(path, data, _options) {
-        api.appendFile(path, serializeFsData(data));
-      },
-      existsSync(path) {
-        return api.exists(path);
-      },
-      unlinkSync(path) {
-        api.deleteFile(path);
-      },
-      rmSync(path, _options) {
-        api.deleteFile(path);
-      },
-      readdirSync(path = "") {
-        return api.listFiles(path);
-      },
-      mkdirSync(path, _options) {
-        api.mkdir(path);
-        return void 0;
-      },
-      rmdirSync(path, _options) {
-        api.deleteFile(path);
-      },
-      statSync(path) {
-        return api.stat(path);
-      },
-      copyFileSync(src, dest) {
-        const content = api.readFile(src);
-        if (content === null) {
-          throw new Error(`ENOENT: no such file or directory, copyfile '${src}'`);
+        renderNotebookUI();
+        renderVfsTreeUI();
+      };
+      input.addEventListener("blur", commit);
+      input.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter") {
+          ev.preventDefault();
+          input.blur();
+        } else if (ev.key === "Escape") {
+          committed = true;
+          renderNotebookUI();
         }
-        api.writeFile(dest, content);
-      },
-      renameSync(oldPath, newPath) {
-        const content = api.readFile(oldPath);
-        if (content === null) {
-          throw new Error(`ENOENT: no such file or directory, rename '${oldPath}'`);
-        }
-        api.writeFile(newPath, content);
-        api.deleteFile(oldPath);
+      });
+    });
+  }
+  function initNotebookCellsEvents() {
+    const typeSel = $("nbCellType");
+    if (typeSel) {
+      typeSel.onchange = () => {
+        const doc = getActiveNotebook();
+        const cell = getActiveCell(doc);
+        if (!cell) return;
+        cell.type = typeSel.value === "markdown" ? "markdown" : "code";
+        cell.markdownRendered = false;
+        cell.output = null;
+        cell.executionCount = null;
+        renderNotebookUI(true);
+      };
+    }
+    const cellsList = $("nbCellsList");
+    if (!cellsList || !cellsList.addEventListener) return;
+    cellsList.addEventListener("click", (e) => {
+      const target = e.target;
+      if (!target) return;
+      if (target.closest && target.closest("#nbBottomAddCode")) {
+        const doc = getActiveNotebook();
+        const last = doc.cells[doc.cells.length - 1];
+        insertNotebookCell("below", last ? last.id : void 0, "code");
+        return;
       }
-    };
-    globalThis.__VFS__ = api;
-    globalThis.vfs = api;
-    globalThis.__FS_SHIM__ = fsShim;
+      if (target.closest && target.closest("#nbBottomAddMd")) {
+        const doc = getActiveNotebook();
+        const last = doc.cells[doc.cells.length - 1];
+        insertNotebookCell("below", last ? last.id : void 0, "markdown");
+        return;
+      }
+      const gline = target.closest ? target.closest(".nb-gline") : null;
+      if (gline && gline.dataset.line) {
+        const cellEl = gline.closest(".nb-cell");
+        if (cellEl && cellEl.dataset.cellId) {
+          toggleNotebookCellCheckpoint(cellEl.dataset.cellId, parseInt(gline.dataset.line, 10));
+          return;
+        }
+      }
+      const actEl = target.closest ? target.closest("[data-cell-act]") : null;
+      if (actEl) {
+        const act = actEl.getAttribute("data-cell-act");
+        const cid = actEl.getAttribute("data-cell-id");
+        if (!cid) return;
+        const doc = getActiveNotebook();
+        doc.activeCellId = cid;
+        ACTIVE_NB_CELL_ID = cid;
+        if (act === "run") {
+          runNotebookCell(cid, true);
+          return;
+        }
+        if (act === "debug") {
+          debugNotebookCell(cid);
+          return;
+        }
+        if (act === "dup") {
+          duplicateNotebookCell(cid);
+          return;
+        }
+        if (act === "up") {
+          moveNotebookCell(-1, cid);
+          return;
+        }
+        if (act === "down") {
+          moveNotebookCell(1, cid);
+          return;
+        }
+        if (act === "ins-above") {
+          insertNotebookCell("above", cid);
+          return;
+        }
+        if (act === "ins-below") {
+          insertNotebookCell("below", cid);
+          return;
+        }
+        if (act === "del") {
+          deleteNotebookCell(cid);
+          return;
+        }
+        if (act === "toggle-md") {
+          const c = doc.cells.find((x) => x.id === cid);
+          if (c) {
+            c.markdownRendered = !c.markdownRendered;
+            renderNotebookUI(!c.markdownRendered);
+          }
+          return;
+        }
+      }
+      const cellBox = target.closest ? target.closest(".nb-cell") : null;
+      if (cellBox && cellBox.dataset.cellId) {
+        const doc = getActiveNotebook();
+        if (doc.activeCellId !== cellBox.dataset.cellId) {
+          doc.activeCellId = cellBox.dataset.cellId;
+          ACTIVE_NB_CELL_ID = doc.activeCellId;
+          if (cellsList.querySelectorAll) {
+            cellsList.querySelectorAll(".nb-cell").forEach((el) => {
+              el.classList.toggle("active", el.dataset.cellId === doc.activeCellId);
+            });
+          }
+          const c = getActiveCell(doc);
+          if (typeSel && c) typeSel.value = c.type;
+        }
+      }
+    });
+    cellsList.addEventListener("dblclick", (e) => {
+      const target = e.target;
+      const mdPrev = target && target.closest ? target.closest('[data-cell-act="edit-md"]') : null;
+      if (mdPrev) {
+        const cid = mdPrev.getAttribute("data-cell-id");
+        const doc = getActiveNotebook();
+        const c = doc.cells.find((x) => x.id === cid);
+        if (c) {
+          c.markdownRendered = false;
+          doc.activeCellId = c.id;
+          renderNotebookUI(true);
+        }
+      }
+    });
+    cellsList.addEventListener("input", (e) => {
+      const ta = e.target;
+      if (!ta || !ta.classList || !ta.classList.contains("nb-cell-textarea")) return;
+      const cid = ta.getAttribute("data-cell-id");
+      const doc = getActiveNotebook();
+      const cell = doc.cells.find((c) => c.id === cid);
+      if (!cell) return;
+      cell.source = ta.value;
+      if (cell.type === "markdown") {
+        const estH = estimateMarkdownEditorHeight(cell.source);
+        ta.style.height = "auto";
+        const nextH = Math.max(estH, (ta.scrollHeight || 0) + 10);
+        ta.style.height = nextH + "px";
+        return;
+      }
+      const lineCount = Math.max(1, cell.source.split("\n").length);
+      const h = Math.max(38, lineCount * 24 + 14);
+      ta.style.height = h + "px";
+      const codeBox = ta.closest ? ta.closest(".nb-cell-code-box") : null;
+      if (codeBox) codeBox.style.height = h + "px";
+      if (cell.type === "code") {
+        const isDebugging = doc.debuggingCellId === cell.id && DEBUG_SESSION.active;
+        const { hlHtml, gutterHtml } = renderCellCodeHighlight(cell, isDebugging);
+        const hlPre = codeBox && codeBox.querySelector ? codeBox.querySelector(".nb-cell-hl") : null;
+        if (hlPre) hlPre.innerHTML = hlHtml;
+        const inputWrap = ta.closest ? ta.closest(".nb-cell-input") : null;
+        const gutter = inputWrap && inputWrap.querySelector ? inputWrap.querySelector(".nb-cell-gutter") : null;
+        if (gutter) gutter.innerHTML = gutterHtml;
+      }
+    });
+    cellsList.addEventListener("keydown", (e) => {
+      const ta = e.target;
+      if (!ta || !ta.classList || !ta.classList.contains("nb-cell-textarea")) return;
+      const cid = ta.getAttribute("data-cell-id") || void 0;
+      if (e.key === "Tab") {
+        e.preventDefault();
+        const s = ta.selectionStart || 0;
+        const t = ta.selectionEnd || 0;
+        const indent = LANG === "python" ? "    " : "  ";
+        ta.value = ta.value.slice(0, s) + indent + ta.value.slice(t);
+        ta.selectionStart = ta.selectionEnd = s + indent.length;
+        ta.dispatchEvent(new Event("input", { bubbles: true }));
+        return;
+      }
+      if (e.key === "Enter" && e.shiftKey && !(e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        runNotebookCell(cid, true);
+        return;
+      }
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && e.shiftKey) {
+        e.preventDefault();
+        debugNotebookCell(cid);
+        return;
+      }
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
+        e.preventDefault();
+        runNotebookCell(cid, false);
+        return;
+      }
+    });
   }
   function initNotebookUI() {
     bindGlobalVfsApi();
@@ -14780,517 +15713,14 @@ runAsyncDemo()
         setViewMode(btn.dataset.mode === "notebook" ? "notebook" : "script");
       });
     }
-    const importMenuWrap = $("importMenuWrap");
-    const btnImport = $("btnImport");
-    const btnUploadLocalFile = $("btnUploadLocalFile");
-    const importSampleList = $("importSampleList");
-    const fileInput = $("fileInput");
-    if (btnImport && importMenuWrap) {
-      btnImport.onclick = (e) => {
-        if (e && typeof e.stopPropagation === "function") e.stopPropagation();
-        renderImportSampleMenu();
-        if (importMenuWrap.classList) {
-          importMenuWrap.classList.toggle("open");
-        }
-      };
-      addEventListener("click", (e) => {
-        if (!importMenuWrap.classList || !importMenuWrap.classList.contains("open")) return;
-        if (importMenuWrap.contains && importMenuWrap.contains(e.target)) return;
-        importMenuWrap.classList.remove("open");
-      });
-    }
-    if (btnUploadLocalFile && fileInput) {
-      btnUploadLocalFile.onclick = (e) => {
-        if (e && typeof e.stopPropagation === "function") e.stopPropagation();
-        if (importMenuWrap && importMenuWrap.classList) importMenuWrap.classList.remove("open");
-        fileInput.click();
-      };
-    }
-    if (importSampleList && importSampleList.addEventListener) {
-      importSampleList.addEventListener("click", (e) => {
-        const target = e.target;
-        const btn = target && target.closest ? target.closest(".import-sample-item") : null;
-        if (!btn) return;
-        if (importMenuWrap && importMenuWrap.classList) importMenuWrap.classList.remove("open");
-        const nbFile = btn.getAttribute("data-import-sample-notebook");
-        if (nbFile) {
-          setViewMode("notebook");
-          say(`\u2713 \u5DF2\u52A0\u8F7D\u5185\u7F6E\u793A\u4F8B\u7B14\u8BB0\u672C ${nbFile}`, "ok");
-          return;
-        }
-        const sampleKey = btn.getAttribute("data-import-sample-key");
-        if (sampleKey) {
-          if (VIEW_MODE === "notebook") {
-            const code = LANG === "python" ? getPySamplesDict()[sampleKey] || "" : SAMPLES[sampleKey] || "";
-            if (code) {
-              const doc = getActiveNotebook();
-              const newCell = {
-                id: nextCellId(),
-                type: "code",
-                source: code.trim(),
-                executionCount: null,
-                status: "idle",
-                output: null
-              };
-              doc.cells.push(newCell);
-              doc.activeCellId = newCell.id;
-              renderNotebookUI(true);
-              say(`\u2713 \u5DF2\u5C06\u793A\u4F8B ${sampleKey} \u5BFC\u5165\u5230\u5F53\u524D Notebook \u65B0\u5355\u5143\u683C`, "ok");
-            }
-            return;
-          }
-          loadSample(sampleKey);
-        }
-      });
-    }
-    const scriptTabsEl = $("scriptTabsList");
-    if (scriptTabsEl && scriptTabsEl.addEventListener) {
-      scriptTabsEl.addEventListener("click", (e) => {
-        const target = e.target;
-        if (!target) return;
-        const lang = LANG === "python" ? "python" : "ts";
-        const store = ensureScriptTabsForLang(lang);
-        const closeBtn = target.closest ? target.closest("[data-close-script-tab]") : null;
-        if (closeBtn) {
-          e.stopPropagation();
-          const closeId = closeBtn.getAttribute("data-close-script-tab");
-          if (store.tabs.length <= 1) return;
-          const idx = store.tabs.findIndex((t) => t.id === closeId);
-          if (idx >= 0) {
-            store.tabs.splice(idx, 1);
-            if (store.activeTabId === closeId) {
-              const fallbackTab = store.tabs[Math.max(0, idx - 1)];
-              if (fallbackTab) store.activeTabId = fallbackTab.id;
-              const nextTab = getActiveScriptTab(lang);
-              syncingScriptTab = true;
-              editor.value = nextTab.source;
-              setFileName(nextTab.title);
-              syncingScriptTab = false;
-              resetTraceState();
-              updateEditorChrome();
-            }
-            renderScriptTabsUI();
-            renderVfsTreeUI();
-          }
-          return;
-        }
-        const newBtn = target.closest ? target.closest("#scriptBtnNewTab") : null;
-        if (newBtn) {
-          syncActiveScriptTabSource(editor ? editor.value : "");
-          const ext = lang === "python" ? ".py" : ".ts";
-          const newTitle = `untitled-${store.tabs.length + 1}${ext}`;
-          const newTab = {
-            id: "stab_" + ++scriptTabSeq,
-            title: newTitle,
-            lang,
-            source: lang === "python" ? "# \u65B0\u5EFA Python \u811A\u672C\n" : "// \u65B0\u5EFA TypeScript \u811A\u672C\n",
-            vfsPath: "",
-            isSample: false
-          };
-          store.tabs.push(newTab);
-          store.activeTabId = newTab.id;
-          syncingScriptTab = true;
-          editor.value = newTab.source;
-          setFileName(newTab.title);
-          syncingScriptTab = false;
-          resetTraceState();
-          updateEditorChrome();
-          renderScriptTabsUI();
-          renderVfsTreeUI();
-          if (editor && typeof editor.focus === "function") editor.focus();
-          return;
-        }
-        const tabEl = target.closest ? target.closest("[data-script-tab-id]") : null;
-        if (tabEl) {
-          const tabId = tabEl.getAttribute("data-script-tab-id");
-          if (tabId && store.activeTabId !== tabId) {
-            syncActiveScriptTabSource(editor ? editor.value : "");
-            store.activeTabId = tabId;
-            const nextTab = getActiveScriptTab(lang);
-            syncingScriptTab = true;
-            editor.value = nextTab.source;
-            setFileName(nextTab.title);
-            syncingScriptTab = false;
-            resetTraceState();
-            updateEditorChrome();
-            renderScriptTabsUI();
-            renderVfsTreeUI();
-          }
-        }
-      });
-      scriptTabsEl.addEventListener("dblclick", (e) => {
-        const target = e.target;
-        const tabEl = target && target.closest ? target.closest("[data-script-tab-id]") : null;
-        if (!tabEl) return;
-        const tabId = tabEl.getAttribute("data-script-tab-id");
-        const lang = LANG === "python" ? "python" : "ts";
-        const store = ensureScriptTabsForLang(lang);
-        const targetTab = store.tabs.find((t) => t.id === tabId);
-        if (!targetTab) return;
-        const titleSpan = tabEl.querySelector ? tabEl.querySelector(".nb-tab-title") : null;
-        if (!titleSpan) return;
-        const input = document.createElement("input");
-        input.type = "text";
-        input.className = "nb-tab-rename-input";
-        input.value = targetTab.title;
-        titleSpan.replaceWith(input);
-        input.focus();
-        input.select();
-        let committed = false;
-        const commit = () => {
-          if (committed) return;
-          committed = true;
-          const rawVal = input.value.trim();
-          if (rawVal) {
-            const ext = lang === "python" ? ".py" : ".ts";
-            const nextName = /\.[A-Za-z0-9]{1,12}$/.test(rawVal) ? rawVal : rawVal + ext;
-            const oldPath = targetTab.vfsPath;
-            targetTab.title = nextName;
-            if (!targetTab.isSample && oldPath && VFS_NODES.has(oldPath)) {
-              targetTab.vfsPath = nextName;
-              VFS_NODES.delete(oldPath);
-              VFS_NODES.set(targetTab.vfsPath, {
-                path: targetTab.vfsPath,
-                name: nextName,
-                type: "file",
-                parentPath: "",
-                content: targetTab.source
-              });
-              persistVfsToClientStorage();
-            }
-            if (store.activeTabId === targetTab.id) {
-              syncingScriptTab = true;
-              setFileName(nextName);
-              syncingScriptTab = false;
-            }
-            say(`\u2713 \u6587\u4EF6\u5DF2\u91CD\u547D\u540D\u4E3A ${nextName}`, "ok");
-          }
-          renderScriptTabsUI();
-          renderVfsTreeUI();
-        };
-        input.addEventListener("blur", commit);
-        input.addEventListener("keydown", (ev) => {
-          if (ev.key === "Enter") {
-            ev.preventDefault();
-            input.blur();
-          } else if (ev.key === "Escape") {
-            committed = true;
-            renderScriptTabsUI();
-          }
-        });
-      });
-    }
-    if (editor && editor.addEventListener) {
-      editor.addEventListener("input", () => {
-        syncActiveScriptTabSource(editor.value);
-      });
-    }
-    const vfsSidebar = $("vfsSidebar");
-    const b1 = $("btnToggleVfs");
-    const b2 = $("nbBtnToggleVfs");
-    if (vfsSidebar) {
-      vfsSidebar.hidden = true;
-    }
-    if (b1 && b1.classList) b1.classList.remove("active");
-    if (b2 && b2.classList) b2.classList.remove("active");
-    const toggleVfsSidebar = () => {
-      if (!vfsSidebar) return;
-      vfsSidebar.hidden = !vfsSidebar.hidden;
-      const isVisible = !vfsSidebar.hidden;
-      if (b1 && b1.classList) b1.classList.toggle("active", isVisible);
-      if (b2 && b2.classList) b2.classList.toggle("active", isVisible);
-    };
-    if (b1) b1.onclick = toggleVfsSidebar;
-    if (b2) b2.onclick = toggleVfsSidebar;
-    if ($("vfsBtnNewFile")) {
-      $("vfsBtnNewFile").onclick = () => {
-        ensureVfsInitialized();
-        const ext = LANG === "python" ? ".py" : ".ts";
-        let idx = 1;
-        while (VFS_NODES.has(`file_${idx}${ext}`)) idx++;
-        const name = `file_${idx}${ext}`;
-        const path = name;
-        const content = LANG === "python" ? `# ${name}
-` : `// ${name}
-`;
-        VFS_NODES.set(path, {
-          path,
-          name,
-          type: "file",
-          parentPath: "",
-          content
-        });
-        persistVfsToClientStorage();
-        openVfsFile(path);
-      };
-    }
-    if ($("vfsBtnNewFolder")) {
-      $("vfsBtnNewFolder").onclick = () => {
-        ensureVfsInitialized();
-        let idx = 1;
-        while (VFS_NODES.has(`folder_${idx}`)) idx++;
-        const name = `folder_${idx}`;
-        const path = name;
-        VFS_NODES.set(path, {
-          path,
-          name,
-          type: "folder",
-          parentPath: ""
-        });
-        VFS_EXPANDED_FOLDERS.add(path);
-        persistVfsToClientStorage();
-        renderVfsTreeUI();
-        say(`\u{1F4C1} \u5DF2\u521B\u5EFA\u6587\u4EF6\u5939 ${path}/\uFF08\u53CC\u51FB\u53EF\u91CD\u547D\u540D\uFF09`, "ok");
-      };
-    }
-    if ($("vfsBtnUpload") && fileInput) {
-      $("vfsBtnUpload").onclick = () => fileInput.click();
-    }
-    const vfsTreeList = $("vfsTreeList");
-    if (vfsTreeList && vfsTreeList.addEventListener) {
-      vfsTreeList.addEventListener("click", (e) => {
-        const target = e.target;
-        if (!target) return;
-        const confirmDelBtn = target.closest ? target.closest("[data-vfs-confirm-del]") : null;
-        if (confirmDelBtn) {
-          e.stopPropagation();
-          const delPath = confirmDelBtn.getAttribute("data-vfs-confirm-del");
-          pendingVfsDeletePath = null;
-          if (delPath && VFS_NODES.has(delPath)) {
-            const prefix = delPath + "/";
-            Array.from(VFS_NODES.keys()).forEach((k) => {
-              if (k === delPath || k.startsWith(prefix)) {
-                VFS_NODES.delete(k);
-              }
-            });
-            ["ts", "python"].forEach((l) => {
-              const st = SCRIPT_TABS[l];
-              st.tabs.forEach((t) => {
-                if (t.vfsPath === delPath || t.vfsPath.startsWith(prefix)) {
-                  t.vfsPath = "";
-                }
-              });
-            });
-            persistVfsToClientStorage();
-            renderScriptTabsUI();
-            renderVfsTreeUI();
-            say(`\u{1F5D1} \u5DF2\u4ECE\u6587\u4EF6\u76EE\u5F55\u79FB\u9664 ${delPath}`, "dim");
-          } else {
-            renderVfsTreeUI();
-          }
-          return;
-        }
-        const cancelDelBtn = target.closest ? target.closest("[data-vfs-cancel-del]") : null;
-        if (cancelDelBtn) {
-          e.stopPropagation();
-          pendingVfsDeletePath = null;
-          renderVfsTreeUI();
-          return;
-        }
-        const delBtn = target.closest ? target.closest("[data-vfs-del]") : null;
-        if (delBtn) {
-          e.stopPropagation();
-          const delPath = delBtn.getAttribute("data-vfs-del");
-          if (delPath && VFS_NODES.has(delPath)) {
-            pendingVfsDeletePath = pendingVfsDeletePath === delPath ? null : delPath;
-            renderVfsTreeUI();
-          }
-          return;
-        }
-        const folderRow = target.closest ? target.closest("[data-vfs-folder]") : null;
-        if (folderRow) {
-          const folderPath = folderRow.getAttribute("data-vfs-folder");
-          if (folderPath) {
-            if (VFS_EXPANDED_FOLDERS.has(folderPath)) VFS_EXPANDED_FOLDERS.delete(folderPath);
-            else VFS_EXPANDED_FOLDERS.add(folderPath);
-            renderVfsTreeUI();
-          }
-          return;
-        }
-        const fileRow = target.closest ? target.closest("[data-vfs-file]") : null;
-        if (fileRow) {
-          const filePath = fileRow.getAttribute("data-vfs-file");
-          if (filePath) {
-            const curActivePath = VIEW_MODE === "notebook" ? getActiveNotebook().title : getActiveScriptTab().vfsPath;
-            if (filePath !== curActivePath || editor.value !== (VFS_NODES.get(filePath)?.content ?? "")) {
-              openVfsFile(filePath);
-            }
-          }
-        }
-      });
-      vfsTreeList.addEventListener("dblclick", (e) => {
-        const target = e.target;
-        const row = target && target.closest ? target.closest("[data-vfs-file], [data-vfs-folder]") : null;
-        if (!row) return;
-        const oldPath = row.getAttribute("data-vfs-file") || row.getAttribute("data-vfs-folder");
-        if (!oldPath) return;
-        const node = VFS_NODES.get(oldPath);
-        if (!node || node.readonly) return;
-        const nameSpan = row.querySelector ? row.querySelector(".vfs-name") : null;
-        if (!nameSpan) return;
-        const input = document.createElement("input");
-        input.type = "text";
-        input.className = "vfs-rename-input";
-        input.value = node.name;
-        nameSpan.replaceWith(input);
-        input.focus();
-        input.select();
-        let committed = false;
-        const commit = () => {
-          if (committed) return;
-          committed = true;
-          const nextName = input.value.trim().replace(/[\\/:*?"<>|]/g, "");
-          if (nextName && nextName !== node.name) {
-            const nextPath = node.parentPath ? `${node.parentPath}/${nextName}` : nextName;
-            VFS_NODES.delete(oldPath);
-            node.name = nextName;
-            node.path = nextPath;
-            VFS_NODES.set(nextPath, node);
-            persistVfsToClientStorage();
-            const lang = LANG === "python" ? "python" : "ts";
-            const store = ensureScriptTabsForLang(lang);
-            const matchingTab = store.tabs.find((t) => t.vfsPath === oldPath);
-            if (matchingTab) {
-              matchingTab.title = nextName;
-              matchingTab.vfsPath = nextPath;
-              if (store.activeTabId === matchingTab.id) {
-                syncingScriptTab = true;
-                setFileName(nextName);
-                syncingScriptTab = false;
-              }
-              renderScriptTabsUI();
-            }
-            say(`\u2713 \u5DF2\u91CD\u547D\u540D\u4E3A ${nextPath}`, "ok");
-          }
-          renderVfsTreeUI();
-        };
-        input.addEventListener("blur", commit);
-        input.addEventListener("keydown", (ev) => {
-          if (ev.key === "Enter") {
-            ev.preventDefault();
-            input.blur();
-          } else if (ev.key === "Escape") {
-            committed = true;
-            renderVfsTreeUI();
-          }
-        });
-      });
-    }
+    initScriptTabsAndImportEvents();
+    initVfsSidebarEvents();
     renderScriptTabsUI();
     renderVfsTreeUI();
     renderImportSampleMenu();
     const nbWrap = $("notebookWrap");
     if (!nbWrap || !nbWrap.addEventListener) return;
-    const tabsEl = $("nbTabsList");
-    if (tabsEl && tabsEl.addEventListener) {
-      tabsEl.addEventListener("click", (e) => {
-        const target = e.target;
-        if (!target) return;
-        const closeBtn = target.closest ? target.closest("[data-close-doc]") : null;
-        const lang = LANG === "python" ? "python" : "ts";
-        const store = ensureLangNotebooks(lang);
-        if (closeBtn) {
-          e.stopPropagation();
-          const closeId = closeBtn.getAttribute("data-close-doc");
-          if (store.docs.length <= 1) return;
-          const idx = store.docs.findIndex((d) => d.id === closeId);
-          if (idx >= 0) {
-            store.docs.splice(idx, 1);
-            if (store.activeDocId === closeId) {
-              const fallbackDoc = store.docs[Math.max(0, idx - 1)];
-              if (fallbackDoc) store.activeDocId = fallbackDoc.id;
-            }
-            syncNotebookGlobalsToSidePanel();
-            renderNotebookUI();
-            renderVfsTreeUI();
-          }
-          return;
-        }
-        const newBtn = target.closest ? target.closest("#nbBtnNewTab") : null;
-        if (newBtn) {
-          const cId = nextCellId();
-          const newDoc = {
-            id: nextDocId(),
-            title: `Untitled-${store.docs.length + 1}.ipynb`,
-            lang,
-            execCounter: 0,
-            activeCellId: cId,
-            debuggingCellId: null,
-            cells: [
-              {
-                id: cId,
-                type: "code",
-                source: "",
-                executionCount: null,
-                status: "idle",
-                output: null
-              }
-            ],
-            executedHistory: [],
-            lastGlobalVars: {},
-            lastGlobalDs: {}
-          };
-          store.docs.push(newDoc);
-          store.activeDocId = newDoc.id;
-          syncNotebookGlobalsToSidePanel(newDoc);
-          renderNotebookUI(true);
-          renderVfsTreeUI();
-          return;
-        }
-        const tab = target.closest ? target.closest(".nb-tab") : null;
-        if (tab && tab.dataset.docId) {
-          if (store.activeDocId !== tab.dataset.docId) {
-            store.activeDocId = tab.dataset.docId;
-            syncNotebookGlobalsToSidePanel();
-            renderNotebookUI();
-            renderVfsTreeUI();
-          }
-        }
-      });
-      tabsEl.addEventListener("dblclick", (e) => {
-        const target = e.target;
-        const tab = target && target.closest ? target.closest(".nb-tab") : null;
-        if (!tab || !tab.dataset.docId) return;
-        const lang = LANG === "python" ? "python" : "ts";
-        const store = ensureLangNotebooks(lang);
-        const targetDoc = store.docs.find((d) => d.id === tab.dataset.docId) || getActiveNotebook();
-        const titleSpan = tab.querySelector ? tab.querySelector(".nb-tab-title") : null;
-        if (!titleSpan) return;
-        const input = document.createElement("input");
-        input.type = "text";
-        input.className = "nb-tab-rename-input";
-        input.value = targetDoc.title;
-        titleSpan.replaceWith(input);
-        input.focus();
-        input.select();
-        let committed = false;
-        const commit = () => {
-          if (committed) return;
-          committed = true;
-          const val = input.value.trim();
-          if (val) {
-            const oldPath = `notebooks/${targetDoc.title}`;
-            targetDoc.title = val.endsWith(".ipynb") ? val : val + ".ipynb";
-            if (oldPath !== `notebooks/${targetDoc.title}`) {
-              VFS_NODES.delete(oldPath);
-            }
-            say(`\u2713 \u7B14\u8BB0\u672C\u5DF2\u91CD\u547D\u540D\u4E3A ${targetDoc.title}`, "ok");
-          }
-          renderNotebookUI();
-          renderVfsTreeUI();
-        };
-        input.addEventListener("blur", commit);
-        input.addEventListener("keydown", (ev) => {
-          if (ev.key === "Enter") {
-            ev.preventDefault();
-            input.blur();
-          } else if (ev.key === "Escape") {
-            committed = true;
-            renderNotebookUI();
-          }
-        });
-      });
-    }
+    initNotebookTabsEvents();
     const bindBtn = (id, fn) => {
       const b = $(id);
       if (b) b.onclick = fn;
@@ -15311,184 +15741,7 @@ runAsyncDemo()
     });
     bindBtn("nbBtnRestart", () => restartNotebookKernel(false));
     bindBtn("nbBtnRunAll", () => runAllNotebookCells());
-    const typeSel = $("nbCellType");
-    if (typeSel) {
-      typeSel.onchange = () => {
-        const doc = getActiveNotebook();
-        const cell = getActiveCell(doc);
-        if (!cell) return;
-        cell.type = typeSel.value === "markdown" ? "markdown" : "code";
-        cell.markdownRendered = false;
-        cell.output = null;
-        cell.executionCount = null;
-        renderNotebookUI(true);
-      };
-    }
-    const cellsList = $("nbCellsList");
-    if (cellsList && cellsList.addEventListener) {
-      cellsList.addEventListener("click", (e) => {
-        const target = e.target;
-        if (!target) return;
-        if (target.closest && target.closest("#nbBottomAddCode")) {
-          const doc = getActiveNotebook();
-          const last = doc.cells[doc.cells.length - 1];
-          insertNotebookCell("below", last ? last.id : void 0, "code");
-          return;
-        }
-        if (target.closest && target.closest("#nbBottomAddMd")) {
-          const doc = getActiveNotebook();
-          const last = doc.cells[doc.cells.length - 1];
-          insertNotebookCell("below", last ? last.id : void 0, "markdown");
-          return;
-        }
-        const gline = target.closest ? target.closest(".nb-gline") : null;
-        if (gline && gline.dataset.line) {
-          const cellEl = gline.closest(".nb-cell");
-          if (cellEl && cellEl.dataset.cellId) {
-            toggleNotebookCellCheckpoint(cellEl.dataset.cellId, parseInt(gline.dataset.line, 10));
-            return;
-          }
-        }
-        const actEl = target.closest ? target.closest("[data-cell-act]") : null;
-        if (actEl) {
-          const act = actEl.getAttribute("data-cell-act");
-          const cid = actEl.getAttribute("data-cell-id");
-          if (!cid) return;
-          const doc = getActiveNotebook();
-          doc.activeCellId = cid;
-          ACTIVE_NB_CELL_ID = cid;
-          if (act === "run") {
-            runNotebookCell(cid, true);
-            return;
-          }
-          if (act === "debug") {
-            debugNotebookCell(cid);
-            return;
-          }
-          if (act === "dup") {
-            duplicateNotebookCell(cid);
-            return;
-          }
-          if (act === "up") {
-            moveNotebookCell(-1, cid);
-            return;
-          }
-          if (act === "down") {
-            moveNotebookCell(1, cid);
-            return;
-          }
-          if (act === "ins-above") {
-            insertNotebookCell("above", cid);
-            return;
-          }
-          if (act === "ins-below") {
-            insertNotebookCell("below", cid);
-            return;
-          }
-          if (act === "del") {
-            deleteNotebookCell(cid);
-            return;
-          }
-          if (act === "toggle-md") {
-            const c = doc.cells.find((x) => x.id === cid);
-            if (c) {
-              c.markdownRendered = !c.markdownRendered;
-              renderNotebookUI(!c.markdownRendered);
-            }
-            return;
-          }
-        }
-        const cellBox = target.closest ? target.closest(".nb-cell") : null;
-        if (cellBox && cellBox.dataset.cellId) {
-          const doc = getActiveNotebook();
-          if (doc.activeCellId !== cellBox.dataset.cellId) {
-            doc.activeCellId = cellBox.dataset.cellId;
-            ACTIVE_NB_CELL_ID = doc.activeCellId;
-            if (cellsList.querySelectorAll) {
-              cellsList.querySelectorAll(".nb-cell").forEach((el) => {
-                el.classList.toggle("active", el.dataset.cellId === doc.activeCellId);
-              });
-            }
-            const c = getActiveCell(doc);
-            if (typeSel && c) typeSel.value = c.type;
-          }
-        }
-      });
-      cellsList.addEventListener("dblclick", (e) => {
-        const target = e.target;
-        const mdPrev = target && target.closest ? target.closest('[data-cell-act="edit-md"]') : null;
-        if (mdPrev) {
-          const cid = mdPrev.getAttribute("data-cell-id");
-          const doc = getActiveNotebook();
-          const c = doc.cells.find((x) => x.id === cid);
-          if (c) {
-            c.markdownRendered = false;
-            doc.activeCellId = c.id;
-            renderNotebookUI(true);
-          }
-        }
-      });
-      cellsList.addEventListener("input", (e) => {
-        const ta = e.target;
-        if (!ta || !ta.classList || !ta.classList.contains("nb-cell-textarea")) return;
-        const cid = ta.getAttribute("data-cell-id");
-        const doc = getActiveNotebook();
-        const cell = doc.cells.find((c) => c.id === cid);
-        if (!cell) return;
-        cell.source = ta.value;
-        if (cell.type === "markdown") {
-          const estH = estimateMarkdownEditorHeight(cell.source);
-          ta.style.height = "auto";
-          const nextH = Math.max(estH, (ta.scrollHeight || 0) + 10);
-          ta.style.height = nextH + "px";
-          return;
-        }
-        const lineCount = Math.max(1, cell.source.split("\n").length);
-        const h = Math.max(38, lineCount * 24 + 14);
-        ta.style.height = h + "px";
-        const codeBox = ta.closest ? ta.closest(".nb-cell-code-box") : null;
-        if (codeBox) codeBox.style.height = h + "px";
-        if (cell.type === "code") {
-          const isDebugging = doc.debuggingCellId === cell.id && DEBUG_SESSION.active;
-          const { hlHtml, gutterHtml } = renderCellCodeHighlight(cell, isDebugging);
-          const hlPre = codeBox && codeBox.querySelector ? codeBox.querySelector(".nb-cell-hl") : null;
-          if (hlPre) hlPre.innerHTML = hlHtml;
-          const inputWrap = ta.closest ? ta.closest(".nb-cell-input") : null;
-          const gutter = inputWrap && inputWrap.querySelector ? inputWrap.querySelector(".nb-cell-gutter") : null;
-          if (gutter) gutter.innerHTML = gutterHtml;
-        }
-      });
-      cellsList.addEventListener("keydown", (e) => {
-        const ta = e.target;
-        if (!ta || !ta.classList || !ta.classList.contains("nb-cell-textarea")) return;
-        const cid = ta.getAttribute("data-cell-id") || void 0;
-        if (e.key === "Tab") {
-          e.preventDefault();
-          const s = ta.selectionStart || 0;
-          const t = ta.selectionEnd || 0;
-          const indent = LANG === "python" ? "    " : "  ";
-          ta.value = ta.value.slice(0, s) + indent + ta.value.slice(t);
-          ta.selectionStart = ta.selectionEnd = s + indent.length;
-          ta.dispatchEvent(new Event("input", { bubbles: true }));
-          return;
-        }
-        if (e.key === "Enter" && e.shiftKey && !(e.ctrlKey || e.metaKey)) {
-          e.preventDefault();
-          runNotebookCell(cid, true);
-          return;
-        }
-        if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && e.shiftKey) {
-          e.preventDefault();
-          debugNotebookCell(cid);
-          return;
-        }
-        if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
-          e.preventDefault();
-          runNotebookCell(cid, false);
-          return;
-        }
-      });
-    }
+    initNotebookCellsEvents();
     if (typeof window !== "undefined") {
       window.onNotebookLangChanged = (_nextLang) => {
         renderImportSampleMenu();

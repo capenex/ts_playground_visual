@@ -8,13 +8,14 @@
 
 ## 📚 文档导航
 
-本项目提供五份配套中文文档，面向不同阅读场景：
+本项目提供六份配套中文文档，面向不同阅读场景：
 
-1. **[`README.md`（本文档 · 项目架构与部署维护指南）](./README.md)**：介绍项目 17 模块严格化 TypeScript 架构、核心编译与调试管线设计、交互式 Notebook 引擎、内置样例、严格化质量门禁（Strict TS Gate）与构建/测试流程。
-2. **[`USER_GUIDE.md`（面向用户的操作说明手册）](./USER_GUIDE.md)**：图文式讲解界面布局、Script 源码模式与 Notebook 交互式笔记本模式、如何编写可调试代码、如何使用 `checkpoint()` 检查点、异步 Event Loop 调试、`.ipynb` 导入导出以及 1080p 60fps 视频导出。
-3. **[`SYNTAX_REFERENCE.md`（支持的 TypeScript 语法与可视化范围参考手册）](./SYNTAX_REFERENCE.md)**：详列静态类型检查器（`typecheckTS` + TS Worker + Notebook 跨单元格推导）支持的规则与错误码、类型剥离与语法降级器（`stripTypes`）、自动插桩器（`instrument`）、虚拟事件循环以及 14 类数据结构可视化识别规则。
-4. **[`REFACTOR_PLAN.md`（TypeScript 模块化重构与严格化编程验收规范）](./REFACTOR_PLAN.md)**：记录 `src/**/*.ts` 17 模块架构映射、全局桥接契约，以及每次代码更新必须执行的**严格化 TypeScript 编程红线与四步验收清单**。
-5. **[`DEPLOY.md`（纯静态发布包部署说明）](./DEPLOY.md)**：说明 `dist/` 静态产物的目录结构、本地预览方式及 GitHub Pages / Vercel / Cloudflare Pages / Nginx 零后端部署方法。
+1. **[`README.md`（本文档 · 项目架构与部署维护指南）](./README.md)**：介绍项目模块化严格 TypeScript 架构、核心编译与调试管线设计、交互式 Notebook 引擎、内置样例、严格化质量门禁（Strict TS Gate）与构建/测试流程。
+2. **[`CHANGELOG.md`（版本演进与工程架构记录）](./CHANGELOG.md)**：记录从初代原型到 v0.6.0 工业级工程化基线的历代架构演进、技术决策与对应源码索引，并提供后续「AI 辅助工程研发阶段」的标准 Changelog 提交模板。
+3. **[`USER_GUIDE.md`（面向用户的操作说明手册）](./USER_GUIDE.md)**：图文式讲解界面布局、Script 源码模式与 Notebook 交互式笔记本模式、如何编写可调试代码、如何使用 `checkpoint()` 检查点、异步 Event Loop 调试、`.ipynb` 导入导出以及 1080p 60fps 视频导出。
+4. **[`SYNTAX_REFERENCE.md`（支持的 TypeScript 语法与可视化范围参考手册）](./SYNTAX_REFERENCE.md)**：详列静态类型检查器（`typecheckTS` + TS Worker + Notebook 跨单元格推导）支持的规则与错误码、类型剥离与语法降级器（`stripTypes`）、自动插桩器（`instrument`）、虚拟事件循环以及 14 类数据结构可视化识别规则。
+5. **[`REFACTOR_PLAN.md`（TypeScript 模块化重构与严格化编程验收规范）](./REFACTOR_PLAN.md)**：记录 `src/**/*.ts` 模块架构映射、全局桥接契约，以及每次代码更新必须执行的**严格化 TypeScript 编程红线与四步验收清单**。
+6. **[`DEPLOY.md`（纯静态发布包部署说明）](./DEPLOY.md)**：说明 `dist/` 静态产物的目录结构、本地预览方式及 GitHub Pages / Vercel / Cloudflare Pages / Nginx 零后端部署方法。
 
 ---
 
