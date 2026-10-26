@@ -625,10 +625,10 @@ export function renderSlots() {
 }
 
 export function updateControlButtons() {
-  const prevBtn = $('prev');
-  const nextBtn = $('next');
-  const ckptBtn = $('nextCheckpoint');
-  const autoBtn = $('auto');
+  const prevBtn = $<HTMLButtonElement>('prev');
+  const nextBtn = $<HTMLButtonElement>('next');
+  const ckptBtn = $<HTMLButtonElement>('nextCheckpoint');
+  const autoBtn = $<HTMLButtonElement>('auto');
   const atEnd = Boolean(TRACE.steps.length > 0 && cur >= TRACE.steps.length - 1 && DEBUG_SESSION.finished);
   if (prevBtn) prevBtn.disabled = !TRACE.steps.length || cur <= 0;
   if (nextBtn) nextBtn.disabled = atEnd;

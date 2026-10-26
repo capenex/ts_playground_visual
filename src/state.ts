@@ -6,15 +6,15 @@ import type {
   Diag,
   InterfaceSchemaMeta,
   LangBuffer,
-  PlaygroundElement,
+  StepVizElement,
   TraceData,
   TsMeta,
 } from './types';
 
-export const $ = (id: string): PlaygroundElement =>
-  (typeof document !== 'undefined' ? document.getElementById(id) : null) as unknown as PlaygroundElement;
+export const $ = <T extends HTMLElement = HTMLElement>(id: string): T =>
+  (typeof document !== 'undefined' ? document.getElementById(id) : null) as T;
 
-export const editor = $('editor');
+export const editor = $<HTMLTextAreaElement>('editor');
 export const logEl = $('log');
 export const gutterEl = $('gutter');
 export const highlightEl = $('highlight');
@@ -31,10 +31,10 @@ export const sidePanelEl = $('sidePanel');
 export const resizerEl = $('resizer');
 export const flyLayerEl = $('flyLayer');
 export const hoverTipEl = $('hoverTip');
-export const stepVizEl = $('stepViz');
-export const fileNameEl = $('fileName');
-export const fileInputEl = $('fileInput');
-export const btnImportEl = $('btnImport');
+export const stepVizEl = $<StepVizElement>('stepViz');
+export const fileNameEl = $<HTMLInputElement>('fileName');
+export const fileInputEl = $<HTMLInputElement>('fileInput');
+export const btnImportEl = $<HTMLButtonElement>('btnImport');
 
 export const MAX_STEPS = 5000;
 export const MAX_EXEC_MS = 3500;
@@ -94,16 +94,15 @@ export const appState = {
   } as DebugSession,
 };
 
-export function bindStateGlobals(target: Record<string, unknown> = globalThis as unknown as Record<string, unknown>): void {
-  const stateRecord = appState as unknown as Record<string, unknown>;
-  const keys = Object.keys(appState);
+export function bindStateGlobals(target: object = globalThis): void {
+  const keys = Object.keys(appState) as Array<keyof typeof appState>;
   for (const key of keys) {
     const desc = Object.getOwnPropertyDescriptor(target, key);
     if (desc && !desc.configurable) continue;
     Object.defineProperty(target, key, {
-      get: () => stateRecord[key],
+      get: () => Reflect.get(appState, key),
       set: (v: unknown) => {
-        stateRecord[key] = v;
+        Reflect.set(appState, key, v);
       },
       configurable: true,
       enumerable: true,

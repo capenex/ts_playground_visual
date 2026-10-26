@@ -248,13 +248,13 @@ export function renderImportSampleMenu() {
 
 export function initScriptTabsAndImportEvents() {
   const importMenuWrap = $("importMenuWrap");
-  const btnImport = $("btnImport");
-  const btnUploadLocalFile = $("btnUploadLocalFile");
+  const btnImport = $<HTMLButtonElement>("btnImport");
+  const btnUploadLocalFile = $<HTMLButtonElement>("btnUploadLocalFile");
   const importSampleList = $("importSampleList");
-  const fileInput = $("fileInput") as HTMLInputElement | null;
+  const fileInput = $<HTMLInputElement>("fileInput");
 
   if (btnImport && importMenuWrap) {
-    btnImport.onclick = (e?: MouseEvent) => {
+    btnImport.onclick = (e: MouseEvent) => {
       if (e && typeof e.stopPropagation === "function") e.stopPropagation();
       renderImportSampleMenu();
       if (importMenuWrap.classList) {
@@ -263,13 +263,13 @@ export function initScriptTabsAndImportEvents() {
     };
     addEventListener("click", (e: MouseEvent) => {
       if (!importMenuWrap.classList || !importMenuWrap.classList.contains("open")) return;
-      if (importMenuWrap.contains && importMenuWrap.contains(e.target)) return;
+      if (importMenuWrap.contains && importMenuWrap.contains(e.target as Node | null)) return;
       importMenuWrap.classList.remove("open");
     });
   }
 
   if (btnUploadLocalFile && fileInput) {
-    btnUploadLocalFile.onclick = (e?: MouseEvent) => {
+    btnUploadLocalFile.onclick = (e: MouseEvent) => {
       if (e && typeof e.stopPropagation === "function") e.stopPropagation();
       if (importMenuWrap && importMenuWrap.classList) importMenuWrap.classList.remove("open");
       fileInput.click();

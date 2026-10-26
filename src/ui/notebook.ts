@@ -1283,7 +1283,7 @@ export function setViewMode(mode: "script" | "notebook") {
   }
   const modeSwitch = $("modeSwitch");
   if (modeSwitch && modeSwitch.querySelectorAll) {
-    modeSwitch.querySelectorAll(".mode-tab").forEach((btn: HTMLElement) => {
+    modeSwitch.querySelectorAll<HTMLElement>(".mode-tab").forEach((btn: HTMLElement) => {
       if (btn.classList && typeof btn.classList.toggle === "function") {
         btn.classList.toggle("active", btn.dataset.mode === next);
       }
@@ -1413,7 +1413,7 @@ export function renderNotebookUI(focusActiveEditor = false) {
       `<button type="button" class="nb-tab-add" id="nbBtnNewTab" title="新建空白 Notebook 标签页">＋</button>`;
   }
 
-  const typeSel = $("nbCellType");
+  const typeSel = $<HTMLSelectElement>("nbCellType");
   if (typeSel && activeCell) {
     typeSel.value = activeCell.type;
   }
@@ -1522,7 +1522,7 @@ export function renderNotebookUI(focusActiveEditor = false) {
     `</div>`;
 
   if (cellsContainer.querySelectorAll) {
-    cellsContainer.querySelectorAll(".nb-cell-textarea.md-textarea").forEach((el: HTMLElement) => {
+    cellsContainer.querySelectorAll<HTMLElement>(".nb-cell-textarea.md-textarea").forEach((el: HTMLElement) => {
       if (el && el.scrollHeight && el.scrollHeight > el.clientHeight) {
         el.style.height = Math.max(92, el.scrollHeight + 10) + "px";
       }
@@ -1674,7 +1674,7 @@ function initNotebookTabsEvents() {
 }
 
 function initNotebookCellsEvents() {
-  const typeSel = $("nbCellType");
+  const typeSel = $<HTMLSelectElement>("nbCellType");
   if (typeSel) {
     typeSel.onchange = () => {
       const doc = getActiveNotebook();
@@ -1773,7 +1773,7 @@ function initNotebookCellsEvents() {
         doc.activeCellId = cellBox.dataset.cellId;
         ACTIVE_NB_CELL_ID = doc.activeCellId;
         if (cellsList.querySelectorAll) {
-          cellsList.querySelectorAll(".nb-cell").forEach((el: HTMLElement) => {
+          cellsList.querySelectorAll<HTMLElement>(".nb-cell").forEach((el: HTMLElement) => {
             el.classList.toggle("active", el.dataset.cellId === doc.activeCellId);
           });
         }

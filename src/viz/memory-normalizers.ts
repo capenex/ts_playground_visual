@@ -104,9 +104,10 @@ export function normalizeTree(value: Frame | null | undefined) {
 }
 
 export function normalizeList(value: Frame | unknown[] | null | undefined) {
-  const pyMeta: Frame | null = (value && typeof value === 'object' && '__py_meta__' in value)
-    ? ((value as unknown as { __py_meta__?: Frame }).__py_meta__ || null)
-    : null;
+  const pyMeta: Frame | null =
+    value && typeof value === 'object' && '__py_meta__' in value && value.__py_meta__
+      ? (value.__py_meta__ as Frame)
+      : null;
   if (Array.isArray(value)) {
     const total = (pyMeta && typeof pyMeta.total === 'number') ? pyMeta.total : value.length;
     const out = { kind: 'list', items: value.slice(0, 30).map((x: unknown) => cloneDeepBounded(x, 1)), total };

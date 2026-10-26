@@ -609,7 +609,7 @@ export function bindGlobalVfsApi() {
 }
 
 export function initVfsSidebarEvents() {
-  const fileInput = $("fileInput") as HTMLInputElement | null;
+  const fileInput = $<HTMLInputElement>("fileInput");
   const vfsSidebar = $("vfsSidebar");
   const b1 = $("btnToggleVfs");
   const b2 = $("nbBtnToggleVfs");

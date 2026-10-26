@@ -389,7 +389,7 @@ export const exportMenuWrap = $('exportMenuWrap');
 export const btnExportMenu = $('btnExportMenu');
 export const videoSpeedGroup = $('videoSpeedGroup');
 export const videoSpeedBadge = $('videoSpeedBadge');
-export const btnExportVideo = $('btnExportVideo');
+export const btnExportVideo = $<HTMLButtonElement>('btnExportVideo');
 export const btnExportVideoLabel = $('btnExportVideoLabel');
 export const videoExportStatus = $('videoExportStatus');
 
@@ -398,7 +398,7 @@ export function setVideoExportSpeed(mult: number | string) {
   if (!VIDEO_SPEED_OPTIONS.includes(num)) return VIDEO_EXPORT_SPEED;
   VIDEO_EXPORT_SPEED = num;
   if (videoSpeedGroup && videoSpeedGroup.querySelectorAll) {
-    const btns = videoSpeedGroup.querySelectorAll('.speed-opt');
+    const btns = videoSpeedGroup.querySelectorAll<HTMLElement>('.speed-opt');
     btns.forEach((b: HTMLElement) => {
       if (b.classList) b.classList.toggle('active', Number(b.dataset.speed) === num);
     });
@@ -416,7 +416,7 @@ if (btnExportMenu && exportMenuWrap) {
   };
   addEventListener('click', (e) => {
     if (!exportMenuWrap.classList || !exportMenuWrap.classList.contains('open')) return;
-    if (exportMenuWrap.contains && exportMenuWrap.contains(e.target)) return;
+    if (exportMenuWrap.contains && exportMenuWrap.contains(e.target as Node | null)) return;
     exportMenuWrap.classList.remove('open');
   });
 }
@@ -538,7 +538,7 @@ if ($('btnShareLink')) {
 }
 
 
-$('sampleSel').onchange = () => loadSample($('sampleSel').value);
+$<HTMLSelectElement>('sampleSel').onchange = () => loadSample($<HTMLSelectElement>('sampleSel').value);
 
 pickEl.addEventListener('click', (e: MouseEvent) => {
   const target = e.target as HTMLElement | null;
@@ -765,8 +765,8 @@ export const stepBack = stepPrev;
 export const renderStep = renderStatic;
 export const scheduleRebuild = onSourceChanged;
 export function togglePlay(): void {
-  const autoBtn = $("auto");
-  if (autoBtn && typeof autoBtn.onclick === "function") (autoBtn.onclick as () => unknown)();
+  const autoBtn = $<HTMLButtonElement>("auto");
+  if (autoBtn && typeof autoBtn.onclick === "function") Reflect.apply(autoBtn.onclick, autoBtn, []);
 }
 export function setStatus(msg: string, cls?: string): void {
   say(msg, cls);

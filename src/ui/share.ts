@@ -607,7 +607,7 @@ export function renderVideoFrameToCanvas(ctx: CanvasRenderingContext2D, stepIdx:
 export function loadSample(key: string) {
   if (LANG === 'python') { PY_ENGINE.loadSample(key); return; }
   const targetKey = SAMPLES[key] ? key : 'showcase';
-  if ($('sampleSel')) $('sampleSel').value = targetKey;
+  if ($('sampleSel')) $<HTMLSelectElement>('sampleSel').value = targetKey;
   const src = SAMPLES[targetKey] || '';
   if (typeof globalThis.openSampleScriptTab === 'function') {
     globalThis.openSampleScriptTab(targetKey + '.ts', src, 'ts');
@@ -667,7 +667,7 @@ export function boot() {
     }
   } catch {}
 
-  if ($('sampleSel')) $('sampleSel').value = sampleKey;
+  if ($('sampleSel')) $<HTMLSelectElement>('sampleSel').value = sampleKey;
   const initialSrc = SAMPLES[sampleKey] || SAMPLES.showcase || '';
   if (typeof globalThis.openSampleScriptTab === 'function') {
     globalThis.openSampleScriptTab(sampleKey + '.ts', initialSrc, 'ts');

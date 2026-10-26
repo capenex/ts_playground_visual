@@ -6,10 +6,10 @@ import type {
   Diag,
   InterfaceSchemaMeta,
   LangBuffer,
-  PlaygroundElement,
   PyEngineBridge,
   StepAnim,
   StepSnapshot,
+  StepVizElement,
   TraceData,
   TsMeta,
 } from './types';
@@ -135,28 +135,28 @@ export interface VfsClientApi {
 }
 
 declare global {
-  var $: (id: string) => PlaygroundElement;
-  var editor: PlaygroundElement;
-  var logEl: PlaygroundElement;
-  var gutterEl: PlaygroundElement;
-  var highlightEl: PlaygroundElement;
-  var varsEl: PlaygroundElement;
-  var pickEl: PlaygroundElement;
-  var callStackBarEl: PlaygroundElement;
-  var callStackHintEl: PlaygroundElement;
-  var slotsEl: PlaygroundElement;
-  var consoleEl: PlaygroundElement;
-  var cntEl: PlaygroundElement;
-  var ctlHint: PlaygroundElement;
-  var mainEl: PlaygroundElement;
-  var sidePanelEl: PlaygroundElement;
-  var resizerEl: PlaygroundElement;
-  var flyLayerEl: PlaygroundElement;
-  var hoverTipEl: PlaygroundElement;
-  var stepVizEl: PlaygroundElement;
-  var fileNameEl: PlaygroundElement;
-  var fileInputEl: PlaygroundElement;
-  var btnImportEl: PlaygroundElement;
+  var $: <T extends HTMLElement = HTMLElement>(id: string) => T;
+  var editor: HTMLTextAreaElement;
+  var logEl: HTMLElement;
+  var gutterEl: HTMLElement;
+  var highlightEl: HTMLElement;
+  var varsEl: HTMLElement;
+  var pickEl: HTMLElement;
+  var callStackBarEl: HTMLElement;
+  var callStackHintEl: HTMLElement;
+  var slotsEl: HTMLElement;
+  var consoleEl: HTMLElement;
+  var cntEl: HTMLElement;
+  var ctlHint: HTMLElement;
+  var mainEl: HTMLElement;
+  var sidePanelEl: HTMLElement;
+  var resizerEl: HTMLElement;
+  var flyLayerEl: HTMLElement;
+  var hoverTipEl: HTMLElement;
+  var stepVizEl: StepVizElement;
+  var fileNameEl: HTMLInputElement;
+  var fileInputEl: HTMLInputElement;
+  var btnImportEl: HTMLButtonElement;
 
   var MAX_STEPS: number;
   var MAX_EXEC_MS: number;

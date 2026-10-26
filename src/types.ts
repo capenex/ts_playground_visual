@@ -258,21 +258,7 @@ export interface NotebookDocument {
   lastGlobalDs: Record<string, StepAnim>;
 }
 
-export interface PlaygroundElement extends HTMLElement {
-  value: string;
-  disabled: boolean;
-  files: FileList | null;
-  selectionStart: number;
-  selectionEnd: number;
-  select(): void;
-  setPointerCapture(pointerId: number): void;
-  querySelectorAll(selectors: string): NodeListOf<PlaygroundElement>;
-  querySelector(selectors: string): PlaygroundElement | null;
-  closest(selectors: string): PlaygroundElement | null;
-  contains(other: EventTarget | Node | null): boolean;
-  onclick: ((e: MouseEvent) => unknown) | (() => unknown) | null;
-  onchange: ((e?: Event) => unknown) | null;
-  onkeydown: ((e: KeyboardEvent) => unknown) | null;
+export interface StepVizElement extends HTMLElement {
   __vizHtml?: string;
 }
 

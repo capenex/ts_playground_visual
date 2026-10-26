@@ -7,7 +7,7 @@ import { renderPicker, renderStatic } from "../viz/memory-graph";
 import { stopAuto, setVideoExportSpeed } from "./controls";
 import { renderVideoFrameToCanvas } from "./share";
 
-const btnExportVideo = $('btnExportVideo');
+const btnExportVideo = $<HTMLButtonElement>('btnExportVideo');
 const btnExportVideoLabel = $('btnExportVideoLabel');
 const videoExportStatus = $('videoExportStatus');
 
