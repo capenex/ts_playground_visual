@@ -81,15 +81,14 @@
     }
   };
   function bindStateGlobals(target = globalThis) {
-    const stateRecord = appState;
     const keys = Object.keys(appState);
     for (const key of keys) {
       const desc = Object.getOwnPropertyDescriptor(target, key);
       if (desc && !desc.configurable) continue;
       Object.defineProperty(target, key, {
-        get: () => stateRecord[key],
+        get: () => Reflect.get(appState, key),
         set: (v) => {
-          stateRecord[key] = v;
+          Reflect.set(appState, key, v);
         },
         configurable: true,
         enumerable: true
@@ -148,6 +147,38 @@
       esc: esc2,
       appState
     });
+  }
+  var uiHooks = {
+    stopAuto: () => {
+    },
+    clearFlyLayer: () => {
+    },
+    renderPicker: () => {
+    },
+    renderStatic: () => {
+    },
+    updateEditorChrome: () => {
+    },
+    revealErrorLine: () => {
+    },
+    loadSample: () => {
+    },
+    getActiveWorkspacePath: () => "",
+    openVfsNotebookFile: () => {
+    },
+    openVfsScriptFile: () => {
+    },
+    onVfsFileDeleted: () => {
+    },
+    onVfsFileRenamed: () => {
+    },
+    setViewMode: () => {
+    },
+    importSampleIntoNotebook: () => {
+    }
+  };
+  function registerUiHooks(hooks) {
+    Object.assign(uiHooks, hooks);
   }
   bindStateGlobals();
 
@@ -2793,7 +2824,6 @@ runAsyncDemo()
     parseTopLevelConditional: () => parseTopLevelConditional,
     parseType: () => parseType,
     parseTypeParams: () => parseTypeParams,
-    reportTypeErrors: () => reportTypeErrors,
     requestTsWorkerCheck: () => requestTsWorkerCheck,
     splitTopLevelDecl: () => splitTopLevelDecl,
     splitTopLevelIntersection: () => splitTopLevelIntersection,
@@ -2806,868 +2836,7 @@ runAsyncDemo()
     typecheckTS: () => typecheckTS
   });
 
-  // src/runtime/event-loop.ts
-  var event_loop_exports = {};
-  __export(event_loop_exports, {
-    anonStackLine: () => anonStackLine,
-    clearLog: () => clearLog,
-    createVirtualEventLoop: () => createVirtualEventLoop,
-    createVirtualPromiseAndFsEnv: () => createVirtualPromiseAndFsEnv,
-    fnBodyLineOffset: () => fnBodyLineOffset,
-    formatCallArgItem: () => formatCallArgItem,
-    formatCallFrameLabel: () => formatCallFrameLabel,
-    getOrCreateVfsApi: () => getOrCreateVfsApi,
-    hasAsyncConstructs: () => hasAsyncConstructs,
-    resetTraceState: () => resetTraceState,
-    rethrowIfControlSignal: () => rethrowIfControlSignal,
-    safeJSONStringify: () => safeJSONStringify,
-    say: () => say,
-    sourceLineFromStack: () => sourceLineFromStack
-  });
-
-  // src/viz/memory-graph.ts
-  var memory_graph_exports = {};
-  __export(memory_graph_exports, {
-    POINTER_VAR_NAMES: () => POINTER_VAR_NAMES,
-    VIZ: () => VIZ,
-    allocateSlotSpans: () => allocateSlotSpans,
-    build1DFocalSlice: () => build1DFocalSlice,
-    classifyValue: () => classifyValue,
-    cloneDeepBounded: () => cloneDeepBounded,
-    decideSpan: () => decideSpan,
-    defineHidden: () => defineHidden,
-    deriveAnimAndNote: () => deriveAnimAndNote,
-    detectWindowRange: () => detectWindowRange,
-    discoverVars: () => discoverVars,
-    drawArrows: () => drawArrows,
-    enrichFromNote: () => enrichFromNote,
-    formatShortVal: () => formatShortVal,
-    getActiveFrame: () => getActiveFrame,
-    isMapLike: () => isMapLike,
-    isSetLike: () => isSetLike,
-    normalizeGraph: () => normalizeGraph,
-    normalizeList: () => normalizeList,
-    normalizeTree: () => normalizeTree,
-    populateInterfaceSchemas: () => populateInterfaceSchemas,
-    pressure: () => pressure,
-    renderAsyncQueues: () => renderAsyncQueues,
-    renderCallStack: () => renderCallStack,
-    renderMemory: () => renderMemory,
-    renderPicker: () => renderPicker,
-    renderSlots: () => renderSlots,
-    renderStatic: () => renderStatic,
-    safeEvalExpr: () => safeEvalExpr,
-    scheduleArrowRedraw: () => scheduleArrowRedraw,
-    selectGridAxisIndices: () => selectGridAxisIndices,
-    selectStackFrame: () => selectStackFrame,
-    snapshot: () => snapshot,
-    splitLogicalClauses: () => splitLogicalClauses,
-    truncMap: () => truncMap,
-    updateControlButtons: () => updateControlButtons,
-    vizArray: () => vizArray,
-    vizEventLoop: () => vizEventLoop,
-    vizGraph: () => vizGraph,
-    vizGrid: () => vizGrid,
-    vizHeap: () => vizHeap,
-    vizInterface: () => vizInterface,
-    vizList: () => vizList,
-    vizMap: () => vizMap,
-    vizQueue: () => vizQueue,
-    vizSet: () => vizSet,
-    vizStack: () => vizStack,
-    vizString: () => vizString,
-    vizTree: () => vizTree,
-    vizUF: () => vizUF
-  });
-
-  // src/viz/highlight.ts
-  var highlight_exports = {};
-  __export(highlight_exports, {
-    HIGHLIGHT_BUILTINS: () => HIGHLIGHT_BUILTINS,
-    collectDeclaredNames: () => collectDeclaredNames,
-    collectHighlightBuiltins: () => collectHighlightBuiltins,
-    findExprSpan: () => findExprSpan,
-    formatHoverVal: () => formatHoverVal,
-    hideHoverTip: () => hideHoverTip,
-    highlightTS: () => highlightTS,
-    hl: () => hl,
-    hlActiveLine: () => hlActiveLine,
-    hoverColumnAt: () => hoverColumnAt,
-    hoverHitFromEvent: () => hoverHitFromEvent,
-    hoverInfoFor: () => hoverInfoFor,
-    hoverMetrics: () => hoverMetrics,
-    hoverTipForName: () => hoverTipForName,
-    hoverTipHtml: () => hoverTipHtml,
-    hoverValueSummary: () => hoverValueSummary,
-    hoverWordAt: () => hoverWordAt,
-    liveTypeDiags: () => liveTypeDiags,
-    positionHoverTip: () => positionHoverTip,
-    revealErrorLine: () => revealErrorLine,
-    scrollCodeTo: () => scrollCodeTo,
-    showHoverTip: () => showHoverTip,
-    syncScroll: () => syncScroll,
-    updateEditorChrome: () => updateEditorChrome
-  });
-
-  // src/viz/ast-view.ts
-  var ast_view_exports = {};
-  __export(ast_view_exports, {
-    buildAST: () => buildAST,
-    buildStepVizRow: () => buildStepVizRow,
-    clearFlyLayer: () => clearFlyLayer,
-    playStepAnimation: () => playStepAnimation,
-    positionStepViz: () => positionStepViz,
-    renderAST: () => renderAST,
-    updateStepViz: () => updateStepViz
-  });
-  function buildAST(src) {
-    const lines = String(src || "").replace(/\r\n?/g, "\n").split("\n");
-    const children = [];
-    for (let i = 0; i < lines.length; i++) {
-      const clean = stripInlineCommentSafe(lines[i]).trim();
-      if (!clean) continue;
-      const stmts = splitStatements(clean).map((s) => s.trim()).filter(Boolean);
-      for (const st of stmts) {
-        let kind = "Statement";
-        if (/^(?:export\s+)?(?:async\s+)?function\b/.test(st)) kind = "FunctionDeclaration";
-        else if (/^(?:export\s+)?(?:abstract\s+)?class\b/.test(st)) kind = "ClassDeclaration";
-        else if (/^(?:export\s+)?interface\b/.test(st)) kind = "InterfaceDeclaration";
-        else if (/^(?:export\s+)?type\b/.test(st)) kind = "TypeAliasDeclaration";
-        else if (/^(?:const|let|var)\b/.test(st)) kind = "VariableDeclaration";
-        else if (/^(?:for|while|do)\b/.test(st)) kind = "LoopStatement";
-        else if (/^(?:if|else|switch)\b/.test(st)) kind = "BranchStatement";
-        else if (/^return\b/.test(st)) kind = "ReturnStatement";
-        children.push({ kind, line: i + 1, text: st });
-      }
-    }
-    return { kind: "Program", line: 1, text: "Program", children };
-  }
-  function renderAST(ast) {
-    if (!ast || !Array.isArray(ast.children)) return "";
-    return ast.children.map((n) => `<div class="ast-node" data-line="${n.line}"><span class="ast-kind">${esc(n.kind)}</span> <span class="ast-txt">${esc(n.text)}</span></div>`).join("");
-  }
-  function buildStepVizRow(_rawLine, anim, stError, isBelow = false) {
-    const guideChar = isBelow ? "\u2570\u2500" : "\u256D\u2500";
-    if (stError) {
-      return `<div class="step-viz-row"><span class="sv-guide err">${guideChar}</span><div class="sv-box sv-err-box"><span class="sv-err-tag">\u2717 RUNTIME ERROR</span><span class="sv-err-msg">${esc(stError)}</span></div></div>`;
-    }
-    if (!anim) return "";
-    if (anim.type === "error" && anim.message) {
-      return `<div class="step-viz-row"><span class="sv-guide err">${guideChar}</span><div class="sv-box sv-err-box"><span class="sv-err-tag">\u2717 RUNTIME ERROR</span><span class="sv-err-msg">${esc(anim.message)}</span></div></div>`;
-    }
-    if (anim.type === "checkpoint") {
-      const args = anim.args || [];
-      const argVals = anim.argVals || [];
-      const chips = args.length ? args.map((a, idx) => {
-        const av = argVals[idx];
-        const showEq = av !== void 0 && av !== a;
-        return `<span class="sv-arg">${esc(a)}${showEq ? ` <span class="sv-eval">= ${esc(av)}</span>` : ""}</span>`;
-      }).join('<span class="sv-dim">,</span>') : `<span class="sv-dim">\u5DF2\u6682\u505C\u4E8E\u68C0\u67E5\u70B9\u51FD\u6570 ${esc(anim.fn || "checkpoint")}()</span>`;
-      return `<div class="step-viz-row"><span class="sv-guide ckpt">${guideChar}</span><div class="sv-box sv-ckpt-box"><span class="sv-ckpt-tag">\u25C9 CHECKPOINT</span>` + chips + `</div></div>`;
-    }
-    if (anim.type === "assign") {
-      const valTxt = anim.val != null ? anim.val : "\u2026";
-      const showFrom = anim.from && anim.from !== valTxt;
-      return `<div class="step-viz-row"><span class="sv-guide">${guideChar}</span><div class="sv-box"><span class="sv-dst">${esc(anim.to)}</span><span class="sv-arrow">\u27F5</span><span class="sv-val">${esc(valTxt)}</span>` + (showFrom ? `<span class="sv-dim">from</span><span class="sv-src">${esc(anim.from)}</span>` : "") + `</div></div>`;
-    }
-    if (anim.type === "compare") {
-      const vCls = anim.result ? "ok" : "no";
-      const lhsShowVal = anim.lhsVal !== void 0 && anim.lhsVal !== anim.lhs;
-      const rhsShowVal = anim.rhs && anim.rhsVal !== void 0 && anim.rhsVal !== anim.rhs;
-      const lhsHtml = `<span class="sv-cmp"><span>${esc(anim.lhs)}</span>${lhsShowVal ? `<span class="sv-eval">= ${esc(anim.lhsVal)}</span>` : ""}</span>`;
-      const rhsHtml = anim.rhs ? `<span class="sv-op">${esc(anim.op)}</span><span class="sv-cmp"><span>${esc(anim.rhs)}</span>${rhsShowVal ? `<span class="sv-eval">= ${esc(anim.rhsVal)}</span>` : ""}</span>` : "";
-      return `<div class="step-viz-row"><span class="sv-guide">${guideChar}</span><div class="sv-box">` + lhsHtml + rhsHtml + `<span class="sv-verdict ${vCls}">\u21D2 ${anim.result ? "true" : "false"}</span></div></div>`;
-    }
-    if (anim.type === "call") {
-      const args = anim.args || [];
-      const argVals = anim.argVals || [];
-      const argChips = args.map((a, idx) => {
-        const av = argVals[idx];
-        const showEq = av !== void 0 && av !== a;
-        return `<span class="sv-arg">${esc(a)}${showEq ? ` <span class="sv-eval">= ${esc(av)}</span>` : ""}</span>`;
-      }).join('<span class="sv-dim">,</span>');
-      const prefix = anim.to && anim.result != null ? `<span class="sv-dst">${esc(anim.to)}</span><span class="sv-arrow">\u27F5</span><span class="sv-val">${esc(anim.result)}</span><span class="sv-dim">from</span>` : anim.result != null ? `<span class="sv-val">${esc(anim.result)}</span><span class="sv-arrow">\u27F5</span>` : "";
-      return `<div class="step-viz-row"><span class="sv-guide">${guideChar}</span><div class="sv-box">` + prefix + `<span class="sv-fn">${esc(anim.fn)}</span><span class="sv-dim">(</span>${argChips}<span class="sv-dim">)</span></div></div>`;
-    }
-    return "";
-  }
-  var STEP_VIZ_LINE = -1;
-  function updateStepViz(st, line, show, rawLine) {
-    if (!stepVizEl) return;
-    const html = show && st ? buildStepVizRow(rawLine, st.anim, st.error, line === 1) : "";
-    if (!html) {
-      STEP_VIZ_LINE = -1;
-      if (stepVizEl.__vizHtml !== "") {
-        stepVizEl.innerHTML = "";
-        stepVizEl.__vizHtml = "";
-      }
-      if (stepVizEl.style) stepVizEl.style.display = "none";
-      return;
-    }
-    STEP_VIZ_LINE = line;
-    if (stepVizEl.__vizHtml !== html) {
-      stepVizEl.innerHTML = html;
-      stepVizEl.__vizHtml = html;
-    }
-    if (stepVizEl.style) {
-      stepVizEl.style.left = "16px";
-      stepVizEl.style.display = "block";
-    }
-    positionStepViz();
-  }
-  function positionStepViz() {
-    if (!stepVizEl || !stepVizEl.style) return;
-    if (STEP_VIZ_LINE < 1 || !TRACE.steps.length) {
-      stepVizEl.style.display = "none";
-      return;
-    }
-    let placedBelow = false;
-    if (window.PlaygroundCM) {
-      const cm = window.PlaygroundCM;
-      const lineTop = cm.lineTop(STEP_VIZ_LINE);
-      const h = stepVizEl.offsetHeight || 22;
-      let top = lineTop - h - 3;
-      if (top < 2) {
-        top = lineTop + 24 + 3;
-        placedBelow = true;
-      }
-      const boxH = cm.viewportHeight() || 0;
-      if (boxH && top + h > boxH - 2) {
-        top = lineTop - h - 3;
-        placedBelow = false;
-        if (top < 2) top = Math.max(2, boxH - h - 4);
-      }
-      stepVizEl.style.left = cm.contentLeft() + "px";
-      stepVizEl.style.top = Math.round(top) + "px";
-      stepVizEl.style.display = "block";
-    } else {
-      const m = hoverMetrics();
-      const lineTop = m.padTop + (STEP_VIZ_LINE - 1) * m.lh - (editor.scrollTop || 0);
-      const h = stepVizEl.offsetHeight || 22;
-      let top = lineTop - h - 3;
-      if (top < 2) {
-        top = lineTop + m.lh + 3;
-        placedBelow = true;
-      }
-      const boxH = editor.clientHeight || 0;
-      if (boxH && top + h > boxH - 2) {
-        top = lineTop - h - 3;
-        placedBelow = false;
-        if (top < 2) top = Math.max(2, boxH - h - 4);
-      }
-      stepVizEl.style.top = Math.round(top) + "px";
-      stepVizEl.style.display = "block";
-    }
-    if (stepVizEl.classList) {
-      stepVizEl.classList.toggle("below-line", placedBelow);
-    }
-    if (typeof stepVizEl.innerHTML === "string" && stepVizEl.innerHTML) {
-      const targetGuide = placedBelow ? "\u2570\u2500" : "\u256D\u2500";
-      const nextHtml = stepVizEl.innerHTML.replace(
-        /(<span class="sv-guide(?:\s+[^"]*)?">)(?:╭─|╰─)(<\/span>)/,
-        `$1${targetGuide}$2`
-      );
-      if (nextHtml !== stepVizEl.innerHTML) {
-        stepVizEl.innerHTML = nextHtml;
-        stepVizEl.__vizHtml = nextHtml;
-      }
-    }
-  }
-  function clearFlyLayer() {
-    if (flyLayerEl) flyLayerEl.innerHTML = "";
-  }
-  function playStepAnimation(st) {
-    clearFlyLayer();
-    if (IS_STILL || !st || !st.anim || !flyLayerEl) return;
-    const anim = st.anim;
-    if (anim.type !== "assign" && !(anim.type === "call" && anim.to && anim.result != null)) return;
-    const srcEl = highlightEl.querySelector(".ln.cur .tok-src") || highlightEl.querySelector(".ln.cur .tok-fn");
-    const dstEl = highlightEl.querySelector(".ln.cur .tok-dst") || highlightEl.querySelector(".ln.cur");
-    if (!srcEl || !dstEl) return;
-    const sRect = srcEl.getBoundingClientRect();
-    const dRect = dstEl.getBoundingClientRect();
-    if (sRect.width === 0 && sRect.height === 0) return;
-    const chip = document.createElement("div");
-    chip.className = "fly-chip";
-    chip.textContent = String(anim.val != null ? anim.val : anim.result);
-    const sx = Math.round(sRect.left + sRect.width / 2 - 14);
-    const sy = Math.round(sRect.top - 6);
-    const dx = Math.round(dRect.left + dRect.width / 2 - 14);
-    const dy = Math.round(dRect.top - 6);
-    chip.style.transform = `translate3d(${sx}px, ${sy}px, 0) scale(0.92)`;
-    chip.style.opacity = "0.96";
-    flyLayerEl.appendChild(chip);
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        chip.classList.add("landed");
-        chip.style.transform = `translate3d(${dx}px, ${dy}px, 0) scale(1)`;
-      });
-    });
-    setTimeout(() => {
-      chip.style.opacity = "0";
-    }, 340);
-    setTimeout(() => {
-      if (chip.parentNode) chip.parentNode.removeChild(chip);
-    }, 620);
-  }
-
-  // src/viz/highlight.ts
-  var HIGHLIGHT_BUILTINS = /* @__PURE__ */ new Set([
-    "checkpoint",
-    "\u65AD\u70B9",
-    "this",
-    "console",
-    "window",
-    "document",
-    "globalThis",
-    "undefined",
-    "NaN",
-    "Infinity",
-    "Math",
-    "JSON",
-    "Object",
-    "Array",
-    "Number",
-    "String",
-    "Boolean",
-    "Map",
-    "Set",
-    "Promise",
-    "Error",
-    "RegExp",
-    "Date",
-    "parseInt",
-    "parseFloat",
-    "isNaN",
-    "setTimeout",
-    "clearTimeout"
-  ]);
-  var DECLARED_NAMES_CACHE = { src: null, names: /* @__PURE__ */ new Set() };
-  function collectDeclaredNames(src) {
-    if (LANG === "python") return PY_ENGINE.collectDeclared(src);
-    const text = String(src == null ? "" : src);
-    if (DECLARED_NAMES_CACHE.src === text) return DECLARED_NAMES_CACHE.names;
-    const names = /* @__PURE__ */ new Set();
-    let js = text;
-    try {
-      js = stripTypes(text);
-    } catch (_) {
-      js = text;
-    }
-    try {
-      collectNames(js).forEach((n) => names.add(n));
-    } catch (_) {
-    }
-    let m;
-    const impRe = /\/\*__import__\*\/\s*var\s+([^\n=]+)=/g;
-    while (m = impRe.exec(js)) {
-      const lhs = m[1] || "";
-      const idRe = /\b([A-Za-z_$][\w$]*)\b/g;
-      let im;
-      while (im = idRe.exec(lhs)) {
-        if (im[1]) names.add(im[1]);
-      }
-    }
-    const typeRe = /\b(?:function|class|interface|type|enum)\s+([A-Za-z_$][\w$]*)/g;
-    const rawClean = blankStrings(text);
-    while (m = typeRe.exec(rawClean)) {
-      if (m[1]) names.add(m[1]);
-    }
-    const fnAssign = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:function\b|\(|[A-Za-z_$][\w$]*\s*=>)/g;
-    while (m = fnAssign.exec(js)) {
-      if (m[1]) names.add(m[1]);
-    }
-    DECLARED_NAMES_CACHE = { src: text, names };
-    return names;
-  }
-  function collectHighlightBuiltins(declared) {
-    const source = LANG === "python" ? typeof PY_ENGINE !== "undefined" && PY_ENGINE.builtins || [] : HIGHLIGHT_BUILTINS;
-    const out = /* @__PURE__ */ new Set();
-    Array.from(source).forEach((name) => {
-      if (!declared.has(name)) out.add(name);
-    });
-    return out;
-  }
-  function hl(t, declared) {
-    if (LANG === "python") return PY_ENGINE.hl(t, declared);
-    const re = new RegExp("(\\/\\/.*$)|(\"(?:[^\"\\\\]|\\\\.)*\"|'(?:[^'\\\\]|\\\\.)*'|`(?:[^`\\\\]|\\\\.)*`)|\\b(function|const|let|var|new|class|extends|typeof|instanceof|import|export|from|async|await|interface|type|as|satisfies)\\b|\\b(for|if|else|return|while|do|switch|case|break|continue|try|catch|finally|throw|yield)\\b|\\b(number|string|boolean|void|any|unknown|never|Math|Map|Set|Array|Object|JSON|Number|String|Boolean|Promise|Record|Error)\\b|\\b(true|false|null|undefined|\\d+(?:\\.\\d+)?)\\b|(\\b[A-Za-z_$][\\w$]*)(?=\\s*\\()|(?<=\\.)([A-Za-z_$][\\w$]*)\\b|([{,][ \\t]*)([A-Za-z_$][\\w$]*)(?=[ \\t]*:)|(^[ \\t]*)([A-Za-z_$][\\w$]*)(?=[ \\t]*:)|\\b([A-Za-z_$][\\w$]*)\\b|(===|!==|>=|<=|=>|&&|\\|\\||\\+\\+|--)", "g");
-    let out = "", last = 0, m;
-    while (m = re.exec(t)) {
-      out += esc(t.slice(last, m.index));
-      if (m[1]) out += '<span class="com">' + esc(m[1]) + "</span>";
-      else if (m[2]) out += '<span class="str">' + esc(m[2]) + "</span>";
-      else if (m[3]) out += '<span class="kw">' + esc(m[3]) + "</span>";
-      else if (m[4]) out += '<span class="ctl">' + esc(m[4]) + "</span>";
-      else if (m[5]) out += '<span class="' + (HIGHLIGHT_BUILTINS.has(m[5]) ? "bi" : "typ") + '">' + esc(m[5]) + "</span>";
-      else if (m[6]) out += '<span class="num">' + esc(m[6]) + "</span>";
-      else if (m[7]) {
-        const id = m[7];
-        const isMethod = m.index > 0 && t[m.index - 1] === ".";
-        if (!isMethod && HIGHLIGHT_BUILTINS.has(id)) out += '<span class="bi">' + esc(id) + "</span>";
-        else if (!declared || isMethod || declared.has(id)) out += '<span class="fn">' + esc(id) + "</span>";
-        else out += esc(id);
-      } else if (m[8]) out += '<span class="prop">' + esc(m[8]) + "</span>";
-      else if (m[9]) out += esc(m[9]) + '<span class="prop">' + esc(m[10]) + "</span>";
-      else if (m[11]) out += esc(m[11]) + '<span class="prop">' + esc(m[12]) + "</span>";
-      else if (m[13]) {
-        if (!declared || declared.has(m[13])) out += '<span class="prop">' + esc(m[13]) + "</span>";
-        else if (HIGHLIGHT_BUILTINS.has(m[13])) out += '<span class="bi">' + esc(m[13]) + "</span>";
-        else out += esc(m[13]);
-      } else if (m[14]) out += '<span class="op">' + esc(m[14]) + "</span>";
-      last = m.index + m[0].length;
-    }
-    out += esc(t.slice(last));
-    return out;
-  }
-  function findExprSpan(line, target, fromIndex = 0) {
-    if (!target) return -1;
-    const startBoundary = isIdentPart(target[0]);
-    const endBoundary = isIdentPart(target[target.length - 1]);
-    let pos = Math.max(0, fromIndex);
-    while (pos <= line.length - target.length) {
-      const idx = line.indexOf(target, pos);
-      if (idx < 0) return -1;
-      const prev = idx > 0 ? line[idx - 1] : "";
-      const next = idx + target.length < line.length ? line[idx + target.length] : "";
-      const okStart = !startBoundary || !isIdentPart(prev);
-      const okEnd = !endBoundary || !isIdentPart(next);
-      if (okStart && okEnd) return idx;
-      pos = idx + 1;
-    }
-    return -1;
-  }
-  function hlActiveLine(rawLine, anim, declared) {
-    if (LANG === "python") return PY_ENGINE.hlActiveLine(rawLine, anim, declared);
-    if (!anim) return hl(rawLine, declared);
-    const h = (s) => hl(s, declared);
-    const declPrefix = rawLine.match(/^\s*(?:(?:export\s+)?(?:const|let|var)\b\s*)/);
-    const lhsSearchStart = declPrefix ? declPrefix[0].length : 0;
-    if (anim.type === "assign" && typeof anim.from === "string" && anim.from && typeof anim.to === "string" && anim.to) {
-      const toIdx = findExprSpan(rawLine, anim.to, lhsSearchStart);
-      if (toIdx >= 0) {
-        const afterTo = toIdx + anim.to.length;
-        const eqPos = rawLine.indexOf("=", afterTo);
-        const rhsSearchStart = eqPos >= 0 ? eqPos + 1 : afterTo;
-        const fromIdx = findExprSpan(rawLine, anim.from, rhsSearchStart);
-        if (fromIdx >= afterTo) {
-          const p1 = rawLine.slice(0, toIdx);
-          const p2 = rawLine.slice(toIdx, afterTo);
-          const p3 = rawLine.slice(afterTo, fromIdx);
-          const p4 = rawLine.slice(fromIdx, fromIdx + anim.from.length);
-          const p5 = rawLine.slice(fromIdx + anim.from.length);
-          return h(p1) + '<span class="tok-dst">' + h(p2) + "</span>" + h(p3) + '<span class="tok-src">' + h(p4) + "</span>" + h(p5);
-        }
-      }
-    }
-    if (anim.type === "compare" && anim.lhs) {
-      const condPrefix = rawLine.match(/^\s*(?:}\s*)?(?:(?:else\s+)?(?:if|while)\s*\(|for\s*\([^;]*;)/);
-      const cmpStart = condPrefix ? condPrefix[0].length : 0;
-      const lIdx = findExprSpan(rawLine, anim.lhs, cmpStart);
-      if (lIdx >= 0) {
-        if (anim.rhs) {
-          const afterLhs2 = lIdx + anim.lhs.length;
-          const opStr = anim.op || "";
-          const opIdx = opStr ? rawLine.indexOf(opStr, afterLhs2) : -1;
-          const rhsStart = opIdx >= 0 ? opIdx + opStr.length : afterLhs2;
-          const rIdx = findExprSpan(rawLine, anim.rhs, rhsStart);
-          if (rIdx >= afterLhs2) {
-            const p1 = rawLine.slice(0, lIdx);
-            const p2 = rawLine.slice(lIdx, afterLhs2);
-            const p3 = rawLine.slice(afterLhs2, rIdx);
-            const p4 = rawLine.slice(rIdx, rIdx + anim.rhs.length);
-            const p5 = rawLine.slice(rIdx + anim.rhs.length);
-            return h(p1) + '<span class="tok-cmp">' + h(p2) + "</span>" + h(p3) + '<span class="tok-cmp">' + h(p4) + "</span>" + h(p5);
-          }
-        }
-        const afterLhs = lIdx + anim.lhs.length;
-        return h(rawLine.slice(0, lIdx)) + '<span class="tok-cmp">' + h(rawLine.slice(lIdx, afterLhs)) + "</span>" + h(rawLine.slice(afterLhs));
-      }
-    }
-    if (anim.type === "checkpoint") {
-      const fnName = anim.fn || "checkpoint";
-      const fnIdx = findExprSpan(rawLine, fnName, 0);
-      if (fnIdx >= 0) {
-        const p1 = rawLine.slice(0, fnIdx);
-        const p2 = rawLine.slice(fnIdx, fnIdx + fnName.length);
-        const rest = rawLine.slice(fnIdx + fnName.length);
-        return h(p1) + '<span class="tok-ckpt">' + h(p2) + "</span>" + h(rest);
-      }
-    }
-    if (anim.type === "call" && anim.fn) {
-      const toStr = typeof anim.to === "string" && anim.to ? anim.to : "";
-      const toIdx = toStr ? findExprSpan(rawLine, toStr, lhsSearchStart) : -1;
-      const fnSearchStart = toIdx >= 0 ? toIdx + toStr.length : lhsSearchStart;
-      const fnIdx = findExprSpan(rawLine, anim.fn, fnSearchStart);
-      if (fnIdx >= 0) {
-        if (toIdx >= 0 && fnIdx > toIdx) {
-          const p12 = rawLine.slice(0, toIdx);
-          const p22 = rawLine.slice(toIdx, toIdx + toStr.length);
-          const p3 = rawLine.slice(toIdx + toStr.length, fnIdx);
-          const p4 = rawLine.slice(fnIdx, fnIdx + anim.fn.length);
-          const p5 = rawLine.slice(fnIdx + anim.fn.length);
-          return h(p12) + '<span class="tok-dst">' + h(p22) + "</span>" + h(p3) + '<span class="tok-fn">' + h(p4) + "</span>" + h(p5);
-        }
-        const p1 = rawLine.slice(0, fnIdx);
-        const p2 = rawLine.slice(fnIdx, fnIdx + anim.fn.length);
-        const rest = rawLine.slice(fnIdx + anim.fn.length);
-        return h(p1) + '<span class="tok-fn">' + h(p2) + "</span>" + h(rest);
-      }
-    }
-    return h(rawLine);
-  }
-  function updateEditorChrome() {
-    const text = editor.value.replace(/\r\n?/g, "\n");
-    const lines = text.split("\n");
-    const declared = collectDeclaredNames(text);
-    const builtins = collectHighlightBuiltins(declared);
-    const liveErrors = liveTypeDiags(text);
-    const liveByLine = /* @__PURE__ */ new Map();
-    liveErrors.forEach((d) => {
-      if (d && d.line >= 1 && !liveByLine.has(d.line)) liveByLine.set(d.line, d);
-    });
-    const st = TRACE.steps.length ? TRACE.steps[cur] : null;
-    const activeFrame = st ? getActiveFrame(st) : null;
-    const curLine = activeFrame ? activeFrame.line : st ? st.line : -1;
-    const showVizOnLine = Boolean(st && (!activeFrame || activeFrame.isTop) && (st.anim || st.error) && curLine >= 1 && curLine <= lines.length);
-    const errorBadge = (lineNum) => {
-      const d = liveByLine.get(lineNum);
-      if (!d) return "";
-      const tip = (d.code ? d.code + ": " : "") + (d.message || "");
-      return '<span class="ln-err-badge" title="' + esc(tip) + '">\u2717 ' + esc(d.code || (LANG === "python" ? "PY" : "TS")) + "</span>";
-    };
-    if (window.PlaygroundCM) {
-      const errorLines = /* @__PURE__ */ new Set([...liveByLine.keys(), ...TYPE_ERROR_LINES, ...RUNTIME_ERROR_LINES]);
-      if (st && st.error && curLine >= 1) errorLines.add(curLine);
-      window.PlaygroundCM.syncFromApp({
-        language: LANG,
-        text,
-        lines,
-        declared,
-        builtins,
-        liveErrors,
-        curLine,
-        st,
-        errorLines
-      });
-    } else {
-      highlightEl.innerHTML = lines.map((t, k) => {
-        const lineNum = k + 1;
-        const isCur = lineNum === curLine;
-        const isLiveErr = liveByLine.has(lineNum);
-        const isErr = isLiveErr || TYPE_ERROR_LINES.has(lineNum) || RUNTIME_ERROR_LINES.has(lineNum) || Boolean(isCur && st && st.error);
-        const inner = isCur && (!activeFrame || activeFrame.isTop) ? hlActiveLine(t, st && st.anim, declared) : hl(t, declared);
-        const content = (inner || "&nbsp;") + (isLiveErr ? errorBadge(lineNum) : "");
-        return '<span class="ln' + (isCur ? " cur" : "") + (isErr ? " err" : "") + '">' + content + "</span>";
-      }).join("");
-      gutterEl.innerHTML = lines.map((t, k) => {
-        const lineNum = k + 1;
-        const isCur = lineNum === curLine;
-        const isErr = liveByLine.has(lineNum) || TYPE_ERROR_LINES.has(lineNum) || RUNTIME_ERROR_LINES.has(lineNum) || Boolean(isCur && st && st.error);
-        const hasCkpt = /^\s*(?:checkpoint|断点)\s*\(/.test(t);
-        return '<div class="gline' + (isCur ? " cur" : "") + (hasCkpt ? " ckpt" : "") + (isErr ? " err" : "") + '" data-line="' + lineNum + '">' + lineNum + "</div>";
-      }).join("");
-    }
-    updateStepViz(st, curLine, showVizOnLine, lines[curLine - 1] || "");
-    syncScroll();
-  }
-  var LIVE_TYPE_CACHE = { src: null, diags: [] };
-  function liveTypeDiags(src) {
-    if (LANG === "python") return PY_DIAGS;
-    const text = String(src == null ? "" : src);
-    if (LIVE_TYPE_CACHE.src === text) return LIVE_TYPE_CACHE.diags;
-    let diags = [];
-    try {
-      diags = typecheckTS(text, STRICT_TS) || [];
-    } catch (_) {
-      diags = [];
-    }
-    LIVE_TYPE_CACHE = { src: text, diags };
-    return diags;
-  }
-  function revealErrorLine(line, focus) {
-    const ln = Math.round(Number(line) || 0);
-    if (ln < 1) return;
-    if (window.PlaygroundCM) {
-      window.PlaygroundCM.revealLine(ln, focus);
-      return;
-    }
-    const lines = editor.value.replace(/\r\n?/g, "\n").split("\n");
-    if (ln > lines.length) return;
-    scrollCodeTo(ln);
-    if (!focus || !editor.focus) return;
-    try {
-      editor.focus();
-      let pos = 0;
-      for (let i = 0; i < ln - 1; i++) pos += (lines[i] || "").length + 1;
-      editor.selectionStart = editor.selectionEnd = Math.min(pos, editor.value.length);
-    } catch (_) {
-    }
-  }
-  var HOVER_GEOM = { charW: 0, lh: 24, padLeft: 16, padTop: 12 };
-  var hoverTipKey = "";
-  function hoverMetrics() {
-    let lh = 24, padLeft = 16, padTop = 12;
-    try {
-      const cs = typeof getComputedStyle === "function" ? getComputedStyle(editor) : null;
-      if (cs) {
-        lh = parseFloat(cs.lineHeight) || lh;
-        padLeft = parseFloat(cs.paddingLeft) || padLeft;
-        padTop = parseFloat(cs.paddingTop) || padTop;
-        if (!HOVER_GEOM.charW && document.createElement) {
-          const cv = document.createElement("canvas");
-          const ctx = cv && cv.getContext ? cv.getContext("2d") : null;
-          if (ctx) {
-            ctx.font = (cs.fontWeight || "400") + " " + (cs.fontSize || "15px") + " " + (cs.fontFamily || "monospace");
-            const w = ctx.measureText("MMMMMMMMMM").width / 10;
-            if (w > 0 && isFinite(w)) HOVER_GEOM.charW = w;
-          }
-        }
-      }
-    } catch (_) {
-    }
-    HOVER_GEOM.lh = lh;
-    HOVER_GEOM.padLeft = padLeft;
-    HOVER_GEOM.padTop = padTop;
-    return { lh, padLeft, padTop, charW: HOVER_GEOM.charW || 8.5 };
-  }
-  function hoverColumnAt(lineText, x, charW) {
-    let acc = 0;
-    for (let i = 0; i < lineText.length; i++) {
-      const w = lineText[i] === "	" ? charW * 2 : charW;
-      if (x < acc + w) return i;
-      acc += w;
-    }
-    return -1;
-  }
-  function hoverHitFromEvent(e) {
-    if (!editor || !editor.getBoundingClientRect) return null;
-    const rect = editor.getBoundingClientRect();
-    if (!rect || !rect.width && !rect.height) return null;
-    const m = hoverMetrics();
-    const y = e.clientY - rect.top - m.padTop + (editor.scrollTop || 0);
-    const x = e.clientX - rect.left - m.padLeft + (editor.scrollLeft || 0);
-    if (y < 0 || x < 0) return null;
-    const lineIdx = Math.floor(y / m.lh);
-    const lines = editor.value.replace(/\r\n?/g, "\n").split("\n");
-    if (lineIdx < 0 || lineIdx >= lines.length) return null;
-    const text = lines[lineIdx];
-    if (!text) return null;
-    const col = hoverColumnAt(text, x, m.charW);
-    if (col < 0) return null;
-    return { line: lineIdx + 1, text, col };
-  }
-  var HOVER_WORD_RE = /[A-Za-z0-9_$]/;
-  function hoverWordAt(lineText, col) {
-    if (!lineText) return null;
-    let i = Math.min(Math.max(0, col), lineText.length - 1);
-    if (!HOVER_WORD_RE.test(lineText[i] || "")) {
-      if (i > 0 && HOVER_WORD_RE.test(lineText[i - 1] || "")) i--;
-      else return null;
-    }
-    let s = i, e = i;
-    while (s > 0 && HOVER_WORD_RE.test(lineText[s - 1] || "")) s--;
-    while (e < lineText.length && HOVER_WORD_RE.test(lineText[e] || "")) e++;
-    const word = lineText.slice(s, e);
-    if (!/^[A-Za-z_$][\w$]*$/.test(word)) return null;
-    return { word, start: s, end: e };
-  }
-  function hoverInfoFor(name) {
-    if (!name || !TRACE.steps.length) return null;
-    if (typeof RESERVED_WORDS !== "undefined" && RESERVED_WORDS.has(name) && name !== "this") return null;
-    const st = TRACE.steps[cur];
-    if (!st) return null;
-    const frame = getActiveFrame(st);
-    let v = frame && frame.v || st.v || {};
-    let ds = frame && frame.ds || st.ds || {};
-    let frameLabel = frame ? frame.label : "global";
-    const found = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
-    let lookupKey = name;
-    if (name === "self" && !found(v, "self") && !ds.self && (found(v, "this") || ds.this)) {
-      lookupKey = "this";
-    }
-    if (!found(v, lookupKey) && !ds[lookupKey]) {
-      const globalFrame = st.callStack && st.callStack[0];
-      if (globalFrame && globalFrame.v && (found(globalFrame.v, lookupKey) || globalFrame.ds && globalFrame.ds[lookupKey])) {
-        v = globalFrame.v;
-        ds = globalFrame.ds || {};
-        frameLabel = globalFrame.label || "global";
-      }
-    }
-    const hasVal = found(v, lookupKey);
-    const d = ds[lookupKey] || null;
-    if (!hasVal && !d) return null;
-    const val = hasVal ? v[lookupKey] : void 0;
-    const declaredType = (CURRENT_TS_META && CURRENT_TS_META.varTypes ? CURRENT_TS_META.varTypes.get(lookupKey) : null) || (d && d.interfaceName && d.interfaceName !== "object" ? d.interfaceName : null);
-    const kindStr = d ? d.kind === "interface" && d.isClass ? d.interfaceName ? "class \xB7 " + d.interfaceName : "class" : d.kind : declaredType || inferRuntimeTsType(val);
-    return {
-      name,
-      val,
-      d,
-      kind: kindStr,
-      declaredType: declaredType || null,
-      frame: frameLabel
-    };
-  }
-  function formatHoverVal(val) {
-    if (val === void 0) return "undefined";
-    if (val === null) return "null";
-    if (typeof val === "function") return "\u0192 " + (val.name || "function");
-    if (typeof val === "string") return JSON.stringify(val.length > 140 ? val.slice(0, 138) + "\u2026" : val);
-    if (typeof val === "number" || typeof val === "boolean") return String(val);
-    if (Array.isArray(val)) {
-      const head = val.slice(0, 12).map(formatHoverVal).join(", ");
-      return "[" + head + (val.length > 12 ? ", \u2026 (" + val.length + " \u9879)" : "") + "]";
-    }
-    if (isMapLike(val)) return "Map(" + val.size + ")";
-    if (isSetLike(val)) return "Set(" + val.size + ")";
-    if (typeof val === "object") {
-      const record = val;
-      const keys = Object.keys(record);
-      const body = keys.slice(0, 8).map((k) => k + ": " + formatHoverVal(record[k])).join(", ");
-      return "{ " + body + (keys.length > 8 ? ", \u2026" : "") + " }";
-    }
-    return String(val);
-  }
-  function hoverValueSummary(info) {
-    const d = info.d;
-    if (!d) return formatHoverVal(info.val);
-    const short = formatShortVal;
-    if (Array.isArray(d.items)) {
-      const total = typeof d.total === "number" ? d.total : d.items.length;
-      if (d.kind === "string") {
-        const s = d.items.join("");
-        const suffix = total > d.items.length ? ` (\u5171 ${total} \u5B57\u7B26)` : "";
-        return JSON.stringify(s.length > 120 ? s.slice(0, 118) + "\u2026" : s) + suffix;
-      }
-      const head = d.items.slice(0, 14).map(short).join(", ");
-      return "[" + head + (total > 14 ? `, \u2026 (\u5171 ${total} \u9879)` : "") + "]";
-    }
-    if (d.kind === "map") {
-      const entries = d.entries || [];
-      const total = typeof d.total === "number" ? d.total : entries.length;
-      const head = entries.slice(0, 6).map((e) => short(e.k) + " \u2192 " + short(e.v)).join(", ");
-      return "Map(" + total + " \u9879) { " + head + (total > 6 ? ", \u2026" : "") + " }";
-    }
-    if (d.kind === "grid") {
-      const rows = typeof d.totalRows === "number" ? d.totalRows : (d.cells || []).length;
-      const cols = typeof d.totalCols === "number" ? d.totalCols : rows && Array.isArray(d.cells[0]) ? d.cells[0].length : 0;
-      return rows + " \xD7 " + cols + " \u7684\u4E8C\u7EF4\u77E9\u9635";
-    }
-    if (d.kind === "tree") {
-      const nodes = d.nodes || [];
-      const total = typeof d.total === "number" ? d.total : nodes.length;
-      const root = nodes[d.root] ? nodes[d.root].val : void 0;
-      return "Tree(" + total + " \u4E2A\u8282\u70B9 \xB7 \u6839 " + short(root) + ")";
-    }
-    if (d.kind === "graph") {
-      const nCnt = typeof d.totalNodes === "number" ? d.totalNodes : (d.nodes || []).length;
-      const eCnt = typeof d.totalEdges === "number" ? d.totalEdges : (d.edges || []).length;
-      return "Graph(" + nCnt + " \u8282\u70B9 / " + eCnt + " \u6761\u8FB9)";
-    }
-    if (d.fields) {
-      const head = d.fields.slice(0, 6).map((f) => f.k + ": " + short(f.v)).join(", ");
-      return "{ " + head + (d.fields.length > 6 ? ", \u2026" : "") + " }";
-    }
-    return formatHoverVal(info.val);
-  }
-  function hoverTipHtml(info) {
-    if (!info) return "";
-    const parts = [];
-    const kindLabel = esc(String(info.kind || "").replace(/^./, (c) => c.toUpperCase()));
-    parts.push('<div class="ht-head"><span class="ht-name">' + esc(info.name) + "</span>" + (kindLabel ? '<span class="ht-kind">' + kindLabel + "</span>" : "") + "</div>");
-    parts.push('<div class="ht-val">' + esc(hoverValueSummary(info)) + "</div>");
-    const note = [];
-    if (info.declaredType) note.push("\u58F0\u660E\u7C7B\u578B " + info.declaredType);
-    if (info.frame) note.push("\u6808\u5E27 " + info.frame);
-    if (note.length) parts.push('<div class="ht-note">' + esc(note.join(" \xB7 ")) + "</div>");
-    const vizMap2 = VIZ;
-    const vizFn = info.d && typeof info.d.kind === "string" ? vizMap2[info.d.kind] : null;
-    if (typeof vizFn === "function") {
-      let viz = "";
-      try {
-        viz = vizFn(info.d) || "";
-      } catch (_) {
-        viz = "";
-      }
-      if (viz) parts.push('<div class="ht-viz">' + viz + "</div>");
-    }
-    return parts.join("");
-  }
-  function positionHoverTip(clientX, clientY) {
-    if (!hoverTipEl) return;
-    const rect = hoverTipEl.getBoundingClientRect ? hoverTipEl.getBoundingClientRect() : { width: 320, height: 120 };
-    const vw = typeof window !== "undefined" && window.innerWidth || 1280;
-    const vh = typeof window !== "undefined" && window.innerHeight || 800;
-    let left = clientX + 16;
-    let top = clientY + 18;
-    if (left + rect.width > vw - 10) left = Math.max(8, clientX - rect.width - 16);
-    if (top + rect.height > vh - 10) top = Math.max(8, clientY - rect.height - 14);
-    if (hoverTipEl.style) {
-      hoverTipEl.style.left = left + "px";
-      hoverTipEl.style.top = top + "px";
-    }
-  }
-  function hideHoverTip() {
-    hoverTipKey = "";
-    if (!hoverTipEl) return;
-    if (hoverTipEl.classList) hoverTipEl.classList.remove("on");
-    if (hoverTipEl.setAttribute) hoverTipEl.setAttribute("aria-hidden", "true");
-  }
-  function showHoverTip(info, clientX, clientY) {
-    if (!hoverTipEl || !info) {
-      hideHoverTip();
-      return;
-    }
-    hoverTipEl.innerHTML = hoverTipHtml(info);
-    if (hoverTipEl.classList) hoverTipEl.classList.add("on");
-    if (hoverTipEl.setAttribute) hoverTipEl.setAttribute("aria-hidden", "false");
-    positionHoverTip(clientX, clientY);
-  }
-  function hoverTipForName(name, clientX, clientY) {
-    if (!TRACE.steps.length) {
-      hideHoverTip();
-      return false;
-    }
-    const info = hoverInfoFor(name);
-    if (!info) {
-      hideHoverTip();
-      return false;
-    }
-    const key = name + "@" + cur + "#" + TRACE.steps.length;
-    if (!(hoverTipEl && hoverTipEl.classList && hoverTipEl.classList.contains && hoverTipEl.classList.contains("on")) || hoverTipKey !== key) {
-      hoverTipKey = key;
-      showHoverTip(info, clientX, clientY);
-    } else {
-      positionHoverTip(clientX, clientY);
-    }
-    return true;
-  }
-  function syncScroll() {
-    if (window.PlaygroundCM) {
-      positionStepViz();
-      return;
-    }
-    highlightEl.scrollTop = editor.scrollTop;
-    highlightEl.scrollLeft = editor.scrollLeft;
-    gutterEl.scrollTop = editor.scrollTop;
-    positionStepViz();
-  }
-  function scrollCodeTo(line) {
-    if (window.PlaygroundCM) {
-      window.PlaygroundCM.scrollToLine(line);
-      return;
-    }
-    const lh = 24;
-    const idx = Math.max(0, line - 1);
-    const visible = Math.max(1, Math.floor(editor.clientHeight / lh));
-    const first = Math.round(editor.scrollTop / lh);
-    if (idx < first) editor.scrollTop = Math.max(0, (idx - 1) * lh);
-    else if (idx >= first + visible - 1) editor.scrollTop = (idx - visible + 2) * lh;
-    syncScroll();
-  }
-  var highlightTS = hl;
-
-  // src/viz/memory-normalizers.ts
+  // src/utils/format.ts
   function isMapLike(v) {
     return Object.prototype.toString.call(v) === "[object Map]";
   }
@@ -3685,6 +2854,23 @@ runAsyncDemo()
       });
     } catch (_) {
     }
+  }
+  function formatShortVal(val) {
+    if (val === void 0) return "undefined";
+    if (val === null) return "null";
+    if (typeof val === "string") return JSON.stringify(val.length > 16 ? val.slice(0, 14) + "\u2026" : val);
+    if (typeof val === "number" || typeof val === "boolean") return String(val);
+    if (Array.isArray(val)) return "[" + val.slice(0, 4).map(formatShortVal).join(", ") + (val.length > 4 ? ", \u2026" : "") + "]";
+    if (isMapLike(val)) return "Map(" + val.size + ")";
+    if (isSetLike(val)) return "Set(" + val.size + ")";
+    if (typeof val === "object") {
+      const rec = val;
+      const keys = Object.keys(rec);
+      if (keys.length > 0 && keys.length <= 4 && keys.every((k) => rec[k] === null || typeof rec[k] !== "object")) {
+        return "{ " + keys.map((k) => k + ": " + formatShortVal(rec[k])).join(", ") + " }";
+      }
+    }
+    return "{\u2026}";
   }
   function cloneDeepBounded(val, depth = 0) {
     if (val === null || typeof val !== "object") return val;
@@ -3722,4604 +2908,6 @@ runAsyncDemo()
     });
     return out;
   }
-  function normalizeTree(value) {
-    if (value && Array.isArray(value.nodes)) {
-      return {
-        kind: "tree",
-        total: value.total || value.nodes.length,
-        nodes: value.nodes.slice(0, 31).map((n) => ({
-          val: n.val !== void 0 ? n.val : n.id,
-          left: n.left ?? null,
-          right: n.right ?? null
-        })),
-        root: value.root ?? 0
-      };
-    }
-    const nodes = [];
-    const seen = /* @__PURE__ */ new Set();
-    const nodeMap = /* @__PURE__ */ new Map();
-    function walk(node) {
-      if (!node || typeof node !== "object" || seen.has(node)) return null;
-      seen.add(node);
-      if (nodes.length >= 31) {
-        if (seen.size < 2e3) {
-          walk(node.left);
-          walk(node.right);
-        }
-        return null;
-      }
-      const idx = nodes.length;
-      nodeMap.set(node, idx);
-      const item = {
-        val: node.val !== void 0 ? node.val : node.value,
-        left: null,
-        right: null
-      };
-      nodes.push(item);
-      item.left = walk(node.left);
-      item.right = walk(node.right);
-      return idx;
-    }
-    const root = walk(value);
-    const out = { kind: "tree", nodes, root: root ?? 0, total: seen.size };
-    defineHidden(out, "__nodeMap", nodeMap);
-    return out;
-  }
-  function normalizeList(value) {
-    const pyMeta = value && typeof value === "object" && "__py_meta__" in value ? value.__py_meta__ || null : null;
-    if (Array.isArray(value)) {
-      const total = pyMeta && typeof pyMeta.total === "number" ? pyMeta.total : value.length;
-      const out2 = { kind: "list", items: value.slice(0, 30).map((x) => cloneDeepBounded(x, 1)), total };
-      if (total > 20) {
-        defineHidden(out2, "__raw", value);
-        if (pyMeta) defineHidden(out2, "__pyMeta", pyMeta);
-      }
-      return out2;
-    }
-    const items = [];
-    const rawNodes = [];
-    const rawVals = [];
-    const seen = /* @__PURE__ */ new Set();
-    let curNode = value;
-    while (curNode && typeof curNode === "object" && !seen.has(curNode) && rawNodes.length < 5e3) {
-      seen.add(curNode);
-      const v = curNode.val !== void 0 ? curNode.val : curNode.value;
-      rawNodes.push(curNode);
-      rawVals.push(v);
-      if (items.length < 30) items.push(cloneDeepBounded(v, 1));
-      curNode = curNode.next;
-    }
-    const out = { kind: "list", items, total: rawNodes.length };
-    if (rawNodes.length > 0) {
-      defineHidden(out, "__rawNodes", rawNodes);
-      defineHidden(out, "__rawVals", rawVals);
-    }
-    return out;
-  }
-  function normalizeGraph(value) {
-    if (value && Array.isArray(value.nodes) && Array.isArray(value.edges)) {
-      const rawNodes = value.nodes.slice(0, 16);
-      const count = rawNodes.length || 1;
-      const nodes = rawNodes.map((n, idx) => {
-        const angle = 2 * Math.PI * idx / count - Math.PI / 2;
-        const id = n && typeof n === "object" ? n.id ?? idx : n;
-        const label = n && typeof n === "object" ? n.label ?? n.val ?? id : String(n);
-        const x = n && typeof n.x === "number" ? n.x : Math.round(90 + 62 * Math.cos(angle));
-        const y = n && typeof n.y === "number" ? n.y : Math.round(68 + 48 * Math.sin(angle));
-        return { id, label: String(label), x, y };
-      });
-      const edges = value.edges.slice(0, 32).map(
-        (e) => Array.isArray(e) ? [e[0], e[1]] : [e.from ?? 0, e.to ?? 0]
-      );
-      return { kind: "graph", nodes, edges, totalNodes: value.nodes.length, totalEdges: value.edges.length };
-    }
-    return { kind: "graph", nodes: [], edges: [] };
-  }
-  function snapshot(kind, value, extra) {
-    const recVal = value && typeof value === "object" ? value : null;
-    const pyMeta = recVal && recVal.__py_meta__ ? recVal.__py_meta__ : null;
-    if (kind === "stack") {
-      const arr = Array.isArray(value) ? value : [];
-      const total = pyMeta && typeof pyMeta.total === "number" ? pyMeta.total : arr.length;
-      let items;
-      let baseIdx = 0;
-      if (pyMeta && Array.isArray(pyMeta.tail) && total > arr.length) {
-        items = pyMeta.tail.map((x) => cloneDeepBounded(x, 1));
-        baseIdx = Math.max(0, total - items.length);
-      } else if (arr.length > 40) {
-        baseIdx = arr.length - 40;
-        items = arr.slice(baseIdx).map((x) => cloneDeepBounded(x, 1));
-      } else {
-        items = arr.slice(0, 40).map((x) => cloneDeepBounded(x, 1));
-      }
-      return Object.assign({ kind, items, total, baseIdx }, extra || {});
-    }
-    if (kind === "array" || kind === "heap" || kind === "queue" || kind === "uf") {
-      const arr = Array.isArray(value) ? value : [];
-      const total = pyMeta && typeof pyMeta.total === "number" ? pyMeta.total : arr.length;
-      const items = arr.slice(0, 40).map((x) => cloneDeepBounded(x, 1));
-      const out = Object.assign({ kind, items, total }, extra || {});
-      if (total > 20) {
-        defineHidden(out, "__raw", arr);
-        if (pyMeta) defineHidden(out, "__pyMeta", pyMeta);
-      }
-      return out;
-    }
-    if (kind === "list") {
-      return Object.assign(normalizeList(value), extra || {});
-    }
-    if (kind === "tree") {
-      return Object.assign(normalizeTree(value), extra || {});
-    }
-    if (kind === "graph") {
-      return Object.assign(normalizeGraph(value), extra || {});
-    }
-    if (kind === "string") {
-      const s = String(value);
-      const total = s.length;
-      const items = s.slice(0, 40).split("");
-      const out = Object.assign({ kind, items, total }, extra || {});
-      if (total > 20) {
-        defineHidden(out, "__raw", s);
-      }
-      return out;
-    }
-    if (kind === "map") {
-      const entries = [];
-      let total = 0;
-      if (isMapLike(value)) {
-        const mapVal = value;
-        total = pyMeta && typeof pyMeta.total === "number" ? pyMeta.total : mapVal.size;
-        for (const [k, v] of mapVal) {
-          if (entries.length >= 40) break;
-          entries.push({ k: cloneDeepBounded(k, 1), v: cloneDeepBounded(v, 1) });
-        }
-      } else if (recVal && typeof recVal.forEach === "function") {
-        recVal.forEach((v, k) => {
-          total++;
-          if (entries.length < 40) entries.push({ k: cloneDeepBounded(k, 1), v: cloneDeepBounded(v, 1) });
-        });
-      } else if (recVal) {
-        const keys = Object.keys(recVal);
-        total = keys.length;
-        keys.slice(0, 40).forEach((k) => entries.push({ k, v: cloneDeepBounded(recVal[k], 1) }));
-      }
-      const out = Object.assign({ kind, entries, total }, extra || {});
-      if (total > 20) defineHidden(out, "__raw", value);
-      return out;
-    }
-    if (kind === "set") {
-      const items = [];
-      let total = 0;
-      if (isSetLike(value)) {
-        const setVal = value;
-        total = pyMeta && typeof pyMeta.total === "number" ? pyMeta.total : setVal.size;
-        for (const v of setVal) {
-          if (items.length >= 40) break;
-          items.push(cloneDeepBounded(v, 1));
-        }
-      } else if (recVal && typeof recVal.forEach === "function") {
-        recVal.forEach((v) => {
-          total++;
-          if (items.length < 40) items.push(cloneDeepBounded(v, 1));
-        });
-      }
-      const out = Object.assign({ kind, items, total }, extra || {});
-      if (total > 20) defineHidden(out, "__raw", value);
-      return out;
-    }
-    if (kind === "grid") {
-      const totalRows = pyMeta && typeof pyMeta.totalRows === "number" ? pyMeta.totalRows : Array.isArray(value) ? value.length : 0;
-      const totalCols = pyMeta && typeof pyMeta.totalCols === "number" ? pyMeta.totalCols : Array.isArray(value) && Array.isArray(value[0]) ? value[0].length : 0;
-      const cloned = Array.isArray(value) ? value.slice(0, 30).map((r) => Array.isArray(r) ? r.slice(0, 30).map((c) => cloneDeepBounded(c, 2)) : r) : [[0]];
-      const out = Object.assign({ kind, cells: cloned, mark: null, deps: [], totalRows, totalCols }, extra || {});
-      if (totalRows > 10 || totalCols > 10) {
-        defineHidden(out, "__raw", value);
-        if (pyMeta) defineHidden(out, "__pyMeta", pyMeta);
-      }
-      return out;
-    }
-    if (kind === "interface" || kind === "object") {
-      return Object.assign({ kind: "interface", fields: [], entries: [] }, extra || {});
-    }
-    return { kind: "array", items: [] };
-  }
-  function classifyValue(name, value) {
-    if (value == null) return null;
-    const n = String(name);
-    if (Array.isArray(value)) {
-      if (value.length > 0 && Array.isArray(value[0])) return snapshot("grid", value);
-      if (/^(parent|uf|fa|dsu)\b/i.test(n)) return snapshot("uf", value);
-      if (/stack|stk/i.test(n)) return snapshot("stack", value);
-      if (/queue|deque/i.test(n)) return snapshot("queue", value);
-      if (/heap|pq/i.test(n)) return snapshot("heap", value);
-      if (/^list$/i.test(n)) return snapshot("list", value);
-      return snapshot("array", value);
-    }
-    if (isMapLike(value)) return snapshot("map", value);
-    if (isSetLike(value)) return snapshot("set", value);
-    if (typeof value === "string") {
-      if (value.length > 0) return snapshot("string", value);
-      return null;
-    }
-    if (typeof value === "object") {
-      const obj = value;
-      if (obj.__isVirtualPromise) return null;
-      if (Array.isArray(obj.nodes) && Array.isArray(obj.edges)) return snapshot("graph", obj);
-      if (Array.isArray(obj.nodes) && "root" in obj) return snapshot("tree", obj);
-      if (n !== "this") {
-        if (("val" in obj || "value" in obj) && ("left" in obj || "right" in obj)) return snapshot("tree", obj);
-        if (("val" in obj || "value" in obj) && "next" in obj) return snapshot("list", obj);
-      }
-      const ifaceDef = matchInterfaceForObject(n, obj);
-      const annotType = CURRENT_TS_META.varTypes.get(n);
-      const ifaceName = ifaceDef ? ifaceDef.name : annotType || obj.__py_cls__ || "object";
-      const isClass = Boolean(ifaceDef && ifaceDef.isClass || obj.__py_cls__);
-      const fieldMap = /* @__PURE__ */ new Map();
-      if (ifaceDef) {
-        ifaceDef.fields.forEach((f) => {
-          const fk = f.k || f.name || "";
-          fieldMap.set(fk, {
-            k: fk,
-            v: fk in obj ? cloneDeepBounded(obj[fk], 1) : void 0,
-            declaredType: f.declaredType,
-            optional: Boolean(f.optional)
-          });
-        });
-      }
-      Object.keys(obj).slice(0, 20).forEach((k) => {
-        if (!fieldMap.has(k)) {
-          fieldMap.set(k, {
-            k,
-            v: cloneDeepBounded(obj[k], 1),
-            declaredType: inferRuntimeTsType(obj[k]),
-            optional: false
-          });
-        }
-      });
-      const fields = [...fieldMap.values()];
-      if (fields.length > 0 || isClass) {
-        return snapshot("interface", obj, {
-          interfaceName: ifaceName,
-          isClass,
-          isSchema: false,
-          fields,
-          entries: fields.map((f) => ({ k: f.k, v: f.v }))
-        });
-      }
-    }
-    return null;
-  }
-  function populateInterfaceSchemas(ds) {
-    const { interfaces, varTypes } = CURRENT_TS_META;
-    if (!interfaces || !interfaces.size) return;
-    interfaces.forEach((iface) => {
-      if (iface.isClass && (!iface.fields || !iface.fields.length)) return;
-      const prefix = iface.isClass ? "class " : "interface ";
-      const slotKey = iface.name in ds ? prefix + iface.name : iface.name;
-      let boundInstance = null;
-      let boundVarName = null;
-      Object.keys(ds).forEach((k) => {
-        const item = ds[k];
-        if (!boundInstance && item && item.kind === "interface" && !item.isSchema && item.interfaceName === iface.name) {
-          boundInstance = item;
-          boundVarName = k;
-        }
-      });
-      if (!boundVarName && varTypes) {
-        Object.keys(ds).forEach((k) => {
-          if (!boundVarName && varTypes.get(k) === iface.name) {
-            boundVarName = k;
-          }
-        });
-      }
-      const fields = iface.fields.map((f) => {
-        const key = f.k || f.name || "";
-        const instField = boundInstance && boundInstance.fields ? boundInstance.fields.find((x) => x.k === key) : null;
-        return {
-          k: key,
-          declaredType: f.declaredType,
-          optional: Boolean(f.optional),
-          v: instField ? instField.v : void 0
-        };
-      });
-      ds[slotKey] = {
-        kind: "interface",
-        interfaceName: iface.name,
-        isClass: Boolean(iface.isClass),
-        isSchema: true,
-        instanceName: boundVarName,
-        fields,
-        entries: fields.map((f) => ({ k: f.k, v: f.v !== void 0 ? f.v : f.declaredType }))
-      };
-    });
-  }
-  function detectWindowRange(v) {
-    if (!v) return null;
-    const pairs = [["l", "r"], ["left", "right"], ["lo", "hi"], ["start", "end"]];
-    for (const [lk, rk] of pairs) {
-      const lv = v[lk];
-      const rv = v[rk];
-      if (typeof lv === "number" && typeof rv === "number" && lv >= 0 && rv >= lv) {
-        return [lv, rv];
-      }
-    }
-    return null;
-  }
-  var POINTER_VAR_NAMES = [
-    "mid",
-    "m",
-    "i",
-    "j",
-    "k",
-    "idx",
-    "p",
-    "q",
-    "cur",
-    "curr",
-    "slow",
-    "fast",
-    "pivot",
-    "l",
-    "r",
-    "left",
-    "right",
-    "lo",
-    "hi",
-    "low",
-    "high",
-    "start",
-    "end"
-  ];
-  function build1DFocalSlice(total, getAt, focalCenters) {
-    if (total <= 20) return null;
-    const centers = [];
-    const seenC = /* @__PURE__ */ new Set();
-    (focalCenters || []).forEach((c) => {
-      if (typeof c === "number" && Number.isInteger(c) && c >= 0 && c < total && !seenC.has(c)) {
-        seenC.add(c);
-        centers.push(c);
-      }
-    });
-    const activeCenters = centers.slice(0, 4);
-    const radius = activeCenters.length <= 1 ? 3 : activeCenters.length === 2 ? 2 : 1;
-    const intervals = [
-      [0, Math.min(total - 1, 2)],
-      [Math.max(0, total - 3), total - 1]
-    ];
-    activeCenters.forEach((c) => {
-      intervals.push([Math.max(0, c - radius), Math.min(total - 1, c + radius)]);
-    });
-    intervals.sort((a, b) => a[0] - b[0]);
-    const merged = [];
-    for (const iv of intervals) {
-      const prev = merged[merged.length - 1];
-      if (!prev) {
-        merged.push([iv[0], iv[1]]);
-      } else if (iv[0] <= prev[1] + 2) {
-        prev[1] = Math.max(prev[1], iv[1]);
-      } else {
-        merged.push([iv[0], iv[1]]);
-      }
-    }
-    const out = [];
-    for (let s = 0; s < merged.length; s++) {
-      const curIv = merged[s];
-      if (!curIv) continue;
-      const [start, end] = curIv;
-      const prevIv = s > 0 ? merged[s - 1] : void 0;
-      if (prevIv) {
-        const prevEnd = prevIv[1];
-        const gapCount = start - prevEnd - 1;
-        if (gapCount > 0) {
-          out.push({ gap: true, count: gapCount, from: prevEnd + 1, to: start - 1 });
-        }
-      }
-      for (let idx = start; idx <= end; idx++) {
-        out.push({ idx, val: getAt(idx) });
-      }
-    }
-    return out;
-  }
-  function selectGridAxisIndices(total, focusIdx, maxCount = 8) {
-    if (total <= maxCount) {
-      return Array.from({ length: total }, (_, i) => i);
-    }
-    const set = /* @__PURE__ */ new Set([0, total - 1]);
-    const center = typeof focusIdx === "number" && Number.isInteger(focusIdx) && focusIdx >= 0 && focusIdx < total ? focusIdx : 1;
-    const innerQuota = Math.max(2, maxCount - 2);
-    let start = Math.max(1, center - Math.floor(innerQuota / 2));
-    let end = Math.min(total - 2, start + innerQuota - 1);
-    start = Math.max(1, end - innerQuota + 1);
-    for (let i = start; i <= end; i++) set.add(i);
-    return [...set].sort((a, b) => a - b);
-  }
-  function enrichFromNoteTextAccess(ds, safeV, text, evalIdx) {
-    const propRe = /\b([A-Za-z_$][\w$]*)\s*\.\s*([A-Za-z_$][\w$]*)\b/g;
-    let pm;
-    while (pm = propRe.exec(text)) {
-      const rawObj = pm[1] || "", propName = pm[2];
-      const objName = rawObj === "self" && !ds.self && ds.this ? "this" : rawObj;
-      const objItem = ds[objName];
-      if (objItem && (objItem.kind === "interface" || objItem.kind === "object")) {
-        objItem.hot = propName;
-        const ifaceName = objItem.interfaceName;
-        const ifaceItem = ifaceName ? ds[ifaceName] : void 0;
-        if (ifaceItem && ifaceItem.kind === "interface") {
-          ifaceItem.hot = propName;
-        }
-      }
-    }
-    const g = text.match(/\b([A-Za-z_$][\w$]*)\s*\[\s*([^[\]]+?)\s*\]\s*\[\s*([^[\]]+?)\s*\]/);
-    const gItem = g && g[1] ? ds[g[1]] : void 0;
-    if (g && g[1] && gItem && gItem.kind === "grid") {
-      const row = evalIdx(g[2]);
-      const col = evalIdx(g[3]);
-      if (typeof row === "number" && typeof col === "number") {
-        gItem.mark = [row, col];
-      }
-      const deps = [];
-      const re = /\b[A-Za-z_$][\w$]*\s*\[\s*([^[\]]+?)\s*\]\s*\[\s*([^[\]]+?)\s*\]/g;
-      let m;
-      while (m = re.exec(text)) {
-        const r = evalIdx(m[1]);
-        const c = evalIdx(m[2]);
-        if (typeof r === "number" && typeof c === "number") {
-          const curMark = gItem.mark;
-          if (!(Array.isArray(curMark) && curMark[0] === r && curMark[1] === c)) {
-            deps.push([r, c]);
-          }
-        }
-      }
-      gItem.deps = deps;
-    }
-    const subRe = /\b([A-Za-z_$][\w$]*)\s*\[\s*([^[\]]+?)\s*\](?!\s*\[)/g;
-    let sm;
-    while (sm = subRe.exec(text)) {
-      const varName = sm[1] || "";
-      const d = ds[varName];
-      if (!d || d.kind === "grid") continue;
-      let idx = evalIdx(sm[2]);
-      if (typeof idx === "number") {
-        const total = typeof d.total === "number" ? d.total : d.items ? d.items.length : 0;
-        if (idx < 0 && total > 0) idx = total + idx;
-        if (d.hot === void 0) {
-          d.hot = idx;
-        } else {
-          if (!d.__extraFocal) defineHidden(d, "__extraFocal", []);
-          if (d.__extraFocal) d.__extraFocal.push(idx);
-        }
-      }
-    }
-    const p = text.match(/\b([A-Za-z_$][\w$]*)\s*\.\s*(push|set|add|pop|shift|unshift|get|has)\s*\(\s*([^,)]*)/);
-    const pItem = p && p[1] ? ds[p[1]] : void 0;
-    if (p && p[1] && pItem) {
-      const d = pItem;
-      const method = p[2];
-      const firstArg = p[3] ? p[3].trim() : "";
-      if (method === "get" || method === "has" || method === "set" || method === "add") {
-        const argVal = firstArg ? safeEvalExpr(firstArg, safeV) : void 0;
-        if (d.kind === "map" && argVal !== void 0) {
-          d.hot = argVal;
-        } else if (d.kind === "set" && argVal !== void 0) {
-          d.hot = argVal;
-        }
-      }
-      if (method === "push" || method === "add" || method === "set" || method === "unshift") {
-        if (d.kind === "stack" || d.kind === "array" || d.kind === "queue" || d.kind === "heap") {
-          const total = typeof d.total === "number" ? d.total : d.items ? d.items.length : 0;
-          if (total > 0) d.hot = method === "unshift" ? 0 : total - 1;
-        } else if (d.kind === "map" && d.hot === void 0) {
-          if (d.entries && d.entries.length) {
-            const lastEntry = d.entries[d.entries.length - 1];
-            if (lastEntry) d.hot = lastEntry.k;
-          }
-        } else if (d.kind === "set" && d.hot === void 0) {
-          if (d.items && d.items.length) d.hot = d.items[d.items.length - 1];
-        }
-      }
-    }
-  }
-  function enrichFromNote(ds, v, note) {
-    if (!ds || typeof ds !== "object") return;
-    const safeV = v || {};
-    const text = String(note || "");
-    const evalIdx = (expr) => {
-      const t = String(expr || "").trim();
-      if (!t) return void 0;
-      if (/^\d+$/.test(t)) return +t;
-      const directVal = safeV[t];
-      if (t in safeV && typeof directVal === "number" && Number.isInteger(directVal)) return directVal;
-      const m = t.match(/^([A-Za-z_$][\w$]*)\s*([+-])\s*(\d+)$/);
-      if (m && m[1] && m[3] !== void 0) {
-        const baseVal = safeV[m[1]];
-        if (typeof baseVal === "number" && Number.isInteger(baseVal)) {
-          return m[2] === "+" ? baseVal + +m[3] : baseVal - +m[3];
-        }
-      }
-      const evaluated = safeEvalExpr(t, safeV);
-      return typeof evaluated === "number" && Number.isInteger(evaluated) ? evaluated : void 0;
-    };
-    const win = detectWindowRange(safeV);
-    if (win) {
-      Object.keys(ds).forEach((k) => {
-        const item = ds[k];
-        if (item && (item.kind === "array" || item.kind === "string")) {
-          item.win = win;
-        }
-      });
-    }
-    if (text) {
-      enrichFromNoteTextAccess(ds, safeV, text, evalIdx);
-    }
-    Object.keys(ds).forEach((varName) => {
-      const d = ds[varName];
-      if (!d || typeof d !== "object") return;
-      if (d.kind === "tree" && d.__nodeMap) {
-        for (const pName of POINTER_VAR_NAMES) {
-          const ref = safeV[pName];
-          if (ref && typeof ref === "object" && d.__nodeMap.has(ref)) {
-            const nodeIdx = d.__nodeMap.get(ref);
-            if (d.hot === void 0) d.hot = nodeIdx;
-            break;
-          }
-        }
-      }
-      if (d.kind === "list" && d.__rawNodes) {
-        const nodePtrs = {};
-        const focal = [];
-        for (const pName of POINTER_VAR_NAMES) {
-          const ref = safeV[pName];
-          if (ref && typeof ref === "object") {
-            const idx = d.__rawNodes.indexOf(ref);
-            if (idx >= 0) {
-              const ptrArr = nodePtrs[idx] || (nodePtrs[idx] = []);
-              if (!ptrArr.includes(pName)) ptrArr.push(pName);
-              if (d.hot === void 0) d.hot = idx;
-              focal.push(idx);
-            }
-          }
-        }
-        if (Object.keys(nodePtrs).length) d.pointers = nodePtrs;
-        const rawVals = d.__rawVals || [];
-        const total = d.total || rawVals.length;
-        if (total > 20) {
-          if (typeof d.hot === "number") focal.unshift(d.hot);
-          d.windowed = build1DFocalSlice(total, (idx) => cloneDeepBounded(rawVals[idx], 1), focal);
-        }
-      }
-      if (d.kind === "array" || d.kind === "queue" || d.kind === "heap" || d.kind === "uf" || d.kind === "string" || d.kind === "list" && !d.__rawNodes) {
-        const total = typeof d.total === "number" ? d.total : d.items ? d.items.length : 0;
-        if (total > 0) {
-          const ptrs = d.pointers || {};
-          const focal = [];
-          if (typeof d.hot === "number" && d.hot >= 0 && d.hot < total) focal.push(d.hot);
-          if (Array.isArray(d.__extraFocal)) {
-            d.__extraFocal.forEach((idx) => {
-              if (typeof idx === "number" && idx >= 0 && idx < total) focal.push(idx);
-            });
-          }
-          if (typeof d.mark === "number" && d.mark >= 0 && d.mark < total) focal.push(d.mark);
-          if (Array.isArray(d.win)) {
-            if (d.win[0] >= 0 && d.win[0] < total) focal.push(d.win[0]);
-            if (d.win[1] >= 0 && d.win[1] < total) focal.push(d.win[1]);
-          }
-          for (const pName of POINTER_VAR_NAMES) {
-            const val = safeV[pName];
-            if (typeof val === "number" && Number.isInteger(val) && val >= 0 && val < total) {
-              const pArr = ptrs[val] || (ptrs[val] = []);
-              if (!pArr.includes(pName)) pArr.push(pName);
-              focal.push(val);
-            }
-          }
-          if (Object.keys(ptrs).length) d.pointers = ptrs;
-          if (d.hot === void 0 && d.mark === void 0) {
-            if (typeof safeV.mid === "number" && Number.isInteger(safeV.mid) && safeV.mid >= 0 && safeV.mid < total) {
-              d.mark = safeV.mid;
-            } else if (typeof safeV.m === "number" && Number.isInteger(safeV.m) && safeV.m >= 0 && safeV.m < total) {
-              d.mark = safeV.m;
-            }
-          }
-          if (total > 20) {
-            const raw = d.__raw;
-            const pyMeta = d.__pyMeta;
-            const getAt = (idx) => {
-              if (pyMeta && pyMeta.sparse && pyMeta.sparse.has(idx)) {
-                return cloneDeepBounded(pyMeta.sparse.get(idx), 1);
-              }
-              if (typeof raw === "string") return raw[idx] ?? "";
-              if (Array.isArray(raw) && idx < raw.length) return cloneDeepBounded(raw[idx], 1);
-              if (d.items && idx < d.items.length) return d.items[idx];
-              return "\u2026";
-            };
-            d.windowed = build1DFocalSlice(total, getAt, focal);
-          }
-        }
-      }
-      if (d.kind === "map" && d.hot !== void 0 && d.__raw && isMapLike(d.__raw)) {
-        const rawMap = d.__raw;
-        const entries = d.entries || (d.entries = []);
-        const exists = entries.some((e) => e.k === d.hot);
-        if (!exists && rawMap.has(d.hot)) {
-          entries.push({ k: cloneDeepBounded(d.hot, 1), v: cloneDeepBounded(rawMap.get(d.hot), 1) });
-        }
-      }
-      if (d.kind === "set" && d.hot !== void 0 && d.__raw && isSetLike(d.__raw)) {
-        const rawSet = d.__raw;
-        const items = d.items || (d.items = []);
-        const exists = items.some((x) => x === d.hot);
-        if (!exists && rawSet.has(d.hot)) {
-          items.push(cloneDeepBounded(d.hot, 1));
-        }
-      }
-      if (d.kind === "grid") {
-        const totalRows = typeof d.totalRows === "number" ? d.totalRows : d.cells ? d.cells.length : 0;
-        const totalCols = typeof d.totalCols === "number" ? d.totalCols : d.cells && d.cells[0] ? d.cells[0].length : 0;
-        if (totalRows > 10 || totalCols > 10) {
-          const pyMeta = d.__pyMeta;
-          if (pyMeta && Array.isArray(pyMeta.rowIndices) && Array.isArray(pyMeta.colIndices) && Array.isArray(pyMeta.viewCells)) {
-            d.rowIndices = pyMeta.rowIndices;
-            d.colIndices = pyMeta.colIndices;
-            d.viewCells = pyMeta.viewCells;
-          } else {
-            let focusR = Array.isArray(d.mark) ? d.mark[0] : d.deps && d.deps[0] ? d.deps[0][0] : void 0;
-            let focusC = Array.isArray(d.mark) ? d.mark[1] : d.deps && d.deps[0] ? d.deps[0][1] : void 0;
-            if (focusR === void 0 || focusC === void 0) {
-              const coordPairs = [["i", "j"], ["r", "c"], ["row", "col"], ["x", "y"]];
-              for (const [rk, ck] of coordPairs) {
-                const rv = safeV[rk];
-                const cv = safeV[ck];
-                if (typeof rv === "number" && typeof cv === "number") {
-                  focusR = rv;
-                  focusC = cv;
-                  break;
-                }
-              }
-            }
-            const rowIndices = selectGridAxisIndices(totalRows, focusR, 8);
-            const colIndices = selectGridAxisIndices(totalCols, focusC, 8);
-            const rawGrid = Array.isArray(d.__raw) ? d.__raw : d.cells;
-            d.rowIndices = rowIndices;
-            d.colIndices = colIndices;
-            d.viewCells = rowIndices.map((r) => {
-              const rowArr = rawGrid && Array.isArray(rawGrid[r]) ? rawGrid[r] : [];
-              return colIndices.map((c) => cloneDeepBounded(rowArr[c], 2));
-            });
-          }
-        }
-      }
-      delete d.__raw;
-      delete d.__rawNodes;
-      delete d.__rawVals;
-      delete d.__nodeMap;
-      delete d.__pyMeta;
-      delete d.__extraFocal;
-    });
-  }
-  function formatShortVal(val) {
-    if (val === void 0) return "undefined";
-    if (val === null) return "null";
-    if (typeof val === "string") return JSON.stringify(val.length > 16 ? val.slice(0, 14) + "\u2026" : val);
-    if (typeof val === "number" || typeof val === "boolean") return String(val);
-    if (Array.isArray(val)) return "[" + val.slice(0, 4).map(formatShortVal).join(", ") + (val.length > 4 ? ", \u2026" : "") + "]";
-    if (isMapLike(val)) return "Map(" + val.size + ")";
-    if (isSetLike(val)) return "Set(" + val.size + ")";
-    if (typeof val === "object") {
-      const rec = val;
-      const keys = Object.keys(rec);
-      if (keys.length > 0 && keys.length <= 4 && keys.every((k) => rec[k] === null || typeof rec[k] !== "object")) {
-        return "{ " + keys.map((k) => k + ": " + formatShortVal(rec[k])).join(", ") + " }";
-      }
-    }
-    return "{\u2026}";
-  }
-  function safeEvalExpr(expr, v) {
-    if (!expr || !v) return void 0;
-    const clean = stripTypes(expr).trim();
-    if (!clean) return void 0;
-    if (/\.\s*(push|pop|shift|unshift|splice|set|add|delete|clear|fill|sort|reverse)\s*\(/.test(clean)) {
-      return void 0;
-    }
-    if (new RegExp("(?:\\+\\+|--|(?<![=!<>])=(?!=))").test(clean)) return void 0;
-    try {
-      const keys = Object.keys(v).filter((k) => /^[A-Za-z_$][\w$]*$/.test(k) && !RESERVED_WORDS.has(k));
-      const vals = keys.map((k) => v[k]);
-      const fn = new Function(...keys, "return (" + clean + ");");
-      const thisCtx = v && Object.prototype.hasOwnProperty.call(v, "this") ? v.this : void 0;
-      return fn.call(thisCtx, ...vals);
-    } catch {
-      return void 0;
-    }
-  }
-  function splitLogicalClauses(condExpr) {
-    const clauses = [];
-    let depth = 0, start = 0;
-    for (let i = 0; i < condExpr.length; i++) {
-      const ch = condExpr[i];
-      if (ch === '"' || ch === "'" || ch === "`") {
-        i = skipString(condExpr, i) - 1;
-        continue;
-      }
-      if (ch === "(" || ch === "[" || ch === "{") depth++;
-      else if (ch === ")" || ch === "]" || ch === "}") depth--;
-      else if (depth === 0 && (ch === "&" && condExpr[i + 1] === "&" || ch === "|" && condExpr[i + 1] === "|")) {
-        clauses.push({ expr: condExpr.slice(start, i).trim(), opAfter: ch + ch });
-        i++;
-        start = i + 1;
-      }
-    }
-    clauses.push({ expr: condExpr.slice(start).trim(), opAfter: null });
-    return clauses.filter((c) => c.expr);
-  }
-  function deriveAnimAndNote(rawLine, v, nextV) {
-    const clean = stripTypes(rawLine || "").trim().replace(/;$/, "");
-    if (!clean) return { anim: null, note: rawLine };
-    let condExpr = null;
-    const condMatch = clean.match(/^(?:}\s*)?(?:if|while|else\s+if)\s*\(([\s\S]+)\)\s*\{?$/);
-    if (condMatch && condMatch[1]) {
-      condExpr = condMatch[1].trim();
-    } else {
-      const forMatch = clean.match(/^for\s*\(([\s\S]+)\)\s*\{?$/);
-      if (forMatch && forMatch[1] !== void 0) {
-        const semiParts = splitTopLevelSemicolons(forMatch[1]);
-        if (semiParts.length === 3 && semiParts[1]?.trim()) {
-          condExpr = semiParts[1].trim();
-        }
-      }
-    }
-    if (condExpr !== null) {
-      const clauses = splitLogicalClauses(condExpr);
-      let activeClause = clauses[0] ? clauses[0].expr : condExpr;
-      let overallResult = safeEvalExpr(condExpr, v);
-      for (let i = 0; i < clauses.length; i++) {
-        const c = clauses[i];
-        if (!c) continue;
-        activeClause = c.expr;
-        const cVal = safeEvalExpr(c.expr, v);
-        if (typeof cVal === "boolean") {
-          if (c.opAfter === "&&" && !cVal) {
-            overallResult = false;
-            break;
-          }
-          if (c.opAfter === "||" && cVal) {
-            overallResult = true;
-            break;
-          }
-          if (!c.opAfter) overallResult = cVal;
-        }
-      }
-      const cmp = activeClause.match(/^(.+?)\s*(===|!==|<=|>=|==|!=|<|>)\s*(.+)$/);
-      if (cmp && cmp[1] && cmp[2] && cmp[3]) {
-        const lhs = cmp[1].trim(), op = cmp[2], rhs = cmp[3].trim();
-        const lhsVal = safeEvalExpr(lhs, v);
-        const rhsVal = safeEvalExpr(rhs, v);
-        const resVal = typeof overallResult === "boolean" ? overallResult : safeEvalExpr(activeClause, v);
-        if (typeof resVal === "boolean") {
-          const anim = {
-            type: "compare",
-            lhs,
-            rhs,
-            op,
-            lhsVal: formatShortVal(lhsVal),
-            rhsVal: formatShortVal(rhsVal),
-            result: resVal
-          };
-          const note = `${rawLine.trim()}  \u2192  ${anim.lhsVal} ${op} ${anim.rhsVal} (${resVal})`;
-          return { anim, note };
-        }
-      }
-      if (typeof overallResult === "boolean") {
-        const anim = {
-          type: "compare",
-          lhs: activeClause,
-          rhs: "",
-          op: "?",
-          lhsVal: formatShortVal(overallResult),
-          rhsVal: "",
-          result: overallResult
-        };
-        return { anim, note: `${rawLine.trim()}  \u2192  ${overallResult}` };
-      }
-    }
-    const ckptCall = clean.match(/^(?:checkpoint|断点)\s*\(([\s\S]*)\)$/);
-    if (ckptCall && ckptCall[1] !== void 0) {
-      const fnName = clean.startsWith("\u65AD\u70B9") ? "\u65AD\u70B9" : "checkpoint";
-      const args = splitTopLevel(ckptCall[1]).map((s) => s.trim()).filter(Boolean);
-      const ckptVals = nextV && Array.isArray(nextV.__ckptVals) ? nextV.__ckptVals : null;
-      const argVals = ckptVals && ckptVals.length === args.length ? ckptVals : args.map((a) => formatShortVal(safeEvalExpr(a, v)));
-      const anim = { type: "checkpoint", fn: fnName, args, argVals };
-      const detail = args.length ? args.map((a, idx) => argVals[idx] !== void 0 && argVals[idx] !== a ? `${a}=${argVals[idx]}` : a).join(", ") : "\u5DF2\u547D\u4E2D\u65AD\u70B9";
-      return { anim, note: `\u25C9 ${fnName}(${detail})`, isCheckpoint: true };
-    }
-    const callOnly = clean.match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\((.*)\)$/);
-    if (callOnly && callOnly[1] && callOnly[2] !== void 0) {
-      const fnName = callOnly[1];
-      const args = splitTopLevel(callOnly[2]).map((s) => s.trim()).filter(Boolean);
-      const argVals = args.map((a) => formatShortVal(safeEvalExpr(a, v)));
-      const anim = { type: "call", fn: fnName, args, argVals, result: null, to: null };
-      return { anim, note: `${fnName}(${argVals.join(", ")})` };
-    }
-    const compoundAssign = clean.match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\s*\[[^\]]+\])*)\s*(\+=|-=|\*=|\/=)\s*(.+)$/);
-    if (compoundAssign && compoundAssign[1] && compoundAssign[2] && compoundAssign[3]) {
-      const to = compoundAssign[1].trim();
-      const op = compoundAssign[2][0];
-      const rhs = compoundAssign[3].trim();
-      const from = `${to} ${op} ${rhs}`;
-      let val = safeEvalExpr(from, v);
-      if (val === void 0 && nextV) val = safeEvalExpr(to, nextV);
-      if (val !== void 0) {
-        const valStr = formatShortVal(val);
-        return { anim: { type: "assign", to, from: rhs, val: valStr }, note: `${to} \u2190 ${valStr}   (${rawLine.trim()})` };
-      }
-    }
-    const assignMatch = clean.match(/^(?:(?:const|let|var)\s+)?([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\s*\[[^\]]+\])*)\s*=\s*(?!=)(.+)$/);
-    if (assignMatch && assignMatch[1] && assignMatch[2]) {
-      const to = assignMatch[1].trim();
-      const from = assignMatch[2].trim();
-      const isSingleDecl = splitTopLevel(clean.replace(/^(?:const|let|var)\s+/, "")).length === 1;
-      if (isSingleDecl || !from.includes(",") || /^[\w$.]+\s*\([^)]*\)$/.test(from)) {
-        let val = safeEvalExpr(from, v);
-        if (val === void 0 && nextV) {
-          val = safeEvalExpr(to, nextV);
-        }
-        const valStr = val !== void 0 ? formatShortVal(val) : null;
-        const rhsCall = from.match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\((.*)\)$/);
-        if (rhsCall && rhsCall[1] && rhsCall[2] !== void 0 && valStr !== null) {
-          const fnName = rhsCall[1];
-          const args = splitTopLevel(rhsCall[2]).map((s) => s.trim()).filter(Boolean);
-          const argVals = args.map((a) => formatShortVal(safeEvalExpr(a, v)));
-          const anim = { type: "call", fn: fnName, args, argVals, result: valStr, to };
-          return { anim, note: `${to} = ${fnName}(${argVals.join(", ")})  \u2192  ${valStr}` };
-        }
-        if (valStr !== null) {
-          const anim = { type: "assign", to, from, val: valStr };
-          return { anim, note: `${to} \u2190 ${valStr}   (${rawLine.trim()})` };
-        }
-      }
-    }
-    const retMatch = clean.match(/^return\s+(.+)$/);
-    if (retMatch && retMatch[1]) {
-      const expr = retMatch[1].trim();
-      const val = safeEvalExpr(expr, v);
-      if (val !== void 0) {
-        const valStr = formatShortVal(val);
-        const anim = { type: "assign", to: "return", from: expr, val: valStr };
-        return { anim, note: `return ${expr}  \u2192  ${valStr}` };
-      }
-    }
-    return { anim: null, note: rawLine.trim() };
-  }
-
-  // src/viz/memory-graph.ts
-  function getActiveFrame(st) {
-    if (!st) return null;
-    const stack = Array.isArray(st.callStack) && st.callStack.length ? st.callStack : null;
-    if (!stack) {
-      return {
-        idx: 0,
-        total: 1,
-        isTop: true,
-        fn: "global",
-        label: "global",
-        line: st.line,
-        v: st.v || {},
-        ds: st.ds || {}
-      };
-    }
-    const topIdx = stack.length - 1;
-    const idx = SELECTED_FRAME_IDX !== null && SELECTED_FRAME_IDX >= 0 && SELECTED_FRAME_IDX < stack.length ? SELECTED_FRAME_IDX : topIdx;
-    const frame = stack[idx] || stack[topIdx];
-    return {
-      idx,
-      total: stack.length,
-      isTop: idx === topIdx,
-      fn: frame.fn || "global",
-      label: frame.label || "global",
-      line: frame.line || st.line,
-      v: frame.v || (idx === topIdx ? st.v : {}) || {},
-      ds: (frame.ds && Object.keys(frame.ds).length ? frame.ds : st.ds) || {}
-    };
-  }
-  function selectStackFrame(frameIdx) {
-    const st = TRACE.steps[cur];
-    if (!st || !Array.isArray(st.callStack) || !st.callStack.length) return;
-    const topIdx = st.callStack.length - 1;
-    const clamped = Math.max(0, Math.min(topIdx, Number(frameIdx) || 0));
-    SELECTED_FRAME_IDX = clamped === topIdx ? null : clamped;
-    renderStatic(cur, false);
-  }
-  function renderCallStack(st) {
-    if (!callStackBarEl) return;
-    if (!st) {
-      callStackBarEl.innerHTML = '<span class="cs-empty">\u672A\u5728\u8C03\u8BD5</span>';
-      if (callStackHintEl) callStackHintEl.textContent = "\u70B9\u51FB\u6808\u5E27\u53EF\u5207\u6362\u4F5C\u7528\u57DF";
-      return;
-    }
-    const stack = Array.isArray(st.callStack) && st.callStack.length ? st.callStack : [{ fn: "global", label: "global", line: st.line, v: st.v || {}, ds: st.ds || {} }];
-    const active = getActiveFrame(st);
-    const activeIdx = active ? active.idx : 0;
-    const activeIsTop = active ? active.isTop : true;
-    const activeLabel = active ? active.label : "global";
-    callStackBarEl.innerHTML = stack.map((f, fIdx) => {
-      const isSel = fIdx === activeIdx;
-      const isTop = fIdx === stack.length - 1;
-      const cls = "cs-crumb" + (isSel ? " active" : "") + (isTop ? " is-top" : "") + (!isTop && isSel ? " inspecting" : "");
-      const sep = fIdx > 0 ? '<span class="cs-sep">\u25B8</span>' : "";
-      return sep + `<button type="button" class="${cls}" data-frame-idx="${fIdx}" title="\u5207\u6362\u5230\u6808\u5E27 ${esc(f.label)} (\u7B2C ${f.line || st.line} \u884C)">${esc(f.label)}</button>`;
-    }).join("");
-    if (callStackHintEl) {
-      callStackHintEl.textContent = activeIsTop ? `\u6808\u6DF1 ${stack.length} \xB7 \u70B9\u51FB\u6808\u5E27\u53EF\u5207\u6362` : `\u6B63\u5728\u67E5\u770B\u6808\u5E27 ${activeIdx + 1}/${stack.length}: ${activeLabel}`;
-    }
-  }
-  function truncMap(arr, render, d) {
-    if (d && Array.isArray(d.windowed) && d.windowed.length) {
-      return d.windowed.map((entry) => {
-        if (entry && entry.gap) {
-          const tip = entry.from != null && entry.to != null ? ` title="\u7701\u7565\u4E0B\u6807 ${entry.from}..${entry.to}\uFF08\u5171 ${entry.count} \u9879\uFF09"` : "";
-          return '<div class="vmore"' + tip + '>\u2026<span class="vmore-cnt">+' + entry.count + "</span></div>";
-        }
-        return render(entry.val, entry.idx ?? 0);
-      }).join("");
-    }
-    const MAX = 20, HEAD = 10, TAIL = 5;
-    if (!arr || arr.length <= MAX) return (arr || []).map((x, i) => render(x, i)).join("");
-    const total = d && typeof d.total === "number" && d.total >= arr.length ? d.total : arr.length;
-    const hidden = Math.max(1, total - HEAD - TAIL);
-    const head = arr.slice(0, HEAD).map((x, i) => render(x, i)).join("");
-    const tailStart = total - TAIL;
-    const tail = arr.slice(arr.length - TAIL).map((x, i) => render(x, tailStart + i)).join("");
-    return head + '<div class="vmore" title="\u7701\u7565 ' + hidden + ' \u9879">\u2026<span class="vmore-cnt">+' + hidden + "</span></div>" + tail;
-  }
-  function vizArray(d) {
-    if (!d || !d.items || !d.items.length) return null;
-    const win = d.win;
-    const ptrs = d.pointers;
-    const cells = truncMap(d.items, (n, k) => {
-      let cls = "vcell vcell-idx";
-      if (win && k >= win[0] && k <= win[1]) cls += " win";
-      if (d.hot === k) cls += " hot";
-      else if (d.mark === k) cls += " mark";
-      const pTag = ptrs && ptrs[k] && ptrs[k].length ? '<span class="sub-tag ptr-tag">' + esc(ptrs[k].slice(0, 2).join(",")) + "</span>" : "";
-      return '<div class="' + cls + '">' + pTag + '<span class="val">' + esc(n) + '</span><span class="idx">' + k + "</span></div>";
-    }, d);
-    return '<div class="viz"><div class="viz-row varray-row">' + cells + "</div></div>";
-  }
-  function vizQueue(d) {
-    if (!d || !d.items || !d.items.length) return null;
-    const len = typeof d.total === "number" && d.total > 0 ? d.total : d.items.length;
-    const cells = truncMap(d.items, (n, k) => {
-      let cls = "vcell vcell-idx";
-      if (d.hot === k) cls += " hot";
-      else if (k === 0) cls += " mark";
-      const tag = k === 0 ? '<span class="sub-tag">front</span>' : k === len - 1 ? '<span class="sub-tag">back</span>' : "";
-      return '<div class="' + cls + '">' + tag + '<span class="val">' + esc(n) + '</span><span class="idx">' + k + "</span></div>";
-    }, d);
-    return '<div class="viz"><div class="viz-row varray-row">' + cells + "</div></div>";
-  }
-  function vizHeap(d) {
-    if (!d || !d.items || !d.items.length) return null;
-    const cells = truncMap(d.items, (n, k) => {
-      let cls = "vcell vcell-idx";
-      if (d.hot === k) cls += " hot";
-      else if (k === 0) cls += " mark";
-      const tag = k === 0 ? '<span class="sub-tag">top</span>' : "";
-      return '<div class="' + cls + '">' + tag + '<span class="val">' + esc(n) + '</span><span class="idx">' + k + "</span></div>";
-    }, d);
-    return '<div class="viz"><div class="viz-row varray-row">' + cells + '</div><div class="vmeta-hint">parent = (i - 1) &gt;&gt; 1 \xB7 left = 2i + 1</div></div>';
-  }
-  function vizUF(d) {
-    if (!d || !d.items || !d.items.length) return null;
-    const cells = truncMap(d.items, (p, k) => {
-      let cls = "vcell vcell-idx";
-      if (d.hot === k) cls += " hot";
-      else if (p === k) cls += " mark";
-      const tag = p === k ? '<span class="sub-tag">root</span>' : '<span class="sub-tag">p:' + esc(p) + "</span>";
-      return '<div class="' + cls + '">' + tag + '<span class="val">' + esc(p) + '</span><span class="idx">' + k + "</span></div>";
-    }, d);
-    return '<div class="viz"><div class="viz-row varray-row">' + cells + "</div></div>";
-  }
-  function vizMap(d) {
-    if (!d || !d.entries || !d.entries.length) return null;
-    return '<div class="viz"><div class="viz-row vmap-row">' + truncMap(
-      d.entries,
-      (e) => '<div class="vpair' + (d.hot === e.k ? " hot" : "") + '"><span class="vcell vk">' + esc(e.k) + '</span><span class="varr">\u2192</span><span class="vcell vv">' + esc(e.v) + "</span></div>",
-      d
-    ) + "</div></div>";
-  }
-  function vizSet(d) {
-    if (!d || !d.items || !d.items.length) return null;
-    return '<div class="viz"><div class="viz-row">' + truncMap(
-      d.items,
-      (x) => '<div class="vcell' + (d.hot === x ? " hot" : "") + '">' + esc(x) + "</div>",
-      d
-    ) + "</div></div>";
-  }
-  function vizStack(d) {
-    if (!d || !d.items || !d.items.length) return null;
-    const all = d.items, MAX = 6;
-    const total = typeof d.total === "number" && d.total >= all.length ? d.total : all.length;
-    const baseIdx = typeof d.baseIdx === "number" ? d.baseIdx : Math.max(0, total - all.length);
-    const sliceStart = Math.max(0, all.length - MAX);
-    const shown = all.slice(sliceStart);
-    const hiddenCount = Math.max(0, total - shown.length);
-    const rows = shown.map((x, k) => {
-      const abs = baseIdx + sliceStart + k;
-      const isTop = abs === total - 1;
-      return '<div class="vcell' + (d.hot === abs ? " hot" : isTop ? " mark" : "") + '"><span>' + esc(x) + "</span>" + (isTop ? '<span class="vtop">top</span>' : "") + "</div>";
-    }).join("");
-    return '<div class="viz"><div class="vcol">' + rows + "</div>" + (hiddenCount ? '<div class="vmore">\u2026+' + hiddenCount + "</div>" : "") + "</div>";
-  }
-  function vizString(d) {
-    if (!d || !d.items || !d.items.length) return null;
-    const win = d.win;
-    if (Array.isArray(d.windowed) && d.windowed.length) {
-      const cells = truncMap(d.items, (ch, k) => {
-        let cls = "ch";
-        if (win && k >= win[0] && k <= win[1]) cls += " win";
-        if (d.hot === k) cls += " hot";
-        else if (d.mark === k) cls += " mark";
-        return '<span class="' + cls + '" title="[' + k + ']">' + esc(ch) + "</span>";
-      }, d);
-      return '<div class="viz"><div class="vstr">' + cells + "</div></div>";
-    }
-    return '<div class="viz"><div class="vstr">' + d.items.map((ch, k) => {
-      let cls = "ch";
-      if (win && k >= win[0] && k <= win[1]) cls += " win";
-      if (d.hot === k) cls += " hot";
-      else if (d.mark === k) cls += " mark";
-      return '<span class="' + cls + '">' + esc(ch) + "</span>";
-    }).join("") + "</div></div>";
-  }
-  function vizGrid(d) {
-    if (!d || !d.cells || !d.cells.length) return null;
-    const depSet = new Set((d.deps || []).map((p) => p[0] + "," + p[1]));
-    if (Array.isArray(d.rowIndices) && Array.isArray(d.colIndices) && Array.isArray(d.viewCells)) {
-      const rIdxs = d.rowIndices;
-      const cIdxs = d.colIndices;
-      const colTracks = [];
-      for (let ci = 0; ci < cIdxs.length; ci++) {
-        const curC = cIdxs[ci] ?? 0;
-        const prevC = cIdxs[ci - 1] ?? 0;
-        if (ci > 0 && curC > prevC + 1) colTracks.push({ gap: true });
-        colTracks.push({ gap: false, c: curC, ci });
-      }
-      const gridCols = colTracks.length + 1;
-      let html2 = '<div class="ghead">r\\c</div>';
-      for (const ct of colTracks) {
-        if (ct.gap) {
-          html2 += '<div class="ggap">\u22EF</div>';
-        } else {
-          const isFocusCol = Array.isArray(d.mark) && d.mark[1] === ct.c;
-          html2 += '<div class="ghead' + (isFocusCol ? " focus" : "") + '">' + ct.c + "</div>";
-        }
-      }
-      for (let ri = 0; ri < rIdxs.length; ri++) {
-        const realR = rIdxs[ri];
-        if (ri > 0 && realR !== void 0 && realR > (rIdxs[ri - 1] ?? 0) + 1) {
-          html2 += '<div class="ggap">\u22EE</div>';
-          for (let gi = 0; gi < colTracks.length; gi++) {
-            html2 += '<div class="ggap">' + (colTracks[gi]?.gap ? "\u22F1" : "\u22EE") + "</div>";
-          }
-        }
-        const isFocusRow = Array.isArray(d.mark) && d.mark[0] === realR;
-        html2 += '<div class="ghead' + (isFocusRow ? " focus" : "") + '">' + realR + "</div>";
-        const rowVals = d.viewCells[ri] || [];
-        for (const ct of colTracks) {
-          if (ct.gap) {
-            html2 += '<div class="ggap">\u22EF</div>';
-          } else {
-            const realC = ct.c;
-            let cls = "gcell";
-            if (Array.isArray(d.mark) && d.mark[0] === realR && d.mark[1] === realC) cls += " hot";
-            else if (depSet.has(realR + "," + realC)) cls += " dep";
-            const val = rowVals[ct.ci];
-            html2 += '<div class="' + cls + '" title="[' + realR + "][" + realC + ']">' + (val === void 0 || val === null ? "\xB7" : esc(val)) + "</div>";
-          }
-        }
-      }
-      return '<div class="viz"><div class="vgrid-wrap"><div class="vgrid" style="grid-template-columns:repeat(' + gridCols + ',auto)">' + html2 + "</div></div></div>";
-    }
-    const cols = d.cells[0]?.length ?? 0;
-    let html = "";
-    for (let r = 0; r < d.cells.length; r++) {
-      for (let c = 0; c < cols; c++) {
-        let cls = "gcell";
-        if (Array.isArray(d.mark) && d.mark[0] === r && d.mark[1] === c) cls += " hot";
-        else if (depSet.has(r + "," + c)) cls += " dep";
-        const val = d.cells[r]?.[c];
-        html += '<div class="' + cls + '">' + (val === void 0 || val === null ? "\xB7" : esc(val)) + "</div>";
-      }
-    }
-    return '<div class="viz"><div class="vgrid" style="grid-template-columns:repeat(' + cols + ',auto)">' + html + "</div></div>";
-  }
-  function vizList(d) {
-    if (!d || !d.items || !d.items.length) return null;
-    const total = typeof d.total === "number" && d.total > 0 ? d.total : d.items.length;
-    const ptrs = d.pointers;
-    return '<div class="viz"><div class="viz-row">' + truncMap(d.items, (val, k) => {
-      const pTag = ptrs && ptrs[k] && ptrs[k].length ? '<span class="sub-tag ptr-tag">' + esc(ptrs[k].slice(0, 2).join(",")) + "</span>" : "";
-      return '<div class="vpair"><span class="vcell' + (d.hot === k ? " hot" : "") + '">' + pTag + esc(val) + "</span>" + (k < total - 1 ? '<span class="varr">\u2192</span>' : '<span class="varr">\u2192</span><span class="vempty">null</span>') + "</div>";
-    }, d) + "</div></div>";
-  }
-  function vizTree(d) {
-    if (!d || !d.nodes || !d.nodes.length) return null;
-    const nodes = d.nodes;
-    const root = d.root ?? 0;
-    const coords = /* @__PURE__ */ new Map();
-    let maxDepth = 0;
-    function layout(idx, depth, xMin, xMax) {
-      if (idx == null || !nodes[idx] || coords.has(idx) || depth > 5) return;
-      const node = nodes[idx];
-      if (!node) return;
-      maxDepth = Math.max(maxDepth, depth);
-      const x = (xMin + xMax) / 2;
-      const y = 20 + depth * 36;
-      coords.set(idx, { x, y, val: node.val, left: node.left, right: node.right });
-      layout(node.left, depth + 1, xMin, x);
-      layout(node.right, depth + 1, x, xMax);
-    }
-    layout(root, 0, 14, 226);
-    const h = Math.max(60, (maxDepth + 1) * 36 + 10);
-    let edgesSvg = "", nodesSvg = "";
-    coords.forEach((info, idx) => {
-      [info.left, info.right].forEach((ch) => {
-        if (ch != null && coords.has(ch)) {
-          const c = coords.get(ch);
-          if (c) edgesSvg += `<line class="vsvg-edge" x1="${info.x}" y1="${info.y}" x2="${c.x}" y2="${c.y}"/>`;
-        }
-      });
-      const cls = d.hot === idx ? "vsvg-node hot" : idx === root ? "vsvg-node mark" : "vsvg-node";
-      nodesSvg += `<g><circle class="${cls}" cx="${info.x}" cy="${info.y}" r="12"/><text class="vsvg-txt" x="${info.x}" y="${info.y}">${esc(info.val)}</text></g>`;
-    });
-    return `<div class="viz"><div class="vsvg-wrap"><svg viewBox="0 0 240 ${h}" width="240" height="${h}">${edgesSvg}${nodesSvg}</svg></div></div>`;
-  }
-  function vizGraph(d) {
-    if (!d || !d.nodes || !d.nodes.length) return null;
-    const byId = /* @__PURE__ */ new Map();
-    d.nodes.forEach((n, idx) => byId.set(n.id ?? idx, n));
-    let edgesSvg = "", nodesSvg = "";
-    (d.edges || []).forEach((e) => {
-      const e0 = Array.isArray(e) ? e[0] : e.from ?? 0;
-      const e1 = Array.isArray(e) ? e[1] : e.to ?? 0;
-      const a = byId.get(e0), b = byId.get(e1);
-      if (a && b) {
-        edgesSvg += `<line class="vsvg-edge" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"/>`;
-      }
-    });
-    d.nodes.forEach((n, idx) => {
-      const id = n.id ?? idx;
-      const cls = d.hot === id ? "vsvg-node hot" : "vsvg-node";
-      nodesSvg += `<g><circle class="${cls}" cx="${n.x}" cy="${n.y}" r="13"/><text class="vsvg-txt" x="${n.x}" y="${n.y}">${esc(n.label ?? id)}</text></g>`;
-    });
-    return `<div class="viz"><div class="vsvg-wrap"><svg viewBox="0 0 180 136" width="180" height="136">${edgesSvg}${nodesSvg}</svg></div></div>`;
-  }
-  function vizInterface(d) {
-    if (!d) return null;
-    const fields = d.fields || (d.entries ? d.entries.map((e) => ({ k: String(e.k), v: e.v, declaredType: typeof e.v })) : []);
-    if (!fields.length && !d.isClass) return null;
-    const ifaceTitle = d.interfaceName && d.interfaceName !== "object" ? d.interfaceName : "Object";
-    const kwTxt = d.isClass ? "class" : "interface";
-    const badgeTxt = d.isSchema ? d.instanceName ? `schema \xB7 \u7ED1\u5B9A ${d.instanceName}` : "schema" : "instance";
-    const rows = fields.length ? fields.slice(0, 12).map((f) => {
-      const isHot = d.hot === f.k;
-      const hasVal = f.v !== void 0;
-      const isStr = typeof f.v === "string";
-      const valDisplay = hasVal ? isStr ? JSON.stringify(f.v) : f.v !== null && typeof f.v === "object" ? safeJSONStringify(f.v) : String(f.v) : "\u672A\u5B9E\u4F8B\u5316";
-      return '<div class="viface-row' + (isHot ? " hot" : "") + '"><span class="viface-k">' + esc(f.k) + (f.optional ? '<span class="viface-opt">?</span>' : "") + "</span>" + (f.declaredType ? '<span class="viface-t">: ' + esc(f.declaredType) + "</span>" : "") + (hasVal ? '<span class="viface-eq">=</span><span class="viface-v' + (isStr ? " str" : "") + '">' + esc(valDisplay) + "</span>" : '<span class="viface-v schema-only">' + esc(valDisplay) + "</span>") + "</div>";
-    }).join("") : '<div class="viface-row"><span class="viface-v schema-only">\uFF08\u65E0\u5B9E\u4F8B\u5C5E\u6027\uFF09</span></div>';
-    return '<div class="viz"><div class="viface"><div class="viface-head"><span class="viface-kw">' + kwTxt + '</span><span class="viface-title">' + esc(ifaceTitle) + '</span><span class="viface-badge">' + esc(badgeTxt) + '</span></div><div class="viface-body">' + rows + "</div></div></div>";
-  }
-  function vizEventLoop(d) {
-    if (!d) return null;
-    const phaseMap = {
-      sync: { label: "Sync \xB7 \u540C\u6B65\u6808\u6267\u884C", cls: "sync" },
-      await_suspend: { label: "Await \xB7 \u534F\u7A0B\u6302\u8D77", cls: "suspend" },
-      await_resume: { label: "Await \xB7 \u534F\u7A0B\u6062\u590D", cls: "resume" },
-      microtask: { label: "Microtask \xB7 \u5FAE\u4EFB\u52A1\u51FA\u961F", cls: "micro" },
-      macrotask: { label: "Macrotask \xB7 \u5B8F\u4EFB\u52A1\u89E6\u53D1", cls: "macro" }
-    };
-    const ph = (d.phase ? phaseMap[d.phase] : void 0) || { label: d.phase || "Event Loop", cls: "sync" };
-    const nowMs = typeof d.now === "number" ? d.now : 0;
-    const coroutines = Array.isArray(d.coroutines) ? d.coroutines : [];
-    const coroHtml = coroutines.length ? coroutines.map((c) => {
-      const stCls = c.status === "running" ? "running" : c.status === "suspended" ? "suspended" : "completed";
-      const stLabel = c.status === "running" ? "\u25CF \u6267\u884C\u4E2D" : c.status === "suspended" ? `\u23F8 \u6302\u8D77 @L${c.line}` : "\u2713 \u5B8C\u6210";
-      const detail = c.status === "suspended" && c.awaitingExpr ? `<span class="vel-coro-expr">await ${esc(c.awaitingExpr)}</span>` : c.status === "completed" && c.returnVal !== void 0 ? `<span class="vel-coro-expr">\u21D2 ${esc(c.returnVal)}</span>` : "";
-      return `<div class="vel-chip coro-${stCls}"><span class="vel-chip-title">async ${esc(c.name)}()</span><span class="vel-chip-status">${esc(stLabel)}</span>` + detail + `</div>`;
-    }).join("") : '<span class="vel-empty">\u65E0\u6D3B\u8DC3\u534F\u7A0B</span>';
-    const microtasks = Array.isArray(d.microtasks) ? d.microtasks : [];
-    const microHtml = microtasks.length ? microtasks.map(
-      (m, idx) => `<div class="vel-qitem micro${idx === 0 ? " head" : ""}"><span class="vel-qidx">#${idx + 1}</span><span class="vel-qlabel">${esc(m.label)}</span>` + ((m.line ?? 0) > 0 ? `<span class="vel-qmeta">@L${m.line}</span>` : "") + `</div>`
-    ).join("") : '<span class="vel-empty">\u961F\u5217\u4E3A\u7A7A (0)</span>';
-    const macrotasks = Array.isArray(d.macrotasks) ? d.macrotasks : [];
-    const macroHtml = macrotasks.length ? macrotasks.map(
-      (t, idx) => `<div class="vel-qitem macro${idx === 0 ? " head" : ""}"><span class="vel-qidx">t=${t.due}ms</span><span class="vel-qlabel">${esc(t.label)}</span><span class="vel-qmeta">+${t.delay}ms</span></div>`
-    ).join("") : '<span class="vel-empty">\u65E0\u5F85\u89E6\u53D1\u5B9A\u65F6\u5668 (0)</span>';
-    const promises = Array.isArray(d.promises) ? d.promises : [];
-    const promHtml = promises.length ? promises.map((p) => {
-      const st = p.state || "pending";
-      const icon = st === "fulfilled" ? "\u2713" : st === "rejected" ? "\u2717" : "\u23F3";
-      const reactions = p.reactions ?? 0;
-      const valPart = st === "pending" ? reactions > 0 ? `<span class="vel-pval dim">${reactions} waiter${reactions > 1 ? "s" : ""}</span>` : '<span class="vel-pval dim">pending</span>' : `<span class="vel-pval">${esc(p.value)}</span>`;
-      return `<div class="vel-pcard ${esc(st)}"><span class="vel-phead"><span class="vel-picon">${icon}</span><span class="vel-pname">P#${p.id} \xB7 ${esc(p.label)}</span></span>` + valPart + `</div>`;
-    }).join("") : '<span class="vel-empty">\u6682\u65E0 Promise \u5B9E\u4F8B</span>';
-    return `<div class="viz"><div class="veventloop"><div class="vel-header"><span class="vel-phase ${ph.cls}">${esc(ph.label)}</span>` + (d.activeTask ? `<span class="vel-active">${esc(d.activeTask)}</span>` : "") + `<span class="vel-clock">\u23F1 \u865A\u62DF\u65F6\u949F ${nowMs}ms</span></div><div class="vel-grid"><div class="vel-lane"><div class="vel-lane-title">Async \u534F\u7A0B\u72B6\u6001</div><div class="vel-lane-body">` + coroHtml + '</div></div><div class="vel-lane"><div class="vel-lane-title">Microtask \u5FAE\u4EFB\u52A1\u961F\u5217 (FIFO)</div><div class="vel-lane-body">' + microHtml + '</div></div><div class="vel-lane"><div class="vel-lane-title">Macrotask \u5B8F\u4EFB\u52A1 / \u5B9A\u65F6\u5668</div><div class="vel-lane-body">' + macroHtml + '</div></div><div class="vel-lane"><div class="vel-lane-title">Promise \u72B6\u6001\u8868</div><div class="vel-lane-body vel-pgrid">' + promHtml + "</div></div></div></div></div>";
-  }
-  var VIZ = {
-    array: vizArray,
-    map: vizMap,
-    set: vizSet,
-    stack: vizStack,
-    string: vizString,
-    grid: vizGrid,
-    list: vizList,
-    heap: vizHeap,
-    queue: vizQueue,
-    tree: vizTree,
-    graph: vizGraph,
-    uf: vizUF,
-    interface: vizInterface,
-    object: vizInterface,
-    eventloop: vizEventLoop
-  };
-  function pressure(d) {
-    if (!d) return 0;
-    let n = 0;
-    if (typeof d.total === "number") n = d.total;
-    else if (d.items) n = d.items.length;
-    else if (d.fields) n = d.fields.length;
-    else if (d.entries) n = d.entries.length;
-    else if (d.nodes) n = d.nodes.length;
-    else if (d.cells) n = (d.totalRows || d.cells.length) * (d.totalCols || (d.cells[0] ? d.cells[0].length : 1));
-    switch (d.kind) {
-      case "eventloop":
-        return 1;
-      case "grid":
-        return Math.min(1, Math.max(0.5, n / 12));
-      case "array":
-      case "queue":
-      case "uf":
-        return Math.min(1, n / 11);
-      case "heap":
-        return Math.min(1, Math.max(0.46, n / 11));
-      case "list":
-        return Math.min(1, n / 7);
-      case "map":
-        return Math.min(1, n / 7);
-      case "interface":
-      case "object":
-        return Math.min(1, n / 6);
-      case "set":
-        return Math.min(1, n / 9);
-      case "string":
-        return Math.min(1, n / 18);
-      case "tree":
-        return n >= 6 ? 0.38 : 0.28;
-      case "graph":
-        return n >= 5 ? 0.36 : 0.26;
-      case "stack":
-        return Math.min(0.35, n / 16);
-      default:
-        return Math.min(1, n / 10);
-    }
-  }
-  var SPAN_UP = 0.45;
-  var SPAN_DOWN = 0.28;
-  function decideSpan(id, p) {
-    const curSpan = layoutSpan[id] || 1;
-    if (curSpan < 2 && p >= SPAN_UP) layoutSpan[id] = 2;
-    else if (curSpan > 1 && p <= SPAN_DOWN) layoutSpan[id] = 1;
-    return layoutSpan[id] || 1;
-  }
-  function allocateSlotSpans(vars, ds) {
-    const meta = vars.map((s, idx) => {
-      const d = ds[s.id];
-      const kind = d && d.kind || s.kind || "array";
-      const p = pressure(d);
-      const span = decideSpan(s.id, p);
-      return { s, d, kind, p, span, idx };
-    });
-    const oneColItems = meta.filter((m) => m.span === 1);
-    if (oneColItems.length % 2 === 1) {
-      let promote = oneColItems[0];
-      if (promote) {
-        for (let i = 1; i < oneColItems.length; i++) {
-          const candidate = oneColItems[i];
-          if (candidate && candidate.p >= promote.p) {
-            promote = candidate;
-          }
-        }
-        promote.span = 2;
-      }
-    }
-    return meta;
-  }
-  var _DISCOVER_CACHE = {
-    traceRef: null,
-    scannedSteps: 0,
-    map: /* @__PURE__ */ new Map(),
-    list: []
-  };
-  function discoverVars() {
-    const steps = TRACE && TRACE.steps || [];
-    if (_DISCOVER_CACHE.traceRef !== TRACE || steps.length < _DISCOVER_CACHE.scannedSteps) {
-      _DISCOVER_CACHE = { traceRef: TRACE, scannedSteps: 0, map: /* @__PURE__ */ new Map(), list: [] };
-    }
-    if (_DISCOVER_CACHE.scannedSteps < steps.length) {
-      let changed = false;
-      for (let i = _DISCOVER_CACHE.scannedSteps; i < steps.length; i++) {
-        const st = steps[i];
-        const ds = st && st.ds || {};
-        const keys = Object.keys(ds);
-        for (let k = 0; k < keys.length; k++) {
-          const name = keys[k];
-          const item = name ? ds[name] : void 0;
-          if (name && item && !_DISCOVER_CACHE.map.has(name)) {
-            _DISCOVER_CACHE.map.set(name, { id: name, name, kind: item.kind || name });
-            changed = true;
-          }
-        }
-      }
-      _DISCOVER_CACHE.scannedSteps = steps.length;
-      if (changed) _DISCOVER_CACHE.list = [..._DISCOVER_CACHE.map.values()];
-    }
-    return _DISCOVER_CACHE.list;
-  }
-  function renderPicker() {
-    const vars = discoverVars();
-    if (!vars.length) {
-      pickEl.innerHTML = '<span class="vempty">\u65E0\u7ED3\u6784\u53D8\u91CF</span>';
-      renderSlots();
-      return;
-    }
-    pickEl.innerHTML = vars.map(
-      (s) => '<div class="chip-pick' + (watched.has(s.id) ? " on" : "") + '" data-id="' + esc(s.id) + '">' + esc(s.name) + "</div>"
-    ).join("");
-    renderSlots();
-  }
-  function renderSlots() {
-    const stepAtCur = TRACE.steps[cur];
-    const st = stepAtCur || {};
-    const activeFrame = stepAtCur ? getActiveFrame(stepAtCur) : null;
-    const ds = Object.assign({}, activeFrame && activeFrame.ds || st.ds || {});
-    if (st.ds && st.ds.eventLoop && !ds.eventLoop) ds.eventLoop = st.ds.eventLoop;
-    const vars = discoverVars().filter((s) => watched.has(s.id) && ds[s.id] !== void 0);
-    if (slotsEl && slotsEl.classList && slotsEl.classList.toggle) {
-      slotsEl.classList.toggle("single-col", slotsEl.clientWidth > 0 && slotsEl.clientWidth < 420);
-    }
-    if (!vars.length) {
-      slotsEl.innerHTML = '<div class="slot" style="grid-column:1/-1"><div class="vempty">' + (TRACE.steps.length ? "\u70B9\u9009\u53D8\u91CF\u4EE5\u5173\u6CE8\uFF08\u6216\u672C\u6B65\u6682\u65E0\u7ED3\u6784\uFF09" : "\u751F\u6210\u8F68\u8FF9\u540E\u663E\u793A\u7ED3\u6784\u53EF\u89C6\u5316") + "</div></div>";
-      return;
-    }
-    const allocated = allocateSlotSpans(vars, ds);
-    slotsEl.innerHTML = allocated.map(({ s, d, kind, span }) => {
-      const fn = VIZ[kind];
-      const body = d ? fn ? fn(d) || '<div class="vempty">empty</div>' : '<div class="vempty">\u2026</div>' : '<div class="vempty">empty</div>';
-      const winTag = d && d.win ? `<span class="win-tag">[${d.win[0]}..${d.win[1]}]</span>` : "";
-      let sizeTag = "";
-      if (d) {
-        if (kind === "grid" && ((d.totalRows || 0) > 10 || (d.totalCols || 0) > 10)) {
-          sizeTag = `<span class="size-tag">${d.totalRows}\xD7${d.totalCols}</span>`;
-        } else if (typeof d.total === "number" && d.total > 20) {
-          sizeTag = `<span class="size-tag">\u5171 ${d.total} \u9879</span>`;
-        }
-      }
-      const isHotSlot = d && (d.hot !== void 0 || d.mark != null);
-      const kindPrefix = d && d.isClass ? "class" : "interface";
-      const kindBadge = kind === "interface" && d && d.interfaceName && d.interfaceName !== "object" && !d.isSchema ? `${kindPrefix} \xB7 ${d.interfaceName}` : kind === "interface" && d && d.isClass ? "class" : kind;
-      return '<div class="slot' + (span === 2 ? " span-2" : "") + (isHotSlot ? " pulse" : "") + '" data-var="' + esc(s.name) + '"><div class="name"><span>' + esc(s.name) + '</span><span class="kind">' + esc(kindBadge) + "</span>" + sizeTag + winTag + "</div>" + body + "</div>";
-    }).join("");
-  }
-  function updateControlButtons() {
-    const prevBtn = $("prev");
-    const nextBtn = $("next");
-    const ckptBtn = $("nextCheckpoint");
-    const autoBtn = $("auto");
-    const atEnd = Boolean(TRACE.steps.length > 0 && cur >= TRACE.steps.length - 1 && DEBUG_SESSION.finished);
-    if (prevBtn) prevBtn.disabled = !TRACE.steps.length || cur <= 0;
-    if (nextBtn) nextBtn.disabled = atEnd;
-    if (ckptBtn) ckptBtn.disabled = atEnd;
-    if (autoBtn) autoBtn.disabled = atEnd;
-  }
-  function renderStatic(i, withAnim = false) {
-    hideHoverTip();
-    const st = TRACE.steps[i];
-    const prevSt = i > 0 ? TRACE.steps[i - 1] : null;
-    if (!st) {
-      renderCallStack(null);
-      varsEl.innerHTML = "";
-      consoleEl.innerHTML = '<div><span class="p">\u203A</span><span class="dim">\u5F00\u542F Debug \u6A21\u5F0F\u540E\u5F53\u573A\u8BA1\u7B97\u5E76\u663E\u793A\u6BCF\u6B65\u6267\u884C\u8BE6\u60C5</span></div>';
-      cntEl.textContent = "\u672A\u5728\u8C03\u8BD5";
-      cntEl.className = "";
-      updateControlButtons();
-      renderSlots();
-      updateEditorChrome();
-      return;
-    }
-    renderCallStack(st);
-    const activeFrame = getActiveFrame(st);
-    const v = activeFrame && activeFrame.v || st.v || {};
-    const prevV = prevSt && prevSt.v || {};
-    const primEntries = Object.keys(v).map((k) => {
-      const val = v[k];
-      if (val !== null && typeof val === "object") return "";
-      const changed = Boolean(activeFrame && activeFrame.isTop && prevSt && prevV[k] !== val);
-      return '<div class="pair' + (changed ? " changed" : "") + '" data-var="' + esc(k) + '"><span class="k">' + esc(k) + '</span><span class="v">' + esc(val) + "</span></div>";
-    }).join("");
-    if (primEntries) {
-      varsEl.innerHTML = primEntries;
-    } else if (activeFrame && activeFrame.fn === "global") {
-      varsEl.innerHTML = '<div class="pair"><span class="k">scope</span><span class="v">global</span></div>' + (DEBUG_SESSION.callExpr && DEBUG_SESSION.callExpr !== "undefined" ? '<div class="pair"><span class="k">entry</span><span class="v">' + esc(DEBUG_SESSION.callExpr) + "</span></div>" : "");
-    } else {
-      varsEl.innerHTML = '<div class="vempty">\uFF08\u672C\u5E27\u65E0\u539F\u59CB\u7C7B\u578B\u5C40\u90E8\u53D8\u91CF\uFF09</div>';
-    }
-    let animDesc = "";
-    if (st.error) {
-      animDesc = `<div class="anim-desc" style="color:var(--red)">runtime error \xB7 \u5DF2\u505C\u6B62\u5728\u62A5\u9519\u884C (\u7B2C ${st.line} \u884C)</div>`;
-    } else if (st.anim) {
-      if (st.anim.type === "assign") animDesc = `<div class="anim-desc">assign \xB7 ${esc(st.anim.from)} \u2192 ${esc(st.anim.to)} = ${esc(st.anim.val)}</div>`;
-      else if (st.anim.type === "compare") animDesc = `<div class="anim-desc">compare \xB7 ${esc(st.anim.lhs)} ${esc(st.anim.op)} ${esc(st.anim.rhs)} \u21D2 ${esc(st.anim.result)}</div>`;
-      else if (st.anim.type === "call") animDesc = `<div class="anim-desc">call \xB7 ${esc(st.anim.fn)}(${esc((st.anim.argVals || []).join(", "))})</div>`;
-      else if (st.anim.type === "checkpoint") animDesc = `<div class="anim-desc" style="color:var(--cyan)">checkpoint \xB7 \u68C0\u67E5\u70B9\u5DF2\u547D\u4E2D (${esc((st.anim.argVals || []).join(", ") || "\u65E0\u53C2\u6570")})</div>`;
-    }
-    consoleEl.innerHTML = '<div><span class="p">\u203A</span>' + esc(st.note || "") + "</div>" + animDesc;
-    if (st.error) {
-      cntEl.textContent = "\u2717 \u8FD0\u884C\u65F6\u62A5\u9519";
-      cntEl.className = "err";
-    } else if (st.isCheckpoint) {
-      cntEl.textContent = "\u25C9 \u547D\u4E2D\u68C0\u67E5\u70B9";
-      cntEl.className = "ckpt";
-    } else if (DEBUG_SESSION.finished && i === TRACE.steps.length - 1) {
-      cntEl.textContent = "\u2713 \u6267\u884C\u5B8C\u6BD5";
-      cntEl.className = "done";
-    } else {
-      cntEl.textContent = "\u25CF \u8C03\u8BD5\u8FD0\u884C\u4E2D";
-      cntEl.className = "running";
-    }
-    updateControlButtons();
-    updateEditorChrome();
-    if (typeof VIEW_MODE !== "undefined" && VIEW_MODE === "notebook" && typeof globalThis.renderNotebookUI === "function") {
-      globalThis.renderNotebookUI(false);
-    } else {
-      scrollCodeTo(activeFrame ? activeFrame.line : st.line);
-    }
-    renderSlots();
-    if (withAnim && (typeof VIEW_MODE === "undefined" || VIEW_MODE !== "notebook")) {
-      playStepAnimation(st);
-    }
-  }
-  var renderMemory = renderSlots;
-  var renderAsyncQueues = vizEventLoop;
-  function drawArrows() {
-  }
-  function scheduleArrowRedraw() {
-  }
-
-  // src/ui/controls.ts
-  var controls_exports = {};
-  __export(controls_exports, {
-    addCheckpointFunction: () => addCheckpointFunction,
-    blurEditor: () => blurEditor,
-    btnExportMenu: () => btnExportMenu,
-    btnExportVideo: () => btnExportVideo2,
-    btnExportVideoLabel: () => btnExportVideoLabel2,
-    exportFileName: () => exportFileName,
-    exportMenuWrap: () => exportMenuWrap,
-    go: () => go,
-    isEditorFocused: () => isEditorFocused,
-    loadImportedSource: () => loadImportedSource,
-    onSourceChanged: () => onSourceChanged,
-    rebuildDebugAtPosition: () => rebuildDebugAtPosition,
-    recordEditorCursorLine: () => recordEditorCursorLine,
-    renderStep: () => renderStep,
-    runToNextCheckpoint: () => runToNextCheckpoint,
-    sanitizeFileName: () => sanitizeFileName,
-    scheduleRebuild: () => scheduleRebuild,
-    setFileName: () => setFileName,
-    setStatus: () => setStatus,
-    setVideoExportSpeed: () => setVideoExportSpeed,
-    staleTimer: () => staleTimer,
-    stepBack: () => stepBack,
-    stepForward: () => stepForward,
-    stepNext: () => stepNext,
-    stepPrev: () => stepPrev,
-    stopAuto: () => stopAuto,
-    togglePlay: () => togglePlay,
-    videoExportStatus: () => videoExportStatus2,
-    videoSpeedBadge: () => videoSpeedBadge,
-    videoSpeedGroup: () => videoSpeedGroup
-  });
-
-  // src/runtime/runner.ts
-  var runner_exports = {};
-  __export(runner_exports, {
-    buildFrameSnapshotFromClosure: () => buildFrameSnapshotFromClosure,
-    computeAndAppendNextStep: () => computeAndAppendNextStep,
-    evalCall: () => evalCall,
-    generateTrace: () => generateTrace,
-    initWatchedVars: () => initWatchedVars,
-    rebuildFromSource: () => rebuildFromSource,
-    runOnce: () => runOnce,
-    runTrace: () => runTrace,
-    startDebug: () => startDebug
-  });
-  function evalCall(js, call, opts) {
-    const o = opts || {};
-    const expr = stripTypes(call || "undefined");
-    const budgetMs = o.budgetMs || 0;
-    const entryLine = o.entryLine || 0;
-    const stub = o.instrumented ? "" : "var checkpoint = function(){}, \u65AD\u70B9 = checkpoint;\n";
-    const t0 = Date.now();
-    let ticks = 0;
-    let lastLine = 0;
-    let expired = false;
-    const timeoutError = () => {
-      const err = new Error("RUN_TIMEOUT");
-      err.__timeout = true;
-      err.__line = lastLine;
-      return err;
-    };
-    const __t = function(line) {
-      if (line) lastLine = line;
-      if (!budgetMs) return;
-      if (expired) throw timeoutError();
-      if ((++ticks & 31) === 31 && Date.now() - t0 > budgetMs) {
-        expired = true;
-        throw timeoutError();
-      }
-    };
-    const evLoop = createVirtualEventLoop(__t, () => lastLine);
-    __t.__env = evLoop.env;
-    __t.__async = evLoop.runAsyncCoroutine;
-    __t.__await = (val, fid, line, exprText) => ({ __isAwait: true, value: val, fid, line, expr: exprText });
-    __t.__drain = evLoop.drainEventLoop;
-    __t.__initGlobal = function(snapFn) {
-      evLoop.loop.globalSnapFn = snapFn;
-    };
-    __t.__ckpt = function() {
-    };
-    const body = stub + js + "\n;return (function(){ try { var __v = (" + expr + '); if (__t && __t.__drain) __v = __t.__drain(__v); return { ok:true, value:__v }; } catch (e) { return { ok:false, error: e && e.message ? e.message : String(e), stack: e && e.stack ? String(e.stack) : "", line: (e && e.__line) || 0, timeout: Boolean(e && e.__timeout) }; } })();';
-    const logs = [];
-    const f = new Function("__t", "console", body);
-    let r;
-    const formatConsoleArg = (x) => {
-      if (x instanceof Error) return x.message || String(x);
-      try {
-        return typeof x === "object" ? JSON.stringify(x) : String(x);
-      } catch (_) {
-        return String(x);
-      }
-    };
-    const pushLogLine = (...a) => logs.push(a.map(formatConsoleArg).join(" "));
-    try {
-      r = f(__t, {
-        log: pushLogLine,
-        info: pushLogLine,
-        warn: pushLogLine,
-        error: pushLogLine
-      });
-    } catch (e) {
-      const errObj = e && typeof e === "object" ? e : null;
-      r = {
-        ok: false,
-        error: errObj && errObj.message ? errObj.message : String(e),
-        stack: errObj && errObj.stack ? String(errObj.stack) : "",
-        line: errObj && errObj.__line || lastLine || entryLine || 0,
-        timeout: Boolean(errObj && errObj.__timeout)
-      };
-    }
-    if (r && r.ok && !r.line) r.line = lastLine || entryLine || 0;
-    if (r && !r.ok) r.line = r.line || lastLine || entryLine || 0;
-    return { ...r, logs, elapsedMs: Date.now() - t0 };
-  }
-  function runOnce(budgetMs) {
-    if (LANG === "python") return PY_ENGINE.runOnly(budgetMs);
-    const budget = typeof budgetMs === "number" && budgetMs > 0 ? budgetMs : RUN_TIMEOUT_MS;
-    const src = editor.value;
-    const unsupported = detectUnsupportedSyntax2(src);
-    if (unsupported.length && unsupported[0]) {
-      unsupported.forEach((x) => say("\u2717 \u7B2C " + x.line + " \u884C\uFF1A\u6682\u4E0D\u652F\u6301 " + x.feature + " \u2014\u2014 " + x.hint, "err", x.line));
-      revealErrorLine(unsupported[0].line);
-      return;
-    }
-    const diags = typecheckTS(src, STRICT_TS);
-    if (diags.length > 0) {
-      reportTypeErrors(diags);
-      return;
-    }
-    if (TYPE_ERROR_LINES.size || RUNTIME_ERROR_LINES.size) {
-      TYPE_ERROR_LINES.clear();
-      RUNTIME_ERROR_LINES.clear();
-      updateEditorChrome();
-    }
-    const enums = transpileEnums(src);
-    if (enums.error) {
-      say("\u2717 \u7B2C " + enums.error.line + " \u884C\uFF1A" + enums.error.message, "err", enums.error.line);
-      revealErrorLine(enums.error.line);
-      return;
-    }
-    const js = stripTypes(enums.code);
-    const originalLines = src.replace(/\r/g, "").split("\n");
-    const entry = resolveEntry(src, js);
-    const call = stripTypes(entry.expr || "undefined");
-    ENTRY_CALL_LINE = entry.line || 0;
-    const jsBody = entry.index >= 0 ? blankJsLine(js, entry.index) : js;
-    let code = jsBody;
-    let instrumented = false;
-    try {
-      const candidate = instrument(jsBody, originalLines, collectNames(jsBody));
-      new Function("__t", "console", candidate);
-      code = candidate;
-      instrumented = true;
-    } catch (_) {
-      code = jsBody;
-      instrumented = false;
-    }
-    if (!instrumented) say("\u26A0 \u672C\u6B21\u8FD0\u884C\u672A\u80FD\u542F\u7528\u6B7B\u5FAA\u73AF\u7194\u65AD\uFF08\u63D2\u6869/\u7F16\u8BD1\u56DE\u9000\uFF09\uFF0C\u8BF7\u7559\u610F\u53EF\u80FD\u7684\u6B7B\u5FAA\u73AF", "dim");
-    try {
-      const r = evalCall(code, call, { budgetMs: budget, instrumented, entryLine: entry.line });
-      r.logs.forEach((l) => say("  log: " + l, "dim"));
-      if (!r.ok && r.timeout) {
-        const line = r.line || 0;
-        const snippet = line ? (originalLines[line - 1] || "").trim().slice(0, 90) : "";
-        if (line) {
-          RUNTIME_ERROR_LINES.add(line);
-          updateEditorChrome();
-          revealErrorLine(line);
-        }
-        say(
-          "\u2717 \u8FD0\u884C\u8D85\u8FC7 " + budget / 1e3 + "s \u4ECD\u672A\u7ED3\u675F\uFF0C\u5DF2\u5F3A\u5236\u7EC8\u6B62\uFF08\u7591\u4F3C\u6B7B\u5FAA\u73AF / \u8BA1\u7B97\u91CF\u8FC7\u5927\uFF09" + (line ? " \xB7 \u4F4D\u7F6E\uFF1A\u7B2C " + line + " \u884C" + (snippet ? " \xB7 " + snippet : "") : " \xB7 \u672A\u80FD\u5B9A\u4F4D\u5230\u5177\u4F53\u884C"),
-          "err",
-          line || void 0
-        );
-        return;
-      }
-      if (!r.ok) {
-        const line = r.line || sourceLineFromStack(r.stack, originalLines.length);
-        if (line) {
-          RUNTIME_ERROR_LINES.add(line);
-          updateEditorChrome();
-          say("\u2717 \u7B2C " + line + " \u884C\u8FD0\u884C\u65F6\u62A5\u9519: " + r.error, "err", line);
-          revealErrorLine(line);
-        } else {
-          say("\u2717 \u8C03\u7528\u5931\u8D25: " + r.error, "err");
-        }
-        return;
-      }
-      const elapsed = " (" + r.elapsedMs + "ms)";
-      say("\u2713 \u8FD0\u884C\u5B8C\u6210  \u2192  " + safeJSONStringify(r.value) + elapsed, "ok");
-    } catch (e) {
-      say("\u2717 " + (e instanceof Error && e.message ? e.message : e), "err");
-    }
-  }
-  function buildFrameSnapshotFromClosure(frame, fallbackLine, noteForEnrich) {
-    const raw = (typeof frame.snapFn === "function" ? frame.snapFn() : {}) || {};
-    if (frame.self && typeof frame.self === "object") {
-      try {
-        const selfCopy = {};
-        for (const k in frame.self) {
-          try {
-            selfCopy[k] = frame.self[k];
-          } catch (e) {
-          }
-        }
-        raw["this"] = selfCopy;
-      } catch (e) {
-      }
-    }
-    const v = {};
-    Object.keys(raw).forEach((k) => {
-      const val = raw[k];
-      v[k] = val !== null && typeof val === "object" ? cloneDeepBounded(val, 2) : val;
-    });
-    const ds = {};
-    Object.keys(raw).forEach((name) => {
-      const d = classifyValue(name, raw[name]);
-      if (d) ds[name] = d;
-    });
-    populateInterfaceSchemas(ds);
-    enrichFromNote(ds, raw, noteForEnrich || "");
-    const win = detectWindowRange(raw);
-    const snapFrame = {
-      id: frame.id,
-      fn: frame.fn,
-      label: frame.label,
-      line: frame.lastLine || frame.line || fallbackLine || 1,
-      v,
-      ds
-    };
-    if (win) {
-      snapFrame.l = win[0];
-      snapFrame.r = win[1];
-    }
-    return snapFrame;
-  }
-  function computeAndAppendNextStep(opts = {}) {
-    if (!DEBUG_SESSION.active || DEBUG_SESSION.finished) return false;
-    const targetIdx = TRACE.steps.length;
-    if (targetIdx >= MAX_STEPS) {
-      DEBUG_SESSION.finished = true;
-      DEBUG_SESSION.crashed = true;
-      DEBUG_SESSION.error = "\u5DF2\u8FBE\u5355\u6B21\u8C03\u8BD5\u4E0A\u9650\uFF0C\u81EA\u52A8\u7194\u65AD\u4EE5\u9632\u6B7B\u5FAA\u73AF";
-      say("\u2717 " + DEBUG_SESSION.error, "err");
-      return false;
-    }
-    const originalLines = DEBUG_SESSION.originalLines;
-    const callIdx = originalLines.findIndex((l) => /\/\/\s*调用[:：]/.test(l));
-    const globalCallLine = callIdx >= 0 ? callIdx + 1 : ENTRY_CALL_LINE || 1;
-    let count = 0;
-    let frameSeq = 0;
-    let curLineTracker = globalCallLine;
-    let activeRecording = false;
-    let unwindingPause = false;
-    let pendingStep = null;
-    let pendingStepSnapFn = null;
-    let pendingEventLoopPhase = null;
-    let nextVRaw = null;
-    const stepLogs = [];
-    const t0 = Date.now();
-    const liveCallStack = [
-      {
-        id: 0,
-        fn: "global",
-        label: "global",
-        line: globalCallLine,
-        lastLine: globalCallLine,
-        snapFn: null
-      }
-    ];
-    const suspendedFrames = /* @__PURE__ */ new Map();
-    const evLoop = createVirtualEventLoop(
-      (line, note, snap, self) => __t(line, note, snap, self),
-      () => curLineTracker,
-      (fid) => {
-        if (unwindingPause) return;
-        for (let k = liveCallStack.length - 1; k >= 1; k--) {
-          if (liveCallStack[k]?.id === fid) {
-            const [removed] = liveCallStack.splice(k, 1);
-            if (removed) suspendedFrames.set(fid, removed);
-            break;
-          }
-        }
-      },
-      (fid) => {
-        if (unwindingPause) return;
-        const frame = suspendedFrames.get(fid);
-        if (frame) {
-          suspendedFrames.delete(fid);
-          liveCallStack.push(frame);
-        }
-      }
-    );
-    if (DEBUG_SESSION.hasAsync) {
-      evLoop.loop.used = true;
-    }
-    const __t = (line, note, snap, self) => {
-      const stepLine = line || curLineTracker || 1;
-      if (line) curLineTracker = line;
-      const idx = count++;
-      if ((idx & 63) === 63 && Date.now() - t0 > MAX_EXEC_MS) {
-        throw new Error("\u6267\u884C\u8D85\u65F6 (>" + MAX_EXEC_MS + "ms)\uFF0C\u81EA\u52A8\u7194\u65AD\u4EE5\u9632\u9875\u9762\u5361\u6B7B");
-      }
-      const topFrame = liveCallStack[liveCallStack.length - 1];
-      if (topFrame) {
-        topFrame.lastLine = stepLine;
-        if (typeof snap === "function") topFrame.snapFn = snap;
-        if (self && typeof self === "object") topFrame.self = self;
-      }
-      if (idx < targetIdx) {
-        return;
-      }
-      if (idx === targetIdx) {
-        const effectiveSnap = (typeof snap === "function" ? snap : null) || topFrame && topFrame.snapFn || evLoop.loop.globalSnapFn;
-        const vRaw = (typeof effectiveSnap === "function" ? effectiveSnap() : snap && typeof snap === "object" ? snap : {}) || {};
-        if (self && typeof self === "object") {
-          try {
-            const selfCopy = {};
-            const selfRec = self;
-            for (const k in selfRec) {
-              try {
-                selfCopy[k] = selfRec[k];
-              } catch (e) {
-              }
-            }
-            vRaw["this"] = selfCopy;
-          } catch (e) {
-          }
-        }
-        const v = {};
-        Object.keys(vRaw).forEach((k) => {
-          const val = vRaw[k];
-          v[k] = val !== null && typeof val === "object" ? cloneDeepBounded(val, 2) : val;
-        });
-        const ds = {};
-        Object.keys(vRaw).forEach((name) => {
-          const d = classifyValue(name, vRaw[name]);
-          if (d) ds[name] = d;
-        });
-        enrichFromNote(ds, vRaw, note || "");
-        const win = detectWindowRange(vRaw);
-        const capturedStack = liveCallStack.map((fr, fIdx) => {
-          const isTop = fIdx === liveCallStack.length - 1;
-          const fNote = isTop ? note || "" : originalLines[(fr.lastLine || fr.line || 1) - 1] || "";
-          return buildFrameSnapshotFromClosure(fr, isTop ? stepLine : fr.line || 1, fNote);
-        });
-        pendingStepSnapFn = effectiveSnap;
-        pendingEventLoopPhase = {
-          phase: evLoop.loop.phase,
-          activeTaskLabel: evLoop.loop.activeTaskLabel,
-          virtualTime: evLoop.loop.virtualTime
-        };
-        const stepToCommit = {
-          line: stepLine,
-          note: note || "",
-          v,
-          vRaw,
-          ds,
-          callStack: capturedStack,
-          isCheckpoint: false,
-          checkpointVals: null,
-          error: null
-        };
-        if (win) {
-          stepToCommit.l = win[0];
-          stepToCommit.r = win[1];
-        }
-        pendingStep = stepToCommit;
-        activeRecording = true;
-        return;
-      }
-      if (idx === targetIdx + 1) {
-        activeRecording = false;
-        unwindingPause = true;
-        const sameScopeRaw = typeof pendingStepSnapFn === "function" ? pendingStepSnapFn() : null;
-        const fallbackRaw = typeof snap === "function" ? snap() : snap && typeof snap === "object" ? snap : {};
-        nextVRaw = sameScopeRaw || fallbackRaw || {};
-        throw PAUSE_SIGNAL;
-      }
-    };
-    __t.__env = evLoop.env;
-    __t.__async = evLoop.runAsyncCoroutine;
-    __t.__await = (val, fid, line, exprText) => ({ __isAwait: true, value: val, fid, line, expr: exprText });
-    __t.__drain = evLoop.drainEventLoop;
-    __t.__initGlobal = (globalSnapFn) => {
-      evLoop.loop.globalSnapFn = globalSnapFn;
-      if (liveCallStack[0]) {
-        liveCallStack[0].snapFn = globalSnapFn;
-      }
-    };
-    __t.__enter = (fnName, paramNames, paramVals, defLine, snapFn) => {
-      if (unwindingPause) return 0;
-      const fid = ++frameSeq;
-      const label = formatCallFrameLabel(fnName, paramNames, paramVals);
-      liveCallStack.push({
-        id: fid,
-        fn: fnName,
-        label,
-        line: defLine || 1,
-        lastLine: defLine || 1,
-        snapFn
-      });
-      return fid;
-    };
-    __t.__leave = (fid) => {
-      if (unwindingPause) return;
-      suspendedFrames.delete(fid);
-      for (let k = liveCallStack.length - 1; k >= 1; k--) {
-        if (liveCallStack[k]?.id === fid) {
-          liveCallStack.splice(k, 1);
-          break;
-        }
-      }
-    };
-    __t.__ckpt = (args) => {
-      if (activeRecording && pendingStep) {
-        pendingStep.isCheckpoint = true;
-        pendingStep.checkpointVals = (args || []).map((a) => formatShortVal(a));
-      }
-    };
-    __t.__fin = (snap) => {
-      if (activeRecording) {
-        activeRecording = false;
-        const sameScopeRaw = typeof pendingStepSnapFn === "function" ? pendingStepSnapFn() : null;
-        const fallbackRaw = typeof snap === "function" ? snap() : snap && typeof snap === "object" ? snap : {};
-        nextVRaw = sameScopeRaw || fallbackRaw || {};
-      }
-    };
-    const formatStepConsoleArg = (x) => {
-      if (x instanceof Error) return x.message || String(x);
-      try {
-        return typeof x === "object" ? JSON.stringify(x) : String(x);
-      } catch (_) {
-        return String(x);
-      }
-    };
-    const pushStepConsole = (...a) => {
-      if (!activeRecording) return;
-      stepLogs.push(a.map(formatStepConsoleArg).join(" "));
-    };
-    const customConsole = {
-      log: pushStepConsole,
-      info: pushStepConsole,
-      warn: pushStepConsole,
-      error: pushStepConsole
-    };
-    let paused = false;
-    let runtimeErr = null;
-    let retVal = void 0;
-    try {
-      if (DEBUG_SESSION.compiledFn) {
-        retVal = DEBUG_SESSION.compiledFn(__t, customConsole);
-      }
-    } catch (e) {
-      if (e === PAUSE_SIGNAL) {
-        paused = true;
-      } else {
-        runtimeErr = e;
-      }
-    }
-    stepLogs.forEach((l) => say("  log: " + l, "dim"));
-    if (!pendingStep) {
-      if (runtimeErr) {
-        const errMsg = runtimeErr instanceof Error && runtimeErr.message ? runtimeErr.message : runtimeErr && typeof runtimeErr === "object" && "message" in runtimeErr && typeof runtimeErr.message === "string" ? runtimeErr.message : String(runtimeErr);
-        const callLine = globalCallLine;
-        const errStep = {
-          line: callLine,
-          note: "\u2717 \u8FD0\u884C\u65F6\u9519\u8BEF: " + errMsg,
-          v: {},
-          ds: {},
-          callStack: [{ id: 0, fn: "global", label: "global", line: callLine, v: {}, ds: {} }],
-          anim: { type: "error", message: errMsg },
-          isCheckpoint: false,
-          error: errMsg
-        };
-        populateInterfaceSchemas(errStep.ds);
-        TRACE.steps.push(errStep);
-        RUNTIME_ERROR_LINES.add(callLine);
-        DEBUG_SESSION.finished = true;
-        DEBUG_SESSION.crashed = true;
-        DEBUG_SESSION.error = errMsg;
-        DEBUG_SESSION.errorLine = callLine;
-        say("\u2717 \u8FD0\u884C\u65F6\u9519\u8BEF [\u7B2C " + callLine + " \u884C]: " + errMsg + "\uFF08\u5DF2\u505C\u6B62\u5728\u62A5\u9519\u5904\uFF09", "err");
-        return true;
-      }
-      if (targetIdx === 0 && CURRENT_TS_META.interfaces && CURRENT_TS_META.interfaces.size > 0) {
-        const firstIface = [...CURRENT_TS_META.interfaces.values()][0];
-        if (firstIface) {
-          const schemaDs = {};
-          populateInterfaceSchemas(schemaDs);
-          const schemaStep = {
-            line: firstIface.line || 1,
-            note: `interface ${firstIface.name} { ${firstIface.fields.map((f) => f.k + (f.optional ? "?" : "") + ": " + f.declaredType).join("; ")} }`,
-            v: {},
-            ds: schemaDs,
-            callStack: [{ id: 0, fn: "global", label: "global", line: firstIface.line || 1, v: {}, ds: schemaDs }],
-            anim: null,
-            isCheckpoint: false,
-            error: null,
-            isFinalReturn: true
-          };
-          TRACE.steps.push(schemaStep);
-          DEBUG_SESSION.finished = true;
-          DEBUG_SESSION.returnValue = retVal;
-          return true;
-        }
-      }
-      DEBUG_SESSION.finished = true;
-      DEBUG_SESSION.returnValue = retVal;
-      return false;
-    }
-    const stepObj = pendingStep;
-    const rawLine = originalLines[stepObj.line - 1] || stepObj.note || "";
-    const nextContext = Object.assign({}, nextVRaw || stepObj.vRaw);
-    if (stepObj.checkpointVals) {
-      nextContext["__ckptVals"] = stepObj.checkpointVals;
-    }
-    if (nextVRaw) {
-      const rawMap = nextVRaw;
-      Object.keys(rawMap).forEach((name) => {
-        const nv = rawMap[name];
-        if (nv && typeof nv === "object" && "__isVirtualPromise" in nv) {
-          stepObj.v[name] = cloneDeepBounded(nv, 2);
-        }
-        if (stepObj.vRaw && stepObj.vRaw[name] === void 0 && nv !== void 0 && !stepObj.ds[name]) {
-          const d = classifyValue(name, nv);
-          if (d) stepObj.ds[name] = d;
-        }
-      });
-    }
-    populateInterfaceSchemas(stepObj.ds);
-    enrichFromNote(stepObj.ds, nextVRaw || stepObj.vRaw || {}, rawLine);
-    if (evLoop.loop.used) {
-      const elSnap = evLoop.toVizSnapshot();
-      const phaseInfo = pendingEventLoopPhase;
-      if (phaseInfo) {
-        elSnap.phase = phaseInfo.phase;
-        elSnap.activeTaskLabel = phaseInfo.activeTaskLabel;
-        elSnap.virtualTime = phaseInfo.virtualTime;
-      }
-      stepObj.ds["eventLoop"] = elSnap;
-    }
-    if (stepObj.callStack && stepObj.callStack.length > 0) {
-      const topF = stepObj.callStack[stepObj.callStack.length - 1];
-      if (topF) {
-        topF.line = stepObj.line;
-        topF.v = stepObj.v;
-        topF.ds = stepObj.ds;
-      }
-    }
-    const derived = deriveAnimAndNote(rawLine, stepObj.vRaw || {}, nextContext);
-    delete stepObj.vRaw;
-    stepObj.anim = derived.anim;
-    stepObj.rawNote = stepObj.note;
-    stepObj.note = derived.note || stepObj.note;
-    if (derived.isCheckpoint) {
-      stepObj.isCheckpoint = true;
-    }
-    if (runtimeErr) {
-      const errMsg = runtimeErr instanceof Error && runtimeErr.message ? runtimeErr.message : runtimeErr && typeof runtimeErr === "object" && "message" in runtimeErr && typeof runtimeErr.message === "string" ? runtimeErr.message : String(runtimeErr);
-      stepObj.error = errMsg;
-      stepObj.note = `${rawLine.trim()}  \u2192  \u2717 \u8FD0\u884C\u65F6\u9519\u8BEF: ${errMsg}`;
-      RUNTIME_ERROR_LINES.add(stepObj.line);
-      DEBUG_SESSION.finished = true;
-      DEBUG_SESSION.crashed = true;
-      DEBUG_SESSION.error = errMsg;
-      DEBUG_SESSION.errorLine = stepObj.line;
-    } else if (!paused) {
-      DEBUG_SESSION.finished = true;
-      DEBUG_SESSION.returnValue = retVal;
-      stepObj.isFinalReturn = true;
-      stepObj.returnValue = retVal;
-    }
-    TRACE.steps.push(stepObj);
-    discoverVars().forEach((s) => {
-      if (!SEEN_VARS_EVER.has(s.id)) {
-        SEEN_VARS_EVER.add(s.id);
-        if (!URL_WATCH || !URL_WATCH.length || URL_WATCH.includes(s.id)) {
-          watched.add(s.id);
-        }
-      }
-    });
-    if (runtimeErr) {
-      say("\u2717 \u8FD0\u884C\u65F6\u9519\u8BEF [\u7B2C " + stepObj.line + " \u884C]: " + stepObj.error + "\uFF08\u5DF2\u8FD0\u884C\u5230\u62A5\u9519\u4E3A\u6B62\uFF09", "err");
-    } else if (!paused && !opts.silent) {
-      say("\u2713 \u8C03\u8BD5\u8FD0\u884C\u5B8C\u6210  \u2192  " + safeJSONStringify(retVal), "ok");
-    }
-    return true;
-  }
-  function detectUnsupportedSyntax2(_src) {
-    return [];
-  }
-  function startDebug(initialStep = 0) {
-    if (LANG === "python") return PY_ENGINE.start(initialStep);
-    SELECTED_FRAME_IDX = null;
-    const src = editor.value.replace(/\r/g, "");
-    const unsupported = detectUnsupportedSyntax2(src);
-    if (unsupported.length && unsupported[0]) {
-      resetTraceState();
-      unsupported.forEach((x) => say("\u2717 \u7B2C " + x.line + " \u884C\uFF1A\u6682\u4E0D\u652F\u6301 " + x.feature + " \u2014\u2014 " + x.hint, "err", x.line));
-      revealErrorLine(unsupported[0].line);
-      return false;
-    }
-    extractTsInterfaceMetadata(src);
-    const diags = typecheckTS(src, STRICT_TS);
-    if (diags.length > 0) {
-      resetTraceState();
-      reportTypeErrors(diags);
-      return false;
-    }
-    if (TYPE_ERROR_LINES.size || RUNTIME_ERROR_LINES.size) {
-      TYPE_ERROR_LINES.clear();
-      RUNTIME_ERROR_LINES.clear();
-    }
-    const originalLines = src.split("\n");
-    const enums = transpileEnums(src);
-    if (enums.error) {
-      resetTraceState();
-      say("\u2717 \u7B2C " + enums.error.line + " \u884C\uFF1A" + enums.error.message, "err", enums.error.line);
-      revealErrorLine(enums.error.line);
-      return false;
-    }
-    const js0 = stripTypes(enums.code);
-    const entry = resolveEntry(src, js0);
-    const expr = stripTypes(entry.expr || "undefined");
-    ENTRY_CALL_LINE = entry.line || 0;
-    const jsBody = entry.index >= 0 ? blankJsLine(js0, entry.index) : js0;
-    let compiledFn;
-    try {
-      const names = collectNames(jsBody);
-      const js = instrument(jsBody, originalLines, names);
-      const snapStr = snapFnExpr(names);
-      const body = js + "\n;var __entryVal = (" + expr + ');\nif (typeof __t === "function" && __t.__drain) { __entryVal = __t.__drain(__entryVal, ' + snapStr + '); }\ntry{if(typeof __t==="function"&&__t.__fin)__t.__fin(' + snapStr + ");}catch(_){}\nreturn __entryVal;";
-      compiledFn = new Function("__t", "console", body);
-    } catch (e) {
-      resetTraceState();
-      say("\u2717 \u7F16\u8BD1\u5931\u8D25: " + (e instanceof Error && e.message ? e.message : e), "err");
-      return false;
-    }
-    stopAuto();
-    clearFlyLayer();
-    TRACE = {
-      title: "TypeScript Playground \xB7 Debug",
-      code: originalLines,
-      steps: []
-    };
-    DEBUG_SESSION = {
-      active: true,
-      finished: false,
-      crashed: false,
-      error: null,
-      errorLine: -1,
-      returnValue: void 0,
-      compiledFn,
-      originalLines,
-      callExpr: expr,
-      hasAsync: hasAsyncConstructs(src)
-    };
-    cur = 0;
-    watched = /* @__PURE__ */ new Set();
-    SEEN_VARS_EVER = /* @__PURE__ */ new Set();
-    layoutSpan = /* @__PURE__ */ Object.create(null);
-    const target = Math.max(0, initialStep || 0);
-    for (let s = 0; s <= target; s++) {
-      const ok = computeAndAppendNextStep({ silent: s < target });
-      if (!ok || DEBUG_SESSION.finished) break;
-    }
-    cur = Math.max(0, TRACE.steps.length - 1);
-    initWatchedVars();
-    renderPicker();
-    renderStatic(cur, false);
-    if (!DEBUG_SESSION.crashed) {
-      say("\u2713 \u7F16\u8BD1\u901A\u8FC7 \xB7 \u5DF2\u8FDB\u5165 Debug \u6A21\u5F0F\uFF08\u6BCF\u8D70\u4E00\u6B65\u5F53\u573A\u8BA1\u7B97\uFF0C\u53EF\u968F\u65F6\u6B65\u8FDB\u6216\u8FD0\u884C\u5230\u4E0B\u4E00\u4E2A\u68C0\u67E5\u70B9\uFF09", "ok");
-    }
-    return true;
-  }
-  var generateTrace = startDebug;
-  function initWatchedVars() {
-    const all = discoverVars().map((s) => s.id);
-    all.forEach((id) => SEEN_VARS_EVER.add(id));
-    const urlWatch = URL_WATCH;
-    if (urlWatch && urlWatch.length) {
-      const filtered = all.filter((id) => urlWatch.includes(id));
-      watched = new Set(filtered.length ? filtered : all);
-    } else {
-      watched = new Set(all);
-    }
-  }
-  var runTrace = startDebug;
-  var rebuildFromSource = startDebug;
-
-  // src/ui/share.ts
-  var share_exports = {};
-  __export(share_exports, {
-    boot: () => boot,
-    concatUint8Arrays: () => concatUint8Arrays,
-    drawVizCardOnCanvas: () => drawVizCardOnCanvas,
-    ebmlAsciiBytes: () => ebmlAsciiBytes,
-    ebmlElement: () => ebmlElement,
-    ebmlFloat64Bytes: () => ebmlFloat64Bytes,
-    ebmlUintBytes: () => ebmlUintBytes,
-    ebmlVintSize: () => ebmlVintSize,
-    encodeVideoFastWebCodecs: () => encodeVideoFastWebCodecs,
-    exportVideo: () => exportVideo,
-    fixWebmDuration: () => fixWebmDuration,
-    initApp: () => initApp,
-    loadSample: () => loadSample,
-    muxWebmChunks: () => muxWebmChunks,
-    renderVideoFrameToCanvas: () => renderVideoFrameToCanvas,
-    roundRectPath: () => roundRectPath,
-    tokenizeCodeForCanvas: () => tokenizeCodeForCanvas
-  });
-
-  // src/ui/video-webm.ts
-  var btnExportVideo = $("btnExportVideo");
-  var btnExportVideoLabel = $("btnExportVideoLabel");
-  var videoExportStatus = $("videoExportStatus");
-  function ebmlUintBytes(num) {
-    let v = Math.max(0, Math.floor(Number(num) || 0));
-    if (v === 0) return new Uint8Array([0]);
-    const bytes = [];
-    while (v > 0) {
-      bytes.unshift(v & 255);
-      v = Math.floor(v / 256);
-    }
-    return new Uint8Array(bytes);
-  }
-  function ebmlFloat64Bytes(val) {
-    const buf = new ArrayBuffer(8);
-    new DataView(buf).setFloat64(0, Number(val) || 0, false);
-    return new Uint8Array(buf);
-  }
-  function ebmlAsciiBytes(str) {
-    const s = String(str || "");
-    const out = new Uint8Array(s.length);
-    for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i) & 127;
-    return out;
-  }
-  function ebmlVintSize(len) {
-    const n = Math.max(0, Math.floor(len));
-    if (n < 127) return new Uint8Array([128 | n]);
-    if (n < 16383) return new Uint8Array([64 | n >> 8, n & 255]);
-    if (n < 2097151) return new Uint8Array([32 | n >> 16, n >> 8 & 255, n & 255]);
-    if (n < 268435455) {
-      return new Uint8Array([
-        16 | n >>> 24 & 15,
-        n >>> 16 & 255,
-        n >>> 8 & 255,
-        n & 255
-      ]);
-    }
-    const hi = Math.floor(n / 4294967296);
-    const lo = n >>> 0;
-    return new Uint8Array([
-      1,
-      hi >>> 16 & 255,
-      hi >>> 8 & 255,
-      hi & 255,
-      lo >>> 24 & 255,
-      lo >>> 16 & 255,
-      lo >>> 8 & 255,
-      lo & 255
-    ]);
-  }
-  function concatUint8Arrays(arrays) {
-    let total = 0;
-    for (const arr of arrays) total += arr.length;
-    const out = new Uint8Array(total);
-    let offset = 0;
-    for (const arr of arrays) {
-      out.set(arr, offset);
-      offset += arr.length;
-    }
-    return out;
-  }
-  function ebmlElement(idBytes, payload) {
-    const idArr = idBytes instanceof Uint8Array ? idBytes : new Uint8Array(idBytes);
-    const body = Array.isArray(payload) ? payload[0] instanceof Uint8Array ? concatUint8Arrays(payload) : new Uint8Array(payload) : payload instanceof Uint8Array ? payload : new Uint8Array(payload);
-    const sizeArr = ebmlVintSize(body.length);
-    return concatUint8Arrays([idArr, sizeArr, body]);
-  }
-  function muxWebmChunks(frames, durationMs, width = VIDEO_WIDTH, height = VIDEO_HEIGHT, fps = VIDEO_FPS, codecId = "V_VP8") {
-    const ebmlHeader = ebmlElement([26, 69, 223, 163], [
-      ebmlElement([66, 134], ebmlUintBytes(1)),
-      ebmlElement([66, 247], ebmlUintBytes(1)),
-      ebmlElement([66, 242], ebmlUintBytes(4)),
-      ebmlElement([66, 243], ebmlUintBytes(8)),
-      ebmlElement([66, 130], ebmlAsciiBytes("webm")),
-      ebmlElement([66, 135], ebmlUintBytes(4)),
-      ebmlElement([66, 133], ebmlUintBytes(2))
-    ]);
-    const infoElem = ebmlElement([21, 73, 169, 102], [
-      ebmlElement([42, 215, 177], ebmlUintBytes(1e6)),
-      ebmlElement([68, 137], ebmlFloat64Bytes(durationMs)),
-      ebmlElement([77, 128], ebmlAsciiBytes("TSPlaygroundVisual")),
-      ebmlElement([87, 65], ebmlAsciiBytes("TSPlaygroundVisual"))
-    ]);
-    const defaultDurNs = Math.round(1e9 / fps);
-    const tracksElem = ebmlElement([22, 84, 174, 107], [
-      ebmlElement([174], [
-        ebmlElement([215], ebmlUintBytes(1)),
-        ebmlElement([115, 197], ebmlUintBytes(1)),
-        ebmlElement([156], ebmlUintBytes(0)),
-        ebmlElement([34, 181, 156], ebmlAsciiBytes("und")),
-        ebmlElement([134], ebmlAsciiBytes(codecId)),
-        ebmlElement([131], ebmlUintBytes(1)),
-        ebmlElement([35, 227, 131], ebmlUintBytes(defaultDurNs)),
-        ebmlElement([224], [
-          ebmlElement([176], ebmlUintBytes(width)),
-          ebmlElement([186], ebmlUintBytes(height))
-        ])
-      ])
-    ]);
-    const clusters = [];
-    let curCluster = null;
-    for (const f of frames) {
-      const tMs = Math.max(0, Math.round(f.timestampMs));
-      if (!curCluster || f.isKey || tMs - curCluster.timecodeMs >= 2e3) {
-        curCluster = { timecodeMs: tMs, blocks: [] };
-        clusters.push(curCluster);
-      }
-      const relMs = Math.max(0, Math.min(32767, tMs - curCluster.timecodeMs));
-      const blockHeader = new Uint8Array([
-        129,
-        relMs >> 8 & 255,
-        relMs & 255,
-        f.isKey ? 128 : 0
-      ]);
-      const simpleBlock = ebmlElement([163], [blockHeader, f.data]);
-      curCluster.blocks.push(simpleBlock);
-    }
-    let segOffset = infoElem.length + tracksElem.length;
-    const clusterElems = [];
-    const cuePoints = [];
-    for (const cl of clusters) {
-      const tcElem = ebmlElement([231], ebmlUintBytes(cl.timecodeMs));
-      const clElem = ebmlElement([31, 67, 182, 117], [tcElem, ...cl.blocks]);
-      cuePoints.push(
-        ebmlElement([187], [
-          ebmlElement([179], ebmlUintBytes(cl.timecodeMs)),
-          ebmlElement([183], [
-            ebmlElement([247], ebmlUintBytes(1)),
-            ebmlElement([241], ebmlUintBytes(segOffset))
-          ])
-        ])
-      );
-      clusterElems.push(clElem);
-      segOffset += clElem.length;
-    }
-    const cuesElem = ebmlElement([28, 83, 187, 107], cuePoints);
-    const segmentBody = concatUint8Arrays([infoElem, tracksElem, ...clusterElems, cuesElem]);
-    const segmentSize8 = new Uint8Array([
-      1,
-      0,
-      0,
-      0,
-      segmentBody.length >>> 24 & 255,
-      segmentBody.length >>> 16 & 255,
-      segmentBody.length >>> 8 & 255,
-      segmentBody.length & 255
-    ]);
-    const segmentElem = concatUint8Arrays([new Uint8Array([24, 83, 128, 103]), segmentSize8, segmentBody]);
-    return new Blob([ebmlHeader, segmentElem], { type: "video/webm" });
-  }
-  async function fixWebmDuration(blob, durationMs) {
-    if (!blob || !(durationMs > 0)) return blob;
-    try {
-      const buf = await blob.arrayBuffer();
-      const bytes = new Uint8Array(buf);
-      const searchLimit = Math.min(bytes.length - 12, 16384);
-      let infoPos = -1;
-      let tracksPos = -1;
-      for (let i = 0; i < searchLimit; i++) {
-        if (infoPos < 0 && bytes[i] === 21 && bytes[i + 1] === 73 && bytes[i + 2] === 169 && bytes[i + 3] === 102) {
-          infoPos = i;
-        } else if (infoPos >= 0 && bytes[i] === 22 && bytes[i + 1] === 84 && bytes[i + 2] === 174 && bytes[i + 3] === 107) {
-          tracksPos = i;
-          break;
-        }
-      }
-      if (infoPos < 0) return blob;
-      const sizeIdx = infoPos + 4;
-      const firstByte = bytes[sizeIdx] ?? 0;
-      let vintLen = 1;
-      let mask = 128;
-      while (vintLen <= 8 && !(firstByte & mask)) {
-        mask >>= 1;
-        vintLen++;
-      }
-      if (vintLen > 8) return blob;
-      let parsedInfoSize = firstByte & mask - 1;
-      for (let k = 1; k < vintLen; k++) {
-        parsedInfoSize = parsedInfoSize * 256 + (bytes[sizeIdx + k] ?? 0);
-      }
-      const isUnknownInfoSize = vintLen === 8 && bytes[sizeIdx + 1] === 255 && bytes[sizeIdx + 2] === 255 || parsedInfoSize === Math.pow(2, 7 * vintLen) - 1;
-      const infoDataStart = sizeIdx + vintLen;
-      const infoDataEnd = tracksPos > infoDataStart ? tracksPos : !isUnknownInfoSize ? Math.min(bytes.length, infoDataStart + parsedInfoSize) : Math.min(bytes.length, infoDataStart + 64);
-      let existingDurUpdated = false;
-      for (let i = infoDataStart; i <= infoDataEnd - 11; i++) {
-        if (bytes[i] === 68 && bytes[i + 1] === 137 && bytes[i + 2] === 136) {
-          new DataView(bytes.buffer, bytes.byteOffset + i + 3, 8).setFloat64(0, durationMs, false);
-          existingDurUpdated = true;
-          break;
-        }
-      }
-      let outBytes = bytes;
-      let tailStartInOut = infoDataEnd;
-      if (!existingDurUpdated) {
-        const durElem = new Uint8Array(11);
-        durElem[0] = 68;
-        durElem[1] = 137;
-        durElem[2] = 136;
-        new DataView(durElem.buffer).setFloat64(3, durationMs, false);
-        const origInfoPayload = bytes.subarray(infoDataStart, infoDataEnd);
-        const newInfoPayloadLen = durElem.length + origInfoPayload.length;
-        const newSizeVint = new Uint8Array([
-          16 | newInfoPayloadLen >>> 24 & 15,
-          newInfoPayloadLen >>> 16 & 255,
-          newInfoPayloadLen >>> 8 & 255,
-          newInfoPayloadLen & 255
-        ]);
-        const head = bytes.subarray(0, infoPos + 4);
-        const tail = bytes.subarray(infoDataEnd);
-        outBytes = concatUint8Arrays([head, newSizeVint, durElem, origInfoPayload, tail]);
-        tailStartInOut = head.length + newSizeVint.length + durElem.length + origInfoPayload.length;
-      }
-      for (let i = 0; i < Math.min(infoPos, 128); i++) {
-        if (outBytes[i] === 24 && outBytes[i + 1] === 83 && outBytes[i + 2] === 128 && outBytes[i + 3] === 103) {
-          if (outBytes[i + 4] === 1 && outBytes[i + 5] === 255 && outBytes[i + 6] === 255) {
-            const segPayloadLen = outBytes.length - (i + 12);
-            outBytes[i + 4] = 1;
-            outBytes[i + 5] = 0;
-            outBytes[i + 6] = 0;
-            outBytes[i + 7] = 0;
-            outBytes[i + 8] = segPayloadLen >>> 24 & 255;
-            outBytes[i + 9] = segPayloadLen >>> 16 & 255;
-            outBytes[i + 10] = segPayloadLen >>> 8 & 255;
-            outBytes[i + 11] = segPayloadLen & 255;
-          }
-          break;
-        }
-      }
-      let firstClusterTc = null;
-      for (let i = tailStartInOut; i < outBytes.length - 16; i++) {
-        if (outBytes[i] === 31 && outBytes[i + 1] === 67 && outBytes[i + 2] === 182 && outBytes[i + 3] === 117) {
-          const b0 = outBytes[i + 4] ?? 0;
-          let vLen = 1, m = 128;
-          while (vLen <= 8 && !(b0 & m)) {
-            m >>= 1;
-            vLen++;
-          }
-          const tcPos = i + 4 + vLen;
-          if (tcPos + 2 < outBytes.length && outBytes[tcPos] === 231) {
-            const tcSizeByte = outBytes[tcPos + 1] ?? 0;
-            const tcLen = tcSizeByte & 127;
-            if (tcLen >= 1 && tcLen <= 8 && tcPos + 2 + tcLen <= outBytes.length) {
-              let val = 0;
-              for (let b = 0; b < tcLen; b++) {
-                val = val * 256 + (outBytes[tcPos + 2 + b] ?? 0);
-              }
-              if (firstClusterTc === null) {
-                firstClusterTc = val;
-              }
-              if (firstClusterTc > 0) {
-                let rebased = Math.max(0, Math.min(Math.round(durationMs), val - firstClusterTc));
-                for (let b = tcLen - 1; b >= 0; b--) {
-                  outBytes[tcPos + 2 + b] = rebased & 255;
-                  rebased = Math.floor(rebased / 256);
-                }
-              }
-            }
-          }
-        }
-      }
-      return new Blob([outBytes], { type: "video/webm" });
-    } catch (_) {
-      return blob;
-    }
-  }
-  async function encodeVideoFastWebCodecs(canvas, ctx, totalSteps, stepDurationMs, mult) {
-    if (typeof VideoEncoder !== "function" || typeof VideoFrame !== "function") return null;
-    const codecCandidates = [
-      { codec: "vp8", webmId: "V_VP8" },
-      { codec: "vp09.00.10.08", webmId: "V_VP9" }
-    ];
-    let chosen = null;
-    for (const c of codecCandidates) {
-      try {
-        const sup = await VideoEncoder.isConfigSupported({
-          codec: c.codec,
-          width: VIDEO_WIDTH,
-          height: VIDEO_HEIGHT,
-          bitrate: 8e6,
-          framerate: VIDEO_FPS,
-          latencyMode: "realtime"
-        });
-        if (sup && sup.supported) {
-          chosen = c;
-          break;
-        }
-      } catch (_) {
-      }
-    }
-    if (!chosen) return null;
-    const encodedFrames = [];
-    let encoderError = null;
-    const encoder = new VideoEncoder({
-      output: (chunk) => {
-        const data = new Uint8Array(chunk.byteLength);
-        chunk.copyTo(data);
-        encodedFrames.push({
-          data,
-          timestampMs: Math.max(0, Math.round(chunk.timestamp / 1e3)),
-          isKey: chunk.type === "key"
-        });
-      },
-      error: (err) => {
-        encoderError = err;
-      }
-    });
-    encoder.configure({
-      codec: chosen.codec,
-      width: VIDEO_WIDTH,
-      height: VIDEO_HEIGHT,
-      bitrate: 8e6,
-      framerate: VIDEO_FPS,
-      latencyMode: "realtime"
-    });
-    const frameDurMs = 1e3 / VIDEO_FPS;
-    const totalDurationMs = totalSteps * stepDurationMs;
-    const subFramesPerStep = 6;
-    for (let s = 0; s < totalSteps; s++) {
-      if (encoderError) throw encoderError;
-      if (videoExportStatus && (s % 2 === 0 || s === totalSteps - 1)) {
-        const pct = Math.round((s + 1) / totalSteps * 100);
-        videoExportStatus.textContent = `\u6B63\u5728\u6781\u901F\u7F16\u7801 1920\xD71080 60fps (${mult}x) \xB7 ${pct}%`;
-        await new Promise((r) => setTimeout(r, 0));
-      }
-      const stepStartMs = s * stepDurationMs;
-      for (let k = 0; k < subFramesPerStep; k++) {
-        const frac = k / subFramesPerStep;
-        const rawMs = stepStartMs + frac * stepDurationMs;
-        const tickIdx = Math.round(rawMs / frameDurMs);
-        const tMs = Math.min(totalDurationMs - 17, Math.round(tickIdx * frameDurMs));
-        const tUs = tMs * 1e3;
-        if (k === 0 || k === 3) {
-          renderVideoFrameToCanvas(ctx, s, frac, mult);
-        }
-        const vf = new VideoFrame(canvas, {
-          timestamp: tUs,
-          duration: Math.round(stepDurationMs / subFramesPerStep * 1e3)
-        });
-        encoder.encode(vf, { keyFrame: k === 0 });
-        vf.close();
-      }
-      if (s === totalSteps - 1) {
-        const endMs = Math.max(0, Math.round(totalDurationMs - frameDurMs));
-        const vfEnd = new VideoFrame(canvas, {
-          timestamp: endMs * 1e3,
-          duration: Math.round(frameDurMs * 1e3)
-        });
-        encoder.encode(vfEnd, { keyFrame: false });
-        vfEnd.close();
-      }
-      while (encoder.encodeQueueSize > 12) {
-        await new Promise((r) => setTimeout(r, 4));
-      }
-    }
-    await encoder.flush();
-    encoder.close();
-    if (encoderError || !encodedFrames.length) return null;
-    return {
-      blob: muxWebmChunks(encodedFrames, totalDurationMs, VIDEO_WIDTH, VIDEO_HEIGHT, VIDEO_FPS, chosen.webmId),
-      durationMs: totalDurationMs
-    };
-  }
-  async function exportVideo(speedMult = VIDEO_EXPORT_SPEED) {
-    if (IS_EXPORTING_VIDEO) return false;
-    const mult = setVideoExportSpeed(speedMult);
-    stopAuto();
-    const savedCur = cur;
-    if (!startDebug(0)) {
-      say("\u2717 \u4EE3\u7801\u7F16\u8BD1\u672A\u901A\u8FC7\uFF0C\u65E0\u6CD5\u5BFC\u51FA\u89C6\u9891", "err");
-      return false;
-    }
-    while (!DEBUG_SESSION.finished && TRACE.steps.length < MAX_STEPS) {
-      if (!computeAndAppendNextStep({ silent: true })) break;
-    }
-    initWatchedVars();
-    if (!TRACE.steps.length) {
-      say("\u2717 \u5F53\u524D\u4EE3\u7801\u672A\u4EA7\u751F\u53EF\u5F55\u5236\u7684\u8C03\u8BD5\u6B65\u9AA4", "err");
-      return false;
-    }
-    IS_EXPORTING_VIDEO = true;
-    if (btnExportVideo) btnExportVideo.disabled = true;
-    if (btnExportVideoLabel) btnExportVideoLabel.textContent = "\u23FA \u6B63\u5728\u6781\u901F\u5BFC\u51FA...";
-    if (videoExportStatus) {
-      videoExportStatus.classList.add("active");
-      videoExportStatus.textContent = `\u51C6\u5907\u6781\u901F\u5BFC\u51FA 1920\xD71080 @ ${VIDEO_FPS}fps (${mult}x \u500D\u901F)...`;
-    }
-    say(`\u{1F3AC} \u5F00\u59CB\u6781\u901F\u5BFC\u51FA\u89C6\u9891\uFF1A\u5206\u8FA8\u7387 ${VIDEO_WIDTH}\xD7${VIDEO_HEIGHT} \xB7 ${VIDEO_FPS}fps \xB7 \u500D\u901F ${mult}x`, "ok");
-    try {
-      const canvas = document.createElement("canvas");
-      canvas.width = VIDEO_WIDTH;
-      canvas.height = VIDEO_HEIGHT;
-      const ctx = canvas.getContext("2d");
-      const stepDurationMs = Math.max(120, Math.round(AUTO_PLAY_MS / mult));
-      const totalSteps = TRACE.steps.length;
-      const targetTotalDurationMs = totalSteps * stepDurationMs;
-      const fastRes = ctx ? await encodeVideoFastWebCodecs(canvas, ctx, totalSteps, stepDurationMs, mult) : null;
-      if (fastRes && fastRes.blob) {
-        cur = Math.min(savedCur, Math.max(0, TRACE.steps.length - 1));
-        renderPicker();
-        renderStatic(cur, false);
-        const url2 = URL.createObjectURL(fastRes.blob);
-        const a2 = document.createElement("a");
-        a2.href = url2;
-        a2.download = `ts-playground-1080p-60fps-${mult}x.webm`;
-        document.body.appendChild(a2);
-        a2.click();
-        document.body.removeChild(a2);
-        URL.revokeObjectURL(url2);
-        const secTxt2 = (fastRes.durationMs / 1e3).toFixed(1) + "s";
-        if (videoExportStatus) {
-          videoExportStatus.textContent = `\u2713 \u5DF2\u6781\u901F\u5BFC\u51FA (${secTxt2}) ts-playground-1080p-60fps-${mult}x.webm`;
-        }
-        say(`\u2713 \u89C6\u9891\u6781\u901F\u5BFC\u51FA\u5B8C\u6210\uFF1Ats-playground-1080p-60fps-${mult}x.webm (1920\xD71080 \xB7 60fps \xB7 ${mult}x \u500D\u901F \xB7 \u7CBE\u786E\u65F6\u957F ${secTxt2})`, "ok");
-        return true;
-      }
-      if (typeof canvas.captureStream !== "function" || typeof MediaRecorder === "undefined") {
-        if (ctx) renderVideoFrameToCanvas(ctx, totalSteps - 1, 1, mult);
-        return true;
-      }
-      const mimeCandidates = [
-        "video/webm;codecs=vp8",
-        "video/webm;codecs=vp9",
-        "video/webm"
-      ];
-      let mimeType = "";
-      for (const m of mimeCandidates) {
-        if (typeof MediaRecorder.isTypeSupported === "function" && MediaRecorder.isTypeSupported(m)) {
-          mimeType = m;
-          break;
-        }
-      }
-      if (ctx) renderVideoFrameToCanvas(ctx, 0, 0, mult);
-      const stream = canvas.captureStream(VIDEO_FPS);
-      const videoTrack = stream.getVideoTracks && stream.getVideoTracks()[0];
-      const recorderOpts = { videoBitsPerSecond: 8e6 };
-      if (mimeType) recorderOpts.mimeType = mimeType;
-      const recorder = new MediaRecorder(stream, recorderOpts);
-      const chunks = [];
-      recorder.ondataavailable = (ev) => {
-        if (ev.data && ev.data.size > 0) chunks.push(ev.data);
-      };
-      const stoppedPromise = new Promise((resolve, reject) => {
-        recorder.onstop = resolve;
-        recorder.onerror = (ev) => reject(ev.error || new Error("MediaRecorder error"));
-      });
-      const recStartWall = performance.now();
-      recorder.start(100);
-      const frameIntervalMs = 1e3 / VIDEO_FPS;
-      for (let s = 0; s < totalSteps; s++) {
-        if (videoExportStatus && (s % 2 === 0 || s === totalSteps - 1)) {
-          const pct = Math.round((s + 1) / totalSteps * 100);
-          videoExportStatus.textContent = `\u6B63\u5728\u5408\u6210 1920\xD71080 60fps (${mult}x) \xB7 ${pct}%`;
-        }
-        const stepStart = performance.now();
-        if (ctx) renderVideoFrameToCanvas(ctx, s, 0.5, mult);
-        while (true) {
-          const now = performance.now();
-          const elapsedStep = now - stepStart;
-          if (elapsedStep >= stepDurationMs) break;
-          if (videoTrack && typeof videoTrack.requestFrame === "function") {
-            try {
-              videoTrack.requestFrame();
-            } catch (_) {
-            }
-          }
-          const waitMs = Math.max(1, Math.min(frameIntervalMs, stepDurationMs - elapsedStep));
-          await new Promise((r) => setTimeout(r, waitMs));
-        }
-      }
-      const actualDurationMs = Math.max(200, Math.round(performance.now() - recStartWall));
-      recorder.stop();
-      await stoppedPromise;
-      stream.getTracks().forEach((t) => t.stop());
-      cur = Math.min(savedCur, Math.max(0, TRACE.steps.length - 1));
-      renderPicker();
-      renderStatic(cur, false);
-      let blob = new Blob(chunks, { type: mimeType || "video/webm" });
-      blob = await fixWebmDuration(blob, actualDurationMs || targetTotalDurationMs);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `ts-playground-1080p-60fps-${mult}x.webm`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      const secTxt = (actualDurationMs / 1e3).toFixed(1) + "s";
-      if (videoExportStatus) {
-        videoExportStatus.textContent = `\u2713 \u5DF2\u5BFC\u51FA (${secTxt}) ts-playground-1080p-60fps-${mult}x.webm`;
-      }
-      say(`\u2713 \u89C6\u9891\u5BFC\u51FA\u5B8C\u6210\uFF1Ats-playground-1080p-60fps-${mult}x.webm (1920\xD71080 \xB7 60fps \xB7 ${mult}x \u500D\u901F \xB7 \u65F6\u957F ${secTxt})`, "ok");
-      return true;
-    } catch (err) {
-      const msg = err instanceof Error && err.message ? err.message : String(err);
-      if (videoExportStatus) videoExportStatus.textContent = "\u2717 \u5BFC\u51FA\u5931\u8D25: " + msg;
-      say("\u2717 \u89C6\u9891\u5BFC\u51FA\u5931\u8D25: " + msg, "err");
-      return false;
-    } finally {
-      IS_EXPORTING_VIDEO = false;
-      if (btnExportVideo) btnExportVideo.disabled = false;
-      if (btnExportVideoLabel) btnExportVideoLabel.textContent = "\u{1F3AC} \u5BFC\u51FA\u89C6\u9891";
-    }
-  }
-  if (btnExportVideo) {
-    btnExportVideo.onclick = (e) => {
-      e.stopPropagation();
-      exportVideo(VIDEO_EXPORT_SPEED);
-    };
-  }
-
-  // src/ui/share.ts
-  function roundRectPath(ctx, x, y, w, h, r) {
-    const rad = Math.max(0, Math.min(r, w / 2, h / 2));
-    ctx.beginPath();
-    ctx.moveTo(x + rad, y);
-    ctx.lineTo(x + w - rad, y);
-    ctx.quadraticCurveTo(x + w, y, x + w, y + rad);
-    ctx.lineTo(x + w, y + h - rad);
-    ctx.quadraticCurveTo(x + w, y + h, x + w - rad, y + h);
-    ctx.lineTo(x + rad, y + h);
-    ctx.quadraticCurveTo(x, y + h, x, y + h - rad);
-    ctx.lineTo(x, y + rad);
-    ctx.quadraticCurveTo(x, y, x + rad, y);
-    ctx.closePath();
-  }
-  function tokenizeCodeForCanvas(line) {
-    const re = new RegExp("(\\/\\/.*$)|(\"(?:[^\"\\\\]|\\\\.)*\"|'(?:[^'\\\\]|\\\\.)*'|`(?:[^`\\\\]|\\\\.)*`)|\\b(function|const|let|var|new|class|extends|typeof|instanceof|import|export|from|async|await|interface|type|as|satisfies)\\b|\\b(for|if|else|return|while|do|switch|case|break|continue|try|catch|finally|throw|yield)\\b|\\b(number|string|boolean|void|any|unknown|never|Math|Map|Set|Array|Object|JSON|Number|String|Boolean|Promise|Record|Error)\\b|\\b(true|false|null|undefined|\\d+(?:\\.\\d+)?)\\b|(\\b[A-Za-z_$][\\w$]*)(?=\\s*\\()|(?<=\\.)([A-Za-z_$][\\w$]*)\\b|(\\b[A-Za-z_$][\\w$]*)\\b|(===|!==|>=|<=|=>|&&|\\|\\||\\+\\+|--)", "g");
-    const tokens = [];
-    let last = 0, m;
-    while (m = re.exec(line)) {
-      if (m.index > last) tokens.push({ text: line.slice(last, m.index), color: "#d8e2ef" });
-      let color = "#d8e2ef";
-      if (m[1]) color = "#637488";
-      else if (m[2]) color = "#9ece6a";
-      else if (m[3]) color = "#ff7b72";
-      else if (m[4]) color = "#c792ea";
-      else if (m[5]) color = "#38bdf8";
-      else if (m[6]) color = "#ffb454";
-      else if (m[7]) color = "#79c0ff";
-      else if (m[8] || m[9]) color = "#9cdcfe";
-      else if (m[10]) color = "#89ddff";
-      tokens.push({ text: m[0], color });
-      last = m.index + m[0].length;
-    }
-    if (last < line.length) tokens.push({ text: line.slice(last), color: "#d8e2ef" });
-    return tokens;
-  }
-  function drawVizCardOnCanvas(ctx, x, y, w, h, s, d, kind) {
-    roundRectPath(ctx, x, y, w, h, 10);
-    ctx.fillStyle = "#070a0f";
-    ctx.fill();
-    const isHot = d && (d.hot !== void 0 || d.mark != null);
-    ctx.strokeStyle = isHot ? "rgba(255,180,84,0.68)" : "#1c2432";
-    ctx.lineWidth = isHot ? 1.5 : 1;
-    ctx.stroke();
-    ctx.font = '700 13px "Cascadia Code", Consolas, monospace';
-    ctx.fillStyle = "#cbd5e1";
-    ctx.fillText(String(s.name || ""), x + 12, y + 20);
-    const nameW = ctx.measureText(String(s.name || "")).width;
-    ctx.font = '500 11px "Cascadia Code", Consolas, monospace';
-    ctx.fillStyle = "#64748b";
-    ctx.fillText(String(kind || ""), x + 18 + nameW, y + 20);
-    if (d && d.win) {
-      const winTxt = `[${d.win[0]}..${d.win[1]}]`;
-      const ww = ctx.measureText(winTxt).width + 12;
-      roundRectPath(ctx, x + w - ww - 10, y + 7, ww, 18, 9);
-      ctx.fillStyle = "rgba(56,189,248,0.16)";
-      ctx.fill();
-      ctx.fillStyle = "#38bdf8";
-      ctx.fillText(winTxt, x + w - ww - 4, y + 20);
-    }
-    if (!d) {
-      ctx.fillStyle = "#64748b";
-      ctx.fillText("empty", x + 14, y + 52);
-      return;
-    }
-    const bx = x + 12, by = y + 32, bw = w - 24, bh = h - 40;
-    if (kind === "array" || kind === "queue" || kind === "heap" || kind === "uf" || kind === "set" || kind === "list") {
-      const items = d.items || [];
-      const maxShow = Math.min(items.length, Math.max(4, Math.floor(bw / 44)));
-      const cw = Math.min(44, Math.max(28, Math.floor((bw - (maxShow - 1) * 6) / Math.max(1, maxShow))));
-      const ch = 36;
-      const cy = by + Math.max(4, Math.floor((bh - ch - 12) / 2));
-      for (let i = 0; i < maxShow; i++) {
-        const cx = bx + i * (cw + 6);
-        const isCellHot = d.hot === i || kind === "set" && d.hot === items[i];
-        const isWin = d.win && i >= d.win[0] && i <= d.win[1];
-        const isMark = d.mark === i || kind === "heap" && i === 0 || kind === "queue" && i === 0;
-        roundRectPath(ctx, cx, cy - (isCellHot ? 2 : 0), cw, ch, 6);
-        ctx.fillStyle = isCellHot ? "rgba(255,180,84,0.22)" : isWin ? "rgba(56,189,248,0.14)" : "#121823";
-        ctx.fill();
-        ctx.strokeStyle = isCellHot ? "#ffb454" : isMark ? "rgba(96,165,250,0.65)" : isWin ? "rgba(56,189,248,0.65)" : "#253042";
-        ctx.lineWidth = isCellHot ? 1.8 : 1;
-        ctx.stroke();
-        ctx.font = '700 13px "Cascadia Code", Consolas, monospace';
-        ctx.fillStyle = isCellHot ? "#ffb454" : "#f7f9fc";
-        const valStr = String(items[i]);
-        const vw = ctx.measureText(valStr).width;
-        ctx.fillText(valStr, cx + Math.max(3, (cw - vw) / 2), cy + 19);
-        ctx.font = '500 9px "Cascadia Code", Consolas, monospace';
-        ctx.fillStyle = isCellHot ? "#ffb454" : "#64748b";
-        const idxStr = String(i);
-        const iw = ctx.measureText(idxStr).width;
-        ctx.fillText(idxStr, cx + (cw - iw) / 2, cy + 32);
-      }
-      return;
-    }
-    if (kind === "stack") {
-      const items = d.items || [];
-      const shown = items.slice(-5);
-      const cw = Math.min(110, bw - 8);
-      const ch = 22;
-      shown.forEach((val, idx) => {
-        const abs = items.length - shown.length + idx;
-        const isTop = abs === items.length - 1;
-        const isCellHot = d.hot === abs;
-        const ry = by + (shown.length - 1 - idx) * (ch + 4);
-        if (ry + ch > y + h - 4) return;
-        roundRectPath(ctx, bx + 4, ry, cw, ch, 5);
-        ctx.fillStyle = isCellHot ? "rgba(255,180,84,0.22)" : "#121823";
-        ctx.fill();
-        ctx.strokeStyle = isCellHot ? "#ffb454" : isTop ? "rgba(96,165,250,0.65)" : "#253042";
-        ctx.stroke();
-        ctx.font = '700 12px "Cascadia Code", Consolas, monospace';
-        ctx.fillStyle = isCellHot ? "#ffb454" : "#f7f9fc";
-        ctx.fillText(String(val), bx + 12, ry + 15);
-        if (isTop) {
-          ctx.font = '600 9px "Cascadia Code", Consolas, monospace';
-          ctx.fillStyle = "#60a5fa";
-          ctx.fillText("top", bx + cw - 24, ry + 15);
-        }
-      });
-      return;
-    }
-    if (kind === "map") {
-      const entries = d.entries || [];
-      let curX = bx, curY = by + 4;
-      entries.slice(0, 8).forEach((e) => {
-        const pairTxt = `${e.k} \u2192 ${e.v}`;
-        ctx.font = '600 12px "Cascadia Code", Consolas, monospace';
-        const pw = ctx.measureText(pairTxt).width + 18;
-        if (curX + pw > bx + bw && curX > bx) {
-          curX = bx;
-          curY += 30;
-        }
-        if (curY + 24 > y + h - 4) return;
-        const isPairHot = d.hot === e.k;
-        roundRectPath(ctx, curX, curY, pw, 24, 6);
-        ctx.fillStyle = isPairHot ? "rgba(255,180,84,0.2)" : "#121823";
-        ctx.fill();
-        ctx.strokeStyle = isPairHot ? "#ffb454" : "#253042";
-        ctx.stroke();
-        ctx.fillStyle = isPairHot ? "#ffb454" : "#93c5fd";
-        ctx.fillText(pairTxt, curX + 9, curY + 16);
-        curX += pw + 6;
-      });
-      return;
-    }
-    if (kind === "tree" && d.nodes && d.nodes.length) {
-      let layout2 = function(idx, depth, xMin, xMax) {
-        if (idx == null || !nodes[idx] || coords.has(idx) || depth > 4) return;
-        const node = nodes[idx];
-        if (!node) return;
-        const nx = (xMin + xMax) / 2;
-        const ny = by + 16 + depth * 32;
-        coords.set(idx, { x: nx, y: ny, val: node.val, left: node.left, right: node.right });
-        layout2(node.left, depth + 1, xMin, nx);
-        layout2(node.right, depth + 1, nx, xMax);
-      };
-      var layout = layout2;
-      const nodes = d.nodes;
-      const root = d.root ?? 0;
-      const coords = /* @__PURE__ */ new Map();
-      layout2(root, 0, bx + 16, bx + bw - 16);
-      ctx.strokeStyle = "#334155";
-      ctx.lineWidth = 1.5;
-      coords.forEach((info) => {
-        [info.left, info.right].forEach((ch) => {
-          if (ch != null && coords.has(ch)) {
-            const c = coords.get(ch);
-            if (c) {
-              ctx.beginPath();
-              ctx.moveTo(info.x, info.y);
-              ctx.lineTo(c.x, c.y);
-              ctx.stroke();
-            }
-          }
-        });
-      });
-      coords.forEach((info, idx) => {
-        const isNodeHot = d.hot === idx;
-        ctx.beginPath();
-        ctx.arc(info.x, info.y, 12, 0, Math.PI * 2);
-        ctx.fillStyle = isNodeHot ? "#2a1f10" : "#121823";
-        ctx.fill();
-        ctx.strokeStyle = isNodeHot ? "#ffb454" : idx === root ? "#60a5fa" : "#334155";
-        ctx.lineWidth = 1.6;
-        ctx.stroke();
-        ctx.font = '700 11px "Cascadia Code", Consolas, monospace';
-        ctx.fillStyle = isNodeHot ? "#ffb454" : "#f7f9fc";
-        const txt = String(info.val);
-        ctx.fillText(txt, info.x - ctx.measureText(txt).width / 2, info.y + 4);
-      });
-      return;
-    }
-    if (kind === "graph" && d.nodes && d.nodes.length) {
-      const byId = /* @__PURE__ */ new Map();
-      const scaleX = bw / 180;
-      const scaleY = Math.min(1.15, bh / 136);
-      d.nodes.forEach((n, idx) => {
-        byId.set(n.id ?? idx, {
-          id: n.id ?? idx,
-          label: n.label ?? (n.id ?? idx),
-          x: bx + (n.x ?? 0) * scaleX,
-          y: by + (n.y ?? 0) * scaleY
-        });
-      });
-      ctx.strokeStyle = "#334155";
-      ctx.lineWidth = 1.5;
-      (d.edges || []).forEach((e) => {
-        const e0 = Array.isArray(e) ? e[0] : e.from ?? 0;
-        const e1 = Array.isArray(e) ? e[1] : e.to ?? 0;
-        const a = byId.get(e0), b = byId.get(e1);
-        if (a && b) {
-          ctx.beginPath();
-          ctx.moveTo(a.x, a.y);
-          ctx.lineTo(b.x, b.y);
-          ctx.stroke();
-        }
-      });
-      byId.forEach((n) => {
-        const isNodeHot = d.hot === n.id;
-        ctx.beginPath();
-        ctx.arc(n.x, n.y, 12, 0, Math.PI * 2);
-        ctx.fillStyle = isNodeHot ? "#2a1f10" : "#121823";
-        ctx.fill();
-        ctx.strokeStyle = isNodeHot ? "#ffb454" : "#334155";
-        ctx.lineWidth = 1.6;
-        ctx.stroke();
-        ctx.font = '700 11px "Cascadia Code", Consolas, monospace';
-        ctx.fillStyle = isNodeHot ? "#ffb454" : "#f7f9fc";
-        const txt = String(n.label);
-        ctx.fillText(txt, n.x - ctx.measureText(txt).width / 2, n.y + 4);
-      });
-      return;
-    }
-    if (kind === "grid" && d.cells && d.cells.length) {
-      const rows = Math.min(d.cells.length, 6);
-      const cols = Math.min((d.cells[0] || []).length, 10);
-      const cellS = Math.min(24, Math.floor(Math.min(bw / Math.max(1, cols), bh / Math.max(1, rows))));
-      for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < cols; c++) {
-          const gx = bx + c * (cellS + 3);
-          const gy = by + r * (cellS + 3);
-          const isCellHot = Array.isArray(d.mark) && d.mark[0] === r && d.mark[1] === c;
-          roundRectPath(ctx, gx, gy, cellS, cellS, 4);
-          ctx.fillStyle = isCellHot ? "rgba(255,180,84,0.24)" : "#121823";
-          ctx.fill();
-          ctx.strokeStyle = isCellHot ? "#ffb454" : "#222b38";
-          ctx.stroke();
-          ctx.font = '600 11px "Cascadia Code", Consolas, monospace';
-          ctx.fillStyle = isCellHot ? "#ffb454" : "#cbd5e1";
-          const vStr = String(d.cells[r]?.[c] ?? "\xB7");
-          ctx.fillText(vStr, gx + (cellS - ctx.measureText(vStr).width) / 2, gy + cellS / 2 + 4);
-        }
-      }
-      return;
-    }
-    if (kind === "interface" || kind === "object") {
-      const fields = d.fields || (d.entries ? d.entries.map((e) => ({ k: String(e.k), v: e.v, declaredType: typeof e.v })) : []);
-      const rowH = 22;
-      fields.slice(0, 5).forEach((f, idx) => {
-        const ry = by + idx * (rowH + 4);
-        if (ry + rowH > y + h - 4) return;
-        const isRowHot = d.hot === f.k;
-        roundRectPath(ctx, bx, ry, bw, rowH, 5);
-        ctx.fillStyle = isRowHot ? "rgba(255,180,84,0.22)" : "#121823";
-        ctx.fill();
-        ctx.strokeStyle = isRowHot ? "#ffb454" : "#232c3b";
-        ctx.stroke();
-        ctx.font = '700 11px "Cascadia Code", Consolas, monospace';
-        ctx.fillStyle = "#9cdcfe";
-        const keyTxt = f.k + (f.optional ? "?" : "");
-        ctx.fillText(keyTxt, bx + 8, ry + 15);
-        const kw = ctx.measureText(keyTxt).width;
-        if (f.declaredType) {
-          ctx.font = '600 10px "Cascadia Code", Consolas, monospace';
-          ctx.fillStyle = "#4ec9b0";
-          ctx.fillText(": " + f.declaredType, bx + 12 + kw, ry + 15);
-        }
-        if (f.v !== void 0) {
-          const valTxt = typeof f.v === "string" ? JSON.stringify(f.v) : String(f.v);
-          ctx.font = '700 11px "Cascadia Code", Consolas, monospace';
-          ctx.fillStyle = typeof f.v === "string" ? "#9ece6a" : "#ffb454";
-          const vw = ctx.measureText(valTxt).width;
-          ctx.fillText(valTxt, Math.max(bx + 90, bx + bw - vw - 8), ry + 15);
-        }
-      });
-      return;
-    }
-    if (kind === "string" && d.items) {
-      const chars = d.items.slice(0, 24);
-      chars.forEach((ch, idx) => {
-        const cx = bx + idx * 24;
-        if (cx + 22 > bx + bw) return;
-        const isHotCh = d.hot === idx;
-        roundRectPath(ctx, cx, by + 10, 21, 26, 4);
-        ctx.fillStyle = isHotCh ? "rgba(255,180,84,0.22)" : "#121823";
-        ctx.fill();
-        ctx.strokeStyle = isHotCh ? "#ffb454" : "#253042";
-        ctx.stroke();
-        ctx.font = '700 12px "Cascadia Code", Consolas, monospace';
-        ctx.fillStyle = isHotCh ? "#ffb454" : "#f7f9fc";
-        ctx.fillText(String(ch), cx + 6, by + 27);
-      });
-    }
-  }
-  function renderVideoFrameToCanvas(ctx, stepIdx, subProgress, speedMult) {
-    const W = VIDEO_WIDTH, H = VIDEO_HEIGHT;
-    const st = TRACE.steps[stepIdx] || TRACE.steps[0];
-    const prevSt = stepIdx > 0 ? TRACE.steps[stepIdx - 1] : null;
-    const codeLines = TRACE.code && TRACE.code.length ? TRACE.code : editor.value.replace(/\r/g, "").split("\n");
-    ctx.fillStyle = "#07090d";
-    ctx.fillRect(0, 0, W, H);
-    ctx.fillStyle = "#0a0e14";
-    ctx.fillRect(0, 0, W, 56);
-    ctx.strokeStyle = "#1d232e";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(0, 56);
-    ctx.lineTo(W, 56);
-    ctx.stroke();
-    ctx.font = '700 20px "Segoe UI", "PingFang SC", sans-serif';
-    ctx.fillStyle = "#f7f9fc";
-    ctx.fillText("TypeScript Playground \xB7 Debug Trace", 24, 35);
-    const badgeText = `${speedMult}x Speed \xB7 1920\xD71080 \xB7 60fps`;
-    ctx.font = '600 13px "Cascadia Code", Consolas, monospace';
-    const bw = ctx.measureText(badgeText).width + 28;
-    roundRectPath(ctx, W - bw - 24, 13, bw, 30, 15);
-    ctx.fillStyle = "rgba(56,189,248,0.14)";
-    ctx.fill();
-    ctx.strokeStyle = "rgba(56,189,248,0.5)";
-    ctx.stroke();
-    ctx.fillStyle = "#38bdf8";
-    ctx.fillText(badgeText, W - bw - 10, 33);
-    const splitX = 1110;
-    const mainTop = 56, mainBottom = H - 56, mainH = mainBottom - mainTop;
-    ctx.fillStyle = "#0a0e14";
-    ctx.fillRect(0, mainTop, splitX, mainH);
-    ctx.strokeStyle = "#1d232e";
-    ctx.beginPath();
-    ctx.moveTo(splitX, mainTop);
-    ctx.lineTo(splitX, mainBottom);
-    ctx.stroke();
-    ctx.font = '700 12px "Segoe UI", sans-serif';
-    ctx.fillStyle = "#98a2b3";
-    ctx.fillText("SOURCE", 22, mainTop + 26);
-    const curLine = st ? st.line : -1;
-    const lh = 26;
-    const codeStartY = mainTop + 46;
-    const maxVisibleLines = Math.floor((mainH - 64) / lh);
-    let startLineIdx = 0;
-    if (curLine > maxVisibleLines - 6) {
-      startLineIdx = Math.max(0, Math.min(codeLines.length - maxVisibleLines, curLine - Math.floor(maxVisibleLines / 2)));
-    }
-    for (let i = 0; i < maxVisibleLines && startLineIdx + i < codeLines.length; i++) {
-      const lineIdx = startLineIdx + i;
-      const lineNum = lineIdx + 1;
-      const raw = codeLines[lineIdx] || "";
-      const ly = codeStartY + i * lh;
-      const isCur = lineNum === curLine;
-      const hasCkpt = /^\s*(?:checkpoint|断点)\s*\(/.test(raw);
-      if (isCur) {
-        const pulseAlpha = 0.14 + 0.06 * Math.sin(subProgress * Math.PI);
-        ctx.fillStyle = st && st.error ? "rgba(248,113,113,0.20)" : `rgba(255,180,84,${pulseAlpha.toFixed(3)})`;
-        ctx.fillRect(0, ly - 17, splitX - 2, lh);
-        ctx.fillStyle = st && st.error ? "#f87171" : "#ffb454";
-        ctx.fillRect(0, ly - 17, 4, lh);
-      }
-      if (hasCkpt) {
-        ctx.beginPath();
-        ctx.arc(14, ly - 5, 4, 0, Math.PI * 2);
-        ctx.fillStyle = "#38bdf8";
-        ctx.fill();
-      }
-      ctx.font = (isCur ? "700 " : "500 ") + '14px "Cascadia Code", Consolas, monospace';
-      ctx.fillStyle = isCur ? "#ffb454" : "#4b5565";
-      const numStr = String(lineNum).padStart(2, " ");
-      ctx.fillText(numStr, 26, ly);
-      let tx = 68;
-      const tokens = tokenizeCodeForCanvas(raw);
-      tokens.forEach((tok) => {
-        ctx.fillStyle = tok.color;
-        ctx.fillText(tok.text, tx, ly);
-        tx += ctx.measureText(tok.text).width;
-      });
-    }
-    if (st && (st.anim || st.error)) {
-      const hudText = st.error ? `\u2717 RUNTIME ERROR: ${st.error}` : st.note || "";
-      ctx.font = '600 13px "Cascadia Code", Consolas, monospace';
-      const hudW = Math.min(splitX - 60, ctx.measureText(hudText).width + 32);
-      const hudX = 36, hudY = mainBottom - 54;
-      roundRectPath(ctx, hudX, hudY, hudW, 36, 9);
-      ctx.fillStyle = st.error ? "rgba(42,14,18,0.95)" : st.isCheckpoint ? "rgba(11,29,46,0.95)" : "rgba(19,27,40,0.95)";
-      ctx.fill();
-      ctx.strokeStyle = st.error ? "#f87171" : st.isCheckpoint ? "#38bdf8" : "#ffb454";
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-      ctx.fillStyle = st.error ? "#fecaca" : st.isCheckpoint ? "#bae6fd" : "#fde68a";
-      ctx.fillText(hudText.slice(0, 88), hudX + 14, hudY + 23);
-    }
-    const sideX = splitX + 1, sideW = W - sideX;
-    ctx.fillStyle = "#0d1219";
-    ctx.fillRect(sideX, mainTop, sideW, mainH);
-    ctx.font = '700 12px "Segoe UI", sans-serif';
-    ctx.fillStyle = "#98a2b3";
-    ctx.fillText("LOCALS", sideX + 20, mainTop + 24);
-    const stackFrames = st && Array.isArray(st.callStack) && st.callStack.length ? st.callStack : [{ label: "global" }];
-    const stackChainTxt = stackFrames.map((f) => f.label).join(" \u25B8 ");
-    roundRectPath(ctx, sideX + 20, mainTop + 32, sideW - 40, 26, 7);
-    ctx.fillStyle = "#0b1018";
-    ctx.fill();
-    ctx.strokeStyle = "#1e2736";
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    ctx.font = '600 12px "Cascadia Code", Consolas, monospace';
-    ctx.fillStyle = "#7dd3fc";
-    ctx.fillText(stackChainTxt.slice(0, 72), sideX + 30, mainTop + 49);
-    const v = st && st.v || {};
-    const prevV = prevSt && prevSt.v || {};
-    let locX = sideX + 20, locY = mainTop + 66;
-    const primKeys = Object.keys(v).filter((k) => v[k] === null || typeof v[k] !== "object");
-    primKeys.forEach((k) => {
-      const valStr = String(v[k]);
-      const changed = prevSt && prevV[k] !== v[k];
-      ctx.font = '600 13px "Cascadia Code", Consolas, monospace';
-      const chipW = ctx.measureText(`${k} : ${valStr}`).width + 24;
-      if (locX + chipW > W - 20 && locX > sideX + 20) {
-        locX = sideX + 20;
-        locY += 34;
-      }
-      roundRectPath(ctx, locX, locY, chipW, 28, 7);
-      ctx.fillStyle = changed ? "rgba(255,180,84,0.16)" : "#121822";
-      ctx.fill();
-      ctx.strokeStyle = changed ? "rgba(255,180,84,0.65)" : "#1d2532";
-      ctx.lineWidth = 1;
-      ctx.stroke();
-      ctx.fillStyle = "#98a2b3";
-      ctx.fillText(k, locX + 10, locY + 19);
-      const kw = ctx.measureText(k).width;
-      ctx.fillStyle = "#ffb454";
-      ctx.fillText(valStr, locX + 18 + kw, locY + 19);
-      locX += chipW + 8;
-    });
-    const watchHeaderY = Math.max(mainTop + 124, locY + 46);
-    ctx.font = '700 12px "Segoe UI", sans-serif';
-    ctx.fillStyle = "#98a2b3";
-    ctx.fillText("WATCH \xB7 \u6570\u636E\u7ED3\u6784\u53EF\u89C6\u5316", sideX + 20, watchHeaderY);
-    const ds = st && st.ds || {};
-    const vars = discoverVars().filter((s) => watched.has(s.id) && ds[s.id] !== void 0);
-    const allocated = allocateSlotSpans(vars, ds);
-    const gridLeft = sideX + 20;
-    const gridW = sideW - 40;
-    const colGap = 12;
-    const colW = Math.floor((gridW - colGap) / 2);
-    let curRowY = watchHeaderY + 14;
-    let pendingSingle = null;
-    const consoleTop = mainBottom - 84;
-    function drawRowItems(items) {
-      const first = items[0];
-      const second = items[1];
-      if (!first || curRowY + 95 > consoleTop) return;
-      const isTall = items.some((it) => it.kind === "tree" || it.kind === "graph" || it.kind === "grid" || it.kind === "stack" || it.kind === "interface");
-      const cardH = Math.min(isTall ? 158 : 108, consoleTop - curRowY - 8);
-      if (cardH < 64) return;
-      if (items.length === 1 || !second) {
-        drawVizCardOnCanvas(ctx, gridLeft, curRowY, gridW, cardH, first.s, first.d, first.kind);
-      } else {
-        drawVizCardOnCanvas(ctx, gridLeft, curRowY, colW, cardH, first.s, first.d, first.kind);
-        drawVizCardOnCanvas(ctx, gridLeft + colW + colGap, curRowY, colW, cardH, second.s, second.d, second.kind);
-      }
-      curRowY += cardH + 10;
-    }
-    allocated.forEach((item) => {
-      if (item.span === 2) {
-        if (pendingSingle) {
-          drawRowItems([pendingSingle]);
-          pendingSingle = null;
-        }
-        drawRowItems([item]);
-      } else {
-        if (pendingSingle) {
-          drawRowItems([pendingSingle, item]);
-          pendingSingle = null;
-        } else {
-          pendingSingle = item;
-        }
-      }
-    });
-    if (pendingSingle) drawRowItems([pendingSingle]);
-    ctx.fillStyle = "#070a0f";
-    ctx.fillRect(sideX, consoleTop, sideW, mainBottom - consoleTop);
-    ctx.strokeStyle = "#1d232e";
-    ctx.beginPath();
-    ctx.moveTo(sideX, consoleTop);
-    ctx.lineTo(W, consoleTop);
-    ctx.stroke();
-    ctx.font = '600 13px "Cascadia Code", Consolas, monospace';
-    ctx.fillStyle = "#ffb454";
-    ctx.fillText("\u203A", sideX + 20, consoleTop + 30);
-    ctx.fillStyle = st && st.error ? "#f87171" : "#cbd5e1";
-    ctx.fillText(String(st && st.note || "").slice(0, 76), sideX + 36, consoleTop + 30);
-    ctx.fillStyle = "#0a0e14";
-    ctx.fillRect(0, mainBottom, W, 56);
-    ctx.strokeStyle = "#1d232e";
-    ctx.beginPath();
-    ctx.moveTo(0, mainBottom);
-    ctx.lineTo(W, mainBottom);
-    ctx.stroke();
-    let statusLabel = "\u25CF \u8C03\u8BD5\u8FD0\u884C\u4E2D";
-    let statusColor = "#4ade80";
-    if (st && st.error) {
-      statusLabel = "\u2717 \u8FD0\u884C\u65F6\u62A5\u9519";
-      statusColor = "#f87171";
-    } else if (st && st.isCheckpoint) {
-      statusLabel = "\u25C9 \u547D\u4E2D\u68C0\u67E5\u70B9";
-      statusColor = "#38bdf8";
-    } else if (DEBUG_SESSION.finished && stepIdx === TRACE.steps.length - 1) {
-      statusLabel = "\u2713 \u6267\u884C\u5B8C\u6BD5";
-      statusColor = "#ffb454";
-    }
-    roundRectPath(ctx, 24, mainBottom + 12, 136, 32, 16);
-    ctx.fillStyle = "#111722";
-    ctx.fill();
-    ctx.strokeStyle = statusColor;
-    ctx.stroke();
-    ctx.font = '600 13px "Cascadia Code", Consolas, monospace';
-    ctx.fillStyle = statusColor;
-    ctx.fillText(statusLabel, 42, mainBottom + 33);
-    ctx.font = '500 13px "Segoe UI", sans-serif';
-    ctx.fillStyle = "#64748b";
-    ctx.fillText(`TypeScript Playground \xB7 1920\xD71080 60fps \u89C6\u9891\u5BFC\u51FA (${speedMult}x \u500D\u901F)`, 184, mainBottom + 33);
-  }
-  function loadSample(key) {
-    if (LANG === "python") {
-      PY_ENGINE.loadSample(key);
-      return;
-    }
-    const targetKey = SAMPLES[key] ? key : "showcase";
-    if ($("sampleSel")) $("sampleSel").value = targetKey;
-    const src = SAMPLES[targetKey] || "";
-    if (typeof globalThis.openSampleScriptTab === "function") {
-      globalThis.openSampleScriptTab(targetKey + ".ts", src, "ts");
-    } else {
-      editor.value = src;
-      setFileName(targetKey + ".ts");
-    }
-    lastEditorCursorLine = -1;
-    clearLog("\u5DF2\u52A0\u8F7D\u6837\u4F8B \xB7 \u81EA\u52A8\u5F00\u542F Debug \u8C03\u8BD5\u6A21\u5F0F\uFF08\u53EF\u6309 \u2190 / \u2192 \u9010\u6B65\u5F53\u573A\u8BA1\u7B97\uFF0C\u6216\u70B9\u51FB\u5DE6\u4E0B\u300C\u8FD0\u884C\u5230\u4E0B\u4E00\u4E2A\u68C0\u67E5\u70B9\u300D\uFF09");
-    resetTraceState();
-    const defaultStep = SAMPLE_DEFAULT_STEP[targetKey] || 0;
-    startDebug(defaultStep);
-  }
-  function boot() {
-    window.__BOOT_DEFERRED = false;
-    try {
-      const hash = typeof location !== "undefined" && location.hash || "";
-      const qs0 = typeof location !== "undefined" && location.search ? new URLSearchParams(location.search) : null;
-      const hasUrlChoice = Boolean(qs0 && (qs0.has("trace") || qs0.has("sample") || qs0.has("step")));
-      const wantsPython = Boolean(qs0 && qs0.get("lang") === "python");
-      let hasSaved = false;
-      if (!hasUrlChoice && !wantsPython && typeof localStorage !== "undefined") {
-        try {
-          hasSaved = Boolean(localStorage.getItem("ts-playground-session-v1"));
-        } catch (_) {
-        }
-      }
-      if (hash.startsWith("#s=") || wantsPython || hasSaved) {
-        window.__BOOT_DEFERRED = true;
-        editor.value = "";
-        clearLog("\u6B63\u5728\u6062\u590D\u4E0A\u6B21\u4F1A\u8BDD / \u5206\u4EAB\u4EE3\u7801\u2026");
-        updateEditorChrome();
-        return;
-      }
-    } catch (_) {
-    }
-    let sampleKey = "showcase";
-    let customStep = null;
-    try {
-      const qs = typeof location !== "undefined" && location.search ? new URLSearchParams(location.search) : null;
-      if (qs) {
-        const tr = qs.get("trace") || qs.get("sample");
-        const aliasMap = { demo: "showcase", tour: "structures", stress: "lcs" };
-        if (tr) {
-          const mapped = aliasMap[tr] || tr;
-          if (SAMPLES[mapped]) sampleKey = mapped;
-        }
-        if (qs.has("watch")) {
-          const w = qs.get("watch");
-          URL_WATCH = w ? w.split(",").map((s) => s.trim()).filter(Boolean) : [];
-        }
-        if (qs.get("still") === "1") {
-          IS_STILL = true;
-          if (document.body && document.body.classList) document.body.classList.add("still");
-        }
-        if (qs.has("step")) {
-          customStep = parseInt(qs.get("step") || "0", 10) || 0;
-        }
-      }
-    } catch {
-    }
-    if ($("sampleSel")) $("sampleSel").value = sampleKey;
-    const initialSrc = SAMPLES[sampleKey] || SAMPLES.showcase || "";
-    if (typeof globalThis.openSampleScriptTab === "function") {
-      globalThis.openSampleScriptTab(sampleKey + ".ts", initialSrc, "ts");
-    } else {
-      editor.value = initialSrc;
-      setFileName(sampleKey + ".ts");
-    }
-    updateEditorChrome();
-    const initialStep = customStep !== null ? customStep : SAMPLE_DEFAULT_STEP[sampleKey] || 0;
-    generateTrace(initialStep);
-  }
-  var initApp = boot;
-
-  // src/ui/controls.ts
-  function stepPrev() {
-    stopAuto();
-    if (!TRACE.steps.length || cur <= 0) return;
-    SELECTED_FRAME_IDX = null;
-    if (document.body && document.body.classList) document.body.classList.remove("editing-code");
-    if (isEditorFocused()) blurEditor();
-    cur--;
-    renderPicker();
-    renderStatic(cur, true);
-  }
-  function stepNext(fromAuto = false) {
-    if (!fromAuto) stopAuto();
-    SELECTED_FRAME_IDX = null;
-    if (document.body && document.body.classList) document.body.classList.remove("editing-code");
-    if (isEditorFocused()) blurEditor();
-    if (!DEBUG_SESSION.active) {
-      startDebug(0);
-      return;
-    }
-    if (cur < TRACE.steps.length - 1) {
-      cur++;
-      renderPicker();
-      renderStatic(cur, true);
-      return;
-    }
-    if (DEBUG_SESSION.finished) return;
-    const ok = computeAndAppendNextStep();
-    if (ok) {
-      cur = TRACE.steps.length - 1;
-      renderPicker();
-      renderStatic(cur, true);
-    } else {
-      renderStatic(cur, false);
-    }
-  }
-  function runToNextCheckpoint() {
-    if (LANG === "python") return PY_ENGINE.runToNextCheckpoint();
-    stopAuto();
-    SELECTED_FRAME_IDX = null;
-    if (document.body && document.body.classList) document.body.classList.remove("editing-code");
-    if (isEditorFocused()) blurEditor();
-    if (!DEBUG_SESSION.active) {
-      if (!startDebug(0)) return;
-      const firstSt = TRACE.steps[0];
-      if (firstSt && (firstSt.isCheckpoint || firstSt.error || DEBUG_SESSION.finished)) {
-        if (firstSt.isCheckpoint) {
-          say("\u25C9 \u5DF2\u5230\u8FBE\u68C0\u67E5\u70B9 [\u7B2C " + firstSt.line + " \u884C] \xB7 " + (firstSt.note || ""), "ok");
-        }
-        return;
-      }
-    }
-    if (cur >= TRACE.steps.length - 1 && DEBUG_SESSION.finished) {
-      return;
-    }
-    let safety = 0;
-    while (safety++ < MAX_STEPS) {
-      if (cur < TRACE.steps.length - 1) {
-        cur++;
-        const st = TRACE.steps[cur];
-        if (st && (st.isCheckpoint || st.error || cur === TRACE.steps.length - 1 && DEBUG_SESSION.finished)) {
-          break;
-        }
-      } else {
-        if (DEBUG_SESSION.finished) break;
-        const added = computeAndAppendNextStep({ silent: true });
-        if (!added) break;
-        cur = TRACE.steps.length - 1;
-        const st = TRACE.steps[cur];
-        if (st && (st.isCheckpoint || st.error || DEBUG_SESSION.finished)) {
-          break;
-        }
-      }
-    }
-    renderPicker();
-    renderStatic(cur, true);
-    const finalSt = TRACE.steps[cur];
-    if (finalSt && finalSt.error) {
-    } else if (finalSt && finalSt.isCheckpoint) {
-      say("\u25C9 \u5DF2\u8FD0\u884C\u5230\u68C0\u67E5\u70B9 [\u7B2C " + finalSt.line + " \u884C] \xB7 " + (finalSt.note || ""), "ok");
-    } else if (DEBUG_SESSION.finished) {
-      say("\u2713 \u5DF2\u8FD0\u884C\u81F3\u7A0B\u5E8F\u7ED3\u675F\uFF08\u540E\u7EED\u65E0\u66F4\u591A\u68C0\u67E5\u70B9\uFF09  \u2192  " + safeJSONStringify(DEBUG_SESSION.returnValue), "ok");
-    }
-  }
-  function rebuildDebugAtPosition(newTargetLine, targetVisits, fallbackStepIdx) {
-    const src = editor.value.replace(/\r/g, "");
-    const unsupported = detectUnsupportedSyntax(src);
-    if (unsupported.length) {
-      unsupported.forEach((x) => say("\u2717 \u7B2C " + x.line + " \u884C\uFF1A\u6682\u4E0D\u652F\u6301 " + x.feature + " \u2014\u2014 " + x.hint, "err", x.line));
-      return false;
-    }
-    extractTsInterfaceMetadata(src);
-    const diags = typecheckTS(src, STRICT_TS);
-    if (diags.length > 0) {
-      reportTypeErrors(diags);
-      return false;
-    }
-    if (TYPE_ERROR_LINES.size || RUNTIME_ERROR_LINES.size) {
-      TYPE_ERROR_LINES.clear();
-      RUNTIME_ERROR_LINES.clear();
-    }
-    const originalLines = src.split("\n");
-    const enums = transpileEnums(src);
-    if (enums.error) {
-      say("\u2717 \u7B2C " + enums.error.line + " \u884C\uFF1A" + enums.error.message, "err", enums.error.line);
-      return false;
-    }
-    const js0 = stripTypes(enums.code);
-    const entry = resolveEntry(src, js0);
-    const expr = stripTypes(entry.expr || "undefined");
-    ENTRY_CALL_LINE = entry.line || 0;
-    const jsBody = entry.index >= 0 ? blankJsLine(js0, entry.index) : js0;
-    let compiledFn;
-    try {
-      const names = collectNames(jsBody);
-      const js = instrument(jsBody, originalLines, names);
-      const finHook = '\n;try{if(typeof __t==="function"&&__t.__fin)__t.__fin(' + snapFnExpr(names) + ");}catch(_){}\n";
-      const body = js + finHook + ";return (" + expr + ");";
-      compiledFn = new Function("__t", "console", body);
-    } catch (e) {
-      say("\u2717 \u7F16\u8BD1\u5931\u8D25: " + (e instanceof Error && e.message ? e.message : e), "err");
-      return false;
-    }
-    stopAuto();
-    clearFlyLayer();
-    const prevWatched = new Set(watched);
-    TRACE = {
-      title: "TypeScript Playground \xB7 Debug",
-      code: originalLines,
-      steps: []
-    };
-    DEBUG_SESSION = {
-      active: true,
-      finished: false,
-      crashed: false,
-      error: null,
-      errorLine: -1,
-      returnValue: void 0,
-      compiledFn,
-      originalLines,
-      callExpr: expr
-    };
-    cur = 0;
-    let visitsSeen = 0;
-    let safety = 0;
-    while (safety++ < MAX_STEPS) {
-      const ok = computeAndAppendNextStep({ silent: true });
-      if (!ok) break;
-      const latest = TRACE.steps[TRACE.steps.length - 1];
-      if (newTargetLine >= 1 && targetVisits >= 1) {
-        if (latest && latest.line === newTargetLine) {
-          visitsSeen++;
-          if (visitsSeen >= targetVisits) break;
-        }
-      } else if (TRACE.steps.length - 1 >= fallbackStepIdx) {
-        break;
-      }
-      if (DEBUG_SESSION.finished) break;
-    }
-    cur = Math.max(0, TRACE.steps.length - 1);
-    if (prevWatched.size > 0) {
-      watched = prevWatched;
-      discoverVars().forEach((s) => watched.add(s.id));
-    } else {
-      initWatchedVars();
-    }
-    renderPicker();
-    renderStatic(cur, false);
-    return true;
-  }
-  function addCheckpointFunction(preferredLine) {
-    if (LANG === "python") {
-      const text2 = editor.value.replace(/\r\n?/g, "\n");
-      const lines2 = text2.split("\n");
-      let line = preferredLine || TRACE.steps[cur]?.line || (window.__CM_CURSOR_LINE || lastEditorCursorLine) || lines2.length;
-      line = Math.max(1, Math.min(lines2.length, line));
-      const current = lines2[line - 1] || "";
-      const indent2 = (current.match(/^\s*/) || [""])[0];
-      if (/:\s*(?:#.*)?$/.test(current)) {
-        lines2.splice(line, 0, indent2 + "    checkpoint()");
-        line = line + 1;
-      } else {
-        lines2.splice(line - 1, 0, indent2 + "checkpoint()");
-      }
-      editor.value = lines2.join("\n");
-      lastEditorCursorLine = line;
-      resetTraceState();
-      PY_ENGINE.start(0);
-      say("\u2713 \u5DF2\u63D2\u5165 checkpoint()\uFF0C\u6B63\u5728\u91CD\u65B0\u5F55\u5236 Python \u6267\u884C\u6B65\u9AA4", "ok");
-      return;
-    }
-    const text = editor.value.replace(/\r\n?/g, "\n");
-    const lines = text.split("\n");
-    const curStep = TRACE.steps[cur];
-    const wasActive = Boolean(DEBUG_SESSION.active && TRACE.steps.length > 0 && curStep);
-    const origCurLine = curStep ? curStep.line : -1;
-    const origLineVisits = wasActive ? TRACE.steps.slice(0, cur + 1).filter((s) => s.line === origCurLine).length : 0;
-    const prevCurIdx = cur;
-    let fnOpenIdx = -1;
-    let fnCloseIdx = lines.length - 1;
-    let depth = 0;
-    for (let i = 0; i < lines.length; i++) {
-      const raw = lines[i] || "";
-      if (fnOpenIdx < 0 && /^\s*(?:export\s+)?(?:default\s+)?function\b/.test(raw)) {
-        fnOpenIdx = i;
-      }
-      if (fnOpenIdx >= 0) {
-        for (let k = 0; k < raw.length; k++) {
-          const ch = raw[k];
-          if (ch === '"' || ch === "'" || ch === "`") {
-            k = skipString(raw, k) - 1;
-            continue;
-          }
-          if (ch === "/" && raw[k + 1] === "/") break;
-          if (ch === "{") depth++;
-          else if (ch === "}") {
-            depth--;
-            if (depth === 0) {
-              fnCloseIdx = i;
-              break;
-            }
-          }
-        }
-        if (depth === 0 && fnCloseIdx >= fnOpenIdx) break;
-      }
-    }
-    let targetIdx;
-    const cursorLine = window.__CM_CURSOR_LINE || lastEditorCursorLine;
-    if (typeof preferredLine === "number" && preferredLine >= 1 && preferredLine <= lines.length) {
-      targetIdx = preferredLine - 1;
-    } else if (cursorLine >= 1 && cursorLine <= lines.length) {
-      targetIdx = cursorLine - 1;
-    } else if (wasActive) {
-      targetIdx = origCurLine - 1;
-    } else {
-      targetIdx = fnOpenIdx >= 0 ? fnOpenIdx + 1 : 0;
-    }
-    if (fnOpenIdx >= 0) {
-      if (targetIdx <= fnOpenIdx) targetIdx = fnOpenIdx + 1;
-      if (targetIdx >= fnCloseIdx) targetIdx = Math.max(fnOpenIdx + 1, fnCloseIdx);
-    }
-    const refLine = lines[targetIdx] || "";
-    const refTrim = refLine.trim();
-    if (typeof preferredLine === "number" && /^(?:checkpoint|断点)\s*\([^)]*\)\s*;?$/.test(refTrim)) {
-      const removedLine = targetIdx + 1;
-      lines.splice(targetIdx, 1);
-      editor.value = lines.join("\n");
-      if (staleTimer) clearTimeout(staleTimer);
-      if (wasActive) {
-        const newTargetLine = origCurLine > removedLine ? origCurLine - 1 : origCurLine === removedLine ? -1 : origCurLine;
-        rebuildDebugAtPosition(newTargetLine, origLineVisits, Math.max(0, prevCurIdx - 1));
-      } else {
-        startDebug(0);
-      }
-      const keepLine = Math.max(1, Math.min(lines.length, Math.min(removedLine, lines.length)));
-      scrollCodeTo(keepLine);
-      say("\xB7 \u5DF2\u79FB\u9664\u7B2C " + removedLine + " \u884C\u7684 checkpoint() \u68C0\u67E5\u70B9\u51FD\u6570\uFF08\u4FDD\u6301\u5F53\u524D\u8C03\u8BD5\u8FDB\u5EA6\uFF09", "dim");
-      return;
-    }
-    let insertIdx = targetIdx;
-    let indent = (refLine.match(/^\s*/) || ["  "])[0] || "  ";
-    if (refTrim.endsWith("{")) {
-      insertIdx = targetIdx + 1;
-      indent = indent + "  ";
-    }
-    const insertedLineNum = insertIdx + 1;
-    lines.splice(insertIdx, 0, indent + "checkpoint();");
-    editor.value = lines.join("\n");
-    lastEditorCursorLine = insertedLineNum;
-    if (staleTimer) clearTimeout(staleTimer);
-    if (wasActive) {
-      const newTargetLine = origCurLine >= insertedLineNum ? origCurLine + 1 : origCurLine;
-      rebuildDebugAtPosition(newTargetLine, origLineVisits, prevCurIdx);
-    } else {
-      startDebug(0);
-    }
-    scrollCodeTo(insertedLineNum);
-    say("\u2713 \u5DF2\u5728\u7B2C " + insertedLineNum + " \u884C\u6DFB\u52A0\u68C0\u67E5\u70B9\u51FD\u6570 checkpoint()\uFF08\u4FDD\u6301\u5F53\u524D\u8C03\u8BD5\u4F4D\u7F6E\uFF0C\u70B9\u51FB\u5DE6\u4E0B\u300C\u23ED \u8FD0\u884C\u5230\u4E0B\u4E00\u4E2A\u68C0\u67E5\u70B9\u300D\u5373\u53EF\u8FD0\u884C\u81F3\u68C0\u67E5\u70B9\uFF09", "ok");
-  }
-  function go(i) {
-    if (i > cur) stepNext();
-    else if (i < cur) stepPrev();
-  }
-  function stopAuto() {
-    if (timer) {
-      clearInterval(timer);
-      timer = null;
-      $("auto").textContent = "\u25B6 \u81EA\u52A8";
-    }
-  }
-  $("prev").onclick = () => stepPrev();
-  $("next").onclick = () => stepNext();
-  if ($("nextCheckpoint")) {
-    $("nextCheckpoint").onclick = () => runToNextCheckpoint();
-  }
-  if ($("btnAddCheckpoint")) {
-    $("btnAddCheckpoint").onclick = () => addCheckpointFunction();
-  }
-  if (gutterEl) {
-    gutterEl.addEventListener("click", (e) => {
-      const target = e.target;
-      const g = target && target.closest ? target.closest(".gline") : null;
-      if (!g || !g.dataset.line) return;
-      addCheckpointFunction(parseInt(g.dataset.line, 10));
-    });
-  }
-  $("auto").onclick = async () => {
-    if (timer) {
-      stopAuto();
-      return;
-    }
-    if (!DEBUG_SESSION.active || cur >= TRACE.steps.length - 1 && DEBUG_SESSION.finished) {
-      const ok = await Promise.resolve(startDebug(0));
-      if (!ok) return;
-    }
-    if (cur >= TRACE.steps.length - 1 && DEBUG_SESSION.finished) return;
-    $("auto").textContent = "\u23F8 \u6682\u505C";
-    timer = setInterval(() => {
-      if (cur >= TRACE.steps.length - 1 && DEBUG_SESSION.finished) {
-        stopAuto();
-        return;
-      }
-      stepNext(true);
-      const st = TRACE.steps[cur];
-      if (!st || st.error || cur >= TRACE.steps.length - 1 && DEBUG_SESSION.finished) {
-        stopAuto();
-      }
-    }, AUTO_PLAY_MS);
-  };
-  $("btnRun").onclick = () => {
-    stopAuto();
-    if (typeof VIEW_MODE !== "undefined" && VIEW_MODE === "notebook" && typeof globalThis.runNotebookCell === "function") {
-      globalThis.runNotebookCell(void 0, true);
-      return;
-    }
-    runOnce();
-  };
-  $("btnTrace").onclick = () => {
-    stopAuto();
-    if (document.body && document.body.classList) document.body.classList.remove("editing-code");
-    if (typeof VIEW_MODE !== "undefined" && VIEW_MODE === "notebook" && typeof globalThis.debugNotebookCell === "function") {
-      globalThis.debugNotebookCell(void 0);
-      return;
-    }
-    startDebug(0);
-  };
-  var exportMenuWrap = $("exportMenuWrap");
-  var btnExportMenu = $("btnExportMenu");
-  var videoSpeedGroup = $("videoSpeedGroup");
-  var videoSpeedBadge = $("videoSpeedBadge");
-  var btnExportVideo2 = $("btnExportVideo");
-  var btnExportVideoLabel2 = $("btnExportVideoLabel");
-  var videoExportStatus2 = $("videoExportStatus");
-  function setVideoExportSpeed(mult) {
-    const num = Number(mult);
-    if (!VIDEO_SPEED_OPTIONS.includes(num)) return VIDEO_EXPORT_SPEED;
-    VIDEO_EXPORT_SPEED = num;
-    if (videoSpeedGroup && videoSpeedGroup.querySelectorAll) {
-      const btns = videoSpeedGroup.querySelectorAll(".speed-opt");
-      btns.forEach((b) => {
-        if (b.classList) b.classList.toggle("active", Number(b.dataset.speed) === num);
-      });
-    }
-    if (videoSpeedBadge) {
-      videoSpeedBadge.textContent = num + "x \xB7 60fps";
-    }
-    return VIDEO_EXPORT_SPEED;
-  }
-  if (btnExportMenu && exportMenuWrap) {
-    btnExportMenu.onclick = (e) => {
-      e.stopPropagation();
-      if (exportMenuWrap.classList) exportMenuWrap.classList.toggle("open");
-    };
-    addEventListener("click", (e) => {
-      if (!exportMenuWrap.classList || !exportMenuWrap.classList.contains("open")) return;
-      if (exportMenuWrap.contains && exportMenuWrap.contains(e.target)) return;
-      exportMenuWrap.classList.remove("open");
-    });
-  }
-  if (videoSpeedGroup) {
-    videoSpeedGroup.addEventListener("click", (e) => {
-      const target = e.target;
-      const btn = target && target.closest ? target.closest(".speed-opt") : null;
-      if (!btn || !btn.dataset.speed) return;
-      e.stopPropagation();
-      setVideoExportSpeed(parseFloat(btn.dataset.speed));
-    });
-  }
-  function sanitizeFileName(name) {
-    const cleaned = String(name == null ? "" : name).replace(/[\\/:*?"<>|\u0000-\u001f]/g, "").replace(/\s+/g, " ").trim().replace(/[.\s]+$/, "");
-    return cleaned || (LANG === "python" ? "playground.py" : "playground.ts");
-  }
-  function exportFileName() {
-    const fallback = LANG === "python" ? "playground.py" : "playground.ts";
-    const name = FILE_NAME || fallback;
-    const ext = LANG === "python" ? ".py" : ".ts";
-    return /\.[A-Za-z0-9]{1,12}$/.test(name) ? name : name + ext;
-  }
-  function setFileName(name) {
-    FILE_NAME = sanitizeFileName(name);
-    if (fileNameEl && fileNameEl.value !== FILE_NAME) fileNameEl.value = FILE_NAME;
-    const tag = $("fileExportTag");
-    if (tag) tag.textContent = exportFileName();
-    if (typeof globalThis.syncActiveScriptTabFromFileName === "function") {
-      try {
-        globalThis.syncActiveScriptTabFromFileName(FILE_NAME);
-      } catch (_) {
-      }
-    }
-  }
-  function loadImportedSource(text, name) {
-    const src = String(text == null ? "" : text).replace(/\r\n?/g, "\n");
-    if (name && /\.ipynb$/i.test(name) && typeof globalThis.importNotebookFromJson === "function") {
-      if (globalThis.importNotebookFromJson(src, name)) return;
-    }
-    if (typeof VIEW_MODE !== "undefined" && VIEW_MODE === "notebook" && typeof globalThis.setViewMode === "function") {
-      globalThis.setViewMode("script");
-    }
-    editor.value = src;
-    setFileName(name || (LANG === "python" ? "imported.py" : "imported.ts"));
-    if (typeof globalThis.syncActiveScriptTabSource === "function") {
-      try {
-        globalThis.syncActiveScriptTabSource(src);
-      } catch (_) {
-      }
-    }
-    lastEditorCursorLine = -1;
-    resetTraceState();
-    updateEditorChrome();
-    clearLog("\u2713 \u5DF2\u5BFC\u5165 " + FILE_NAME + " \xB7 " + src.split("\n").length + " \u884C \xB7 \u70B9\u300C\u{1F41E} Debug \u8C03\u8BD5\u300D\u6216\u300C\u25B6 \u8FD0\u884C\u300D\u5F00\u59CB");
-  }
-  if (btnImportEl && fileInputEl) {
-    if (!$("importMenuWrap")) {
-      btnImportEl.onclick = () => fileInputEl.click();
-    }
-    fileInputEl.addEventListener("change", () => {
-      const file = fileInputEl.files && fileInputEl.files[0];
-      fileInputEl.value = "";
-      if (!file) return;
-      const read = typeof file.text === "function" ? file.text() : Promise.reject(new Error("\u5F53\u524D\u6D4F\u89C8\u5668\u4E0D\u652F\u6301\u8BFB\u53D6\u8BE5\u6587\u4EF6"));
-      Promise.resolve(read).then((text) => loadImportedSource(text, file.name)).catch((e) => say("\u2717 \u5BFC\u5165\u5931\u8D25: " + (e && e.message ? e.message : e), "err"));
-    });
-  }
-  if (fileNameEl) {
-    const commitName = () => setFileName(fileNameEl.value);
-    fileNameEl.addEventListener("change", commitName);
-    fileNameEl.addEventListener("blur", commitName);
-    fileNameEl.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        commitName();
-        fileNameEl.blur();
-      } else if (e.key === "Escape") {
-        fileNameEl.value = FILE_NAME;
-        fileNameEl.blur();
-      }
-    });
-  }
-  setFileName(FILE_NAME);
-  if ($("btnExportTs")) {
-    $("btnExportTs").onclick = () => {
-      try {
-        if (exportMenuWrap && exportMenuWrap.classList) exportMenuWrap.classList.remove("open");
-        const name = exportFileName();
-        const blob = new Blob([editor.value], { type: "text/plain;charset=utf-8" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = name;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        say("\u2713 \u5DF2\u5BFC\u51FA\u6587\u4EF6 " + name + "\uFF08" + editor.value.split("\n").length + " \u884C\uFF09", "ok");
-      } catch (e) {
-        say("\u2717 \u5BFC\u51FA\u5931\u8D25: " + (e instanceof Error && e.message ? e.message : e), "err");
-      }
-    };
-  }
-  if ($("btnShareLink")) {
-    $("btnShareLink").onclick = () => {
-      if (exportMenuWrap && exportMenuWrap.classList) exportMenuWrap.classList.remove("open");
-      const tag = $("shareLinkTag");
-      if (tag) tag.textContent = "\u6682\u672A\u5B9E\u73B0";
-      say("\u6682\u672A\u5B9E\u73B0", "dim");
-    };
-  }
-  $("sampleSel").onchange = () => loadSample($("sampleSel").value);
-  pickEl.addEventListener("click", (e) => {
-    const target = e.target;
-    const el = target && target.closest ? target.closest(".chip-pick") : null;
-    if (!el || !el.dataset.id) return;
-    const id = el.dataset.id;
-    if (watched.has(id)) watched.delete(id);
-    else watched.add(id);
-    renderPicker();
-  });
-  if (callStackBarEl) {
-    callStackBarEl.addEventListener("click", (e) => {
-      const target = e.target;
-      const btn = target && target.closest ? target.closest(".cs-crumb") : null;
-      if (!btn || btn.dataset.frameIdx === void 0) return;
-      selectStackFrame(parseInt(btn.dataset.frameIdx, 10));
-    });
-  }
-  (function initResizer() {
-    if (!resizerEl || !mainEl || !sidePanelEl) return;
-    let dragging = false;
-    function applySideWidth(clientX) {
-      const rect = mainEl.getBoundingClientRect();
-      if (!rect.width) return;
-      const minCodeW = 340;
-      const minSideW = 280;
-      const maxSideW = Math.max(minSideW, Math.min(rect.width - minCodeW, Math.round(rect.width * 0.65)));
-      const desiredSideW = Math.round(rect.right - clientX);
-      const clamped = Math.max(minSideW, Math.min(maxSideW, desiredSideW));
-      sidePanelEl.style.width = clamped + "px";
-      sidePanelEl.style.maxWidth = "none";
-      if (slotsEl && slotsEl.classList) {
-        slotsEl.classList.toggle("single-col", clamped < 440);
-      }
-      clearFlyLayer();
-    }
-    resizerEl.addEventListener("pointerdown", (e) => {
-      dragging = true;
-      resizerEl.classList.add("dragging");
-      document.body.classList.add("resizing");
-      if (resizerEl.setPointerCapture) {
-        try {
-          resizerEl.setPointerCapture(e.pointerId);
-        } catch {
-        }
-      }
-      e.preventDefault();
-    });
-    addEventListener("pointermove", (e) => {
-      if (!dragging) return;
-      applySideWidth(e.clientX);
-    });
-    function endDrag() {
-      if (!dragging) return;
-      dragging = false;
-      resizerEl.classList.remove("dragging");
-      document.body.classList.remove("resizing");
-    }
-    addEventListener("pointerup", endDrag);
-    addEventListener("pointercancel", endDrag);
-    resizerEl.addEventListener("dblclick", () => {
-      sidePanelEl.style.width = "40%";
-      sidePanelEl.style.maxWidth = "65%";
-      clearFlyLayer();
-    });
-  })();
-  function isEditorFocused() {
-    try {
-      if (window.PlaygroundCM && window.PlaygroundCM.hasFocus()) return true;
-    } catch (_) {
-    }
-    return document.activeElement === editor;
-  }
-  function blurEditor() {
-    try {
-      if (window.PlaygroundCM && window.PlaygroundCM.hasFocus()) {
-        window.PlaygroundCM.blur();
-        return;
-      }
-    } catch (_) {
-    }
-    if (editor.blur) editor.blur();
-  }
-  function recordEditorCursorLine() {
-    try {
-      const pos = editor.selectionStart || 0;
-      lastEditorCursorLine = editor.value.slice(0, pos).split("\n").length;
-    } catch {
-    }
-  }
-  editor.addEventListener("click", recordEditorCursorLine);
-  editor.addEventListener("keyup", recordEditorCursorLine);
-  editor.addEventListener("focus", () => {
-    recordEditorCursorLine();
-    if (TRACE.steps.length && document.body && document.body.classList) {
-      document.body.classList.add("editing-code");
-      clearFlyLayer();
-    }
-  });
-  editor.addEventListener("blur", () => {
-    if (document.body && document.body.classList) {
-      document.body.classList.remove("editing-code");
-    }
-  });
-  editor.addEventListener("keydown", (e) => {
-    if (e.key === "Tab") {
-      e.preventDefault();
-      const s = editor.selectionStart, t = editor.selectionEnd;
-      const indent = LANG === "python" ? "    " : "  ";
-      editor.value = editor.value.slice(0, s) + indent + editor.value.slice(t);
-      editor.selectionStart = editor.selectionEnd = s + indent.length;
-      onSourceChanged();
-    }
-    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-      e.preventDefault();
-      stopAuto();
-      if (e.shiftKey) {
-        if (document.body && document.body.classList) document.body.classList.remove("editing-code");
-        if (isEditorFocused()) blurEditor();
-        startDebug(0);
-      } else {
-        runOnce();
-      }
-    }
-  });
-  var staleTimer = null;
-  function onSourceChanged() {
-    recordEditorCursorLine();
-    TYPE_ERROR_LINES.clear();
-    RUNTIME_ERROR_LINES.clear();
-    if (LANG === "python") PY_DIAGS.length = 0;
-    hideHoverTip();
-    updateEditorChrome();
-    if (TRACE.steps.length || DEBUG_SESSION.active) {
-      if (staleTimer) clearTimeout(staleTimer);
-      staleTimer = setTimeout(() => {
-        resetTraceState();
-        clearLog("\u6E90\u7801\u5DF2\u4FEE\u6539\uFF0C\u5F53\u524D\u8C03\u8BD5\u4F1A\u8BDD\u5DF2\u91CD\u7F6E \xB7 \u53EF\u70B9\u51FB\u300C\u{1F41E} Debug \u8C03\u8BD5\u300D\u6216\u5DE6\u4E0B\u300C\u8FD0\u884C\u5230\u4E0B\u4E00\u4E2A\u68C0\u67E5\u70B9\u300D\u91CD\u65B0\u5F00\u59CB");
-      }, 300);
-    }
-  }
-  editor.addEventListener("input", onSourceChanged);
-  editor.addEventListener("scroll", () => {
-    clearFlyLayer();
-    hideHoverTip();
-    syncScroll();
-  });
-  if (editor && editor.addEventListener) {
-    editor.addEventListener("mousemove", (e) => {
-      if (!TRACE.steps.length || e && e.buttons) {
-        hideHoverTip();
-        return;
-      }
-      const hit = hoverHitFromEvent(e);
-      const word = hit ? hoverWordAt(hit.text, hit.col) : null;
-      if (!word) {
-        hideHoverTip();
-        return;
-      }
-      hoverTipForName(word.word, e.clientX, e.clientY);
-    });
-    editor.addEventListener("mouseleave", hideHoverTip);
-    editor.addEventListener("mousedown", hideHoverTip);
-  }
-  if (sidePanelEl && sidePanelEl.addEventListener) {
-    sidePanelEl.addEventListener("mousemove", (e) => {
-      const target = e && e.target;
-      const card = target && target.closest ? target.closest("[data-var]") : null;
-      if (!card || !card.getAttribute) {
-        hideHoverTip();
-        return;
-      }
-      hoverTipForName(card.getAttribute("data-var"), e.clientX, e.clientY);
-    });
-    sidePanelEl.addEventListener("mouseleave", hideHoverTip);
-  }
-  addEventListener("resize", () => positionStepViz());
-  addEventListener("keydown", (e) => {
-    if (isEditorFocused()) return;
-    const target = e.target;
-    if (e.key === "ArrowRight" || e.key === " ") {
-      if (target && target.closest && target.closest("button,select,input,textarea")) return;
-      e.preventDefault();
-      stepNext();
-    }
-    if (e.key === "ArrowLeft") {
-      if (target && target.closest && target.closest("button,select,input,textarea")) return;
-      e.preventDefault();
-      stepPrev();
-    }
-  });
-  (function initCheckerInfo() {
-    const badge = $("checkerBadge");
-    const modal = $("checkerModal");
-    const close = $("checkerModalClose");
-    if (!badge || !modal) return;
-    const open = () => {
-      modal.hidden = false;
-    };
-    const hide = () => {
-      modal.hidden = true;
-    };
-    badge.onclick = open;
-    badge.onkeydown = (e) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        open();
-      }
-    };
-    if (close) close.onclick = hide;
-    if (modal.addEventListener) {
-      modal.addEventListener("click", (e) => {
-        if (e.target === modal) hide();
-      });
-    }
-    if (document.addEventListener) {
-      document.addEventListener("keydown", (e) => {
-        if (e.key === "Escape") hide();
-      });
-    }
-  })();
-  var stepForward = stepNext;
-  var stepBack = stepPrev;
-  var renderStep = renderStatic;
-  var scheduleRebuild = onSourceChanged;
-  function togglePlay() {
-    const autoBtn = $("auto");
-    if (autoBtn && typeof autoBtn.onclick === "function") autoBtn.onclick();
-  }
-  function setStatus(msg, cls) {
-    say(msg, cls);
-  }
-
-  // src/runtime/event-loop-env.ts
-  function rethrowIfControlSignal(err) {
-    const ctrl = err && typeof err === "object" ? err : null;
-    if (err === PAUSE_SIGNAL || ctrl && (ctrl.__debugPause || ctrl.__timeout)) {
-      throw err;
-    }
-  }
-  function getOrCreateVfsApi() {
-    if (globalThis.__VFS__) return globalThis.__VFS__;
-    const fallbackFiles = /* @__PURE__ */ new Map();
-    const resolveFallbackWorkspacePath = (rawPath, allowEmptyRoot = false) => {
-      const s = String(rawPath ?? "").trim().replace(/\\/g, "/");
-      if (!s) {
-        if (allowEmptyRoot) return "";
-        throw new Error(`ENOENT: no such file or directory, open ''`);
-      }
-      if (/^[A-Za-z]:/.test(s) || s.startsWith("~")) {
-        throw new Error(`EACCES: permission denied, access '${rawPath}' (outside workspace is not allowed)`);
-      }
-      let rel = s;
-      if (s.startsWith("/")) {
-        if (s === "/" || s === "/workspace" || s === "/workspace/") {
-          rel = "";
-        } else if (s.startsWith("/workspace/")) {
-          rel = s.slice("/workspace/".length);
-        } else {
-          throw new Error(`EACCES: permission denied, access '${rawPath}' (outside workspace is not allowed)`);
-        }
-      } else if (s === "workspace" || s === "workspace/") {
-        rel = "";
-      } else if (s.startsWith("workspace/")) {
-        rel = s.slice("workspace/".length);
-      }
-      const rawParts = rel.split("/");
-      const resolved = [];
-      for (const part of rawParts) {
-        if (!part || part === ".") continue;
-        if (part === "..") {
-          if (resolved.length === 0) {
-            throw new Error(`EACCES: permission denied, access '${rawPath}' (outside workspace is not allowed)`);
-          }
-          resolved.pop();
-          continue;
-        }
-        resolved.push(part);
-      }
-      if (resolved.length === 0 && !allowEmptyRoot) {
-        throw new Error(`EISDIR: illegal operation on a directory, open '${rawPath}'`);
-      }
-      return resolved.join("/");
-    };
-    const ensureParentFolders = (norm) => {
-      const parts = norm.split("/").filter(Boolean);
-      let acc = "";
-      for (let idx = 0; idx < parts.length - 1; idx++) {
-        const seg = parts[idx] || "";
-        acc = acc ? `${acc}/${seg}` : seg;
-        if (!fallbackFiles.has(acc)) {
-          fallbackFiles.set(acc, { type: "folder", content: "", mtime: Date.now() });
-        }
-      }
-    };
-    const api = {
-      resolveWorkspacePath(rawPath, allowEmptyRoot = false) {
-        return resolveFallbackWorkspacePath(rawPath, allowEmptyRoot);
-      },
-      readFile(p) {
-        const norm = resolveFallbackWorkspacePath(p, false);
-        const node = fallbackFiles.get(norm);
-        if (!node) throw new Error(`ENOENT: no such file or directory, open '${p}'`);
-        if (node.type === "folder") throw new Error(`EISDIR: illegal operation on a directory, read '${p}'`);
-        return node.content;
-      },
-      writeFile(p, data) {
-        const norm = resolveFallbackWorkspacePath(p, false);
-        ensureParentFolders(norm);
-        const str = typeof data === "string" ? data : JSON.stringify(data, null, 2);
-        fallbackFiles.set(norm, { type: "file", content: str, mtime: Date.now() });
-        return true;
-      },
-      appendFile(p, data) {
-        const norm = resolveFallbackWorkspacePath(p, false);
-        ensureParentFolders(norm);
-        const prev = fallbackFiles.get(norm)?.content ?? "";
-        const str = typeof data === "string" ? data : JSON.stringify(data);
-        fallbackFiles.set(norm, { type: "file", content: prev + str, mtime: Date.now() });
-        return true;
-      },
-      exists(p) {
-        const norm = resolveFallbackWorkspacePath(p, true);
-        if (!norm) return true;
-        return fallbackFiles.has(norm);
-      },
-      listFiles(p) {
-        const norm = resolveFallbackWorkspacePath(p || ".", true);
-        const prefix = norm ? norm + "/" : "";
-        const out = /* @__PURE__ */ new Set();
-        fallbackFiles.forEach((_v, k) => {
-          if (!prefix) {
-            const first = k.split("/")[0];
-            if (first) out.add(first);
-          } else if (k.startsWith(prefix)) {
-            const rest = k.slice(prefix.length).split("/")[0];
-            if (rest) out.add(rest);
-          }
-        });
-        return Array.from(out).sort();
-      },
-      readdir(p) {
-        return api.listFiles(p);
-      },
-      mkdir(p) {
-        const norm = resolveFallbackWorkspacePath(p, true);
-        if (!norm) return true;
-        ensureParentFolders(norm);
-        fallbackFiles.set(norm, { type: "folder", content: "", mtime: Date.now() });
-        return true;
-      },
-      deleteFile(p) {
-        const norm = resolveFallbackWorkspacePath(p, false);
-        const existed = fallbackFiles.delete(norm);
-        Array.from(fallbackFiles.keys()).forEach((k) => {
-          if (k.startsWith(norm + "/")) fallbackFiles.delete(k);
-        });
-        return existed;
-      },
-      unlink(p) {
-        return api.deleteFile(p);
-      },
-      stat(p) {
-        const norm = resolveFallbackWorkspacePath(p, true);
-        if (!norm) {
-          return {
-            size: 0,
-            isFile: () => false,
-            isDirectory: () => true
-          };
-        }
-        const node = fallbackFiles.get(norm);
-        if (!node) throw new Error(`ENOENT: no such file or directory, stat '${p}'`);
-        return {
-          size: node.type === "file" ? node.content.length : 0,
-          isFile: () => node.type === "file",
-          isDirectory: () => node.type === "folder"
-        };
-      },
-      listAll() {
-        return Array.from(fallbackFiles.keys()).sort();
-      },
-      clear() {
-        fallbackFiles.clear();
-      }
-    };
-    globalThis.__VFS__ = api;
-    globalThis.vfs = api;
-    return api;
-  }
-  function createVirtualPromiseAndFsEnv(opts) {
-    const { loop, getCurLine, nextPromiseId, enqueueMicrotask, __t } = opts;
-    class VirtualPromise {
-      __isVirtualPromise;
-      id;
-      label;
-      state;
-      value;
-      reason;
-      line;
-      _handlers;
-      _internal;
-      reactions;
-      constructor(executor, label) {
-        loop.used = true;
-        this.__isVirtualPromise = true;
-        this.id = nextPromiseId();
-        this.label = label || "Promise#" + this.id;
-        this.state = "pending";
-        this.value = void 0;
-        this.reason = void 0;
-        this.line = getCurLine() || 1;
-        this._handlers = [];
-        loop.promises.push(this);
-        const resolve = (val) => this._resolve(val);
-        const reject = (reason) => this._reject(reason);
-        if (typeof executor === "function") {
-          try {
-            executor(resolve, reject);
-          } catch (err) {
-            rethrowIfControlSignal(err);
-            this._reject(err);
-          }
-        }
-      }
-      _resolve(val) {
-        if (this.state !== "pending") return;
-        const thenable = val && (typeof val === "object" || typeof val === "function") ? val : null;
-        if (thenable && (thenable.__isVirtualPromise || typeof thenable.then === "function") && typeof thenable.then === "function") {
-          try {
-            thenable.then((v) => this._resolve(v), (r) => this._reject(r));
-          } catch (err) {
-            rethrowIfControlSignal(err);
-            this._reject(err);
-          }
-          return;
-        }
-        this.state = "fulfilled";
-        this.value = val;
-        this._flush();
-      }
-      _reject(reason) {
-        if (this.state !== "pending") return;
-        this.state = "rejected";
-        this.reason = reason;
-        this._flush();
-      }
-      _flush() {
-        if (this.state === "pending") return;
-        const pending = this._handlers.splice(0, this._handlers.length);
-        for (const h of pending) {
-          this._scheduleHandler(h);
-        }
-      }
-      _scheduleHandler(h) {
-        const isFulfilled = this.state === "fulfilled";
-        const cb = isFulfilled ? h.onFulfilled : h.onRejected;
-        const arg = isFulfilled ? this.value : this.reason;
-        enqueueMicrotask({
-          label: h.label || this.label + (isFulfilled ? ".then" : ".catch"),
-          line: h.line || this.line || 1,
-          isInternalAwait: Boolean(h.isInternalAwait),
-          rawCb: cb,
-          run: () => {
-            if (typeof cb !== "function") {
-              if (isFulfilled) h.child._resolve(arg);
-              else h.child._reject(arg);
-              return;
-            }
-            try {
-              const cbSrc = Function.prototype.toString.call(cb);
-              if (!h.isInternalAwait && !cbSrc.includes("__t(") && typeof __t === "function") {
-                __t(h.line || 1, "\u26A1 [\u5FAE\u4EFB\u52A1 Microtask] " + (h.label || "Promise.then"), loop.globalSnapFn);
-              }
-              const res = cb(arg);
-              h.child._resolve(res);
-            } catch (err) {
-              rethrowIfControlSignal(err);
-              h.child._reject(err);
-            }
-          }
-        });
-      }
-      then(onFulfilled, onRejected, metaLabel, isInternalAwait) {
-        const callLine = getCurLine() || this.line || 1;
-        const child = new VirtualPromise(null, metaLabel || this.label + ".then");
-        if (isInternalAwait) child._internal = true;
-        const handler = {
-          onFulfilled,
-          onRejected,
-          child,
-          line: callLine,
-          label: metaLabel || this.label + ".then",
-          isInternalAwait: Boolean(isInternalAwait)
-        };
-        if (this.state === "pending") {
-          this._handlers.push(handler);
-        } else {
-          this._scheduleHandler(handler);
-        }
-        return child;
-      }
-      catch(onRejected) {
-        return this.then(null, onRejected, this.label + ".catch");
-      }
-      finally(onFinally) {
-        return this.then(
-          (v) => {
-            if (typeof onFinally === "function") onFinally();
-            return v;
-          },
-          (err) => {
-            if (typeof onFinally === "function") onFinally();
-            throw err;
-          },
-          this.label + ".finally"
-        );
-      }
-      static resolve(val) {
-        loop.used = true;
-        if (val instanceof VirtualPromise || val && typeof val === "object" && "__isVirtualPromise" in val) {
-          return val;
-        }
-        return new VirtualPromise((res) => res(val), "Promise.resolve(" + formatShortVal(val) + ")");
-      }
-      static reject(reason) {
-        loop.used = true;
-        return new VirtualPromise((_res, rej) => rej(reason), "Promise.reject(" + formatShortVal(reason) + ")");
-      }
-      static all(items) {
-        loop.used = true;
-        const arr = Array.from(items || []);
-        return new VirtualPromise((resolve, reject) => {
-          if (arr.length === 0) {
-            resolve([]);
-            return;
-          }
-          const out = new Array(arr.length);
-          let left = arr.length;
-          arr.forEach((item, idx) => {
-            VirtualPromise.resolve(item).then((val) => {
-              out[idx] = val;
-              if (--left === 0) resolve(out);
-            }, reject);
-          });
-        }, "Promise.all");
-      }
-      static race(items) {
-        loop.used = true;
-        const arr = Array.from(items || []);
-        return new VirtualPromise((resolve, reject) => {
-          arr.forEach((item) => {
-            VirtualPromise.resolve(item).then(resolve, reject);
-          });
-        }, "Promise.race");
-      }
-    }
-    const readRequiredVfsFile = (p) => {
-      const content = getOrCreateVfsApi().readFile(p);
-      if (content === null) {
-        throw new Error(`ENOENT: no such file or directory, open '${p}'`);
-      }
-      return content;
-    };
-    const fsPromisesApi = {
-      readFile(p, _encoding) {
-        loop.used = true;
-        return new VirtualPromise((resolve, reject) => {
-          try {
-            resolve(readRequiredVfsFile(p));
-          } catch (e) {
-            reject(e);
-          }
-        }, `fs.readFile(${formatShortVal(p)})`);
-      },
-      writeFile(p, data, _encoding) {
-        loop.used = true;
-        return new VirtualPromise((resolve, reject) => {
-          try {
-            getOrCreateVfsApi().writeFile(p, typeof data === "string" ? data : String(data ?? ""));
-            resolve(void 0);
-          } catch (e) {
-            reject(e);
-          }
-        }, `fs.writeFile(${formatShortVal(p)})`);
-      },
-      appendFile(p, data, _encoding) {
-        loop.used = true;
-        return new VirtualPromise((resolve, reject) => {
-          try {
-            getOrCreateVfsApi().appendFile(p, typeof data === "string" ? data : String(data ?? ""));
-            resolve(void 0);
-          } catch (e) {
-            reject(e);
-          }
-        }, `fs.appendFile(${formatShortVal(p)})`);
-      },
-      readdir(p) {
-        loop.used = true;
-        return new VirtualPromise((resolve, reject) => {
-          try {
-            resolve(getOrCreateVfsApi().readdir(p));
-          } catch (e) {
-            reject(e);
-          }
-        }, `fs.readdir(${formatShortVal(p || ".")})`);
-      },
-      mkdir(p, _options) {
-        loop.used = true;
-        return new VirtualPromise((resolve, reject) => {
-          try {
-            getOrCreateVfsApi().mkdir(p);
-            resolve(void 0);
-          } catch (e) {
-            reject(e);
-          }
-        }, `fs.mkdir(${formatShortVal(p)})`);
-      },
-      unlink(p) {
-        loop.used = true;
-        return new VirtualPromise((resolve, reject) => {
-          try {
-            getOrCreateVfsApi().unlink(p);
-            resolve(void 0);
-          } catch (e) {
-            reject(e);
-          }
-        }, `fs.unlink(${formatShortVal(p)})`);
-      },
-      rm(p, _options) {
-        loop.used = true;
-        return new VirtualPromise((resolve, reject) => {
-          try {
-            getOrCreateVfsApi().unlink(p);
-            resolve(void 0);
-          } catch (e) {
-            reject(e);
-          }
-        }, `fs.rm(${formatShortVal(p)})`);
-      },
-      stat(p) {
-        loop.used = true;
-        return new VirtualPromise((resolve, reject) => {
-          try {
-            resolve(getOrCreateVfsApi().stat(p));
-          } catch (e) {
-            reject(e);
-          }
-        }, `fs.stat(${formatShortVal(p)})`);
-      },
-      exists(p) {
-        loop.used = true;
-        return new VirtualPromise((resolve, reject) => {
-          try {
-            resolve(getOrCreateVfsApi().exists(p));
-          } catch (e) {
-            reject(e);
-          }
-        }, `fs.exists(${formatShortVal(p)})`);
-      },
-      access(p, _mode) {
-        loop.used = true;
-        return new VirtualPromise((resolve, reject) => {
-          try {
-            getOrCreateVfsApi().stat(p);
-            resolve(void 0);
-          } catch (e) {
-            reject(e);
-          }
-        }, `fs.access(${formatShortVal(p)})`);
-      },
-      copyFile(srcPath, destPath) {
-        loop.used = true;
-        return new VirtualPromise((resolve, reject) => {
-          try {
-            const content = readRequiredVfsFile(srcPath);
-            getOrCreateVfsApi().writeFile(destPath, content);
-            resolve(void 0);
-          } catch (e) {
-            reject(e);
-          }
-        }, `fs.copyFile(${formatShortVal(srcPath)})`);
-      },
-      rename(oldPath, newPath) {
-        loop.used = true;
-        return new VirtualPromise((resolve, reject) => {
-          try {
-            const content = readRequiredVfsFile(oldPath);
-            getOrCreateVfsApi().writeFile(newPath, content);
-            getOrCreateVfsApi().unlink(oldPath);
-            resolve(void 0);
-          } catch (e) {
-            reject(e);
-          }
-        }, `fs.rename(${formatShortVal(oldPath)})`);
-      }
-    };
-    const fsModuleEnv = {
-      promises: fsPromisesApi,
-      readFileSync(p, _encoding) {
-        return readRequiredVfsFile(p);
-      },
-      writeFileSync(p, data, _encoding) {
-        getOrCreateVfsApi().writeFile(p, typeof data === "string" ? data : String(data ?? ""));
-      },
-      appendFileSync(p, data, _encoding) {
-        getOrCreateVfsApi().appendFile(p, typeof data === "string" ? data : String(data ?? ""));
-      },
-      existsSync(p) {
-        try {
-          return getOrCreateVfsApi().exists(p);
-        } catch (_) {
-          return false;
-        }
-      },
-      readdirSync(p) {
-        return getOrCreateVfsApi().readdir(p);
-      },
-      mkdirSync(p, _options) {
-        getOrCreateVfsApi().mkdir(p);
-      },
-      unlinkSync(p) {
-        getOrCreateVfsApi().unlink(p);
-      },
-      rmSync(p, _options) {
-        getOrCreateVfsApi().unlink(p);
-      },
-      statSync(p) {
-        return getOrCreateVfsApi().stat(p);
-      },
-      copyFileSync(srcPath, destPath) {
-        const content = readRequiredVfsFile(srcPath);
-        getOrCreateVfsApi().writeFile(destPath, content);
-      },
-      renameSync(oldPath, newPath) {
-        const content = readRequiredVfsFile(oldPath);
-        getOrCreateVfsApi().writeFile(newPath, content);
-        getOrCreateVfsApi().unlink(oldPath);
-      }
-    };
-    return { VirtualPromise, fsModuleEnv };
-  }
-
-  // src/runtime/event-loop.ts
-  function say(msg, cls, line) {
-    const d = document.createElement("div");
-    if (cls) d.className = cls;
-    if (line) {
-      d.className = (cls ? cls + " " : "") + "diag";
-      if (d.setAttribute) {
-        d.setAttribute("data-line", String(line));
-        d.setAttribute("title", "\u70B9\u51FB\u5B9A\u4F4D\u5230\u7B2C " + line + " \u884C");
-      }
-    }
-    d.textContent = msg;
-    logEl.appendChild(d);
-    logEl.scrollTop = logEl.scrollHeight;
-  }
-  if (logEl && logEl.addEventListener) {
-    logEl.addEventListener("click", (e) => {
-      const el = e && e.target;
-      const target = el && el.closest ? el.closest(".diag") : null;
-      if (!target || !target.getAttribute) return;
-      revealErrorLine(parseInt(target.getAttribute("data-line") || "0", 10), true);
-    });
-  }
-  function clearLog(msg) {
-    logEl.innerHTML = "";
-    if (msg) say(msg, "dim");
-  }
-  function anonStackLine(stack) {
-    const re = /,\s*<anonymous>:(\d+):\d+/g;
-    const m = re.exec(String(stack || ""));
-    return m && m[1] ? parseInt(m[1], 10) : 0;
-  }
-  var FN_BODY_LINE_OFFSET = null;
-  function fnBodyLineOffset() {
-    if (FN_BODY_LINE_OFFSET !== null) return FN_BODY_LINE_OFFSET;
-    let off = 2;
-    try {
-      new Function('throw new Error("probe")')();
-    } catch (e) {
-      const line = anonStackLine(e instanceof Error ? e.stack : void 0);
-      if (line > 0) off = Math.max(1, line - 1);
-    }
-    FN_BODY_LINE_OFFSET = off;
-    return off;
-  }
-  function sourceLineFromStack(stack, lineCount) {
-    const stackLine = anonStackLine(stack);
-    if (!stackLine) return 0;
-    const line = stackLine - fnBodyLineOffset() - 1;
-    if (!isFinite(line) || line < 1) return 0;
-    if (lineCount && line > lineCount) return 0;
-    return line;
-  }
   function safeJSONStringify(val) {
     if (val === void 0) return "(undefined)";
     try {
@@ -8345,341 +2933,6 @@ runAsyncDemo()
         return "[Object]";
       }
     }
-  }
-  function hasAsyncConstructs(src) {
-    if (!src || typeof src !== "string") return false;
-    const clean = blankStrings(src);
-    return /\b(?:async|await|Promise|setTimeout|queueMicrotask|sleep)\b/.test(clean);
-  }
-  function createVirtualEventLoop(__t, getCurLine = () => 1, onSuspendFrame, onResumeFrame) {
-    let promiseSeq = 0;
-    let microSeq = 0;
-    let macroSeq = 0;
-    let coroSeq = 0;
-    const loop = {
-      used: false,
-      virtualTime: 0,
-      phase: "sync",
-      activeTaskLabel: "\u4E3B\u7EBF\u7A0B\u540C\u6B65\u6808 (Sync)",
-      coroutines: [],
-      microtasks: [],
-      macrotasks: [],
-      promises: [],
-      globalSnapFn: null
-    };
-    function enqueueMicrotask(item) {
-      loop.used = true;
-      const task = {
-        id: ++microSeq,
-        label: item.label || "microtask#" + microSeq,
-        line: item.line || getCurLine() || 1,
-        status: "queued",
-        isInternalAwait: Boolean(item.isInternalAwait),
-        run: item.run,
-        rawCb: item.rawCb || null
-      };
-      loop.microtasks.push(task);
-      return task;
-    }
-    const { VirtualPromise, fsModuleEnv } = createVirtualPromiseAndFsEnv({
-      loop,
-      getCurLine,
-      nextPromiseId: () => ++promiseSeq,
-      enqueueMicrotask,
-      __t
-    });
-    const env = {
-      Promise: VirtualPromise,
-      fs: fsModuleEnv,
-      queueMicrotask(cb) {
-        loop.used = true;
-        const line = getCurLine() || 1;
-        enqueueMicrotask({
-          label: "queueMicrotask",
-          line,
-          rawCb: cb,
-          run: () => {
-            if (typeof cb !== "function") return;
-            const cbSrc = Function.prototype.toString.call(cb);
-            if (!cbSrc.includes("__t(") && typeof __t === "function") {
-              __t(line, "\u26A1 [\u5FAE\u4EFB\u52A1] queueMicrotask", loop.globalSnapFn);
-            }
-            cb();
-          }
-        });
-      },
-      setTimeout(cb, delay = 0, ...args) {
-        loop.used = true;
-        const d = Math.max(0, Number(delay) || 0);
-        const line = getCurLine() || 1;
-        const id = ++macroSeq;
-        loop.macrotasks.push({
-          id,
-          label: `setTimeout (${d}ms)`,
-          delay: d,
-          fireAt: loop.virtualTime + d,
-          line,
-          status: "waiting",
-          cb,
-          args
-        });
-        return id;
-      },
-      clearTimeout(id) {
-        const t = loop.macrotasks.find((m) => m.id === id && m.status === "waiting");
-        if (t) t.status = "cancelled";
-      },
-      sleep(ms = 0, val = void 0) {
-        loop.used = true;
-        const d = Math.max(0, Number(ms) || 0);
-        return new VirtualPromise((resolve) => {
-          env.setTimeout(() => resolve(val), d);
-        }, `sleep(${d}ms)`);
-      }
-    };
-    function runAsyncCoroutine(genFn, self, fnName, defLine) {
-      loop.used = true;
-      const coro = {
-        id: ++coroSeq,
-        name: fnName || "async",
-        line: defLine || getCurLine() || 1,
-        status: "running",
-        awaitExpr: null,
-        fid: 0
-      };
-      loop.coroutines.push(coro);
-      const outPromise = new VirtualPromise(null, `${coro.name}()`);
-      let gen;
-      try {
-        gen = genFn.call(self);
-      } catch (err) {
-        rethrowIfControlSignal(err);
-        coro.status = "rejected";
-        outPromise._reject(err);
-        return outPromise;
-      }
-      function drive(method, arg) {
-        coro.status = "running";
-        coro.awaitExpr = null;
-        let stepRes;
-        try {
-          stepRes = gen[method](arg);
-        } catch (err) {
-          rethrowIfControlSignal(err);
-          coro.status = "rejected";
-          outPromise._reject(err);
-          return;
-        }
-        if (stepRes.done) {
-          coro.status = "done";
-          outPromise._resolve(stepRes.value);
-          return;
-        }
-        const yielded = stepRes.value;
-        const awaitDesc = yielded && typeof yielded === "object" && "__isAwait" in yielded ? yielded : null;
-        const isAwaitDesc = Boolean(awaitDesc && awaitDesc.__isAwait);
-        const awaitedVal = isAwaitDesc && awaitDesc ? awaitDesc.value : yielded;
-        const fid = isAwaitDesc && awaitDesc && awaitDesc.fid ? awaitDesc.fid : 0;
-        const awaitLine = isAwaitDesc && awaitDesc && awaitDesc.line ? awaitDesc.line : getCurLine() || coro.line;
-        const awaitExpr = isAwaitDesc && awaitDesc && awaitDesc.expr ? awaitDesc.expr : "await";
-        coro.status = "suspended";
-        coro.line = awaitLine;
-        coro.awaitExpr = awaitExpr;
-        coro.fid = fid;
-        if (fid && typeof onSuspendFrame === "function") {
-          onSuspendFrame(fid, awaitLine, awaitExpr);
-        }
-        const awaitedPromise = VirtualPromise.resolve(awaitedVal);
-        awaitedPromise.then(
-          (resolvedVal) => {
-            if (fid && typeof onResumeFrame === "function") {
-              onResumeFrame(fid);
-            }
-            drive("next", resolvedVal);
-          },
-          (rejectedReason) => {
-            if (fid && typeof onResumeFrame === "function") {
-              onResumeFrame(fid);
-            }
-            drive("throw", rejectedReason);
-          },
-          `await \u6062\u590D: ${coro.name} (L${awaitLine})`,
-          true
-        );
-      }
-      drive("next", void 0);
-      return outPromise;
-    }
-    function drainEventLoop(entryVal, fallbackSnapFn) {
-      if (fallbackSnapFn && !loop.globalSnapFn) loop.globalSnapFn = fallbackSnapFn;
-      if (!loop.used) return entryVal;
-      let safety = 0;
-      while (safety++ < 2e3) {
-        const nextMicro = loop.microtasks.find((m) => m.status === "queued");
-        if (nextMicro) {
-          nextMicro.status = "running";
-          loop.phase = "microtask";
-          loop.activeTaskLabel = nextMicro.label;
-          try {
-            nextMicro.run();
-          } finally {
-            if (nextMicro.status === "running") nextMicro.status = "done";
-          }
-          continue;
-        }
-        let bestMacro = null;
-        for (const m of loop.macrotasks) {
-          if (m.status !== "waiting") continue;
-          if (!bestMacro || m.fireAt < bestMacro.fireAt || m.fireAt === bestMacro.fireAt && m.id < bestMacro.id) {
-            bestMacro = m;
-          }
-        }
-        if (bestMacro) {
-          bestMacro.status = "running";
-          loop.virtualTime = Math.max(loop.virtualTime, bestMacro.fireAt);
-          loop.phase = "macrotask";
-          loop.activeTaskLabel = `${bestMacro.label} @ ${loop.virtualTime}ms`;
-          try {
-            if (typeof bestMacro.cb === "function") {
-              const cbSrc = Function.prototype.toString.call(bestMacro.cb);
-              if (!cbSrc.includes("__t(") && typeof __t === "function") {
-                __t(bestMacro.line || 1, `\u26A1 [\u5B8F\u4EFB\u52A1 @ ${loop.virtualTime}ms] ${bestMacro.label}`, loop.globalSnapFn);
-              }
-              bestMacro.cb(...bestMacro.args || []);
-            }
-          } catch (err) {
-            rethrowIfControlSignal(err);
-            throw err;
-          } finally {
-            if (bestMacro.status === "running") bestMacro.status = "done";
-          }
-          continue;
-        }
-        break;
-      }
-      loop.phase = "idle";
-      loop.activeTaskLabel = "\u4E8B\u4EF6\u5FAA\u73AF\u5DF2\u6E05\u7A7A (Idle)";
-      const vp = entryVal && typeof entryVal === "object" && "__isVirtualPromise" in entryVal ? entryVal : null;
-      if (vp && vp.__isVirtualPromise) {
-        if (vp.state === "rejected") {
-          throw vp.reason instanceof Error ? vp.reason : new Error(String(vp.reason));
-        }
-        if (vp.state === "fulfilled") {
-          return vp.value;
-        }
-      }
-      return entryVal;
-    }
-    function toVizSnapshot() {
-      return {
-        kind: "eventloop",
-        now: loop.virtualTime,
-        virtualTime: loop.virtualTime,
-        phase: loop.phase,
-        activeTask: loop.activeTaskLabel,
-        activeTaskLabel: loop.activeTaskLabel,
-        coroutines: loop.coroutines.slice(-8).map((c) => ({
-          id: c.id,
-          name: c.name,
-          line: c.line,
-          status: c.status,
-          awaitExpr: c.awaitExpr,
-          awaitingExpr: c.awaitExpr
-        })),
-        microtasks: loop.microtasks.filter((m) => m.status !== "done").concat(
-          loop.microtasks.filter((m) => m.status === "done").slice(-3)
-        ).slice(0, 8).map((m) => ({
-          id: m.id,
-          label: m.label,
-          line: m.line,
-          status: m.status
-        })),
-        macrotasks: loop.macrotasks.filter((m) => m.status !== "done" && m.status !== "cancelled").concat(
-          loop.macrotasks.filter((m) => m.status === "done").slice(-3)
-        ).slice(0, 8).map((m) => ({
-          id: m.id,
-          label: m.label,
-          delay: m.delay,
-          due: m.fireAt,
-          fireAt: m.fireAt,
-          line: m.line,
-          status: m.status
-        })),
-        promises: loop.promises.filter((p) => !p._internal).slice(-8).map((p) => ({
-          id: p.id,
-          label: p.label,
-          state: p.state,
-          value: p.state === "fulfilled" ? formatShortVal(p.value) : p.state === "rejected" ? formatShortVal(p.reason) : "pending",
-          valStr: p.state === "fulfilled" ? formatShortVal(p.value) : p.state === "rejected" ? formatShortVal(p.reason) : "pending",
-          reactions: p.reactions ? p.reactions.length : 0,
-          line: p.line
-        }))
-      };
-    }
-    return {
-      loop,
-      env,
-      runAsyncCoroutine,
-      drainEventLoop,
-      toVizSnapshot
-    };
-  }
-  function formatCallArgItem(val) {
-    if (val === void 0) return "undefined";
-    if (val === null) return "null";
-    if (typeof val === "number" || typeof val === "boolean") return String(val);
-    if (typeof val === "string") {
-      return val.length > 10 ? JSON.stringify(val.slice(0, 8) + "\u2026") : JSON.stringify(val);
-    }
-    if (Array.isArray(val)) {
-      if (val.length === 0) return "[]";
-      if (Array.isArray(val[0])) return `[${val.length}\xD7${val[0].length}]`;
-      if (val.length <= 4) return "[" + val.map((x) => formatCallArgItem(x)).join(", ") + "]";
-      return "[" + val.slice(0, 3).map((x) => formatCallArgItem(x)).join(", ") + ", \u2026]";
-    }
-    if (isMapLike(val)) return `Map(${val.size})`;
-    if (isSetLike(val)) return `Set(${val.size})`;
-    if (typeof val === "object") {
-      if ("val" in val && ("left" in val || "right" in val)) return `Tree(${val.val})`;
-      if ("val" in val && "next" in val) return `List(${val.val})`;
-      return "{\u2026}";
-    }
-    return String(val);
-  }
-  function formatCallFrameLabel(fnName, _paramNames, paramVals) {
-    const vals = Array.isArray(paramVals) ? paramVals : [];
-    if (!vals.length) return `${fnName}()`;
-    const isPrimitive = (v) => v === null || v === void 0 || typeof v === "number" || typeof v === "string" || typeof v === "boolean";
-    const primVals = vals.filter(isPrimitive);
-    const hasComplex = vals.some((v) => !isPrimitive(v));
-    if (hasComplex && primVals.length >= 2 && primVals.every((v) => typeof v === "number")) {
-      return `${fnName}(${primVals.map((v) => formatCallArgItem(v)).join(", ")})`;
-    }
-    return `${fnName}(${vals.map((v) => formatCallArgItem(v)).join(", ")})`;
-  }
-  function resetTraceState() {
-    stopAuto();
-    clearFlyLayer();
-    TRACE = { title: "TypeScript Playground \xB7 Debug", code: [], steps: [] };
-    DEBUG_SESSION = {
-      active: false,
-      finished: false,
-      crashed: false,
-      error: null,
-      errorLine: -1,
-      returnValue: void 0,
-      compiledFn: null,
-      originalLines: [],
-      callExpr: "undefined"
-    };
-    RUNTIME_ERROR_LINES.clear();
-    cur = 0;
-    watched = /* @__PURE__ */ new Set();
-    SEEN_VARS_EVER = /* @__PURE__ */ new Set();
-    layoutSpan = /* @__PURE__ */ Object.create(null);
-    renderPicker();
-    renderStatic(0);
-    updateEditorChrome();
   }
 
   // src/compiler/tc-types.ts
@@ -12973,11 +7226,9 @@ runAsyncDemo()
         _TS_WORKER_STATE.lastDiags = newDiags;
         if (_TYPECHECK_CACHE.src === data.src && newDiags.length > 0) {
           _TYPECHECK_CACHE = { src: null, strict: null, diags: [] };
-          if (typeof updateEditorChrome === "function") {
-            try {
-              updateEditorChrome();
-            } catch (_) {
-            }
+          try {
+            uiHooks.updateEditorChrome();
+          } catch (_) {
           }
         }
       };
@@ -13007,15 +7258,6 @@ runAsyncDemo()
       }
     }, 60);
   }
-  function reportTypeErrors(diags) {
-    TYPE_ERROR_LINES = new Set(diags.map((d) => d.line));
-    updateEditorChrome();
-    say(`\u2717 TypeScript \u4E25\u683C\u7C7B\u578B\u68C0\u67E5\u672A\u901A\u8FC7 (\u5171 ${diags.length} \u5904\u9519\u8BEF)\uFF1A`, "err");
-    diags.forEach((d) => {
-      say(`  \u2022 ${d.code} [\u7B2C ${d.line} \u884C]: ${d.message}`, "err", d.line);
-    });
-    if (diags[0]?.line) revealErrorLine(diags[0].line);
-  }
   var typeCheck = typecheckTS;
   var parseType = normalizeTsType;
   var typeToStr = normalizeTsType;
@@ -13024,437 +7266,5814 @@ runAsyncDemo()
     return normalizeTsType(expr);
   }
 
-  // src/ui/notebook.ts
-  var notebook_exports = {};
-  __export(notebook_exports, {
-    PY_SAMPLE_METADATA: () => PY_SAMPLE_METADATA,
-    SCRIPT_TABS: () => SCRIPT_TABS,
-    TS_SAMPLE_METADATA: () => TS_SAMPLE_METADATA,
+  // src/runtime/event-loop.ts
+  var event_loop_exports = {};
+  __export(event_loop_exports, {
+    anonStackLine: () => anonStackLine,
+    clearLog: () => clearLog,
+    createVirtualEventLoop: () => createVirtualEventLoop,
+    createVirtualPromiseAndFsEnv: () => createVirtualPromiseAndFsEnv,
+    fnBodyLineOffset: () => fnBodyLineOffset,
+    formatCallArgItem: () => formatCallArgItem,
+    formatCallFrameLabel: () => formatCallFrameLabel,
+    getOrCreateVfsApi: () => getOrCreateVfsApi,
+    hasAsyncConstructs: () => hasAsyncConstructs,
+    resetTraceState: () => resetTraceState,
+    rethrowIfControlSignal: () => rethrowIfControlSignal,
+    safeJSONStringify: () => safeJSONStringify,
+    say: () => say,
+    sourceLineFromStack: () => sourceLineFromStack
+  });
+
+  // src/runtime/event-loop-env.ts
+  function rethrowIfControlSignal(err) {
+    const ctrl = err && typeof err === "object" ? err : null;
+    if (err === PAUSE_SIGNAL || ctrl && (ctrl.__debugPause || ctrl.__timeout)) {
+      throw err;
+    }
+  }
+  function getOrCreateVfsApi() {
+    if (globalThis.__VFS__) return globalThis.__VFS__;
+    const fallbackFiles = /* @__PURE__ */ new Map();
+    const resolveFallbackWorkspacePath = (rawPath, allowEmptyRoot = false) => {
+      const s = String(rawPath ?? "").trim().replace(/\\/g, "/");
+      if (!s) {
+        if (allowEmptyRoot) return "";
+        throw new Error(`ENOENT: no such file or directory, open ''`);
+      }
+      if (/^[A-Za-z]:/.test(s) || s.startsWith("~")) {
+        throw new Error(`EACCES: permission denied, access '${rawPath}' (outside workspace is not allowed)`);
+      }
+      let rel = s;
+      if (s.startsWith("/")) {
+        if (s === "/" || s === "/workspace" || s === "/workspace/") {
+          rel = "";
+        } else if (s.startsWith("/workspace/")) {
+          rel = s.slice("/workspace/".length);
+        } else {
+          throw new Error(`EACCES: permission denied, access '${rawPath}' (outside workspace is not allowed)`);
+        }
+      } else if (s === "workspace" || s === "workspace/") {
+        rel = "";
+      } else if (s.startsWith("workspace/")) {
+        rel = s.slice("workspace/".length);
+      }
+      const rawParts = rel.split("/");
+      const resolved = [];
+      for (const part of rawParts) {
+        if (!part || part === ".") continue;
+        if (part === "..") {
+          if (resolved.length === 0) {
+            throw new Error(`EACCES: permission denied, access '${rawPath}' (outside workspace is not allowed)`);
+          }
+          resolved.pop();
+          continue;
+        }
+        resolved.push(part);
+      }
+      if (resolved.length === 0 && !allowEmptyRoot) {
+        throw new Error(`EISDIR: illegal operation on a directory, open '${rawPath}'`);
+      }
+      return resolved.join("/");
+    };
+    const ensureParentFolders = (norm) => {
+      const parts = norm.split("/").filter(Boolean);
+      let acc = "";
+      for (let idx = 0; idx < parts.length - 1; idx++) {
+        const seg = parts[idx] || "";
+        acc = acc ? `${acc}/${seg}` : seg;
+        if (!fallbackFiles.has(acc)) {
+          fallbackFiles.set(acc, { type: "folder", content: "", mtime: Date.now() });
+        }
+      }
+    };
+    const api = {
+      resolveWorkspacePath(rawPath, allowEmptyRoot = false) {
+        return resolveFallbackWorkspacePath(rawPath, allowEmptyRoot);
+      },
+      readFile(p) {
+        const norm = resolveFallbackWorkspacePath(p, false);
+        const node = fallbackFiles.get(norm);
+        if (!node) throw new Error(`ENOENT: no such file or directory, open '${p}'`);
+        if (node.type === "folder") throw new Error(`EISDIR: illegal operation on a directory, read '${p}'`);
+        return node.content;
+      },
+      writeFile(p, data) {
+        const norm = resolveFallbackWorkspacePath(p, false);
+        ensureParentFolders(norm);
+        const str = typeof data === "string" ? data : JSON.stringify(data, null, 2);
+        fallbackFiles.set(norm, { type: "file", content: str, mtime: Date.now() });
+        return true;
+      },
+      appendFile(p, data) {
+        const norm = resolveFallbackWorkspacePath(p, false);
+        ensureParentFolders(norm);
+        const prev = fallbackFiles.get(norm)?.content ?? "";
+        const str = typeof data === "string" ? data : JSON.stringify(data);
+        fallbackFiles.set(norm, { type: "file", content: prev + str, mtime: Date.now() });
+        return true;
+      },
+      exists(p) {
+        const norm = resolveFallbackWorkspacePath(p, true);
+        if (!norm) return true;
+        return fallbackFiles.has(norm);
+      },
+      listFiles(p) {
+        const norm = resolveFallbackWorkspacePath(p || ".", true);
+        const prefix = norm ? norm + "/" : "";
+        const out = /* @__PURE__ */ new Set();
+        fallbackFiles.forEach((_v, k) => {
+          if (!prefix) {
+            const first = k.split("/")[0];
+            if (first) out.add(first);
+          } else if (k.startsWith(prefix)) {
+            const rest = k.slice(prefix.length).split("/")[0];
+            if (rest) out.add(rest);
+          }
+        });
+        return Array.from(out).sort();
+      },
+      readdir(p) {
+        return api.listFiles(p);
+      },
+      mkdir(p) {
+        const norm = resolveFallbackWorkspacePath(p, true);
+        if (!norm) return true;
+        ensureParentFolders(norm);
+        fallbackFiles.set(norm, { type: "folder", content: "", mtime: Date.now() });
+        return true;
+      },
+      deleteFile(p) {
+        const norm = resolveFallbackWorkspacePath(p, false);
+        const existed = fallbackFiles.delete(norm);
+        Array.from(fallbackFiles.keys()).forEach((k) => {
+          if (k.startsWith(norm + "/")) fallbackFiles.delete(k);
+        });
+        return existed;
+      },
+      unlink(p) {
+        return api.deleteFile(p);
+      },
+      stat(p) {
+        const norm = resolveFallbackWorkspacePath(p, true);
+        if (!norm) {
+          return {
+            size: 0,
+            isFile: () => false,
+            isDirectory: () => true
+          };
+        }
+        const node = fallbackFiles.get(norm);
+        if (!node) throw new Error(`ENOENT: no such file or directory, stat '${p}'`);
+        return {
+          size: node.type === "file" ? node.content.length : 0,
+          isFile: () => node.type === "file",
+          isDirectory: () => node.type === "folder"
+        };
+      },
+      listAll() {
+        return Array.from(fallbackFiles.keys()).sort();
+      },
+      clear() {
+        fallbackFiles.clear();
+      }
+    };
+    globalThis.__VFS__ = api;
+    globalThis.vfs = api;
+    return api;
+  }
+  function createVirtualPromiseAndFsEnv(opts) {
+    const { loop, getCurLine, nextPromiseId, enqueueMicrotask, __t } = opts;
+    class VirtualPromise {
+      __isVirtualPromise;
+      id;
+      label;
+      state;
+      value;
+      reason;
+      line;
+      _handlers;
+      _internal;
+      reactions;
+      constructor(executor, label) {
+        loop.used = true;
+        this.__isVirtualPromise = true;
+        this.id = nextPromiseId();
+        this.label = label || "Promise#" + this.id;
+        this.state = "pending";
+        this.value = void 0;
+        this.reason = void 0;
+        this.line = getCurLine() || 1;
+        this._handlers = [];
+        loop.promises.push(this);
+        const resolve = (val) => this._resolve(val);
+        const reject = (reason) => this._reject(reason);
+        if (typeof executor === "function") {
+          try {
+            executor(resolve, reject);
+          } catch (err) {
+            rethrowIfControlSignal(err);
+            this._reject(err);
+          }
+        }
+      }
+      _resolve(val) {
+        if (this.state !== "pending") return;
+        const thenable = val && (typeof val === "object" || typeof val === "function") ? val : null;
+        if (thenable && (thenable.__isVirtualPromise || typeof thenable.then === "function") && typeof thenable.then === "function") {
+          try {
+            thenable.then((v) => this._resolve(v), (r) => this._reject(r));
+          } catch (err) {
+            rethrowIfControlSignal(err);
+            this._reject(err);
+          }
+          return;
+        }
+        this.state = "fulfilled";
+        this.value = val;
+        this._flush();
+      }
+      _reject(reason) {
+        if (this.state !== "pending") return;
+        this.state = "rejected";
+        this.reason = reason;
+        this._flush();
+      }
+      _flush() {
+        if (this.state === "pending") return;
+        const pending = this._handlers.splice(0, this._handlers.length);
+        for (const h of pending) {
+          this._scheduleHandler(h);
+        }
+      }
+      _scheduleHandler(h) {
+        const isFulfilled = this.state === "fulfilled";
+        const cb = isFulfilled ? h.onFulfilled : h.onRejected;
+        const arg = isFulfilled ? this.value : this.reason;
+        enqueueMicrotask({
+          label: h.label || this.label + (isFulfilled ? ".then" : ".catch"),
+          line: h.line || this.line || 1,
+          isInternalAwait: Boolean(h.isInternalAwait),
+          rawCb: cb,
+          run: () => {
+            if (typeof cb !== "function") {
+              if (isFulfilled) h.child._resolve(arg);
+              else h.child._reject(arg);
+              return;
+            }
+            try {
+              const cbSrc = Function.prototype.toString.call(cb);
+              if (!h.isInternalAwait && !cbSrc.includes("__t(") && typeof __t === "function") {
+                __t(h.line || 1, "\u26A1 [\u5FAE\u4EFB\u52A1 Microtask] " + (h.label || "Promise.then"), loop.globalSnapFn);
+              }
+              const res = cb(arg);
+              h.child._resolve(res);
+            } catch (err) {
+              rethrowIfControlSignal(err);
+              h.child._reject(err);
+            }
+          }
+        });
+      }
+      then(onFulfilled, onRejected, metaLabel, isInternalAwait) {
+        const callLine = getCurLine() || this.line || 1;
+        const child = new VirtualPromise(null, metaLabel || this.label + ".then");
+        if (isInternalAwait) child._internal = true;
+        const handler = {
+          onFulfilled,
+          onRejected,
+          child,
+          line: callLine,
+          label: metaLabel || this.label + ".then",
+          isInternalAwait: Boolean(isInternalAwait)
+        };
+        if (this.state === "pending") {
+          this._handlers.push(handler);
+        } else {
+          this._scheduleHandler(handler);
+        }
+        return child;
+      }
+      catch(onRejected) {
+        return this.then(null, onRejected, this.label + ".catch");
+      }
+      finally(onFinally) {
+        return this.then(
+          (v) => {
+            if (typeof onFinally === "function") onFinally();
+            return v;
+          },
+          (err) => {
+            if (typeof onFinally === "function") onFinally();
+            throw err;
+          },
+          this.label + ".finally"
+        );
+      }
+      static resolve(val) {
+        loop.used = true;
+        if (val instanceof VirtualPromise || val && typeof val === "object" && "__isVirtualPromise" in val) {
+          return val;
+        }
+        return new VirtualPromise((res) => res(val), "Promise.resolve(" + formatShortVal(val) + ")");
+      }
+      static reject(reason) {
+        loop.used = true;
+        return new VirtualPromise((_res, rej) => rej(reason), "Promise.reject(" + formatShortVal(reason) + ")");
+      }
+      static all(items) {
+        loop.used = true;
+        const arr = Array.from(items || []);
+        return new VirtualPromise((resolve, reject) => {
+          if (arr.length === 0) {
+            resolve([]);
+            return;
+          }
+          const out = new Array(arr.length);
+          let left = arr.length;
+          arr.forEach((item, idx) => {
+            VirtualPromise.resolve(item).then((val) => {
+              out[idx] = val;
+              if (--left === 0) resolve(out);
+            }, reject);
+          });
+        }, "Promise.all");
+      }
+      static race(items) {
+        loop.used = true;
+        const arr = Array.from(items || []);
+        return new VirtualPromise((resolve, reject) => {
+          arr.forEach((item) => {
+            VirtualPromise.resolve(item).then(resolve, reject);
+          });
+        }, "Promise.race");
+      }
+    }
+    const readRequiredVfsFile = (p) => {
+      const content = getOrCreateVfsApi().readFile(p);
+      if (content === null) {
+        throw new Error(`ENOENT: no such file or directory, open '${p}'`);
+      }
+      return content;
+    };
+    const fsPromisesApi = {
+      readFile(p, _encoding) {
+        loop.used = true;
+        return new VirtualPromise((resolve, reject) => {
+          try {
+            resolve(readRequiredVfsFile(p));
+          } catch (e) {
+            reject(e);
+          }
+        }, `fs.readFile(${formatShortVal(p)})`);
+      },
+      writeFile(p, data, _encoding) {
+        loop.used = true;
+        return new VirtualPromise((resolve, reject) => {
+          try {
+            getOrCreateVfsApi().writeFile(p, typeof data === "string" ? data : String(data ?? ""));
+            resolve(void 0);
+          } catch (e) {
+            reject(e);
+          }
+        }, `fs.writeFile(${formatShortVal(p)})`);
+      },
+      appendFile(p, data, _encoding) {
+        loop.used = true;
+        return new VirtualPromise((resolve, reject) => {
+          try {
+            getOrCreateVfsApi().appendFile(p, typeof data === "string" ? data : String(data ?? ""));
+            resolve(void 0);
+          } catch (e) {
+            reject(e);
+          }
+        }, `fs.appendFile(${formatShortVal(p)})`);
+      },
+      readdir(p) {
+        loop.used = true;
+        return new VirtualPromise((resolve, reject) => {
+          try {
+            resolve(getOrCreateVfsApi().readdir(p));
+          } catch (e) {
+            reject(e);
+          }
+        }, `fs.readdir(${formatShortVal(p || ".")})`);
+      },
+      mkdir(p, _options) {
+        loop.used = true;
+        return new VirtualPromise((resolve, reject) => {
+          try {
+            getOrCreateVfsApi().mkdir(p);
+            resolve(void 0);
+          } catch (e) {
+            reject(e);
+          }
+        }, `fs.mkdir(${formatShortVal(p)})`);
+      },
+      unlink(p) {
+        loop.used = true;
+        return new VirtualPromise((resolve, reject) => {
+          try {
+            getOrCreateVfsApi().unlink(p);
+            resolve(void 0);
+          } catch (e) {
+            reject(e);
+          }
+        }, `fs.unlink(${formatShortVal(p)})`);
+      },
+      rm(p, _options) {
+        loop.used = true;
+        return new VirtualPromise((resolve, reject) => {
+          try {
+            getOrCreateVfsApi().unlink(p);
+            resolve(void 0);
+          } catch (e) {
+            reject(e);
+          }
+        }, `fs.rm(${formatShortVal(p)})`);
+      },
+      stat(p) {
+        loop.used = true;
+        return new VirtualPromise((resolve, reject) => {
+          try {
+            resolve(getOrCreateVfsApi().stat(p));
+          } catch (e) {
+            reject(e);
+          }
+        }, `fs.stat(${formatShortVal(p)})`);
+      },
+      exists(p) {
+        loop.used = true;
+        return new VirtualPromise((resolve, reject) => {
+          try {
+            resolve(getOrCreateVfsApi().exists(p));
+          } catch (e) {
+            reject(e);
+          }
+        }, `fs.exists(${formatShortVal(p)})`);
+      },
+      access(p, _mode) {
+        loop.used = true;
+        return new VirtualPromise((resolve, reject) => {
+          try {
+            getOrCreateVfsApi().stat(p);
+            resolve(void 0);
+          } catch (e) {
+            reject(e);
+          }
+        }, `fs.access(${formatShortVal(p)})`);
+      },
+      copyFile(srcPath, destPath) {
+        loop.used = true;
+        return new VirtualPromise((resolve, reject) => {
+          try {
+            const content = readRequiredVfsFile(srcPath);
+            getOrCreateVfsApi().writeFile(destPath, content);
+            resolve(void 0);
+          } catch (e) {
+            reject(e);
+          }
+        }, `fs.copyFile(${formatShortVal(srcPath)})`);
+      },
+      rename(oldPath, newPath) {
+        loop.used = true;
+        return new VirtualPromise((resolve, reject) => {
+          try {
+            const content = readRequiredVfsFile(oldPath);
+            getOrCreateVfsApi().writeFile(newPath, content);
+            getOrCreateVfsApi().unlink(oldPath);
+            resolve(void 0);
+          } catch (e) {
+            reject(e);
+          }
+        }, `fs.rename(${formatShortVal(oldPath)})`);
+      }
+    };
+    const fsModuleEnv = {
+      promises: fsPromisesApi,
+      readFileSync(p, _encoding) {
+        return readRequiredVfsFile(p);
+      },
+      writeFileSync(p, data, _encoding) {
+        getOrCreateVfsApi().writeFile(p, typeof data === "string" ? data : String(data ?? ""));
+      },
+      appendFileSync(p, data, _encoding) {
+        getOrCreateVfsApi().appendFile(p, typeof data === "string" ? data : String(data ?? ""));
+      },
+      existsSync(p) {
+        try {
+          return getOrCreateVfsApi().exists(p);
+        } catch (_) {
+          return false;
+        }
+      },
+      readdirSync(p) {
+        return getOrCreateVfsApi().readdir(p);
+      },
+      mkdirSync(p, _options) {
+        getOrCreateVfsApi().mkdir(p);
+      },
+      unlinkSync(p) {
+        getOrCreateVfsApi().unlink(p);
+      },
+      rmSync(p, _options) {
+        getOrCreateVfsApi().unlink(p);
+      },
+      statSync(p) {
+        return getOrCreateVfsApi().stat(p);
+      },
+      copyFileSync(srcPath, destPath) {
+        const content = readRequiredVfsFile(srcPath);
+        getOrCreateVfsApi().writeFile(destPath, content);
+      },
+      renameSync(oldPath, newPath) {
+        const content = readRequiredVfsFile(oldPath);
+        getOrCreateVfsApi().writeFile(newPath, content);
+        getOrCreateVfsApi().unlink(oldPath);
+      }
+    };
+    return { VirtualPromise, fsModuleEnv };
+  }
+
+  // src/runtime/event-loop.ts
+  function say(msg, cls, line) {
+    const d = document.createElement("div");
+    if (cls) d.className = cls;
+    if (line) {
+      d.className = (cls ? cls + " " : "") + "diag";
+      if (d.setAttribute) {
+        d.setAttribute("data-line", String(line));
+        d.setAttribute("title", "\u70B9\u51FB\u5B9A\u4F4D\u5230\u7B2C " + line + " \u884C");
+      }
+    }
+    d.textContent = msg;
+    logEl.appendChild(d);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  if (logEl && logEl.addEventListener) {
+    logEl.addEventListener("click", (e) => {
+      const el = e && e.target;
+      const target = el && el.closest ? el.closest(".diag") : null;
+      if (!target || !target.getAttribute) return;
+      uiHooks.revealErrorLine(parseInt(target.getAttribute("data-line") || "0", 10), true);
+    });
+  }
+  function clearLog(msg) {
+    logEl.innerHTML = "";
+    if (msg) say(msg, "dim");
+  }
+  function anonStackLine(stack) {
+    const re = /,\s*<anonymous>:(\d+):\d+/g;
+    const m = re.exec(String(stack || ""));
+    return m && m[1] ? parseInt(m[1], 10) : 0;
+  }
+  var FN_BODY_LINE_OFFSET = null;
+  function fnBodyLineOffset() {
+    if (FN_BODY_LINE_OFFSET !== null) return FN_BODY_LINE_OFFSET;
+    let off = 2;
+    try {
+      new Function('throw new Error("probe")')();
+    } catch (e) {
+      const line = anonStackLine(e instanceof Error ? e.stack : void 0);
+      if (line > 0) off = Math.max(1, line - 1);
+    }
+    FN_BODY_LINE_OFFSET = off;
+    return off;
+  }
+  function sourceLineFromStack(stack, lineCount) {
+    const stackLine = anonStackLine(stack);
+    if (!stackLine) return 0;
+    const line = stackLine - fnBodyLineOffset() - 1;
+    if (!isFinite(line) || line < 1) return 0;
+    if (lineCount && line > lineCount) return 0;
+    return line;
+  }
+  function hasAsyncConstructs(src) {
+    if (!src || typeof src !== "string") return false;
+    const clean = blankStrings(src);
+    return /\b(?:async|await|Promise|setTimeout|queueMicrotask|sleep)\b/.test(clean);
+  }
+  function createVirtualEventLoop(__t, getCurLine = () => 1, onSuspendFrame, onResumeFrame) {
+    let promiseSeq = 0;
+    let microSeq = 0;
+    let macroSeq = 0;
+    let coroSeq = 0;
+    const loop = {
+      used: false,
+      virtualTime: 0,
+      phase: "sync",
+      activeTaskLabel: "\u4E3B\u7EBF\u7A0B\u540C\u6B65\u6808 (Sync)",
+      coroutines: [],
+      microtasks: [],
+      macrotasks: [],
+      promises: [],
+      globalSnapFn: null
+    };
+    function enqueueMicrotask(item) {
+      loop.used = true;
+      const task = {
+        id: ++microSeq,
+        label: item.label || "microtask#" + microSeq,
+        line: item.line || getCurLine() || 1,
+        status: "queued",
+        isInternalAwait: Boolean(item.isInternalAwait),
+        run: item.run,
+        rawCb: item.rawCb || null
+      };
+      loop.microtasks.push(task);
+      return task;
+    }
+    const { VirtualPromise, fsModuleEnv } = createVirtualPromiseAndFsEnv({
+      loop,
+      getCurLine,
+      nextPromiseId: () => ++promiseSeq,
+      enqueueMicrotask,
+      __t
+    });
+    const env = {
+      Promise: VirtualPromise,
+      fs: fsModuleEnv,
+      queueMicrotask(cb) {
+        loop.used = true;
+        const line = getCurLine() || 1;
+        enqueueMicrotask({
+          label: "queueMicrotask",
+          line,
+          rawCb: cb,
+          run: () => {
+            if (typeof cb !== "function") return;
+            const cbSrc = Function.prototype.toString.call(cb);
+            if (!cbSrc.includes("__t(") && typeof __t === "function") {
+              __t(line, "\u26A1 [\u5FAE\u4EFB\u52A1] queueMicrotask", loop.globalSnapFn);
+            }
+            cb();
+          }
+        });
+      },
+      setTimeout(cb, delay = 0, ...args) {
+        loop.used = true;
+        const d = Math.max(0, Number(delay) || 0);
+        const line = getCurLine() || 1;
+        const id = ++macroSeq;
+        loop.macrotasks.push({
+          id,
+          label: `setTimeout (${d}ms)`,
+          delay: d,
+          fireAt: loop.virtualTime + d,
+          line,
+          status: "waiting",
+          cb,
+          args
+        });
+        return id;
+      },
+      clearTimeout(id) {
+        const t = loop.macrotasks.find((m) => m.id === id && m.status === "waiting");
+        if (t) t.status = "cancelled";
+      },
+      sleep(ms = 0, val = void 0) {
+        loop.used = true;
+        const d = Math.max(0, Number(ms) || 0);
+        return new VirtualPromise((resolve) => {
+          env.setTimeout(() => resolve(val), d);
+        }, `sleep(${d}ms)`);
+      }
+    };
+    function runAsyncCoroutine(genFn, self, fnName, defLine) {
+      loop.used = true;
+      const coro = {
+        id: ++coroSeq,
+        name: fnName || "async",
+        line: defLine || getCurLine() || 1,
+        status: "running",
+        awaitExpr: null,
+        fid: 0
+      };
+      loop.coroutines.push(coro);
+      const outPromise = new VirtualPromise(null, `${coro.name}()`);
+      let gen;
+      try {
+        gen = genFn.call(self);
+      } catch (err) {
+        rethrowIfControlSignal(err);
+        coro.status = "rejected";
+        outPromise._reject(err);
+        return outPromise;
+      }
+      function drive(method, arg) {
+        coro.status = "running";
+        coro.awaitExpr = null;
+        let stepRes;
+        try {
+          stepRes = gen[method](arg);
+        } catch (err) {
+          rethrowIfControlSignal(err);
+          coro.status = "rejected";
+          outPromise._reject(err);
+          return;
+        }
+        if (stepRes.done) {
+          coro.status = "done";
+          outPromise._resolve(stepRes.value);
+          return;
+        }
+        const yielded = stepRes.value;
+        const awaitDesc = yielded && typeof yielded === "object" && "__isAwait" in yielded ? yielded : null;
+        const isAwaitDesc = Boolean(awaitDesc && awaitDesc.__isAwait);
+        const awaitedVal = isAwaitDesc && awaitDesc ? awaitDesc.value : yielded;
+        const fid = isAwaitDesc && awaitDesc && awaitDesc.fid ? awaitDesc.fid : 0;
+        const awaitLine = isAwaitDesc && awaitDesc && awaitDesc.line ? awaitDesc.line : getCurLine() || coro.line;
+        const awaitExpr = isAwaitDesc && awaitDesc && awaitDesc.expr ? awaitDesc.expr : "await";
+        coro.status = "suspended";
+        coro.line = awaitLine;
+        coro.awaitExpr = awaitExpr;
+        coro.fid = fid;
+        if (fid && typeof onSuspendFrame === "function") {
+          onSuspendFrame(fid, awaitLine, awaitExpr);
+        }
+        const awaitedPromise = VirtualPromise.resolve(awaitedVal);
+        awaitedPromise.then(
+          (resolvedVal) => {
+            if (fid && typeof onResumeFrame === "function") {
+              onResumeFrame(fid);
+            }
+            drive("next", resolvedVal);
+          },
+          (rejectedReason) => {
+            if (fid && typeof onResumeFrame === "function") {
+              onResumeFrame(fid);
+            }
+            drive("throw", rejectedReason);
+          },
+          `await \u6062\u590D: ${coro.name} (L${awaitLine})`,
+          true
+        );
+      }
+      drive("next", void 0);
+      return outPromise;
+    }
+    function drainEventLoop(entryVal, fallbackSnapFn) {
+      if (fallbackSnapFn && !loop.globalSnapFn) loop.globalSnapFn = fallbackSnapFn;
+      if (!loop.used) return entryVal;
+      let safety = 0;
+      while (safety++ < 2e3) {
+        const nextMicro = loop.microtasks.find((m) => m.status === "queued");
+        if (nextMicro) {
+          nextMicro.status = "running";
+          loop.phase = "microtask";
+          loop.activeTaskLabel = nextMicro.label;
+          try {
+            nextMicro.run();
+          } finally {
+            if (nextMicro.status === "running") nextMicro.status = "done";
+          }
+          continue;
+        }
+        let bestMacro = null;
+        for (const m of loop.macrotasks) {
+          if (m.status !== "waiting") continue;
+          if (!bestMacro || m.fireAt < bestMacro.fireAt || m.fireAt === bestMacro.fireAt && m.id < bestMacro.id) {
+            bestMacro = m;
+          }
+        }
+        if (bestMacro) {
+          bestMacro.status = "running";
+          loop.virtualTime = Math.max(loop.virtualTime, bestMacro.fireAt);
+          loop.phase = "macrotask";
+          loop.activeTaskLabel = `${bestMacro.label} @ ${loop.virtualTime}ms`;
+          try {
+            if (typeof bestMacro.cb === "function") {
+              const cbSrc = Function.prototype.toString.call(bestMacro.cb);
+              if (!cbSrc.includes("__t(") && typeof __t === "function") {
+                __t(bestMacro.line || 1, `\u26A1 [\u5B8F\u4EFB\u52A1 @ ${loop.virtualTime}ms] ${bestMacro.label}`, loop.globalSnapFn);
+              }
+              bestMacro.cb(...bestMacro.args || []);
+            }
+          } catch (err) {
+            rethrowIfControlSignal(err);
+            throw err;
+          } finally {
+            if (bestMacro.status === "running") bestMacro.status = "done";
+          }
+          continue;
+        }
+        break;
+      }
+      loop.phase = "idle";
+      loop.activeTaskLabel = "\u4E8B\u4EF6\u5FAA\u73AF\u5DF2\u6E05\u7A7A (Idle)";
+      const vp = entryVal && typeof entryVal === "object" && "__isVirtualPromise" in entryVal ? entryVal : null;
+      if (vp && vp.__isVirtualPromise) {
+        if (vp.state === "rejected") {
+          throw vp.reason instanceof Error ? vp.reason : new Error(String(vp.reason));
+        }
+        if (vp.state === "fulfilled") {
+          return vp.value;
+        }
+      }
+      return entryVal;
+    }
+    function toVizSnapshot() {
+      return {
+        kind: "eventloop",
+        now: loop.virtualTime,
+        virtualTime: loop.virtualTime,
+        phase: loop.phase,
+        activeTask: loop.activeTaskLabel,
+        activeTaskLabel: loop.activeTaskLabel,
+        coroutines: loop.coroutines.slice(-8).map((c) => ({
+          id: c.id,
+          name: c.name,
+          line: c.line,
+          status: c.status,
+          awaitExpr: c.awaitExpr,
+          awaitingExpr: c.awaitExpr
+        })),
+        microtasks: loop.microtasks.filter((m) => m.status !== "done").concat(
+          loop.microtasks.filter((m) => m.status === "done").slice(-3)
+        ).slice(0, 8).map((m) => ({
+          id: m.id,
+          label: m.label,
+          line: m.line,
+          status: m.status
+        })),
+        macrotasks: loop.macrotasks.filter((m) => m.status !== "done" && m.status !== "cancelled").concat(
+          loop.macrotasks.filter((m) => m.status === "done").slice(-3)
+        ).slice(0, 8).map((m) => ({
+          id: m.id,
+          label: m.label,
+          delay: m.delay,
+          due: m.fireAt,
+          fireAt: m.fireAt,
+          line: m.line,
+          status: m.status
+        })),
+        promises: loop.promises.filter((p) => !p._internal).slice(-8).map((p) => ({
+          id: p.id,
+          label: p.label,
+          state: p.state,
+          value: p.state === "fulfilled" ? formatShortVal(p.value) : p.state === "rejected" ? formatShortVal(p.reason) : "pending",
+          valStr: p.state === "fulfilled" ? formatShortVal(p.value) : p.state === "rejected" ? formatShortVal(p.reason) : "pending",
+          reactions: p.reactions ? p.reactions.length : 0,
+          line: p.line
+        }))
+      };
+    }
+    return {
+      loop,
+      env,
+      runAsyncCoroutine,
+      drainEventLoop,
+      toVizSnapshot
+    };
+  }
+  function formatCallArgItem(val) {
+    if (val === void 0) return "undefined";
+    if (val === null) return "null";
+    if (typeof val === "number" || typeof val === "boolean") return String(val);
+    if (typeof val === "string") {
+      return val.length > 10 ? JSON.stringify(val.slice(0, 8) + "\u2026") : JSON.stringify(val);
+    }
+    if (Array.isArray(val)) {
+      if (val.length === 0) return "[]";
+      if (Array.isArray(val[0])) return `[${val.length}\xD7${val[0].length}]`;
+      if (val.length <= 4) return "[" + val.map((x) => formatCallArgItem(x)).join(", ") + "]";
+      return "[" + val.slice(0, 3).map((x) => formatCallArgItem(x)).join(", ") + ", \u2026]";
+    }
+    if (isMapLike(val)) return `Map(${val.size})`;
+    if (isSetLike(val)) return `Set(${val.size})`;
+    if (typeof val === "object") {
+      if ("val" in val && ("left" in val || "right" in val)) return `Tree(${val.val})`;
+      if ("val" in val && "next" in val) return `List(${val.val})`;
+      return "{\u2026}";
+    }
+    return String(val);
+  }
+  function formatCallFrameLabel(fnName, _paramNames, paramVals) {
+    const vals = Array.isArray(paramVals) ? paramVals : [];
+    if (!vals.length) return `${fnName}()`;
+    const isPrimitive = (v) => v === null || v === void 0 || typeof v === "number" || typeof v === "string" || typeof v === "boolean";
+    const primVals = vals.filter(isPrimitive);
+    const hasComplex = vals.some((v) => !isPrimitive(v));
+    if (hasComplex && primVals.length >= 2 && primVals.every((v) => typeof v === "number")) {
+      return `${fnName}(${primVals.map((v) => formatCallArgItem(v)).join(", ")})`;
+    }
+    return `${fnName}(${vals.map((v) => formatCallArgItem(v)).join(", ")})`;
+  }
+  function resetTraceState() {
+    uiHooks.stopAuto();
+    uiHooks.clearFlyLayer();
+    TRACE = { title: "TypeScript Playground \xB7 Debug", code: [], steps: [] };
+    DEBUG_SESSION = {
+      active: false,
+      finished: false,
+      crashed: false,
+      error: null,
+      errorLine: -1,
+      returnValue: void 0,
+      compiledFn: null,
+      originalLines: [],
+      callExpr: "undefined"
+    };
+    RUNTIME_ERROR_LINES.clear();
+    cur = 0;
+    watched = /* @__PURE__ */ new Set();
+    SEEN_VARS_EVER = /* @__PURE__ */ new Set();
+    layoutSpan = /* @__PURE__ */ Object.create(null);
+    uiHooks.renderPicker();
+    uiHooks.renderStatic(0);
+    uiHooks.updateEditorChrome();
+  }
+
+  // src/runtime/runner.ts
+  var runner_exports = {};
+  __export(runner_exports, {
+    buildFrameSnapshotFromClosure: () => buildFrameSnapshotFromClosure,
+    computeAndAppendNextStep: () => computeAndAppendNextStep,
+    evalCall: () => evalCall,
+    generateTrace: () => generateTrace,
+    initWatchedVars: () => initWatchedVars,
+    rebuildFromSource: () => rebuildFromSource,
+    reportTypeErrors: () => reportTypeErrors,
+    runOnce: () => runOnce,
+    runTrace: () => runTrace,
+    startDebug: () => startDebug
+  });
+
+  // src/viz/memory-normalizers.ts
+  function normalizeTree(value) {
+    if (value && Array.isArray(value.nodes)) {
+      return {
+        kind: "tree",
+        total: value.total || value.nodes.length,
+        nodes: value.nodes.slice(0, 31).map((n) => ({
+          val: n.val !== void 0 ? n.val : n.id,
+          left: n.left ?? null,
+          right: n.right ?? null
+        })),
+        root: value.root ?? 0
+      };
+    }
+    const nodes = [];
+    const seen = /* @__PURE__ */ new Set();
+    const nodeMap = /* @__PURE__ */ new Map();
+    function walk(node) {
+      if (!node || typeof node !== "object" || seen.has(node)) return null;
+      seen.add(node);
+      if (nodes.length >= 31) {
+        if (seen.size < 2e3) {
+          walk(node.left);
+          walk(node.right);
+        }
+        return null;
+      }
+      const idx = nodes.length;
+      nodeMap.set(node, idx);
+      const item = {
+        val: node.val !== void 0 ? node.val : node.value,
+        left: null,
+        right: null
+      };
+      nodes.push(item);
+      item.left = walk(node.left);
+      item.right = walk(node.right);
+      return idx;
+    }
+    const root = walk(value);
+    const out = { kind: "tree", nodes, root: root ?? 0, total: seen.size };
+    defineHidden(out, "__nodeMap", nodeMap);
+    return out;
+  }
+  function normalizeList(value) {
+    const pyMeta = value && typeof value === "object" && "__py_meta__" in value && value.__py_meta__ ? value.__py_meta__ : null;
+    if (Array.isArray(value)) {
+      const total = pyMeta && typeof pyMeta.total === "number" ? pyMeta.total : value.length;
+      const out2 = { kind: "list", items: value.slice(0, 30).map((x) => cloneDeepBounded(x, 1)), total };
+      if (total > 20) {
+        defineHidden(out2, "__raw", value);
+        if (pyMeta) defineHidden(out2, "__pyMeta", pyMeta);
+      }
+      return out2;
+    }
+    const items = [];
+    const rawNodes = [];
+    const rawVals = [];
+    const seen = /* @__PURE__ */ new Set();
+    let curNode = value;
+    while (curNode && typeof curNode === "object" && !seen.has(curNode) && rawNodes.length < 5e3) {
+      seen.add(curNode);
+      const v = curNode.val !== void 0 ? curNode.val : curNode.value;
+      rawNodes.push(curNode);
+      rawVals.push(v);
+      if (items.length < 30) items.push(cloneDeepBounded(v, 1));
+      curNode = curNode.next;
+    }
+    const out = { kind: "list", items, total: rawNodes.length };
+    if (rawNodes.length > 0) {
+      defineHidden(out, "__rawNodes", rawNodes);
+      defineHidden(out, "__rawVals", rawVals);
+    }
+    return out;
+  }
+  function normalizeGraph(value) {
+    if (value && Array.isArray(value.nodes) && Array.isArray(value.edges)) {
+      const rawNodes = value.nodes.slice(0, 16);
+      const count = rawNodes.length || 1;
+      const nodes = rawNodes.map((n, idx) => {
+        const angle = 2 * Math.PI * idx / count - Math.PI / 2;
+        const id = n && typeof n === "object" ? n.id ?? idx : n;
+        const label = n && typeof n === "object" ? n.label ?? n.val ?? id : String(n);
+        const x = n && typeof n.x === "number" ? n.x : Math.round(90 + 62 * Math.cos(angle));
+        const y = n && typeof n.y === "number" ? n.y : Math.round(68 + 48 * Math.sin(angle));
+        return { id, label: String(label), x, y };
+      });
+      const edges = value.edges.slice(0, 32).map(
+        (e) => Array.isArray(e) ? [e[0], e[1]] : [e.from ?? 0, e.to ?? 0]
+      );
+      return { kind: "graph", nodes, edges, totalNodes: value.nodes.length, totalEdges: value.edges.length };
+    }
+    return { kind: "graph", nodes: [], edges: [] };
+  }
+  function snapshot(kind, value, extra) {
+    const recVal = value && typeof value === "object" ? value : null;
+    const pyMeta = recVal && recVal.__py_meta__ ? recVal.__py_meta__ : null;
+    if (kind === "stack") {
+      const arr = Array.isArray(value) ? value : [];
+      const total = pyMeta && typeof pyMeta.total === "number" ? pyMeta.total : arr.length;
+      let items;
+      let baseIdx = 0;
+      if (pyMeta && Array.isArray(pyMeta.tail) && total > arr.length) {
+        items = pyMeta.tail.map((x) => cloneDeepBounded(x, 1));
+        baseIdx = Math.max(0, total - items.length);
+      } else if (arr.length > 40) {
+        baseIdx = arr.length - 40;
+        items = arr.slice(baseIdx).map((x) => cloneDeepBounded(x, 1));
+      } else {
+        items = arr.slice(0, 40).map((x) => cloneDeepBounded(x, 1));
+      }
+      return Object.assign({ kind, items, total, baseIdx }, extra || {});
+    }
+    if (kind === "array" || kind === "heap" || kind === "queue" || kind === "uf") {
+      const arr = Array.isArray(value) ? value : [];
+      const total = pyMeta && typeof pyMeta.total === "number" ? pyMeta.total : arr.length;
+      const items = arr.slice(0, 40).map((x) => cloneDeepBounded(x, 1));
+      const out = Object.assign({ kind, items, total }, extra || {});
+      if (total > 20) {
+        defineHidden(out, "__raw", arr);
+        if (pyMeta) defineHidden(out, "__pyMeta", pyMeta);
+      }
+      return out;
+    }
+    if (kind === "list") {
+      return Object.assign(normalizeList(value), extra || {});
+    }
+    if (kind === "tree") {
+      return Object.assign(normalizeTree(value), extra || {});
+    }
+    if (kind === "graph") {
+      return Object.assign(normalizeGraph(value), extra || {});
+    }
+    if (kind === "string") {
+      const s = String(value);
+      const total = s.length;
+      const items = s.slice(0, 40).split("");
+      const out = Object.assign({ kind, items, total }, extra || {});
+      if (total > 20) {
+        defineHidden(out, "__raw", s);
+      }
+      return out;
+    }
+    if (kind === "map") {
+      const entries = [];
+      let total = 0;
+      if (isMapLike(value)) {
+        const mapVal = value;
+        total = pyMeta && typeof pyMeta.total === "number" ? pyMeta.total : mapVal.size;
+        for (const [k, v] of mapVal) {
+          if (entries.length >= 40) break;
+          entries.push({ k: cloneDeepBounded(k, 1), v: cloneDeepBounded(v, 1) });
+        }
+      } else if (recVal && typeof recVal.forEach === "function") {
+        recVal.forEach((v, k) => {
+          total++;
+          if (entries.length < 40) entries.push({ k: cloneDeepBounded(k, 1), v: cloneDeepBounded(v, 1) });
+        });
+      } else if (recVal) {
+        const keys = Object.keys(recVal);
+        total = keys.length;
+        keys.slice(0, 40).forEach((k) => entries.push({ k, v: cloneDeepBounded(recVal[k], 1) }));
+      }
+      const out = Object.assign({ kind, entries, total }, extra || {});
+      if (total > 20) defineHidden(out, "__raw", value);
+      return out;
+    }
+    if (kind === "set") {
+      const items = [];
+      let total = 0;
+      if (isSetLike(value)) {
+        const setVal = value;
+        total = pyMeta && typeof pyMeta.total === "number" ? pyMeta.total : setVal.size;
+        for (const v of setVal) {
+          if (items.length >= 40) break;
+          items.push(cloneDeepBounded(v, 1));
+        }
+      } else if (recVal && typeof recVal.forEach === "function") {
+        recVal.forEach((v) => {
+          total++;
+          if (items.length < 40) items.push(cloneDeepBounded(v, 1));
+        });
+      }
+      const out = Object.assign({ kind, items, total }, extra || {});
+      if (total > 20) defineHidden(out, "__raw", value);
+      return out;
+    }
+    if (kind === "grid") {
+      const totalRows = pyMeta && typeof pyMeta.totalRows === "number" ? pyMeta.totalRows : Array.isArray(value) ? value.length : 0;
+      const totalCols = pyMeta && typeof pyMeta.totalCols === "number" ? pyMeta.totalCols : Array.isArray(value) && Array.isArray(value[0]) ? value[0].length : 0;
+      const cloned = Array.isArray(value) ? value.slice(0, 30).map((r) => Array.isArray(r) ? r.slice(0, 30).map((c) => cloneDeepBounded(c, 2)) : r) : [[0]];
+      const out = Object.assign({ kind, cells: cloned, mark: null, deps: [], totalRows, totalCols }, extra || {});
+      if (totalRows > 10 || totalCols > 10) {
+        defineHidden(out, "__raw", value);
+        if (pyMeta) defineHidden(out, "__pyMeta", pyMeta);
+      }
+      return out;
+    }
+    if (kind === "interface" || kind === "object") {
+      return Object.assign({ kind: "interface", fields: [], entries: [] }, extra || {});
+    }
+    return { kind: "array", items: [] };
+  }
+  function classifyValue(name, value) {
+    if (value == null) return null;
+    const n = String(name);
+    if (Array.isArray(value)) {
+      if (value.length > 0 && Array.isArray(value[0])) return snapshot("grid", value);
+      if (/^(parent|uf|fa|dsu)\b/i.test(n)) return snapshot("uf", value);
+      if (/stack|stk/i.test(n)) return snapshot("stack", value);
+      if (/queue|deque/i.test(n)) return snapshot("queue", value);
+      if (/heap|pq/i.test(n)) return snapshot("heap", value);
+      if (/^list$/i.test(n)) return snapshot("list", value);
+      return snapshot("array", value);
+    }
+    if (isMapLike(value)) return snapshot("map", value);
+    if (isSetLike(value)) return snapshot("set", value);
+    if (typeof value === "string") {
+      if (value.length > 0) return snapshot("string", value);
+      return null;
+    }
+    if (typeof value === "object") {
+      const obj = value;
+      if (obj.__isVirtualPromise) return null;
+      if (Array.isArray(obj.nodes) && Array.isArray(obj.edges)) return snapshot("graph", obj);
+      if (Array.isArray(obj.nodes) && "root" in obj) return snapshot("tree", obj);
+      if (n !== "this") {
+        if (("val" in obj || "value" in obj) && ("left" in obj || "right" in obj)) return snapshot("tree", obj);
+        if (("val" in obj || "value" in obj) && "next" in obj) return snapshot("list", obj);
+      }
+      const ifaceDef = matchInterfaceForObject(n, obj);
+      const annotType = CURRENT_TS_META.varTypes.get(n);
+      const ifaceName = ifaceDef ? ifaceDef.name : annotType || obj.__py_cls__ || "object";
+      const isClass = Boolean(ifaceDef && ifaceDef.isClass || obj.__py_cls__);
+      const fieldMap = /* @__PURE__ */ new Map();
+      if (ifaceDef) {
+        ifaceDef.fields.forEach((f) => {
+          const fk = f.k || f.name || "";
+          fieldMap.set(fk, {
+            k: fk,
+            v: fk in obj ? cloneDeepBounded(obj[fk], 1) : void 0,
+            declaredType: f.declaredType,
+            optional: Boolean(f.optional)
+          });
+        });
+      }
+      Object.keys(obj).slice(0, 20).forEach((k) => {
+        if (!fieldMap.has(k)) {
+          fieldMap.set(k, {
+            k,
+            v: cloneDeepBounded(obj[k], 1),
+            declaredType: inferRuntimeTsType(obj[k]),
+            optional: false
+          });
+        }
+      });
+      const fields = [...fieldMap.values()];
+      if (fields.length > 0 || isClass) {
+        return snapshot("interface", obj, {
+          interfaceName: ifaceName,
+          isClass,
+          isSchema: false,
+          fields,
+          entries: fields.map((f) => ({ k: f.k, v: f.v }))
+        });
+      }
+    }
+    return null;
+  }
+  function populateInterfaceSchemas(ds) {
+    const { interfaces, varTypes } = CURRENT_TS_META;
+    if (!interfaces || !interfaces.size) return;
+    interfaces.forEach((iface) => {
+      if (iface.isClass && (!iface.fields || !iface.fields.length)) return;
+      const prefix = iface.isClass ? "class " : "interface ";
+      const slotKey = iface.name in ds ? prefix + iface.name : iface.name;
+      let boundInstance = null;
+      let boundVarName = null;
+      Object.keys(ds).forEach((k) => {
+        const item = ds[k];
+        if (!boundInstance && item && item.kind === "interface" && !item.isSchema && item.interfaceName === iface.name) {
+          boundInstance = item;
+          boundVarName = k;
+        }
+      });
+      if (!boundVarName && varTypes) {
+        Object.keys(ds).forEach((k) => {
+          if (!boundVarName && varTypes.get(k) === iface.name) {
+            boundVarName = k;
+          }
+        });
+      }
+      const fields = iface.fields.map((f) => {
+        const key = f.k || f.name || "";
+        const instField = boundInstance && boundInstance.fields ? boundInstance.fields.find((x) => x.k === key) : null;
+        return {
+          k: key,
+          declaredType: f.declaredType,
+          optional: Boolean(f.optional),
+          v: instField ? instField.v : void 0
+        };
+      });
+      ds[slotKey] = {
+        kind: "interface",
+        interfaceName: iface.name,
+        isClass: Boolean(iface.isClass),
+        isSchema: true,
+        instanceName: boundVarName,
+        fields,
+        entries: fields.map((f) => ({ k: f.k, v: f.v !== void 0 ? f.v : f.declaredType }))
+      };
+    });
+  }
+  function detectWindowRange(v) {
+    if (!v) return null;
+    const pairs = [["l", "r"], ["left", "right"], ["lo", "hi"], ["start", "end"]];
+    for (const [lk, rk] of pairs) {
+      const lv = v[lk];
+      const rv = v[rk];
+      if (typeof lv === "number" && typeof rv === "number" && lv >= 0 && rv >= lv) {
+        return [lv, rv];
+      }
+    }
+    return null;
+  }
+  var POINTER_VAR_NAMES = [
+    "mid",
+    "m",
+    "i",
+    "j",
+    "k",
+    "idx",
+    "p",
+    "q",
+    "cur",
+    "curr",
+    "slow",
+    "fast",
+    "pivot",
+    "l",
+    "r",
+    "left",
+    "right",
+    "lo",
+    "hi",
+    "low",
+    "high",
+    "start",
+    "end"
+  ];
+  function build1DFocalSlice(total, getAt, focalCenters) {
+    if (total <= 20) return null;
+    const centers = [];
+    const seenC = /* @__PURE__ */ new Set();
+    (focalCenters || []).forEach((c) => {
+      if (typeof c === "number" && Number.isInteger(c) && c >= 0 && c < total && !seenC.has(c)) {
+        seenC.add(c);
+        centers.push(c);
+      }
+    });
+    const activeCenters = centers.slice(0, 4);
+    const radius = activeCenters.length <= 1 ? 3 : activeCenters.length === 2 ? 2 : 1;
+    const intervals = [
+      [0, Math.min(total - 1, 2)],
+      [Math.max(0, total - 3), total - 1]
+    ];
+    activeCenters.forEach((c) => {
+      intervals.push([Math.max(0, c - radius), Math.min(total - 1, c + radius)]);
+    });
+    intervals.sort((a, b) => a[0] - b[0]);
+    const merged = [];
+    for (const iv of intervals) {
+      const prev = merged[merged.length - 1];
+      if (!prev) {
+        merged.push([iv[0], iv[1]]);
+      } else if (iv[0] <= prev[1] + 2) {
+        prev[1] = Math.max(prev[1], iv[1]);
+      } else {
+        merged.push([iv[0], iv[1]]);
+      }
+    }
+    const out = [];
+    for (let s = 0; s < merged.length; s++) {
+      const curIv = merged[s];
+      if (!curIv) continue;
+      const [start, end] = curIv;
+      const prevIv = s > 0 ? merged[s - 1] : void 0;
+      if (prevIv) {
+        const prevEnd = prevIv[1];
+        const gapCount = start - prevEnd - 1;
+        if (gapCount > 0) {
+          out.push({ gap: true, count: gapCount, from: prevEnd + 1, to: start - 1 });
+        }
+      }
+      for (let idx = start; idx <= end; idx++) {
+        out.push({ idx, val: getAt(idx) });
+      }
+    }
+    return out;
+  }
+  function selectGridAxisIndices(total, focusIdx, maxCount = 8) {
+    if (total <= maxCount) {
+      return Array.from({ length: total }, (_, i) => i);
+    }
+    const set = /* @__PURE__ */ new Set([0, total - 1]);
+    const center = typeof focusIdx === "number" && Number.isInteger(focusIdx) && focusIdx >= 0 && focusIdx < total ? focusIdx : 1;
+    const innerQuota = Math.max(2, maxCount - 2);
+    let start = Math.max(1, center - Math.floor(innerQuota / 2));
+    let end = Math.min(total - 2, start + innerQuota - 1);
+    start = Math.max(1, end - innerQuota + 1);
+    for (let i = start; i <= end; i++) set.add(i);
+    return [...set].sort((a, b) => a - b);
+  }
+  function enrichFromNoteTextAccess(ds, safeV, text, evalIdx) {
+    const propRe = /\b([A-Za-z_$][\w$]*)\s*\.\s*([A-Za-z_$][\w$]*)\b/g;
+    let pm;
+    while (pm = propRe.exec(text)) {
+      const rawObj = pm[1] || "", propName = pm[2];
+      const objName = rawObj === "self" && !ds.self && ds.this ? "this" : rawObj;
+      const objItem = ds[objName];
+      if (objItem && (objItem.kind === "interface" || objItem.kind === "object")) {
+        objItem.hot = propName;
+        const ifaceName = objItem.interfaceName;
+        const ifaceItem = ifaceName ? ds[ifaceName] : void 0;
+        if (ifaceItem && ifaceItem.kind === "interface") {
+          ifaceItem.hot = propName;
+        }
+      }
+    }
+    const g = text.match(/\b([A-Za-z_$][\w$]*)\s*\[\s*([^[\]]+?)\s*\]\s*\[\s*([^[\]]+?)\s*\]/);
+    const gItem = g && g[1] ? ds[g[1]] : void 0;
+    if (g && g[1] && gItem && gItem.kind === "grid") {
+      const row = evalIdx(g[2]);
+      const col = evalIdx(g[3]);
+      if (typeof row === "number" && typeof col === "number") {
+        gItem.mark = [row, col];
+      }
+      const deps = [];
+      const re = /\b[A-Za-z_$][\w$]*\s*\[\s*([^[\]]+?)\s*\]\s*\[\s*([^[\]]+?)\s*\]/g;
+      let m;
+      while (m = re.exec(text)) {
+        const r = evalIdx(m[1]);
+        const c = evalIdx(m[2]);
+        if (typeof r === "number" && typeof c === "number") {
+          const curMark = gItem.mark;
+          if (!(Array.isArray(curMark) && curMark[0] === r && curMark[1] === c)) {
+            deps.push([r, c]);
+          }
+        }
+      }
+      gItem.deps = deps;
+    }
+    const subRe = /\b([A-Za-z_$][\w$]*)\s*\[\s*([^[\]]+?)\s*\](?!\s*\[)/g;
+    let sm;
+    while (sm = subRe.exec(text)) {
+      const varName = sm[1] || "";
+      const d = ds[varName];
+      if (!d || d.kind === "grid") continue;
+      let idx = evalIdx(sm[2]);
+      if (typeof idx === "number") {
+        const total = typeof d.total === "number" ? d.total : d.items ? d.items.length : 0;
+        if (idx < 0 && total > 0) idx = total + idx;
+        if (d.hot === void 0) {
+          d.hot = idx;
+        } else {
+          if (!d.__extraFocal) defineHidden(d, "__extraFocal", []);
+          if (d.__extraFocal) d.__extraFocal.push(idx);
+        }
+      }
+    }
+    const p = text.match(/\b([A-Za-z_$][\w$]*)\s*\.\s*(push|set|add|pop|shift|unshift|get|has)\s*\(\s*([^,)]*)/);
+    const pItem = p && p[1] ? ds[p[1]] : void 0;
+    if (p && p[1] && pItem) {
+      const d = pItem;
+      const method = p[2];
+      const firstArg = p[3] ? p[3].trim() : "";
+      if (method === "get" || method === "has" || method === "set" || method === "add") {
+        const argVal = firstArg ? safeEvalExpr(firstArg, safeV) : void 0;
+        if (d.kind === "map" && argVal !== void 0) {
+          d.hot = argVal;
+        } else if (d.kind === "set" && argVal !== void 0) {
+          d.hot = argVal;
+        }
+      }
+      if (method === "push" || method === "add" || method === "set" || method === "unshift") {
+        if (d.kind === "stack" || d.kind === "array" || d.kind === "queue" || d.kind === "heap") {
+          const total = typeof d.total === "number" ? d.total : d.items ? d.items.length : 0;
+          if (total > 0) d.hot = method === "unshift" ? 0 : total - 1;
+        } else if (d.kind === "map" && d.hot === void 0) {
+          if (d.entries && d.entries.length) {
+            const lastEntry = d.entries[d.entries.length - 1];
+            if (lastEntry) d.hot = lastEntry.k;
+          }
+        } else if (d.kind === "set" && d.hot === void 0) {
+          if (d.items && d.items.length) d.hot = d.items[d.items.length - 1];
+        }
+      }
+    }
+  }
+  function enrichFromNote(ds, v, note) {
+    if (!ds || typeof ds !== "object") return;
+    const safeV = v || {};
+    const text = String(note || "");
+    const evalIdx = (expr) => {
+      const t = String(expr || "").trim();
+      if (!t) return void 0;
+      if (/^\d+$/.test(t)) return +t;
+      const directVal = safeV[t];
+      if (t in safeV && typeof directVal === "number" && Number.isInteger(directVal)) return directVal;
+      const m = t.match(/^([A-Za-z_$][\w$]*)\s*([+-])\s*(\d+)$/);
+      if (m && m[1] && m[3] !== void 0) {
+        const baseVal = safeV[m[1]];
+        if (typeof baseVal === "number" && Number.isInteger(baseVal)) {
+          return m[2] === "+" ? baseVal + +m[3] : baseVal - +m[3];
+        }
+      }
+      const evaluated = safeEvalExpr(t, safeV);
+      return typeof evaluated === "number" && Number.isInteger(evaluated) ? evaluated : void 0;
+    };
+    const win = detectWindowRange(safeV);
+    if (win) {
+      Object.keys(ds).forEach((k) => {
+        const item = ds[k];
+        if (item && (item.kind === "array" || item.kind === "string")) {
+          item.win = win;
+        }
+      });
+    }
+    if (text) {
+      enrichFromNoteTextAccess(ds, safeV, text, evalIdx);
+    }
+    Object.keys(ds).forEach((varName) => {
+      const d = ds[varName];
+      if (!d || typeof d !== "object") return;
+      if (d.kind === "tree" && d.__nodeMap) {
+        for (const pName of POINTER_VAR_NAMES) {
+          const ref = safeV[pName];
+          if (ref && typeof ref === "object" && d.__nodeMap.has(ref)) {
+            const nodeIdx = d.__nodeMap.get(ref);
+            if (d.hot === void 0) d.hot = nodeIdx;
+            break;
+          }
+        }
+      }
+      if (d.kind === "list" && d.__rawNodes) {
+        const nodePtrs = {};
+        const focal = [];
+        for (const pName of POINTER_VAR_NAMES) {
+          const ref = safeV[pName];
+          if (ref && typeof ref === "object") {
+            const idx = d.__rawNodes.indexOf(ref);
+            if (idx >= 0) {
+              const ptrArr = nodePtrs[idx] || (nodePtrs[idx] = []);
+              if (!ptrArr.includes(pName)) ptrArr.push(pName);
+              if (d.hot === void 0) d.hot = idx;
+              focal.push(idx);
+            }
+          }
+        }
+        if (Object.keys(nodePtrs).length) d.pointers = nodePtrs;
+        const rawVals = d.__rawVals || [];
+        const total = d.total || rawVals.length;
+        if (total > 20) {
+          if (typeof d.hot === "number") focal.unshift(d.hot);
+          d.windowed = build1DFocalSlice(total, (idx) => cloneDeepBounded(rawVals[idx], 1), focal);
+        }
+      }
+      if (d.kind === "array" || d.kind === "queue" || d.kind === "heap" || d.kind === "uf" || d.kind === "string" || d.kind === "list" && !d.__rawNodes) {
+        const total = typeof d.total === "number" ? d.total : d.items ? d.items.length : 0;
+        if (total > 0) {
+          const ptrs = d.pointers || {};
+          const focal = [];
+          if (typeof d.hot === "number" && d.hot >= 0 && d.hot < total) focal.push(d.hot);
+          if (Array.isArray(d.__extraFocal)) {
+            d.__extraFocal.forEach((idx) => {
+              if (typeof idx === "number" && idx >= 0 && idx < total) focal.push(idx);
+            });
+          }
+          if (typeof d.mark === "number" && d.mark >= 0 && d.mark < total) focal.push(d.mark);
+          if (Array.isArray(d.win)) {
+            if (d.win[0] >= 0 && d.win[0] < total) focal.push(d.win[0]);
+            if (d.win[1] >= 0 && d.win[1] < total) focal.push(d.win[1]);
+          }
+          for (const pName of POINTER_VAR_NAMES) {
+            const val = safeV[pName];
+            if (typeof val === "number" && Number.isInteger(val) && val >= 0 && val < total) {
+              const pArr = ptrs[val] || (ptrs[val] = []);
+              if (!pArr.includes(pName)) pArr.push(pName);
+              focal.push(val);
+            }
+          }
+          if (Object.keys(ptrs).length) d.pointers = ptrs;
+          if (d.hot === void 0 && d.mark === void 0) {
+            if (typeof safeV.mid === "number" && Number.isInteger(safeV.mid) && safeV.mid >= 0 && safeV.mid < total) {
+              d.mark = safeV.mid;
+            } else if (typeof safeV.m === "number" && Number.isInteger(safeV.m) && safeV.m >= 0 && safeV.m < total) {
+              d.mark = safeV.m;
+            }
+          }
+          if (total > 20) {
+            const raw = d.__raw;
+            const pyMeta = d.__pyMeta;
+            const getAt = (idx) => {
+              if (pyMeta && pyMeta.sparse && pyMeta.sparse.has(idx)) {
+                return cloneDeepBounded(pyMeta.sparse.get(idx), 1);
+              }
+              if (typeof raw === "string") return raw[idx] ?? "";
+              if (Array.isArray(raw) && idx < raw.length) return cloneDeepBounded(raw[idx], 1);
+              if (d.items && idx < d.items.length) return d.items[idx];
+              return "\u2026";
+            };
+            d.windowed = build1DFocalSlice(total, getAt, focal);
+          }
+        }
+      }
+      if (d.kind === "map" && d.hot !== void 0 && d.__raw && isMapLike(d.__raw)) {
+        const rawMap = d.__raw;
+        const entries = d.entries || (d.entries = []);
+        const exists = entries.some((e) => e.k === d.hot);
+        if (!exists && rawMap.has(d.hot)) {
+          entries.push({ k: cloneDeepBounded(d.hot, 1), v: cloneDeepBounded(rawMap.get(d.hot), 1) });
+        }
+      }
+      if (d.kind === "set" && d.hot !== void 0 && d.__raw && isSetLike(d.__raw)) {
+        const rawSet = d.__raw;
+        const items = d.items || (d.items = []);
+        const exists = items.some((x) => x === d.hot);
+        if (!exists && rawSet.has(d.hot)) {
+          items.push(cloneDeepBounded(d.hot, 1));
+        }
+      }
+      if (d.kind === "grid") {
+        const totalRows = typeof d.totalRows === "number" ? d.totalRows : d.cells ? d.cells.length : 0;
+        const totalCols = typeof d.totalCols === "number" ? d.totalCols : d.cells && d.cells[0] ? d.cells[0].length : 0;
+        if (totalRows > 10 || totalCols > 10) {
+          const pyMeta = d.__pyMeta;
+          if (pyMeta && Array.isArray(pyMeta.rowIndices) && Array.isArray(pyMeta.colIndices) && Array.isArray(pyMeta.viewCells)) {
+            d.rowIndices = pyMeta.rowIndices;
+            d.colIndices = pyMeta.colIndices;
+            d.viewCells = pyMeta.viewCells;
+          } else {
+            let focusR = Array.isArray(d.mark) ? d.mark[0] : d.deps && d.deps[0] ? d.deps[0][0] : void 0;
+            let focusC = Array.isArray(d.mark) ? d.mark[1] : d.deps && d.deps[0] ? d.deps[0][1] : void 0;
+            if (focusR === void 0 || focusC === void 0) {
+              const coordPairs = [["i", "j"], ["r", "c"], ["row", "col"], ["x", "y"]];
+              for (const [rk, ck] of coordPairs) {
+                const rv = safeV[rk];
+                const cv = safeV[ck];
+                if (typeof rv === "number" && typeof cv === "number") {
+                  focusR = rv;
+                  focusC = cv;
+                  break;
+                }
+              }
+            }
+            const rowIndices = selectGridAxisIndices(totalRows, focusR, 8);
+            const colIndices = selectGridAxisIndices(totalCols, focusC, 8);
+            const rawGrid = Array.isArray(d.__raw) ? d.__raw : d.cells;
+            d.rowIndices = rowIndices;
+            d.colIndices = colIndices;
+            d.viewCells = rowIndices.map((r) => {
+              const rowArr = rawGrid && Array.isArray(rawGrid[r]) ? rawGrid[r] : [];
+              return colIndices.map((c) => cloneDeepBounded(rowArr[c], 2));
+            });
+          }
+        }
+      }
+      delete d.__raw;
+      delete d.__rawNodes;
+      delete d.__rawVals;
+      delete d.__nodeMap;
+      delete d.__pyMeta;
+      delete d.__extraFocal;
+    });
+  }
+  function safeEvalExpr(expr, v) {
+    if (!expr || !v) return void 0;
+    const clean = stripTypes(expr).trim();
+    if (!clean) return void 0;
+    if (/\.\s*(push|pop|shift|unshift|splice|set|add|delete|clear|fill|sort|reverse)\s*\(/.test(clean)) {
+      return void 0;
+    }
+    if (new RegExp("(?:\\+\\+|--|(?<![=!<>])=(?!=))").test(clean)) return void 0;
+    try {
+      const keys = Object.keys(v).filter((k) => /^[A-Za-z_$][\w$]*$/.test(k) && !RESERVED_WORDS.has(k));
+      const vals = keys.map((k) => v[k]);
+      const fn = new Function(...keys, "return (" + clean + ");");
+      const thisCtx = v && Object.prototype.hasOwnProperty.call(v, "this") ? v.this : void 0;
+      return fn.call(thisCtx, ...vals);
+    } catch {
+      return void 0;
+    }
+  }
+  function splitLogicalClauses(condExpr) {
+    const clauses = [];
+    let depth = 0, start = 0;
+    for (let i = 0; i < condExpr.length; i++) {
+      const ch = condExpr[i];
+      if (ch === '"' || ch === "'" || ch === "`") {
+        i = skipString(condExpr, i) - 1;
+        continue;
+      }
+      if (ch === "(" || ch === "[" || ch === "{") depth++;
+      else if (ch === ")" || ch === "]" || ch === "}") depth--;
+      else if (depth === 0 && (ch === "&" && condExpr[i + 1] === "&" || ch === "|" && condExpr[i + 1] === "|")) {
+        clauses.push({ expr: condExpr.slice(start, i).trim(), opAfter: ch + ch });
+        i++;
+        start = i + 1;
+      }
+    }
+    clauses.push({ expr: condExpr.slice(start).trim(), opAfter: null });
+    return clauses.filter((c) => c.expr);
+  }
+  function deriveAnimAndNote(rawLine, v, nextV) {
+    const clean = stripTypes(rawLine || "").trim().replace(/;$/, "");
+    if (!clean) return { anim: null, note: rawLine };
+    let condExpr = null;
+    const condMatch = clean.match(/^(?:}\s*)?(?:if|while|else\s+if)\s*\(([\s\S]+)\)\s*\{?$/);
+    if (condMatch && condMatch[1]) {
+      condExpr = condMatch[1].trim();
+    } else {
+      const forMatch = clean.match(/^for\s*\(([\s\S]+)\)\s*\{?$/);
+      if (forMatch && forMatch[1] !== void 0) {
+        const semiParts = splitTopLevelSemicolons(forMatch[1]);
+        if (semiParts.length === 3 && semiParts[1]?.trim()) {
+          condExpr = semiParts[1].trim();
+        }
+      }
+    }
+    if (condExpr !== null) {
+      const clauses = splitLogicalClauses(condExpr);
+      let activeClause = clauses[0] ? clauses[0].expr : condExpr;
+      let overallResult = safeEvalExpr(condExpr, v);
+      for (let i = 0; i < clauses.length; i++) {
+        const c = clauses[i];
+        if (!c) continue;
+        activeClause = c.expr;
+        const cVal = safeEvalExpr(c.expr, v);
+        if (typeof cVal === "boolean") {
+          if (c.opAfter === "&&" && !cVal) {
+            overallResult = false;
+            break;
+          }
+          if (c.opAfter === "||" && cVal) {
+            overallResult = true;
+            break;
+          }
+          if (!c.opAfter) overallResult = cVal;
+        }
+      }
+      const cmp = activeClause.match(/^(.+?)\s*(===|!==|<=|>=|==|!=|<|>)\s*(.+)$/);
+      if (cmp && cmp[1] && cmp[2] && cmp[3]) {
+        const lhs = cmp[1].trim(), op = cmp[2], rhs = cmp[3].trim();
+        const lhsVal = safeEvalExpr(lhs, v);
+        const rhsVal = safeEvalExpr(rhs, v);
+        const resVal = typeof overallResult === "boolean" ? overallResult : safeEvalExpr(activeClause, v);
+        if (typeof resVal === "boolean") {
+          const anim = {
+            type: "compare",
+            lhs,
+            rhs,
+            op,
+            lhsVal: formatShortVal(lhsVal),
+            rhsVal: formatShortVal(rhsVal),
+            result: resVal
+          };
+          const note = `${rawLine.trim()}  \u2192  ${anim.lhsVal} ${op} ${anim.rhsVal} (${resVal})`;
+          return { anim, note };
+        }
+      }
+      if (typeof overallResult === "boolean") {
+        const anim = {
+          type: "compare",
+          lhs: activeClause,
+          rhs: "",
+          op: "?",
+          lhsVal: formatShortVal(overallResult),
+          rhsVal: "",
+          result: overallResult
+        };
+        return { anim, note: `${rawLine.trim()}  \u2192  ${overallResult}` };
+      }
+    }
+    const ckptCall = clean.match(/^(?:checkpoint|断点)\s*\(([\s\S]*)\)$/);
+    if (ckptCall && ckptCall[1] !== void 0) {
+      const fnName = clean.startsWith("\u65AD\u70B9") ? "\u65AD\u70B9" : "checkpoint";
+      const args = splitTopLevel(ckptCall[1]).map((s) => s.trim()).filter(Boolean);
+      const ckptVals = nextV && Array.isArray(nextV.__ckptVals) ? nextV.__ckptVals : null;
+      const argVals = ckptVals && ckptVals.length === args.length ? ckptVals : args.map((a) => formatShortVal(safeEvalExpr(a, v)));
+      const anim = { type: "checkpoint", fn: fnName, args, argVals };
+      const detail = args.length ? args.map((a, idx) => argVals[idx] !== void 0 && argVals[idx] !== a ? `${a}=${argVals[idx]}` : a).join(", ") : "\u5DF2\u547D\u4E2D\u65AD\u70B9";
+      return { anim, note: `\u25C9 ${fnName}(${detail})`, isCheckpoint: true };
+    }
+    const callOnly = clean.match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\((.*)\)$/);
+    if (callOnly && callOnly[1] && callOnly[2] !== void 0) {
+      const fnName = callOnly[1];
+      const args = splitTopLevel(callOnly[2]).map((s) => s.trim()).filter(Boolean);
+      const argVals = args.map((a) => formatShortVal(safeEvalExpr(a, v)));
+      const anim = { type: "call", fn: fnName, args, argVals, result: null, to: null };
+      return { anim, note: `${fnName}(${argVals.join(", ")})` };
+    }
+    const compoundAssign = clean.match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\s*\[[^\]]+\])*)\s*(\+=|-=|\*=|\/=)\s*(.+)$/);
+    if (compoundAssign && compoundAssign[1] && compoundAssign[2] && compoundAssign[3]) {
+      const to = compoundAssign[1].trim();
+      const op = compoundAssign[2][0];
+      const rhs = compoundAssign[3].trim();
+      const from = `${to} ${op} ${rhs}`;
+      let val = safeEvalExpr(from, v);
+      if (val === void 0 && nextV) val = safeEvalExpr(to, nextV);
+      if (val !== void 0) {
+        const valStr = formatShortVal(val);
+        return { anim: { type: "assign", to, from: rhs, val: valStr }, note: `${to} \u2190 ${valStr}   (${rawLine.trim()})` };
+      }
+    }
+    const assignMatch = clean.match(/^(?:(?:const|let|var)\s+)?([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\s*\[[^\]]+\])*)\s*=\s*(?!=)(.+)$/);
+    if (assignMatch && assignMatch[1] && assignMatch[2]) {
+      const to = assignMatch[1].trim();
+      const from = assignMatch[2].trim();
+      const isSingleDecl = splitTopLevel(clean.replace(/^(?:const|let|var)\s+/, "")).length === 1;
+      if (isSingleDecl || !from.includes(",") || /^[\w$.]+\s*\([^)]*\)$/.test(from)) {
+        let val = safeEvalExpr(from, v);
+        if (val === void 0 && nextV) {
+          val = safeEvalExpr(to, nextV);
+        }
+        const valStr = val !== void 0 ? formatShortVal(val) : null;
+        const rhsCall = from.match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\((.*)\)$/);
+        if (rhsCall && rhsCall[1] && rhsCall[2] !== void 0 && valStr !== null) {
+          const fnName = rhsCall[1];
+          const args = splitTopLevel(rhsCall[2]).map((s) => s.trim()).filter(Boolean);
+          const argVals = args.map((a) => formatShortVal(safeEvalExpr(a, v)));
+          const anim = { type: "call", fn: fnName, args, argVals, result: valStr, to };
+          return { anim, note: `${to} = ${fnName}(${argVals.join(", ")})  \u2192  ${valStr}` };
+        }
+        if (valStr !== null) {
+          const anim = { type: "assign", to, from, val: valStr };
+          return { anim, note: `${to} \u2190 ${valStr}   (${rawLine.trim()})` };
+        }
+      }
+    }
+    const retMatch = clean.match(/^return\s+(.+)$/);
+    if (retMatch && retMatch[1]) {
+      const expr = retMatch[1].trim();
+      const val = safeEvalExpr(expr, v);
+      if (val !== void 0) {
+        const valStr = formatShortVal(val);
+        const anim = { type: "assign", to: "return", from: expr, val: valStr };
+        return { anim, note: `return ${expr}  \u2192  ${valStr}` };
+      }
+    }
+    return { anim: null, note: rawLine.trim() };
+  }
+  function pressure(d) {
+    if (!d) return 0;
+    let n = 0;
+    if (typeof d.total === "number") n = d.total;
+    else if (d.items) n = d.items.length;
+    else if (d.fields) n = d.fields.length;
+    else if (d.entries) n = d.entries.length;
+    else if (d.nodes) n = d.nodes.length;
+    else if (d.cells) n = (d.totalRows || d.cells.length) * (d.totalCols || (d.cells[0] ? d.cells[0].length : 1));
+    switch (d.kind) {
+      case "eventloop":
+        return 1;
+      case "grid":
+        return Math.min(1, Math.max(0.5, n / 12));
+      case "array":
+      case "queue":
+      case "uf":
+        return Math.min(1, n / 11);
+      case "heap":
+        return Math.min(1, Math.max(0.46, n / 11));
+      case "list":
+        return Math.min(1, n / 7);
+      case "map":
+        return Math.min(1, n / 7);
+      case "interface":
+      case "object":
+        return Math.min(1, n / 6);
+      case "set":
+        return Math.min(1, n / 9);
+      case "string":
+        return Math.min(1, n / 18);
+      case "tree":
+        return n >= 6 ? 0.38 : 0.28;
+      case "graph":
+        return n >= 5 ? 0.36 : 0.26;
+      case "stack":
+        return Math.min(0.35, n / 16);
+      default:
+        return Math.min(1, n / 10);
+    }
+  }
+  var SPAN_UP = 0.45;
+  var SPAN_DOWN = 0.28;
+  function decideSpan(id, p) {
+    const curSpan = layoutSpan[id] || 1;
+    if (curSpan < 2 && p >= SPAN_UP) layoutSpan[id] = 2;
+    else if (curSpan > 1 && p <= SPAN_DOWN) layoutSpan[id] = 1;
+    return layoutSpan[id] || 1;
+  }
+  function allocateSlotSpans(vars, ds) {
+    const meta = vars.map((s, idx) => {
+      const d = ds[s.id];
+      const kind = d && d.kind || s.kind || "array";
+      const p = pressure(d);
+      const span = decideSpan(s.id, p);
+      return { s, d, kind, p, span, idx };
+    });
+    const oneColItems = meta.filter((m) => m.span === 1);
+    if (oneColItems.length % 2 === 1) {
+      let promote = oneColItems[0];
+      if (promote) {
+        for (let i = 1; i < oneColItems.length; i++) {
+          const candidate = oneColItems[i];
+          if (candidate && candidate.p >= promote.p) {
+            promote = candidate;
+          }
+        }
+        promote.span = 2;
+      }
+    }
+    return meta;
+  }
+  var _DISCOVER_CACHE = {
+    traceRef: null,
+    scannedSteps: 0,
+    map: /* @__PURE__ */ new Map(),
+    list: []
+  };
+  function discoverVars() {
+    const steps = TRACE && TRACE.steps || [];
+    if (_DISCOVER_CACHE.traceRef !== TRACE || steps.length < _DISCOVER_CACHE.scannedSteps) {
+      _DISCOVER_CACHE = { traceRef: TRACE, scannedSteps: 0, map: /* @__PURE__ */ new Map(), list: [] };
+    }
+    if (_DISCOVER_CACHE.scannedSteps < steps.length) {
+      let changed = false;
+      for (let i = _DISCOVER_CACHE.scannedSteps; i < steps.length; i++) {
+        const st = steps[i];
+        const ds = st && st.ds || {};
+        const keys = Object.keys(ds);
+        for (let k = 0; k < keys.length; k++) {
+          const name = keys[k];
+          const item = name ? ds[name] : void 0;
+          if (name && item && !_DISCOVER_CACHE.map.has(name)) {
+            _DISCOVER_CACHE.map.set(name, { id: name, name, kind: item.kind || name });
+            changed = true;
+          }
+        }
+      }
+      _DISCOVER_CACHE.scannedSteps = steps.length;
+      if (changed) _DISCOVER_CACHE.list = [..._DISCOVER_CACHE.map.values()];
+    }
+    return _DISCOVER_CACHE.list;
+  }
+  var VIZ = {};
+  function getActiveFrame(st) {
+    if (!st) return null;
+    const stack = Array.isArray(st.callStack) && st.callStack.length ? st.callStack : null;
+    if (!stack) {
+      return {
+        idx: 0,
+        total: 1,
+        isTop: true,
+        fn: "global",
+        label: "global",
+        line: st.line,
+        v: st.v || {},
+        ds: st.ds || {}
+      };
+    }
+    const topIdx = stack.length - 1;
+    const idx = SELECTED_FRAME_IDX !== null && SELECTED_FRAME_IDX >= 0 && SELECTED_FRAME_IDX < stack.length ? SELECTED_FRAME_IDX : topIdx;
+    const frame = stack[idx] || stack[topIdx];
+    return {
+      idx,
+      total: stack.length,
+      isTop: idx === topIdx,
+      fn: frame.fn || "global",
+      label: frame.label || "global",
+      line: frame.line || st.line,
+      v: frame.v || (idx === topIdx ? st.v : {}) || {},
+      ds: (frame.ds && Object.keys(frame.ds).length ? frame.ds : st.ds) || {}
+    };
+  }
+  var HOVER_GEOM = { charW: 0, lh: 24, padLeft: 16, padTop: 12 };
+  function hoverMetrics() {
+    let lh = 24, padLeft = 16, padTop = 12;
+    try {
+      const cs = typeof getComputedStyle === "function" ? getComputedStyle(editor) : null;
+      if (cs) {
+        lh = parseFloat(cs.lineHeight) || lh;
+        padLeft = parseFloat(cs.paddingLeft) || padLeft;
+        padTop = parseFloat(cs.paddingTop) || padTop;
+        if (!HOVER_GEOM.charW && document.createElement) {
+          const cv = document.createElement("canvas");
+          const ctx = cv && cv.getContext ? cv.getContext("2d") : null;
+          if (ctx) {
+            ctx.font = (cs.fontWeight || "400") + " " + (cs.fontSize || "15px") + " " + (cs.fontFamily || "monospace");
+            const w = ctx.measureText("MMMMMMMMMM").width / 10;
+            if (w > 0 && isFinite(w)) HOVER_GEOM.charW = w;
+          }
+        }
+      }
+    } catch (_) {
+    }
+    HOVER_GEOM.lh = lh;
+    HOVER_GEOM.padLeft = padLeft;
+    HOVER_GEOM.padTop = padTop;
+    return { lh, padLeft, padTop, charW: HOVER_GEOM.charW || 8.5 };
+  }
+
+  // src/runtime/runner.ts
+  function reportTypeErrors(diags) {
+    TYPE_ERROR_LINES = new Set(diags.map((d) => d.line));
+    uiHooks.updateEditorChrome();
+    say(`\u2717 TypeScript \u4E25\u683C\u7C7B\u578B\u68C0\u67E5\u672A\u901A\u8FC7 (\u5171 ${diags.length} \u5904\u9519\u8BEF)\uFF1A`, "err");
+    diags.forEach((d) => {
+      say(`  \u2022 ${d.code} [\u7B2C ${d.line} \u884C]: ${d.message}`, "err", d.line);
+    });
+    if (diags[0]?.line) uiHooks.revealErrorLine(diags[0].line);
+  }
+  function evalCall(js, call, opts) {
+    const o = opts || {};
+    const expr = stripTypes(call || "undefined");
+    const budgetMs = o.budgetMs || 0;
+    const entryLine = o.entryLine || 0;
+    const stub = o.instrumented ? "" : "var checkpoint = function(){}, \u65AD\u70B9 = checkpoint;\n";
+    const t0 = Date.now();
+    let ticks = 0;
+    let lastLine = 0;
+    let expired = false;
+    const timeoutError = () => {
+      const err = new Error("RUN_TIMEOUT");
+      err.__timeout = true;
+      err.__line = lastLine;
+      return err;
+    };
+    const __t = function(line) {
+      if (line) lastLine = line;
+      if (!budgetMs) return;
+      if (expired) throw timeoutError();
+      if ((++ticks & 31) === 31 && Date.now() - t0 > budgetMs) {
+        expired = true;
+        throw timeoutError();
+      }
+    };
+    const evLoop = createVirtualEventLoop(__t, () => lastLine);
+    __t.__env = evLoop.env;
+    __t.__async = evLoop.runAsyncCoroutine;
+    __t.__await = (val, fid, line, exprText) => ({ __isAwait: true, value: val, fid, line, expr: exprText });
+    __t.__drain = evLoop.drainEventLoop;
+    __t.__initGlobal = function(snapFn) {
+      evLoop.loop.globalSnapFn = snapFn;
+    };
+    __t.__ckpt = function() {
+    };
+    const body = stub + js + "\n;return (function(){ try { var __v = (" + expr + '); if (__t && __t.__drain) __v = __t.__drain(__v); return { ok:true, value:__v }; } catch (e) { return { ok:false, error: e && e.message ? e.message : String(e), stack: e && e.stack ? String(e.stack) : "", line: (e && e.__line) || 0, timeout: Boolean(e && e.__timeout) }; } })();';
+    const logs = [];
+    const f = new Function("__t", "console", body);
+    let r;
+    const formatConsoleArg = (x) => {
+      if (x instanceof Error) return x.message || String(x);
+      try {
+        return typeof x === "object" ? JSON.stringify(x) : String(x);
+      } catch (_) {
+        return String(x);
+      }
+    };
+    const pushLogLine = (...a) => logs.push(a.map(formatConsoleArg).join(" "));
+    try {
+      r = f(__t, {
+        log: pushLogLine,
+        info: pushLogLine,
+        warn: pushLogLine,
+        error: pushLogLine
+      });
+    } catch (e) {
+      const errObj = e && typeof e === "object" ? e : null;
+      r = {
+        ok: false,
+        error: errObj && errObj.message ? errObj.message : String(e),
+        stack: errObj && errObj.stack ? String(errObj.stack) : "",
+        line: errObj && errObj.__line || lastLine || entryLine || 0,
+        timeout: Boolean(errObj && errObj.__timeout)
+      };
+    }
+    if (r && r.ok && !r.line) r.line = lastLine || entryLine || 0;
+    if (r && !r.ok) r.line = r.line || lastLine || entryLine || 0;
+    return { ...r, logs, elapsedMs: Date.now() - t0 };
+  }
+  function runOnce(budgetMs) {
+    if (LANG === "python") return PY_ENGINE.runOnly(budgetMs);
+    const budget = typeof budgetMs === "number" && budgetMs > 0 ? budgetMs : RUN_TIMEOUT_MS;
+    const src = editor.value;
+    const unsupported = detectUnsupportedSyntax2(src);
+    if (unsupported.length && unsupported[0]) {
+      unsupported.forEach((x) => say("\u2717 \u7B2C " + x.line + " \u884C\uFF1A\u6682\u4E0D\u652F\u6301 " + x.feature + " \u2014\u2014 " + x.hint, "err", x.line));
+      uiHooks.revealErrorLine(unsupported[0].line);
+      return;
+    }
+    const diags = typecheckTS(src, STRICT_TS);
+    if (diags.length > 0) {
+      reportTypeErrors(diags);
+      return;
+    }
+    if (TYPE_ERROR_LINES.size || RUNTIME_ERROR_LINES.size) {
+      TYPE_ERROR_LINES.clear();
+      RUNTIME_ERROR_LINES.clear();
+      uiHooks.updateEditorChrome();
+    }
+    const enums = transpileEnums(src);
+    if (enums.error) {
+      say("\u2717 \u7B2C " + enums.error.line + " \u884C\uFF1A" + enums.error.message, "err", enums.error.line);
+      uiHooks.revealErrorLine(enums.error.line);
+      return;
+    }
+    const js = stripTypes(enums.code);
+    const originalLines = src.replace(/\r/g, "").split("\n");
+    const entry = resolveEntry(src, js);
+    const call = stripTypes(entry.expr || "undefined");
+    ENTRY_CALL_LINE = entry.line || 0;
+    const jsBody = entry.index >= 0 ? blankJsLine(js, entry.index) : js;
+    let code = jsBody;
+    let instrumented = false;
+    try {
+      const candidate = instrument(jsBody, originalLines, collectNames(jsBody));
+      new Function("__t", "console", candidate);
+      code = candidate;
+      instrumented = true;
+    } catch (_) {
+      code = jsBody;
+      instrumented = false;
+    }
+    if (!instrumented) say("\u26A0 \u672C\u6B21\u8FD0\u884C\u672A\u80FD\u542F\u7528\u6B7B\u5FAA\u73AF\u7194\u65AD\uFF08\u63D2\u6869/\u7F16\u8BD1\u56DE\u9000\uFF09\uFF0C\u8BF7\u7559\u610F\u53EF\u80FD\u7684\u6B7B\u5FAA\u73AF", "dim");
+    try {
+      const r = evalCall(code, call, { budgetMs: budget, instrumented, entryLine: entry.line });
+      r.logs.forEach((l) => say("  log: " + l, "dim"));
+      if (!r.ok && r.timeout) {
+        const line = r.line || 0;
+        const snippet = line ? (originalLines[line - 1] || "").trim().slice(0, 90) : "";
+        if (line) {
+          RUNTIME_ERROR_LINES.add(line);
+          uiHooks.updateEditorChrome();
+          uiHooks.revealErrorLine(line);
+        }
+        say(
+          "\u2717 \u8FD0\u884C\u8D85\u8FC7 " + budget / 1e3 + "s \u4ECD\u672A\u7ED3\u675F\uFF0C\u5DF2\u5F3A\u5236\u7EC8\u6B62\uFF08\u7591\u4F3C\u6B7B\u5FAA\u73AF / \u8BA1\u7B97\u91CF\u8FC7\u5927\uFF09" + (line ? " \xB7 \u4F4D\u7F6E\uFF1A\u7B2C " + line + " \u884C" + (snippet ? " \xB7 " + snippet : "") : " \xB7 \u672A\u80FD\u5B9A\u4F4D\u5230\u5177\u4F53\u884C"),
+          "err",
+          line || void 0
+        );
+        return;
+      }
+      if (!r.ok) {
+        const line = r.line || sourceLineFromStack(r.stack, originalLines.length);
+        if (line) {
+          RUNTIME_ERROR_LINES.add(line);
+          uiHooks.updateEditorChrome();
+          say("\u2717 \u7B2C " + line + " \u884C\u8FD0\u884C\u65F6\u62A5\u9519: " + r.error, "err", line);
+          uiHooks.revealErrorLine(line);
+        } else {
+          say("\u2717 \u8C03\u7528\u5931\u8D25: " + r.error, "err");
+        }
+        return;
+      }
+      const elapsed = " (" + r.elapsedMs + "ms)";
+      say("\u2713 \u8FD0\u884C\u5B8C\u6210  \u2192  " + safeJSONStringify(r.value) + elapsed, "ok");
+    } catch (e) {
+      say("\u2717 " + (e instanceof Error && e.message ? e.message : e), "err");
+    }
+  }
+  function buildFrameSnapshotFromClosure(frame, fallbackLine, noteForEnrich) {
+    const raw = (typeof frame.snapFn === "function" ? frame.snapFn() : {}) || {};
+    if (frame.self && typeof frame.self === "object") {
+      try {
+        const selfCopy = {};
+        for (const k in frame.self) {
+          try {
+            selfCopy[k] = frame.self[k];
+          } catch (e) {
+          }
+        }
+        raw["this"] = selfCopy;
+      } catch (e) {
+      }
+    }
+    const v = {};
+    Object.keys(raw).forEach((k) => {
+      const val = raw[k];
+      v[k] = val !== null && typeof val === "object" ? cloneDeepBounded(val, 2) : val;
+    });
+    const ds = {};
+    Object.keys(raw).forEach((name) => {
+      const d = classifyValue(name, raw[name]);
+      if (d) ds[name] = d;
+    });
+    populateInterfaceSchemas(ds);
+    enrichFromNote(ds, raw, noteForEnrich || "");
+    const win = detectWindowRange(raw);
+    const snapFrame = {
+      id: frame.id,
+      fn: frame.fn,
+      label: frame.label,
+      line: frame.lastLine || frame.line || fallbackLine || 1,
+      v,
+      ds
+    };
+    if (win) {
+      snapFrame.l = win[0];
+      snapFrame.r = win[1];
+    }
+    return snapFrame;
+  }
+  function computeAndAppendNextStep(opts = {}) {
+    if (!DEBUG_SESSION.active || DEBUG_SESSION.finished) return false;
+    const targetIdx = TRACE.steps.length;
+    if (targetIdx >= MAX_STEPS) {
+      DEBUG_SESSION.finished = true;
+      DEBUG_SESSION.crashed = true;
+      DEBUG_SESSION.error = "\u5DF2\u8FBE\u5355\u6B21\u8C03\u8BD5\u4E0A\u9650\uFF0C\u81EA\u52A8\u7194\u65AD\u4EE5\u9632\u6B7B\u5FAA\u73AF";
+      say("\u2717 " + DEBUG_SESSION.error, "err");
+      return false;
+    }
+    const originalLines = DEBUG_SESSION.originalLines;
+    const callIdx = originalLines.findIndex((l) => /\/\/\s*调用[:：]/.test(l));
+    const globalCallLine = callIdx >= 0 ? callIdx + 1 : ENTRY_CALL_LINE || 1;
+    let count = 0;
+    let frameSeq = 0;
+    let curLineTracker = globalCallLine;
+    let activeRecording = false;
+    let unwindingPause = false;
+    let pendingStep = null;
+    let pendingStepSnapFn = null;
+    let pendingEventLoopPhase = null;
+    let nextVRaw = null;
+    const stepLogs = [];
+    const t0 = Date.now();
+    const liveCallStack = [
+      {
+        id: 0,
+        fn: "global",
+        label: "global",
+        line: globalCallLine,
+        lastLine: globalCallLine,
+        snapFn: null
+      }
+    ];
+    const suspendedFrames = /* @__PURE__ */ new Map();
+    const evLoop = createVirtualEventLoop(
+      (line, note, snap, self) => __t(line, note, snap, self),
+      () => curLineTracker,
+      (fid) => {
+        if (unwindingPause) return;
+        for (let k = liveCallStack.length - 1; k >= 1; k--) {
+          if (liveCallStack[k]?.id === fid) {
+            const [removed] = liveCallStack.splice(k, 1);
+            if (removed) suspendedFrames.set(fid, removed);
+            break;
+          }
+        }
+      },
+      (fid) => {
+        if (unwindingPause) return;
+        const frame = suspendedFrames.get(fid);
+        if (frame) {
+          suspendedFrames.delete(fid);
+          liveCallStack.push(frame);
+        }
+      }
+    );
+    if (DEBUG_SESSION.hasAsync) {
+      evLoop.loop.used = true;
+    }
+    const __t = (line, note, snap, self) => {
+      const stepLine = line || curLineTracker || 1;
+      if (line) curLineTracker = line;
+      const idx = count++;
+      if ((idx & 63) === 63 && Date.now() - t0 > MAX_EXEC_MS) {
+        throw new Error("\u6267\u884C\u8D85\u65F6 (>" + MAX_EXEC_MS + "ms)\uFF0C\u81EA\u52A8\u7194\u65AD\u4EE5\u9632\u9875\u9762\u5361\u6B7B");
+      }
+      const topFrame = liveCallStack[liveCallStack.length - 1];
+      if (topFrame) {
+        topFrame.lastLine = stepLine;
+        if (typeof snap === "function") topFrame.snapFn = snap;
+        if (self && typeof self === "object") topFrame.self = self;
+      }
+      if (idx < targetIdx) {
+        return;
+      }
+      if (idx === targetIdx) {
+        const effectiveSnap = (typeof snap === "function" ? snap : null) || topFrame && topFrame.snapFn || evLoop.loop.globalSnapFn;
+        const vRaw = (typeof effectiveSnap === "function" ? effectiveSnap() : snap && typeof snap === "object" ? snap : {}) || {};
+        if (self && typeof self === "object") {
+          try {
+            const selfCopy = {};
+            const selfRec = self;
+            for (const k in selfRec) {
+              try {
+                selfCopy[k] = selfRec[k];
+              } catch (e) {
+              }
+            }
+            vRaw["this"] = selfCopy;
+          } catch (e) {
+          }
+        }
+        const v = {};
+        Object.keys(vRaw).forEach((k) => {
+          const val = vRaw[k];
+          v[k] = val !== null && typeof val === "object" ? cloneDeepBounded(val, 2) : val;
+        });
+        const ds = {};
+        Object.keys(vRaw).forEach((name) => {
+          const d = classifyValue(name, vRaw[name]);
+          if (d) ds[name] = d;
+        });
+        enrichFromNote(ds, vRaw, note || "");
+        const win = detectWindowRange(vRaw);
+        const capturedStack = liveCallStack.map((fr, fIdx) => {
+          const isTop = fIdx === liveCallStack.length - 1;
+          const fNote = isTop ? note || "" : originalLines[(fr.lastLine || fr.line || 1) - 1] || "";
+          return buildFrameSnapshotFromClosure(fr, isTop ? stepLine : fr.line || 1, fNote);
+        });
+        pendingStepSnapFn = effectiveSnap;
+        pendingEventLoopPhase = {
+          phase: evLoop.loop.phase,
+          activeTaskLabel: evLoop.loop.activeTaskLabel,
+          virtualTime: evLoop.loop.virtualTime
+        };
+        const stepToCommit = {
+          line: stepLine,
+          note: note || "",
+          v,
+          vRaw,
+          ds,
+          callStack: capturedStack,
+          isCheckpoint: false,
+          checkpointVals: null,
+          error: null
+        };
+        if (win) {
+          stepToCommit.l = win[0];
+          stepToCommit.r = win[1];
+        }
+        pendingStep = stepToCommit;
+        activeRecording = true;
+        return;
+      }
+      if (idx === targetIdx + 1) {
+        activeRecording = false;
+        unwindingPause = true;
+        const sameScopeRaw = typeof pendingStepSnapFn === "function" ? pendingStepSnapFn() : null;
+        const fallbackRaw = typeof snap === "function" ? snap() : snap && typeof snap === "object" ? snap : {};
+        nextVRaw = sameScopeRaw || fallbackRaw || {};
+        throw PAUSE_SIGNAL;
+      }
+    };
+    __t.__env = evLoop.env;
+    __t.__async = evLoop.runAsyncCoroutine;
+    __t.__await = (val, fid, line, exprText) => ({ __isAwait: true, value: val, fid, line, expr: exprText });
+    __t.__drain = evLoop.drainEventLoop;
+    __t.__initGlobal = (globalSnapFn) => {
+      evLoop.loop.globalSnapFn = globalSnapFn;
+      if (liveCallStack[0]) {
+        liveCallStack[0].snapFn = globalSnapFn;
+      }
+    };
+    __t.__enter = (fnName, paramNames, paramVals, defLine, snapFn) => {
+      if (unwindingPause) return 0;
+      const fid = ++frameSeq;
+      const label = formatCallFrameLabel(fnName, paramNames, paramVals);
+      liveCallStack.push({
+        id: fid,
+        fn: fnName,
+        label,
+        line: defLine || 1,
+        lastLine: defLine || 1,
+        snapFn
+      });
+      return fid;
+    };
+    __t.__leave = (fid) => {
+      if (unwindingPause) return;
+      suspendedFrames.delete(fid);
+      for (let k = liveCallStack.length - 1; k >= 1; k--) {
+        if (liveCallStack[k]?.id === fid) {
+          liveCallStack.splice(k, 1);
+          break;
+        }
+      }
+    };
+    __t.__ckpt = (args) => {
+      if (activeRecording && pendingStep) {
+        pendingStep.isCheckpoint = true;
+        pendingStep.checkpointVals = (args || []).map((a) => formatShortVal(a));
+      }
+    };
+    __t.__fin = (snap) => {
+      if (activeRecording) {
+        activeRecording = false;
+        const sameScopeRaw = typeof pendingStepSnapFn === "function" ? pendingStepSnapFn() : null;
+        const fallbackRaw = typeof snap === "function" ? snap() : snap && typeof snap === "object" ? snap : {};
+        nextVRaw = sameScopeRaw || fallbackRaw || {};
+      }
+    };
+    const formatStepConsoleArg = (x) => {
+      if (x instanceof Error) return x.message || String(x);
+      try {
+        return typeof x === "object" ? JSON.stringify(x) : String(x);
+      } catch (_) {
+        return String(x);
+      }
+    };
+    const pushStepConsole = (...a) => {
+      if (!activeRecording) return;
+      stepLogs.push(a.map(formatStepConsoleArg).join(" "));
+    };
+    const customConsole = {
+      log: pushStepConsole,
+      info: pushStepConsole,
+      warn: pushStepConsole,
+      error: pushStepConsole
+    };
+    let paused = false;
+    let runtimeErr = null;
+    let retVal = void 0;
+    try {
+      if (DEBUG_SESSION.compiledFn) {
+        retVal = DEBUG_SESSION.compiledFn(__t, customConsole);
+      }
+    } catch (e) {
+      if (e === PAUSE_SIGNAL) {
+        paused = true;
+      } else {
+        runtimeErr = e;
+      }
+    }
+    stepLogs.forEach((l) => say("  log: " + l, "dim"));
+    if (!pendingStep) {
+      if (runtimeErr) {
+        const errMsg = runtimeErr instanceof Error && runtimeErr.message ? runtimeErr.message : runtimeErr && typeof runtimeErr === "object" && "message" in runtimeErr && typeof runtimeErr.message === "string" ? runtimeErr.message : String(runtimeErr);
+        const callLine = globalCallLine;
+        const errStep = {
+          line: callLine,
+          note: "\u2717 \u8FD0\u884C\u65F6\u9519\u8BEF: " + errMsg,
+          v: {},
+          ds: {},
+          callStack: [{ id: 0, fn: "global", label: "global", line: callLine, v: {}, ds: {} }],
+          anim: { type: "error", message: errMsg },
+          isCheckpoint: false,
+          error: errMsg
+        };
+        populateInterfaceSchemas(errStep.ds);
+        TRACE.steps.push(errStep);
+        RUNTIME_ERROR_LINES.add(callLine);
+        DEBUG_SESSION.finished = true;
+        DEBUG_SESSION.crashed = true;
+        DEBUG_SESSION.error = errMsg;
+        DEBUG_SESSION.errorLine = callLine;
+        say("\u2717 \u8FD0\u884C\u65F6\u9519\u8BEF [\u7B2C " + callLine + " \u884C]: " + errMsg + "\uFF08\u5DF2\u505C\u6B62\u5728\u62A5\u9519\u5904\uFF09", "err");
+        return true;
+      }
+      if (targetIdx === 0 && CURRENT_TS_META.interfaces && CURRENT_TS_META.interfaces.size > 0) {
+        const firstIface = [...CURRENT_TS_META.interfaces.values()][0];
+        if (firstIface) {
+          const schemaDs = {};
+          populateInterfaceSchemas(schemaDs);
+          const schemaStep = {
+            line: firstIface.line || 1,
+            note: `interface ${firstIface.name} { ${firstIface.fields.map((f) => f.k + (f.optional ? "?" : "") + ": " + f.declaredType).join("; ")} }`,
+            v: {},
+            ds: schemaDs,
+            callStack: [{ id: 0, fn: "global", label: "global", line: firstIface.line || 1, v: {}, ds: schemaDs }],
+            anim: null,
+            isCheckpoint: false,
+            error: null,
+            isFinalReturn: true
+          };
+          TRACE.steps.push(schemaStep);
+          DEBUG_SESSION.finished = true;
+          DEBUG_SESSION.returnValue = retVal;
+          return true;
+        }
+      }
+      DEBUG_SESSION.finished = true;
+      DEBUG_SESSION.returnValue = retVal;
+      return false;
+    }
+    const stepObj = pendingStep;
+    const rawLine = originalLines[stepObj.line - 1] || stepObj.note || "";
+    const nextContext = Object.assign({}, nextVRaw || stepObj.vRaw);
+    if (stepObj.checkpointVals) {
+      nextContext["__ckptVals"] = stepObj.checkpointVals;
+    }
+    if (nextVRaw) {
+      const rawMap = nextVRaw;
+      Object.keys(rawMap).forEach((name) => {
+        const nv = rawMap[name];
+        if (nv && typeof nv === "object" && "__isVirtualPromise" in nv) {
+          stepObj.v[name] = cloneDeepBounded(nv, 2);
+        }
+        if (stepObj.vRaw && stepObj.vRaw[name] === void 0 && nv !== void 0 && !stepObj.ds[name]) {
+          const d = classifyValue(name, nv);
+          if (d) stepObj.ds[name] = d;
+        }
+      });
+    }
+    populateInterfaceSchemas(stepObj.ds);
+    enrichFromNote(stepObj.ds, nextVRaw || stepObj.vRaw || {}, rawLine);
+    if (evLoop.loop.used) {
+      const elSnap = evLoop.toVizSnapshot();
+      const phaseInfo = pendingEventLoopPhase;
+      if (phaseInfo) {
+        elSnap.phase = phaseInfo.phase;
+        elSnap.activeTaskLabel = phaseInfo.activeTaskLabel;
+        elSnap.virtualTime = phaseInfo.virtualTime;
+      }
+      stepObj.ds["eventLoop"] = elSnap;
+    }
+    if (stepObj.callStack && stepObj.callStack.length > 0) {
+      const topF = stepObj.callStack[stepObj.callStack.length - 1];
+      if (topF) {
+        topF.line = stepObj.line;
+        topF.v = stepObj.v;
+        topF.ds = stepObj.ds;
+      }
+    }
+    const derived = deriveAnimAndNote(rawLine, stepObj.vRaw || {}, nextContext);
+    delete stepObj.vRaw;
+    stepObj.anim = derived.anim;
+    stepObj.rawNote = stepObj.note;
+    stepObj.note = derived.note || stepObj.note;
+    if (derived.isCheckpoint) {
+      stepObj.isCheckpoint = true;
+    }
+    if (runtimeErr) {
+      const errMsg = runtimeErr instanceof Error && runtimeErr.message ? runtimeErr.message : runtimeErr && typeof runtimeErr === "object" && "message" in runtimeErr && typeof runtimeErr.message === "string" ? runtimeErr.message : String(runtimeErr);
+      stepObj.error = errMsg;
+      stepObj.note = `${rawLine.trim()}  \u2192  \u2717 \u8FD0\u884C\u65F6\u9519\u8BEF: ${errMsg}`;
+      RUNTIME_ERROR_LINES.add(stepObj.line);
+      DEBUG_SESSION.finished = true;
+      DEBUG_SESSION.crashed = true;
+      DEBUG_SESSION.error = errMsg;
+      DEBUG_SESSION.errorLine = stepObj.line;
+    } else if (!paused) {
+      DEBUG_SESSION.finished = true;
+      DEBUG_SESSION.returnValue = retVal;
+      stepObj.isFinalReturn = true;
+      stepObj.returnValue = retVal;
+    }
+    TRACE.steps.push(stepObj);
+    discoverVars().forEach((s) => {
+      if (!SEEN_VARS_EVER.has(s.id)) {
+        SEEN_VARS_EVER.add(s.id);
+        if (!URL_WATCH || !URL_WATCH.length || URL_WATCH.includes(s.id)) {
+          watched.add(s.id);
+        }
+      }
+    });
+    if (runtimeErr) {
+      say("\u2717 \u8FD0\u884C\u65F6\u9519\u8BEF [\u7B2C " + stepObj.line + " \u884C]: " + stepObj.error + "\uFF08\u5DF2\u8FD0\u884C\u5230\u62A5\u9519\u4E3A\u6B62\uFF09", "err");
+    } else if (!paused && !opts.silent) {
+      say("\u2713 \u8C03\u8BD5\u8FD0\u884C\u5B8C\u6210  \u2192  " + safeJSONStringify(retVal), "ok");
+    }
+    return true;
+  }
+  function detectUnsupportedSyntax2(_src) {
+    return [];
+  }
+  function startDebug(initialStep = 0) {
+    if (LANG === "python") return PY_ENGINE.start(initialStep);
+    SELECTED_FRAME_IDX = null;
+    const src = editor.value.replace(/\r/g, "");
+    const unsupported = detectUnsupportedSyntax2(src);
+    if (unsupported.length && unsupported[0]) {
+      resetTraceState();
+      unsupported.forEach((x) => say("\u2717 \u7B2C " + x.line + " \u884C\uFF1A\u6682\u4E0D\u652F\u6301 " + x.feature + " \u2014\u2014 " + x.hint, "err", x.line));
+      uiHooks.revealErrorLine(unsupported[0].line);
+      return false;
+    }
+    extractTsInterfaceMetadata(src);
+    const diags = typecheckTS(src, STRICT_TS);
+    if (diags.length > 0) {
+      resetTraceState();
+      reportTypeErrors(diags);
+      return false;
+    }
+    if (TYPE_ERROR_LINES.size || RUNTIME_ERROR_LINES.size) {
+      TYPE_ERROR_LINES.clear();
+      RUNTIME_ERROR_LINES.clear();
+    }
+    const originalLines = src.split("\n");
+    const enums = transpileEnums(src);
+    if (enums.error) {
+      resetTraceState();
+      say("\u2717 \u7B2C " + enums.error.line + " \u884C\uFF1A" + enums.error.message, "err", enums.error.line);
+      uiHooks.revealErrorLine(enums.error.line);
+      return false;
+    }
+    const js0 = stripTypes(enums.code);
+    const entry = resolveEntry(src, js0);
+    const expr = stripTypes(entry.expr || "undefined");
+    ENTRY_CALL_LINE = entry.line || 0;
+    const jsBody = entry.index >= 0 ? blankJsLine(js0, entry.index) : js0;
+    let compiledFn;
+    try {
+      const names = collectNames(jsBody);
+      const js = instrument(jsBody, originalLines, names);
+      const snapStr = snapFnExpr(names);
+      const body = js + "\n;var __entryVal = (" + expr + ');\nif (typeof __t === "function" && __t.__drain) { __entryVal = __t.__drain(__entryVal, ' + snapStr + '); }\ntry{if(typeof __t==="function"&&__t.__fin)__t.__fin(' + snapStr + ");}catch(_){}\nreturn __entryVal;";
+      compiledFn = new Function("__t", "console", body);
+    } catch (e) {
+      resetTraceState();
+      say("\u2717 \u7F16\u8BD1\u5931\u8D25: " + (e instanceof Error && e.message ? e.message : e), "err");
+      return false;
+    }
+    uiHooks.stopAuto();
+    uiHooks.clearFlyLayer();
+    TRACE = {
+      title: "TypeScript Playground \xB7 Debug",
+      code: originalLines,
+      steps: []
+    };
+    DEBUG_SESSION = {
+      active: true,
+      finished: false,
+      crashed: false,
+      error: null,
+      errorLine: -1,
+      returnValue: void 0,
+      compiledFn,
+      originalLines,
+      callExpr: expr,
+      hasAsync: hasAsyncConstructs(src)
+    };
+    cur = 0;
+    watched = /* @__PURE__ */ new Set();
+    SEEN_VARS_EVER = /* @__PURE__ */ new Set();
+    layoutSpan = /* @__PURE__ */ Object.create(null);
+    const target = Math.max(0, initialStep || 0);
+    for (let s = 0; s <= target; s++) {
+      const ok = computeAndAppendNextStep({ silent: s < target });
+      if (!ok || DEBUG_SESSION.finished) break;
+    }
+    cur = Math.max(0, TRACE.steps.length - 1);
+    initWatchedVars();
+    uiHooks.renderPicker();
+    uiHooks.renderStatic(cur, false);
+    if (!DEBUG_SESSION.crashed) {
+      say("\u2713 \u7F16\u8BD1\u901A\u8FC7 \xB7 \u5DF2\u8FDB\u5165 Debug \u6A21\u5F0F\uFF08\u6BCF\u8D70\u4E00\u6B65\u5F53\u573A\u8BA1\u7B97\uFF0C\u53EF\u968F\u65F6\u6B65\u8FDB\u6216\u8FD0\u884C\u5230\u4E0B\u4E00\u4E2A\u68C0\u67E5\u70B9\uFF09", "ok");
+    }
+    return true;
+  }
+  var generateTrace = startDebug;
+  function initWatchedVars() {
+    const all = discoverVars().map((s) => s.id);
+    all.forEach((id) => SEEN_VARS_EVER.add(id));
+    const urlWatch = URL_WATCH;
+    if (urlWatch && urlWatch.length) {
+      const filtered = all.filter((id) => urlWatch.includes(id));
+      watched = new Set(filtered.length ? filtered : all);
+    } else {
+      watched = new Set(all);
+    }
+  }
+  var runTrace = startDebug;
+  var rebuildFromSource = startDebug;
+
+  // src/viz/ast-view.ts
+  var ast_view_exports = {};
+  __export(ast_view_exports, {
+    buildAST: () => buildAST,
+    buildStepVizRow: () => buildStepVizRow,
+    clearFlyLayer: () => clearFlyLayer,
+    playStepAnimation: () => playStepAnimation,
+    positionStepViz: () => positionStepViz,
+    renderAST: () => renderAST,
+    updateStepViz: () => updateStepViz
+  });
+  function buildAST(src) {
+    const lines = String(src || "").replace(/\r\n?/g, "\n").split("\n");
+    const children = [];
+    for (let i = 0; i < lines.length; i++) {
+      const clean = stripInlineCommentSafe(lines[i]).trim();
+      if (!clean) continue;
+      const stmts = splitStatements(clean).map((s) => s.trim()).filter(Boolean);
+      for (const st of stmts) {
+        let kind = "Statement";
+        if (/^(?:export\s+)?(?:async\s+)?function\b/.test(st)) kind = "FunctionDeclaration";
+        else if (/^(?:export\s+)?(?:abstract\s+)?class\b/.test(st)) kind = "ClassDeclaration";
+        else if (/^(?:export\s+)?interface\b/.test(st)) kind = "InterfaceDeclaration";
+        else if (/^(?:export\s+)?type\b/.test(st)) kind = "TypeAliasDeclaration";
+        else if (/^(?:const|let|var)\b/.test(st)) kind = "VariableDeclaration";
+        else if (/^(?:for|while|do)\b/.test(st)) kind = "LoopStatement";
+        else if (/^(?:if|else|switch)\b/.test(st)) kind = "BranchStatement";
+        else if (/^return\b/.test(st)) kind = "ReturnStatement";
+        children.push({ kind, line: i + 1, text: st });
+      }
+    }
+    return { kind: "Program", line: 1, text: "Program", children };
+  }
+  function renderAST(ast) {
+    if (!ast || !Array.isArray(ast.children)) return "";
+    return ast.children.map((n) => `<div class="ast-node" data-line="${n.line}"><span class="ast-kind">${esc(n.kind)}</span> <span class="ast-txt">${esc(n.text)}</span></div>`).join("");
+  }
+  function buildStepVizRow(_rawLine, anim, stError, isBelow = false) {
+    const guideChar = isBelow ? "\u2570\u2500" : "\u256D\u2500";
+    if (stError) {
+      return `<div class="step-viz-row"><span class="sv-guide err">${guideChar}</span><div class="sv-box sv-err-box"><span class="sv-err-tag">\u2717 RUNTIME ERROR</span><span class="sv-err-msg">${esc(stError)}</span></div></div>`;
+    }
+    if (!anim) return "";
+    if (anim.type === "error" && anim.message) {
+      return `<div class="step-viz-row"><span class="sv-guide err">${guideChar}</span><div class="sv-box sv-err-box"><span class="sv-err-tag">\u2717 RUNTIME ERROR</span><span class="sv-err-msg">${esc(anim.message)}</span></div></div>`;
+    }
+    if (anim.type === "checkpoint") {
+      const args = anim.args || [];
+      const argVals = anim.argVals || [];
+      const chips = args.length ? args.map((a, idx) => {
+        const av = argVals[idx];
+        const showEq = av !== void 0 && av !== a;
+        return `<span class="sv-arg">${esc(a)}${showEq ? ` <span class="sv-eval">= ${esc(av)}</span>` : ""}</span>`;
+      }).join('<span class="sv-dim">,</span>') : `<span class="sv-dim">\u5DF2\u6682\u505C\u4E8E\u68C0\u67E5\u70B9\u51FD\u6570 ${esc(anim.fn || "checkpoint")}()</span>`;
+      return `<div class="step-viz-row"><span class="sv-guide ckpt">${guideChar}</span><div class="sv-box sv-ckpt-box"><span class="sv-ckpt-tag">\u25C9 CHECKPOINT</span>` + chips + `</div></div>`;
+    }
+    if (anim.type === "assign") {
+      const valTxt = anim.val != null ? anim.val : "\u2026";
+      const showFrom = anim.from && anim.from !== valTxt;
+      return `<div class="step-viz-row"><span class="sv-guide">${guideChar}</span><div class="sv-box"><span class="sv-dst">${esc(anim.to)}</span><span class="sv-arrow">\u27F5</span><span class="sv-val">${esc(valTxt)}</span>` + (showFrom ? `<span class="sv-dim">from</span><span class="sv-src">${esc(anim.from)}</span>` : "") + `</div></div>`;
+    }
+    if (anim.type === "compare") {
+      const vCls = anim.result ? "ok" : "no";
+      const lhsShowVal = anim.lhsVal !== void 0 && anim.lhsVal !== anim.lhs;
+      const rhsShowVal = anim.rhs && anim.rhsVal !== void 0 && anim.rhsVal !== anim.rhs;
+      const lhsHtml = `<span class="sv-cmp"><span>${esc(anim.lhs)}</span>${lhsShowVal ? `<span class="sv-eval">= ${esc(anim.lhsVal)}</span>` : ""}</span>`;
+      const rhsHtml = anim.rhs ? `<span class="sv-op">${esc(anim.op)}</span><span class="sv-cmp"><span>${esc(anim.rhs)}</span>${rhsShowVal ? `<span class="sv-eval">= ${esc(anim.rhsVal)}</span>` : ""}</span>` : "";
+      return `<div class="step-viz-row"><span class="sv-guide">${guideChar}</span><div class="sv-box">` + lhsHtml + rhsHtml + `<span class="sv-verdict ${vCls}">\u21D2 ${anim.result ? "true" : "false"}</span></div></div>`;
+    }
+    if (anim.type === "call") {
+      const args = anim.args || [];
+      const argVals = anim.argVals || [];
+      const argChips = args.map((a, idx) => {
+        const av = argVals[idx];
+        const showEq = av !== void 0 && av !== a;
+        return `<span class="sv-arg">${esc(a)}${showEq ? ` <span class="sv-eval">= ${esc(av)}</span>` : ""}</span>`;
+      }).join('<span class="sv-dim">,</span>');
+      const prefix = anim.to && anim.result != null ? `<span class="sv-dst">${esc(anim.to)}</span><span class="sv-arrow">\u27F5</span><span class="sv-val">${esc(anim.result)}</span><span class="sv-dim">from</span>` : anim.result != null ? `<span class="sv-val">${esc(anim.result)}</span><span class="sv-arrow">\u27F5</span>` : "";
+      return `<div class="step-viz-row"><span class="sv-guide">${guideChar}</span><div class="sv-box">` + prefix + `<span class="sv-fn">${esc(anim.fn)}</span><span class="sv-dim">(</span>${argChips}<span class="sv-dim">)</span></div></div>`;
+    }
+    return "";
+  }
+  var STEP_VIZ_LINE = -1;
+  function updateStepViz(st, line, show, rawLine) {
+    if (!stepVizEl) return;
+    const html = show && st ? buildStepVizRow(rawLine, st.anim, st.error, line === 1) : "";
+    if (!html) {
+      STEP_VIZ_LINE = -1;
+      if (stepVizEl.__vizHtml !== "") {
+        stepVizEl.innerHTML = "";
+        stepVizEl.__vizHtml = "";
+      }
+      if (stepVizEl.style) stepVizEl.style.display = "none";
+      return;
+    }
+    STEP_VIZ_LINE = line;
+    if (stepVizEl.__vizHtml !== html) {
+      stepVizEl.innerHTML = html;
+      stepVizEl.__vizHtml = html;
+    }
+    if (stepVizEl.style) {
+      stepVizEl.style.left = "16px";
+      stepVizEl.style.display = "block";
+    }
+    positionStepViz();
+  }
+  function positionStepViz() {
+    if (!stepVizEl || !stepVizEl.style) return;
+    if (STEP_VIZ_LINE < 1 || !TRACE.steps.length) {
+      stepVizEl.style.display = "none";
+      return;
+    }
+    let placedBelow = false;
+    if (window.PlaygroundCM) {
+      const cm = window.PlaygroundCM;
+      const lineTop = cm.lineTop(STEP_VIZ_LINE);
+      const h = stepVizEl.offsetHeight || 22;
+      let top = lineTop - h - 3;
+      if (top < 2) {
+        top = lineTop + 24 + 3;
+        placedBelow = true;
+      }
+      const boxH = cm.viewportHeight() || 0;
+      if (boxH && top + h > boxH - 2) {
+        top = lineTop - h - 3;
+        placedBelow = false;
+        if (top < 2) top = Math.max(2, boxH - h - 4);
+      }
+      stepVizEl.style.left = cm.contentLeft() + "px";
+      stepVizEl.style.top = Math.round(top) + "px";
+      stepVizEl.style.display = "block";
+    } else {
+      const m = hoverMetrics();
+      const lineTop = m.padTop + (STEP_VIZ_LINE - 1) * m.lh - (editor.scrollTop || 0);
+      const h = stepVizEl.offsetHeight || 22;
+      let top = lineTop - h - 3;
+      if (top < 2) {
+        top = lineTop + m.lh + 3;
+        placedBelow = true;
+      }
+      const boxH = editor.clientHeight || 0;
+      if (boxH && top + h > boxH - 2) {
+        top = lineTop - h - 3;
+        placedBelow = false;
+        if (top < 2) top = Math.max(2, boxH - h - 4);
+      }
+      stepVizEl.style.top = Math.round(top) + "px";
+      stepVizEl.style.display = "block";
+    }
+    if (stepVizEl.classList) {
+      stepVizEl.classList.toggle("below-line", placedBelow);
+    }
+    if (typeof stepVizEl.innerHTML === "string" && stepVizEl.innerHTML) {
+      const targetGuide = placedBelow ? "\u2570\u2500" : "\u256D\u2500";
+      const nextHtml = stepVizEl.innerHTML.replace(
+        /(<span class="sv-guide(?:\s+[^"]*)?">)(?:╭─|╰─)(<\/span>)/,
+        `$1${targetGuide}$2`
+      );
+      if (nextHtml !== stepVizEl.innerHTML) {
+        stepVizEl.innerHTML = nextHtml;
+        stepVizEl.__vizHtml = nextHtml;
+      }
+    }
+  }
+  function clearFlyLayer() {
+    if (flyLayerEl) flyLayerEl.innerHTML = "";
+  }
+  function playStepAnimation(st) {
+    clearFlyLayer();
+    if (IS_STILL || !st || !st.anim || !flyLayerEl) return;
+    const anim = st.anim;
+    if (anim.type !== "assign" && !(anim.type === "call" && anim.to && anim.result != null)) return;
+    const srcEl = highlightEl.querySelector(".ln.cur .tok-src") || highlightEl.querySelector(".ln.cur .tok-fn");
+    const dstEl = highlightEl.querySelector(".ln.cur .tok-dst") || highlightEl.querySelector(".ln.cur");
+    if (!srcEl || !dstEl) return;
+    const sRect = srcEl.getBoundingClientRect();
+    const dRect = dstEl.getBoundingClientRect();
+    if (sRect.width === 0 && sRect.height === 0) return;
+    const chip = document.createElement("div");
+    chip.className = "fly-chip";
+    chip.textContent = String(anim.val != null ? anim.val : anim.result);
+    const sx = Math.round(sRect.left + sRect.width / 2 - 14);
+    const sy = Math.round(sRect.top - 6);
+    const dx = Math.round(dRect.left + dRect.width / 2 - 14);
+    const dy = Math.round(dRect.top - 6);
+    chip.style.transform = `translate3d(${sx}px, ${sy}px, 0) scale(0.92)`;
+    chip.style.opacity = "0.96";
+    flyLayerEl.appendChild(chip);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        chip.classList.add("landed");
+        chip.style.transform = `translate3d(${dx}px, ${dy}px, 0) scale(1)`;
+      });
+    });
+    setTimeout(() => {
+      chip.style.opacity = "0";
+    }, 340);
+    setTimeout(() => {
+      if (chip.parentNode) chip.parentNode.removeChild(chip);
+    }, 620);
+  }
+  registerUiHooks({ clearFlyLayer });
+
+  // src/viz/highlight.ts
+  var highlight_exports = {};
+  __export(highlight_exports, {
+    HIGHLIGHT_BUILTINS: () => HIGHLIGHT_BUILTINS,
+    collectDeclaredNames: () => collectDeclaredNames,
+    collectHighlightBuiltins: () => collectHighlightBuiltins,
+    findExprSpan: () => findExprSpan,
+    formatHoverVal: () => formatHoverVal,
+    hideHoverTip: () => hideHoverTip,
+    highlightTS: () => highlightTS,
+    hl: () => hl,
+    hlActiveLine: () => hlActiveLine,
+    hoverColumnAt: () => hoverColumnAt,
+    hoverHitFromEvent: () => hoverHitFromEvent,
+    hoverInfoFor: () => hoverInfoFor,
+    hoverMetrics: () => hoverMetrics,
+    hoverTipForName: () => hoverTipForName,
+    hoverTipHtml: () => hoverTipHtml,
+    hoverValueSummary: () => hoverValueSummary,
+    hoverWordAt: () => hoverWordAt,
+    liveTypeDiags: () => liveTypeDiags,
+    positionHoverTip: () => positionHoverTip,
+    revealErrorLine: () => revealErrorLine,
+    scrollCodeTo: () => scrollCodeTo,
+    showHoverTip: () => showHoverTip,
+    syncScroll: () => syncScroll,
+    updateEditorChrome: () => updateEditorChrome
+  });
+  var HIGHLIGHT_BUILTINS = /* @__PURE__ */ new Set([
+    "checkpoint",
+    "\u65AD\u70B9",
+    "this",
+    "console",
+    "window",
+    "document",
+    "globalThis",
+    "undefined",
+    "NaN",
+    "Infinity",
+    "Math",
+    "JSON",
+    "Object",
+    "Array",
+    "Number",
+    "String",
+    "Boolean",
+    "Map",
+    "Set",
+    "Promise",
+    "Error",
+    "RegExp",
+    "Date",
+    "parseInt",
+    "parseFloat",
+    "isNaN",
+    "setTimeout",
+    "clearTimeout"
+  ]);
+  var DECLARED_NAMES_CACHE = { src: null, names: /* @__PURE__ */ new Set() };
+  function collectDeclaredNames(src) {
+    if (LANG === "python") return PY_ENGINE.collectDeclared(src);
+    const text = String(src == null ? "" : src);
+    if (DECLARED_NAMES_CACHE.src === text) return DECLARED_NAMES_CACHE.names;
+    const names = /* @__PURE__ */ new Set();
+    let js = text;
+    try {
+      js = stripTypes(text);
+    } catch (_) {
+      js = text;
+    }
+    try {
+      collectNames(js).forEach((n) => names.add(n));
+    } catch (_) {
+    }
+    let m;
+    const impRe = /\/\*__import__\*\/\s*var\s+([^\n=]+)=/g;
+    while (m = impRe.exec(js)) {
+      const lhs = m[1] || "";
+      const idRe = /\b([A-Za-z_$][\w$]*)\b/g;
+      let im;
+      while (im = idRe.exec(lhs)) {
+        if (im[1]) names.add(im[1]);
+      }
+    }
+    const typeRe = /\b(?:function|class|interface|type|enum)\s+([A-Za-z_$][\w$]*)/g;
+    const rawClean = blankStrings(text);
+    while (m = typeRe.exec(rawClean)) {
+      if (m[1]) names.add(m[1]);
+    }
+    const fnAssign = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:function\b|\(|[A-Za-z_$][\w$]*\s*=>)/g;
+    while (m = fnAssign.exec(js)) {
+      if (m[1]) names.add(m[1]);
+    }
+    DECLARED_NAMES_CACHE = { src: text, names };
+    return names;
+  }
+  function collectHighlightBuiltins(declared) {
+    const source = LANG === "python" ? typeof PY_ENGINE !== "undefined" && PY_ENGINE.builtins || [] : HIGHLIGHT_BUILTINS;
+    const out = /* @__PURE__ */ new Set();
+    Array.from(source).forEach((name) => {
+      if (!declared.has(name)) out.add(name);
+    });
+    return out;
+  }
+  function hl(t, declared) {
+    if (LANG === "python") return PY_ENGINE.hl(t, declared);
+    const re = new RegExp("(\\/\\/.*$)|(\"(?:[^\"\\\\]|\\\\.)*\"|'(?:[^'\\\\]|\\\\.)*'|`(?:[^`\\\\]|\\\\.)*`)|\\b(function|const|let|var|new|class|extends|typeof|instanceof|import|export|from|async|await|interface|type|as|satisfies)\\b|\\b(for|if|else|return|while|do|switch|case|break|continue|try|catch|finally|throw|yield)\\b|\\b(number|string|boolean|void|any|unknown|never|Math|Map|Set|Array|Object|JSON|Number|String|Boolean|Promise|Record|Error)\\b|\\b(true|false|null|undefined|\\d+(?:\\.\\d+)?)\\b|(\\b[A-Za-z_$][\\w$]*)(?=\\s*\\()|(?<=\\.)([A-Za-z_$][\\w$]*)\\b|([{,][ \\t]*)([A-Za-z_$][\\w$]*)(?=[ \\t]*:)|(^[ \\t]*)([A-Za-z_$][\\w$]*)(?=[ \\t]*:)|\\b([A-Za-z_$][\\w$]*)\\b|(===|!==|>=|<=|=>|&&|\\|\\||\\+\\+|--)", "g");
+    let out = "", last = 0, m;
+    while (m = re.exec(t)) {
+      out += esc(t.slice(last, m.index));
+      if (m[1]) out += '<span class="com">' + esc(m[1]) + "</span>";
+      else if (m[2]) out += '<span class="str">' + esc(m[2]) + "</span>";
+      else if (m[3]) out += '<span class="kw">' + esc(m[3]) + "</span>";
+      else if (m[4]) out += '<span class="ctl">' + esc(m[4]) + "</span>";
+      else if (m[5]) out += '<span class="' + (HIGHLIGHT_BUILTINS.has(m[5]) ? "bi" : "typ") + '">' + esc(m[5]) + "</span>";
+      else if (m[6]) out += '<span class="num">' + esc(m[6]) + "</span>";
+      else if (m[7]) {
+        const id = m[7];
+        const isMethod = m.index > 0 && t[m.index - 1] === ".";
+        if (!isMethod && HIGHLIGHT_BUILTINS.has(id)) out += '<span class="bi">' + esc(id) + "</span>";
+        else if (!declared || isMethod || declared.has(id)) out += '<span class="fn">' + esc(id) + "</span>";
+        else out += esc(id);
+      } else if (m[8]) out += '<span class="prop">' + esc(m[8]) + "</span>";
+      else if (m[9]) out += esc(m[9]) + '<span class="prop">' + esc(m[10]) + "</span>";
+      else if (m[11]) out += esc(m[11]) + '<span class="prop">' + esc(m[12]) + "</span>";
+      else if (m[13]) {
+        if (!declared || declared.has(m[13])) out += '<span class="prop">' + esc(m[13]) + "</span>";
+        else if (HIGHLIGHT_BUILTINS.has(m[13])) out += '<span class="bi">' + esc(m[13]) + "</span>";
+        else out += esc(m[13]);
+      } else if (m[14]) out += '<span class="op">' + esc(m[14]) + "</span>";
+      last = m.index + m[0].length;
+    }
+    out += esc(t.slice(last));
+    return out;
+  }
+  function findExprSpan(line, target, fromIndex = 0) {
+    if (!target) return -1;
+    const startBoundary = isIdentPart(target[0]);
+    const endBoundary = isIdentPart(target[target.length - 1]);
+    let pos = Math.max(0, fromIndex);
+    while (pos <= line.length - target.length) {
+      const idx = line.indexOf(target, pos);
+      if (idx < 0) return -1;
+      const prev = idx > 0 ? line[idx - 1] : "";
+      const next = idx + target.length < line.length ? line[idx + target.length] : "";
+      const okStart = !startBoundary || !isIdentPart(prev);
+      const okEnd = !endBoundary || !isIdentPart(next);
+      if (okStart && okEnd) return idx;
+      pos = idx + 1;
+    }
+    return -1;
+  }
+  function hlActiveLine(rawLine, anim, declared) {
+    if (LANG === "python") return PY_ENGINE.hlActiveLine(rawLine, anim, declared);
+    if (!anim) return hl(rawLine, declared);
+    const h = (s) => hl(s, declared);
+    const declPrefix = rawLine.match(/^\s*(?:(?:export\s+)?(?:const|let|var)\b\s*)/);
+    const lhsSearchStart = declPrefix ? declPrefix[0].length : 0;
+    if (anim.type === "assign" && typeof anim.from === "string" && anim.from && typeof anim.to === "string" && anim.to) {
+      const toIdx = findExprSpan(rawLine, anim.to, lhsSearchStart);
+      if (toIdx >= 0) {
+        const afterTo = toIdx + anim.to.length;
+        const eqPos = rawLine.indexOf("=", afterTo);
+        const rhsSearchStart = eqPos >= 0 ? eqPos + 1 : afterTo;
+        const fromIdx = findExprSpan(rawLine, anim.from, rhsSearchStart);
+        if (fromIdx >= afterTo) {
+          const p1 = rawLine.slice(0, toIdx);
+          const p2 = rawLine.slice(toIdx, afterTo);
+          const p3 = rawLine.slice(afterTo, fromIdx);
+          const p4 = rawLine.slice(fromIdx, fromIdx + anim.from.length);
+          const p5 = rawLine.slice(fromIdx + anim.from.length);
+          return h(p1) + '<span class="tok-dst">' + h(p2) + "</span>" + h(p3) + '<span class="tok-src">' + h(p4) + "</span>" + h(p5);
+        }
+      }
+    }
+    if (anim.type === "compare" && anim.lhs) {
+      const condPrefix = rawLine.match(/^\s*(?:}\s*)?(?:(?:else\s+)?(?:if|while)\s*\(|for\s*\([^;]*;)/);
+      const cmpStart = condPrefix ? condPrefix[0].length : 0;
+      const lIdx = findExprSpan(rawLine, anim.lhs, cmpStart);
+      if (lIdx >= 0) {
+        if (anim.rhs) {
+          const afterLhs2 = lIdx + anim.lhs.length;
+          const opStr = anim.op || "";
+          const opIdx = opStr ? rawLine.indexOf(opStr, afterLhs2) : -1;
+          const rhsStart = opIdx >= 0 ? opIdx + opStr.length : afterLhs2;
+          const rIdx = findExprSpan(rawLine, anim.rhs, rhsStart);
+          if (rIdx >= afterLhs2) {
+            const p1 = rawLine.slice(0, lIdx);
+            const p2 = rawLine.slice(lIdx, afterLhs2);
+            const p3 = rawLine.slice(afterLhs2, rIdx);
+            const p4 = rawLine.slice(rIdx, rIdx + anim.rhs.length);
+            const p5 = rawLine.slice(rIdx + anim.rhs.length);
+            return h(p1) + '<span class="tok-cmp">' + h(p2) + "</span>" + h(p3) + '<span class="tok-cmp">' + h(p4) + "</span>" + h(p5);
+          }
+        }
+        const afterLhs = lIdx + anim.lhs.length;
+        return h(rawLine.slice(0, lIdx)) + '<span class="tok-cmp">' + h(rawLine.slice(lIdx, afterLhs)) + "</span>" + h(rawLine.slice(afterLhs));
+      }
+    }
+    if (anim.type === "checkpoint") {
+      const fnName = anim.fn || "checkpoint";
+      const fnIdx = findExprSpan(rawLine, fnName, 0);
+      if (fnIdx >= 0) {
+        const p1 = rawLine.slice(0, fnIdx);
+        const p2 = rawLine.slice(fnIdx, fnIdx + fnName.length);
+        const rest = rawLine.slice(fnIdx + fnName.length);
+        return h(p1) + '<span class="tok-ckpt">' + h(p2) + "</span>" + h(rest);
+      }
+    }
+    if (anim.type === "call" && anim.fn) {
+      const toStr = typeof anim.to === "string" && anim.to ? anim.to : "";
+      const toIdx = toStr ? findExprSpan(rawLine, toStr, lhsSearchStart) : -1;
+      const fnSearchStart = toIdx >= 0 ? toIdx + toStr.length : lhsSearchStart;
+      const fnIdx = findExprSpan(rawLine, anim.fn, fnSearchStart);
+      if (fnIdx >= 0) {
+        if (toIdx >= 0 && fnIdx > toIdx) {
+          const p12 = rawLine.slice(0, toIdx);
+          const p22 = rawLine.slice(toIdx, toIdx + toStr.length);
+          const p3 = rawLine.slice(toIdx + toStr.length, fnIdx);
+          const p4 = rawLine.slice(fnIdx, fnIdx + anim.fn.length);
+          const p5 = rawLine.slice(fnIdx + anim.fn.length);
+          return h(p12) + '<span class="tok-dst">' + h(p22) + "</span>" + h(p3) + '<span class="tok-fn">' + h(p4) + "</span>" + h(p5);
+        }
+        const p1 = rawLine.slice(0, fnIdx);
+        const p2 = rawLine.slice(fnIdx, fnIdx + anim.fn.length);
+        const rest = rawLine.slice(fnIdx + anim.fn.length);
+        return h(p1) + '<span class="tok-fn">' + h(p2) + "</span>" + h(rest);
+      }
+    }
+    return h(rawLine);
+  }
+  function updateEditorChrome() {
+    const text = editor.value.replace(/\r\n?/g, "\n");
+    const lines = text.split("\n");
+    const declared = collectDeclaredNames(text);
+    const builtins = collectHighlightBuiltins(declared);
+    const liveErrors = liveTypeDiags(text);
+    const liveByLine = /* @__PURE__ */ new Map();
+    liveErrors.forEach((d) => {
+      if (d && d.line >= 1 && !liveByLine.has(d.line)) liveByLine.set(d.line, d);
+    });
+    const st = TRACE.steps.length ? TRACE.steps[cur] : null;
+    const activeFrame = st ? getActiveFrame(st) : null;
+    const curLine = activeFrame ? activeFrame.line : st ? st.line : -1;
+    const showVizOnLine = Boolean(st && (!activeFrame || activeFrame.isTop) && (st.anim || st.error) && curLine >= 1 && curLine <= lines.length);
+    const errorBadge = (lineNum) => {
+      const d = liveByLine.get(lineNum);
+      if (!d) return "";
+      const tip = (d.code ? d.code + ": " : "") + (d.message || "");
+      return '<span class="ln-err-badge" title="' + esc(tip) + '">\u2717 ' + esc(d.code || (LANG === "python" ? "PY" : "TS")) + "</span>";
+    };
+    if (window.PlaygroundCM) {
+      const errorLines = /* @__PURE__ */ new Set([...liveByLine.keys(), ...TYPE_ERROR_LINES, ...RUNTIME_ERROR_LINES]);
+      if (st && st.error && curLine >= 1) errorLines.add(curLine);
+      window.PlaygroundCM.syncFromApp({
+        language: LANG,
+        text,
+        lines,
+        declared,
+        builtins,
+        liveErrors,
+        curLine,
+        st,
+        errorLines
+      });
+    } else {
+      highlightEl.innerHTML = lines.map((t, k) => {
+        const lineNum = k + 1;
+        const isCur = lineNum === curLine;
+        const isLiveErr = liveByLine.has(lineNum);
+        const isErr = isLiveErr || TYPE_ERROR_LINES.has(lineNum) || RUNTIME_ERROR_LINES.has(lineNum) || Boolean(isCur && st && st.error);
+        const inner = isCur && (!activeFrame || activeFrame.isTop) ? hlActiveLine(t, st && st.anim, declared) : hl(t, declared);
+        const content = (inner || "&nbsp;") + (isLiveErr ? errorBadge(lineNum) : "");
+        return '<span class="ln' + (isCur ? " cur" : "") + (isErr ? " err" : "") + '">' + content + "</span>";
+      }).join("");
+      gutterEl.innerHTML = lines.map((t, k) => {
+        const lineNum = k + 1;
+        const isCur = lineNum === curLine;
+        const isErr = liveByLine.has(lineNum) || TYPE_ERROR_LINES.has(lineNum) || RUNTIME_ERROR_LINES.has(lineNum) || Boolean(isCur && st && st.error);
+        const hasCkpt = /^\s*(?:checkpoint|断点)\s*\(/.test(t);
+        return '<div class="gline' + (isCur ? " cur" : "") + (hasCkpt ? " ckpt" : "") + (isErr ? " err" : "") + '" data-line="' + lineNum + '">' + lineNum + "</div>";
+      }).join("");
+    }
+    updateStepViz(st, curLine, showVizOnLine, lines[curLine - 1] || "");
+    syncScroll();
+  }
+  var LIVE_TYPE_CACHE = { src: null, diags: [] };
+  function liveTypeDiags(src) {
+    if (LANG === "python") return PY_DIAGS;
+    const text = String(src == null ? "" : src);
+    if (LIVE_TYPE_CACHE.src === text) return LIVE_TYPE_CACHE.diags;
+    let diags = [];
+    try {
+      diags = typecheckTS(text, STRICT_TS) || [];
+    } catch (_) {
+      diags = [];
+    }
+    LIVE_TYPE_CACHE = { src: text, diags };
+    return diags;
+  }
+  function revealErrorLine(line, focus) {
+    const ln = Math.round(Number(line) || 0);
+    if (ln < 1) return;
+    if (window.PlaygroundCM) {
+      window.PlaygroundCM.revealLine(ln, focus);
+      return;
+    }
+    const lines = editor.value.replace(/\r\n?/g, "\n").split("\n");
+    if (ln > lines.length) return;
+    scrollCodeTo(ln);
+    if (!focus || !editor.focus) return;
+    try {
+      editor.focus();
+      let pos = 0;
+      for (let i = 0; i < ln - 1; i++) pos += (lines[i] || "").length + 1;
+      editor.selectionStart = editor.selectionEnd = Math.min(pos, editor.value.length);
+    } catch (_) {
+    }
+  }
+  var hoverTipKey = "";
+  function hoverColumnAt(lineText, x, charW) {
+    let acc = 0;
+    for (let i = 0; i < lineText.length; i++) {
+      const w = lineText[i] === "	" ? charW * 2 : charW;
+      if (x < acc + w) return i;
+      acc += w;
+    }
+    return -1;
+  }
+  function hoverHitFromEvent(e) {
+    if (!editor || !editor.getBoundingClientRect) return null;
+    const rect = editor.getBoundingClientRect();
+    if (!rect || !rect.width && !rect.height) return null;
+    const m = hoverMetrics();
+    const y = e.clientY - rect.top - m.padTop + (editor.scrollTop || 0);
+    const x = e.clientX - rect.left - m.padLeft + (editor.scrollLeft || 0);
+    if (y < 0 || x < 0) return null;
+    const lineIdx = Math.floor(y / m.lh);
+    const lines = editor.value.replace(/\r\n?/g, "\n").split("\n");
+    if (lineIdx < 0 || lineIdx >= lines.length) return null;
+    const text = lines[lineIdx];
+    if (!text) return null;
+    const col = hoverColumnAt(text, x, m.charW);
+    if (col < 0) return null;
+    return { line: lineIdx + 1, text, col };
+  }
+  var HOVER_WORD_RE = /[A-Za-z0-9_$]/;
+  function hoverWordAt(lineText, col) {
+    if (!lineText) return null;
+    let i = Math.min(Math.max(0, col), lineText.length - 1);
+    if (!HOVER_WORD_RE.test(lineText[i] || "")) {
+      if (i > 0 && HOVER_WORD_RE.test(lineText[i - 1] || "")) i--;
+      else return null;
+    }
+    let s = i, e = i;
+    while (s > 0 && HOVER_WORD_RE.test(lineText[s - 1] || "")) s--;
+    while (e < lineText.length && HOVER_WORD_RE.test(lineText[e] || "")) e++;
+    const word = lineText.slice(s, e);
+    if (!/^[A-Za-z_$][\w$]*$/.test(word)) return null;
+    return { word, start: s, end: e };
+  }
+  function hoverInfoFor(name) {
+    if (!name || !TRACE.steps.length) return null;
+    if (typeof RESERVED_WORDS !== "undefined" && RESERVED_WORDS.has(name) && name !== "this") return null;
+    const st = TRACE.steps[cur];
+    if (!st) return null;
+    const frame = getActiveFrame(st);
+    let v = frame && frame.v || st.v || {};
+    let ds = frame && frame.ds || st.ds || {};
+    let frameLabel = frame ? frame.label : "global";
+    const found = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
+    let lookupKey = name;
+    if (name === "self" && !found(v, "self") && !ds.self && (found(v, "this") || ds.this)) {
+      lookupKey = "this";
+    }
+    if (!found(v, lookupKey) && !ds[lookupKey]) {
+      const globalFrame = st.callStack && st.callStack[0];
+      if (globalFrame && globalFrame.v && (found(globalFrame.v, lookupKey) || globalFrame.ds && globalFrame.ds[lookupKey])) {
+        v = globalFrame.v;
+        ds = globalFrame.ds || {};
+        frameLabel = globalFrame.label || "global";
+      }
+    }
+    const hasVal = found(v, lookupKey);
+    const d = ds[lookupKey] || null;
+    if (!hasVal && !d) return null;
+    const val = hasVal ? v[lookupKey] : void 0;
+    const declaredType = (CURRENT_TS_META && CURRENT_TS_META.varTypes ? CURRENT_TS_META.varTypes.get(lookupKey) : null) || (d && d.interfaceName && d.interfaceName !== "object" ? d.interfaceName : null);
+    const kindStr = d ? d.kind === "interface" && d.isClass ? d.interfaceName ? "class \xB7 " + d.interfaceName : "class" : d.kind : declaredType || inferRuntimeTsType(val);
+    return {
+      name,
+      val,
+      d,
+      kind: kindStr,
+      declaredType: declaredType || null,
+      frame: frameLabel
+    };
+  }
+  function formatHoverVal(val) {
+    if (val === void 0) return "undefined";
+    if (val === null) return "null";
+    if (typeof val === "function") return "\u0192 " + (val.name || "function");
+    if (typeof val === "string") return JSON.stringify(val.length > 140 ? val.slice(0, 138) + "\u2026" : val);
+    if (typeof val === "number" || typeof val === "boolean") return String(val);
+    if (Array.isArray(val)) {
+      const head = val.slice(0, 12).map(formatHoverVal).join(", ");
+      return "[" + head + (val.length > 12 ? ", \u2026 (" + val.length + " \u9879)" : "") + "]";
+    }
+    if (isMapLike(val)) return "Map(" + val.size + ")";
+    if (isSetLike(val)) return "Set(" + val.size + ")";
+    if (typeof val === "object") {
+      const record = val;
+      const keys = Object.keys(record);
+      const body = keys.slice(0, 8).map((k) => k + ": " + formatHoverVal(record[k])).join(", ");
+      return "{ " + body + (keys.length > 8 ? ", \u2026" : "") + " }";
+    }
+    return String(val);
+  }
+  function hoverValueSummary(info) {
+    const d = info.d;
+    if (!d) return formatHoverVal(info.val);
+    const short = formatShortVal;
+    if (Array.isArray(d.items)) {
+      const total = typeof d.total === "number" ? d.total : d.items.length;
+      if (d.kind === "string") {
+        const s = d.items.join("");
+        const suffix = total > d.items.length ? ` (\u5171 ${total} \u5B57\u7B26)` : "";
+        return JSON.stringify(s.length > 120 ? s.slice(0, 118) + "\u2026" : s) + suffix;
+      }
+      const head = d.items.slice(0, 14).map(short).join(", ");
+      return "[" + head + (total > 14 ? `, \u2026 (\u5171 ${total} \u9879)` : "") + "]";
+    }
+    if (d.kind === "map") {
+      const entries = d.entries || [];
+      const total = typeof d.total === "number" ? d.total : entries.length;
+      const head = entries.slice(0, 6).map((e) => short(e.k) + " \u2192 " + short(e.v)).join(", ");
+      return "Map(" + total + " \u9879) { " + head + (total > 6 ? ", \u2026" : "") + " }";
+    }
+    if (d.kind === "grid") {
+      const rows = typeof d.totalRows === "number" ? d.totalRows : (d.cells || []).length;
+      const cols = typeof d.totalCols === "number" ? d.totalCols : rows && Array.isArray(d.cells[0]) ? d.cells[0].length : 0;
+      return rows + " \xD7 " + cols + " \u7684\u4E8C\u7EF4\u77E9\u9635";
+    }
+    if (d.kind === "tree") {
+      const nodes = d.nodes || [];
+      const total = typeof d.total === "number" ? d.total : nodes.length;
+      const root = nodes[d.root] ? nodes[d.root].val : void 0;
+      return "Tree(" + total + " \u4E2A\u8282\u70B9 \xB7 \u6839 " + short(root) + ")";
+    }
+    if (d.kind === "graph") {
+      const nCnt = typeof d.totalNodes === "number" ? d.totalNodes : (d.nodes || []).length;
+      const eCnt = typeof d.totalEdges === "number" ? d.totalEdges : (d.edges || []).length;
+      return "Graph(" + nCnt + " \u8282\u70B9 / " + eCnt + " \u6761\u8FB9)";
+    }
+    if (d.fields) {
+      const head = d.fields.slice(0, 6).map((f) => f.k + ": " + short(f.v)).join(", ");
+      return "{ " + head + (d.fields.length > 6 ? ", \u2026" : "") + " }";
+    }
+    return formatHoverVal(info.val);
+  }
+  function hoverTipHtml(info) {
+    if (!info) return "";
+    const parts = [];
+    const kindLabel = esc(String(info.kind || "").replace(/^./, (c) => c.toUpperCase()));
+    parts.push('<div class="ht-head"><span class="ht-name">' + esc(info.name) + "</span>" + (kindLabel ? '<span class="ht-kind">' + kindLabel + "</span>" : "") + "</div>");
+    parts.push('<div class="ht-val">' + esc(hoverValueSummary(info)) + "</div>");
+    const note = [];
+    if (info.declaredType) note.push("\u58F0\u660E\u7C7B\u578B " + info.declaredType);
+    if (info.frame) note.push("\u6808\u5E27 " + info.frame);
+    if (note.length) parts.push('<div class="ht-note">' + esc(note.join(" \xB7 ")) + "</div>");
+    const vizMap2 = VIZ;
+    const vizFn = info.d && typeof info.d.kind === "string" ? vizMap2[info.d.kind] : null;
+    if (typeof vizFn === "function") {
+      let viz = "";
+      try {
+        viz = vizFn(info.d) || "";
+      } catch (_) {
+        viz = "";
+      }
+      if (viz) parts.push('<div class="ht-viz">' + viz + "</div>");
+    }
+    return parts.join("");
+  }
+  function positionHoverTip(clientX, clientY) {
+    if (!hoverTipEl) return;
+    const rect = hoverTipEl.getBoundingClientRect ? hoverTipEl.getBoundingClientRect() : { width: 320, height: 120 };
+    const vw = typeof window !== "undefined" && window.innerWidth || 1280;
+    const vh = typeof window !== "undefined" && window.innerHeight || 800;
+    let left = clientX + 16;
+    let top = clientY + 18;
+    if (left + rect.width > vw - 10) left = Math.max(8, clientX - rect.width - 16);
+    if (top + rect.height > vh - 10) top = Math.max(8, clientY - rect.height - 14);
+    if (hoverTipEl.style) {
+      hoverTipEl.style.left = left + "px";
+      hoverTipEl.style.top = top + "px";
+    }
+  }
+  function hideHoverTip() {
+    hoverTipKey = "";
+    if (!hoverTipEl) return;
+    if (hoverTipEl.classList) hoverTipEl.classList.remove("on");
+    if (hoverTipEl.setAttribute) hoverTipEl.setAttribute("aria-hidden", "true");
+  }
+  function showHoverTip(info, clientX, clientY) {
+    if (!hoverTipEl || !info) {
+      hideHoverTip();
+      return;
+    }
+    hoverTipEl.innerHTML = hoverTipHtml(info);
+    if (hoverTipEl.classList) hoverTipEl.classList.add("on");
+    if (hoverTipEl.setAttribute) hoverTipEl.setAttribute("aria-hidden", "false");
+    positionHoverTip(clientX, clientY);
+  }
+  function hoverTipForName(name, clientX, clientY) {
+    if (!TRACE.steps.length) {
+      hideHoverTip();
+      return false;
+    }
+    const info = hoverInfoFor(name);
+    if (!info) {
+      hideHoverTip();
+      return false;
+    }
+    const key = name + "@" + cur + "#" + TRACE.steps.length;
+    if (!(hoverTipEl && hoverTipEl.classList && hoverTipEl.classList.contains && hoverTipEl.classList.contains("on")) || hoverTipKey !== key) {
+      hoverTipKey = key;
+      showHoverTip(info, clientX, clientY);
+    } else {
+      positionHoverTip(clientX, clientY);
+    }
+    return true;
+  }
+  function syncScroll() {
+    if (window.PlaygroundCM) {
+      positionStepViz();
+      return;
+    }
+    highlightEl.scrollTop = editor.scrollTop;
+    highlightEl.scrollLeft = editor.scrollLeft;
+    gutterEl.scrollTop = editor.scrollTop;
+    positionStepViz();
+  }
+  function scrollCodeTo(line) {
+    if (window.PlaygroundCM) {
+      window.PlaygroundCM.scrollToLine(line);
+      return;
+    }
+    const lh = 24;
+    const idx = Math.max(0, line - 1);
+    const visible = Math.max(1, Math.floor(editor.clientHeight / lh));
+    const first = Math.round(editor.scrollTop / lh);
+    if (idx < first) editor.scrollTop = Math.max(0, (idx - 1) * lh);
+    else if (idx >= first + visible - 1) editor.scrollTop = (idx - visible + 2) * lh;
+    syncScroll();
+  }
+  var highlightTS = hl;
+  registerUiHooks({ updateEditorChrome, revealErrorLine });
+
+  // src/viz/memory-graph.ts
+  var memory_graph_exports = {};
+  __export(memory_graph_exports, {
+    POINTER_VAR_NAMES: () => POINTER_VAR_NAMES,
+    VIZ: () => VIZ,
+    allocateSlotSpans: () => allocateSlotSpans,
+    build1DFocalSlice: () => build1DFocalSlice,
+    classifyValue: () => classifyValue,
+    cloneDeepBounded: () => cloneDeepBounded,
+    decideSpan: () => decideSpan,
+    defineHidden: () => defineHidden,
+    deriveAnimAndNote: () => deriveAnimAndNote,
+    detectWindowRange: () => detectWindowRange,
+    discoverVars: () => discoverVars,
+    drawArrows: () => drawArrows,
+    enrichFromNote: () => enrichFromNote,
+    formatShortVal: () => formatShortVal,
+    getActiveFrame: () => getActiveFrame,
+    hoverMetrics: () => hoverMetrics,
+    isMapLike: () => isMapLike,
+    isSetLike: () => isSetLike,
+    normalizeGraph: () => normalizeGraph,
+    normalizeList: () => normalizeList,
+    normalizeTree: () => normalizeTree,
+    populateInterfaceSchemas: () => populateInterfaceSchemas,
+    pressure: () => pressure,
+    renderAsyncQueues: () => renderAsyncQueues,
+    renderCallStack: () => renderCallStack,
+    renderMemory: () => renderMemory,
+    renderPicker: () => renderPicker,
+    renderSlots: () => renderSlots,
+    renderStatic: () => renderStatic,
+    safeEvalExpr: () => safeEvalExpr,
+    scheduleArrowRedraw: () => scheduleArrowRedraw,
+    selectGridAxisIndices: () => selectGridAxisIndices,
+    selectStackFrame: () => selectStackFrame,
+    snapshot: () => snapshot,
+    splitLogicalClauses: () => splitLogicalClauses,
+    truncMap: () => truncMap,
+    updateControlButtons: () => updateControlButtons,
+    vizArray: () => vizArray,
+    vizEventLoop: () => vizEventLoop,
+    vizGraph: () => vizGraph,
+    vizGrid: () => vizGrid,
+    vizHeap: () => vizHeap,
+    vizInterface: () => vizInterface,
+    vizList: () => vizList,
+    vizMap: () => vizMap,
+    vizQueue: () => vizQueue,
+    vizSet: () => vizSet,
+    vizStack: () => vizStack,
+    vizString: () => vizString,
+    vizTree: () => vizTree,
+    vizUF: () => vizUF
+  });
+  function selectStackFrame(frameIdx) {
+    const st = TRACE.steps[cur];
+    if (!st || !Array.isArray(st.callStack) || !st.callStack.length) return;
+    const topIdx = st.callStack.length - 1;
+    const clamped = Math.max(0, Math.min(topIdx, Number(frameIdx) || 0));
+    SELECTED_FRAME_IDX = clamped === topIdx ? null : clamped;
+    renderStatic(cur, false);
+  }
+  function renderCallStack(st) {
+    if (!callStackBarEl) return;
+    if (!st) {
+      callStackBarEl.innerHTML = '<span class="cs-empty">\u672A\u5728\u8C03\u8BD5</span>';
+      if (callStackHintEl) callStackHintEl.textContent = "\u70B9\u51FB\u6808\u5E27\u53EF\u5207\u6362\u4F5C\u7528\u57DF";
+      return;
+    }
+    const stack = Array.isArray(st.callStack) && st.callStack.length ? st.callStack : [{ fn: "global", label: "global", line: st.line, v: st.v || {}, ds: st.ds || {} }];
+    const active = getActiveFrame(st);
+    const activeIdx = active ? active.idx : 0;
+    const activeIsTop = active ? active.isTop : true;
+    const activeLabel = active ? active.label : "global";
+    callStackBarEl.innerHTML = stack.map((f, fIdx) => {
+      const isSel = fIdx === activeIdx;
+      const isTop = fIdx === stack.length - 1;
+      const cls = "cs-crumb" + (isSel ? " active" : "") + (isTop ? " is-top" : "") + (!isTop && isSel ? " inspecting" : "");
+      const sep = fIdx > 0 ? '<span class="cs-sep">\u25B8</span>' : "";
+      return sep + `<button type="button" class="${cls}" data-frame-idx="${fIdx}" title="\u5207\u6362\u5230\u6808\u5E27 ${esc(f.label)} (\u7B2C ${f.line || st.line} \u884C)">${esc(f.label)}</button>`;
+    }).join("");
+    if (callStackHintEl) {
+      callStackHintEl.textContent = activeIsTop ? `\u6808\u6DF1 ${stack.length} \xB7 \u70B9\u51FB\u6808\u5E27\u53EF\u5207\u6362` : `\u6B63\u5728\u67E5\u770B\u6808\u5E27 ${activeIdx + 1}/${stack.length}: ${activeLabel}`;
+    }
+  }
+  function truncMap(arr, render, d) {
+    if (d && Array.isArray(d.windowed) && d.windowed.length) {
+      return d.windowed.map((entry) => {
+        if (entry && entry.gap) {
+          const tip = entry.from != null && entry.to != null ? ` title="\u7701\u7565\u4E0B\u6807 ${entry.from}..${entry.to}\uFF08\u5171 ${entry.count} \u9879\uFF09"` : "";
+          return '<div class="vmore"' + tip + '>\u2026<span class="vmore-cnt">+' + entry.count + "</span></div>";
+        }
+        return render(entry.val, entry.idx ?? 0);
+      }).join("");
+    }
+    const MAX = 20, HEAD = 10, TAIL = 5;
+    if (!arr || arr.length <= MAX) return (arr || []).map((x, i) => render(x, i)).join("");
+    const total = d && typeof d.total === "number" && d.total >= arr.length ? d.total : arr.length;
+    const hidden = Math.max(1, total - HEAD - TAIL);
+    const head = arr.slice(0, HEAD).map((x, i) => render(x, i)).join("");
+    const tailStart = total - TAIL;
+    const tail = arr.slice(arr.length - TAIL).map((x, i) => render(x, tailStart + i)).join("");
+    return head + '<div class="vmore" title="\u7701\u7565 ' + hidden + ' \u9879">\u2026<span class="vmore-cnt">+' + hidden + "</span></div>" + tail;
+  }
+  function vizArray(d) {
+    if (!d || !d.items || !d.items.length) return null;
+    const win = d.win;
+    const ptrs = d.pointers;
+    const cells = truncMap(d.items, (n, k) => {
+      let cls = "vcell vcell-idx";
+      if (win && k >= win[0] && k <= win[1]) cls += " win";
+      if (d.hot === k) cls += " hot";
+      else if (d.mark === k) cls += " mark";
+      const pTag = ptrs && ptrs[k] && ptrs[k].length ? '<span class="sub-tag ptr-tag">' + esc(ptrs[k].slice(0, 2).join(",")) + "</span>" : "";
+      return '<div class="' + cls + '">' + pTag + '<span class="val">' + esc(n) + '</span><span class="idx">' + k + "</span></div>";
+    }, d);
+    return '<div class="viz"><div class="viz-row varray-row">' + cells + "</div></div>";
+  }
+  function vizQueue(d) {
+    if (!d || !d.items || !d.items.length) return null;
+    const len = typeof d.total === "number" && d.total > 0 ? d.total : d.items.length;
+    const cells = truncMap(d.items, (n, k) => {
+      let cls = "vcell vcell-idx";
+      if (d.hot === k) cls += " hot";
+      else if (k === 0) cls += " mark";
+      const tag = k === 0 ? '<span class="sub-tag">front</span>' : k === len - 1 ? '<span class="sub-tag">back</span>' : "";
+      return '<div class="' + cls + '">' + tag + '<span class="val">' + esc(n) + '</span><span class="idx">' + k + "</span></div>";
+    }, d);
+    return '<div class="viz"><div class="viz-row varray-row">' + cells + "</div></div>";
+  }
+  function vizHeap(d) {
+    if (!d || !d.items || !d.items.length) return null;
+    const cells = truncMap(d.items, (n, k) => {
+      let cls = "vcell vcell-idx";
+      if (d.hot === k) cls += " hot";
+      else if (k === 0) cls += " mark";
+      const tag = k === 0 ? '<span class="sub-tag">top</span>' : "";
+      return '<div class="' + cls + '">' + tag + '<span class="val">' + esc(n) + '</span><span class="idx">' + k + "</span></div>";
+    }, d);
+    return '<div class="viz"><div class="viz-row varray-row">' + cells + '</div><div class="vmeta-hint">parent = (i - 1) &gt;&gt; 1 \xB7 left = 2i + 1</div></div>';
+  }
+  function vizUF(d) {
+    if (!d || !d.items || !d.items.length) return null;
+    const cells = truncMap(d.items, (p, k) => {
+      let cls = "vcell vcell-idx";
+      if (d.hot === k) cls += " hot";
+      else if (p === k) cls += " mark";
+      const tag = p === k ? '<span class="sub-tag">root</span>' : '<span class="sub-tag">p:' + esc(p) + "</span>";
+      return '<div class="' + cls + '">' + tag + '<span class="val">' + esc(p) + '</span><span class="idx">' + k + "</span></div>";
+    }, d);
+    return '<div class="viz"><div class="viz-row varray-row">' + cells + "</div></div>";
+  }
+  function vizMap(d) {
+    if (!d || !d.entries || !d.entries.length) return null;
+    return '<div class="viz"><div class="viz-row vmap-row">' + truncMap(
+      d.entries,
+      (e) => '<div class="vpair' + (d.hot === e.k ? " hot" : "") + '"><span class="vcell vk">' + esc(e.k) + '</span><span class="varr">\u2192</span><span class="vcell vv">' + esc(e.v) + "</span></div>",
+      d
+    ) + "</div></div>";
+  }
+  function vizSet(d) {
+    if (!d || !d.items || !d.items.length) return null;
+    return '<div class="viz"><div class="viz-row">' + truncMap(
+      d.items,
+      (x) => '<div class="vcell' + (d.hot === x ? " hot" : "") + '">' + esc(x) + "</div>",
+      d
+    ) + "</div></div>";
+  }
+  function vizStack(d) {
+    if (!d || !d.items || !d.items.length) return null;
+    const all = d.items, MAX = 6;
+    const total = typeof d.total === "number" && d.total >= all.length ? d.total : all.length;
+    const baseIdx = typeof d.baseIdx === "number" ? d.baseIdx : Math.max(0, total - all.length);
+    const sliceStart = Math.max(0, all.length - MAX);
+    const shown = all.slice(sliceStart);
+    const hiddenCount = Math.max(0, total - shown.length);
+    const rows = shown.map((x, k) => {
+      const abs = baseIdx + sliceStart + k;
+      const isTop = abs === total - 1;
+      return '<div class="vcell' + (d.hot === abs ? " hot" : isTop ? " mark" : "") + '"><span>' + esc(x) + "</span>" + (isTop ? '<span class="vtop">top</span>' : "") + "</div>";
+    }).join("");
+    return '<div class="viz"><div class="vcol">' + rows + "</div>" + (hiddenCount ? '<div class="vmore">\u2026+' + hiddenCount + "</div>" : "") + "</div>";
+  }
+  function vizString(d) {
+    if (!d || !d.items || !d.items.length) return null;
+    const win = d.win;
+    if (Array.isArray(d.windowed) && d.windowed.length) {
+      const cells = truncMap(d.items, (ch, k) => {
+        let cls = "ch";
+        if (win && k >= win[0] && k <= win[1]) cls += " win";
+        if (d.hot === k) cls += " hot";
+        else if (d.mark === k) cls += " mark";
+        return '<span class="' + cls + '" title="[' + k + ']">' + esc(ch) + "</span>";
+      }, d);
+      return '<div class="viz"><div class="vstr">' + cells + "</div></div>";
+    }
+    return '<div class="viz"><div class="vstr">' + d.items.map((ch, k) => {
+      let cls = "ch";
+      if (win && k >= win[0] && k <= win[1]) cls += " win";
+      if (d.hot === k) cls += " hot";
+      else if (d.mark === k) cls += " mark";
+      return '<span class="' + cls + '">' + esc(ch) + "</span>";
+    }).join("") + "</div></div>";
+  }
+  function vizGrid(d) {
+    if (!d || !d.cells || !d.cells.length) return null;
+    const depSet = new Set((d.deps || []).map((p) => p[0] + "," + p[1]));
+    if (Array.isArray(d.rowIndices) && Array.isArray(d.colIndices) && Array.isArray(d.viewCells)) {
+      const rIdxs = d.rowIndices;
+      const cIdxs = d.colIndices;
+      const colTracks = [];
+      for (let ci = 0; ci < cIdxs.length; ci++) {
+        const curC = cIdxs[ci] ?? 0;
+        const prevC = cIdxs[ci - 1] ?? 0;
+        if (ci > 0 && curC > prevC + 1) colTracks.push({ gap: true });
+        colTracks.push({ gap: false, c: curC, ci });
+      }
+      const gridCols = colTracks.length + 1;
+      let html2 = '<div class="ghead">r\\c</div>';
+      for (const ct of colTracks) {
+        if (ct.gap) {
+          html2 += '<div class="ggap">\u22EF</div>';
+        } else {
+          const isFocusCol = Array.isArray(d.mark) && d.mark[1] === ct.c;
+          html2 += '<div class="ghead' + (isFocusCol ? " focus" : "") + '">' + ct.c + "</div>";
+        }
+      }
+      for (let ri = 0; ri < rIdxs.length; ri++) {
+        const realR = rIdxs[ri];
+        if (ri > 0 && realR !== void 0 && realR > (rIdxs[ri - 1] ?? 0) + 1) {
+          html2 += '<div class="ggap">\u22EE</div>';
+          for (let gi = 0; gi < colTracks.length; gi++) {
+            html2 += '<div class="ggap">' + (colTracks[gi]?.gap ? "\u22F1" : "\u22EE") + "</div>";
+          }
+        }
+        const isFocusRow = Array.isArray(d.mark) && d.mark[0] === realR;
+        html2 += '<div class="ghead' + (isFocusRow ? " focus" : "") + '">' + realR + "</div>";
+        const rowVals = d.viewCells[ri] || [];
+        for (const ct of colTracks) {
+          if (ct.gap) {
+            html2 += '<div class="ggap">\u22EF</div>';
+          } else {
+            const realC = ct.c;
+            let cls = "gcell";
+            if (Array.isArray(d.mark) && d.mark[0] === realR && d.mark[1] === realC) cls += " hot";
+            else if (depSet.has(realR + "," + realC)) cls += " dep";
+            const val = rowVals[ct.ci];
+            html2 += '<div class="' + cls + '" title="[' + realR + "][" + realC + ']">' + (val === void 0 || val === null ? "\xB7" : esc(val)) + "</div>";
+          }
+        }
+      }
+      return '<div class="viz"><div class="vgrid-wrap"><div class="vgrid" style="grid-template-columns:repeat(' + gridCols + ',auto)">' + html2 + "</div></div></div>";
+    }
+    const cols = d.cells[0]?.length ?? 0;
+    let html = "";
+    for (let r = 0; r < d.cells.length; r++) {
+      for (let c = 0; c < cols; c++) {
+        let cls = "gcell";
+        if (Array.isArray(d.mark) && d.mark[0] === r && d.mark[1] === c) cls += " hot";
+        else if (depSet.has(r + "," + c)) cls += " dep";
+        const val = d.cells[r]?.[c];
+        html += '<div class="' + cls + '">' + (val === void 0 || val === null ? "\xB7" : esc(val)) + "</div>";
+      }
+    }
+    return '<div class="viz"><div class="vgrid" style="grid-template-columns:repeat(' + cols + ',auto)">' + html + "</div></div>";
+  }
+  function vizList(d) {
+    if (!d || !d.items || !d.items.length) return null;
+    const total = typeof d.total === "number" && d.total > 0 ? d.total : d.items.length;
+    const ptrs = d.pointers;
+    return '<div class="viz"><div class="viz-row">' + truncMap(d.items, (val, k) => {
+      const pTag = ptrs && ptrs[k] && ptrs[k].length ? '<span class="sub-tag ptr-tag">' + esc(ptrs[k].slice(0, 2).join(",")) + "</span>" : "";
+      return '<div class="vpair"><span class="vcell' + (d.hot === k ? " hot" : "") + '">' + pTag + esc(val) + "</span>" + (k < total - 1 ? '<span class="varr">\u2192</span>' : '<span class="varr">\u2192</span><span class="vempty">null</span>') + "</div>";
+    }, d) + "</div></div>";
+  }
+  function vizTree(d) {
+    if (!d || !d.nodes || !d.nodes.length) return null;
+    const nodes = d.nodes;
+    const root = d.root ?? 0;
+    const coords = /* @__PURE__ */ new Map();
+    let maxDepth = 0;
+    function layout(idx, depth, xMin, xMax) {
+      if (idx == null || !nodes[idx] || coords.has(idx) || depth > 5) return;
+      const node = nodes[idx];
+      if (!node) return;
+      maxDepth = Math.max(maxDepth, depth);
+      const x = (xMin + xMax) / 2;
+      const y = 20 + depth * 36;
+      coords.set(idx, { x, y, val: node.val, left: node.left, right: node.right });
+      layout(node.left, depth + 1, xMin, x);
+      layout(node.right, depth + 1, x, xMax);
+    }
+    layout(root, 0, 14, 226);
+    const h = Math.max(60, (maxDepth + 1) * 36 + 10);
+    let edgesSvg = "", nodesSvg = "";
+    coords.forEach((info, idx) => {
+      [info.left, info.right].forEach((ch) => {
+        if (ch != null && coords.has(ch)) {
+          const c = coords.get(ch);
+          if (c) edgesSvg += `<line class="vsvg-edge" x1="${info.x}" y1="${info.y}" x2="${c.x}" y2="${c.y}"/>`;
+        }
+      });
+      const cls = d.hot === idx ? "vsvg-node hot" : idx === root ? "vsvg-node mark" : "vsvg-node";
+      nodesSvg += `<g><circle class="${cls}" cx="${info.x}" cy="${info.y}" r="12"/><text class="vsvg-txt" x="${info.x}" y="${info.y}">${esc(info.val)}</text></g>`;
+    });
+    return `<div class="viz"><div class="vsvg-wrap"><svg viewBox="0 0 240 ${h}" width="240" height="${h}">${edgesSvg}${nodesSvg}</svg></div></div>`;
+  }
+  function vizGraph(d) {
+    if (!d || !d.nodes || !d.nodes.length) return null;
+    const byId = /* @__PURE__ */ new Map();
+    d.nodes.forEach((n, idx) => byId.set(n.id ?? idx, n));
+    let edgesSvg = "", nodesSvg = "";
+    (d.edges || []).forEach((e) => {
+      const e0 = Array.isArray(e) ? e[0] : e.from ?? 0;
+      const e1 = Array.isArray(e) ? e[1] : e.to ?? 0;
+      const a = byId.get(e0), b = byId.get(e1);
+      if (a && b) {
+        edgesSvg += `<line class="vsvg-edge" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"/>`;
+      }
+    });
+    d.nodes.forEach((n, idx) => {
+      const id = n.id ?? idx;
+      const cls = d.hot === id ? "vsvg-node hot" : "vsvg-node";
+      nodesSvg += `<g><circle class="${cls}" cx="${n.x}" cy="${n.y}" r="13"/><text class="vsvg-txt" x="${n.x}" y="${n.y}">${esc(n.label ?? id)}</text></g>`;
+    });
+    return `<div class="viz"><div class="vsvg-wrap"><svg viewBox="0 0 180 136" width="180" height="136">${edgesSvg}${nodesSvg}</svg></div></div>`;
+  }
+  function vizInterface(d) {
+    if (!d) return null;
+    const fields = d.fields || (d.entries ? d.entries.map((e) => ({ k: String(e.k), v: e.v, declaredType: typeof e.v })) : []);
+    if (!fields.length && !d.isClass) return null;
+    const ifaceTitle = d.interfaceName && d.interfaceName !== "object" ? d.interfaceName : "Object";
+    const kwTxt = d.isClass ? "class" : "interface";
+    const badgeTxt = d.isSchema ? d.instanceName ? `schema \xB7 \u7ED1\u5B9A ${d.instanceName}` : "schema" : "instance";
+    const rows = fields.length ? fields.slice(0, 12).map((f) => {
+      const isHot = d.hot === f.k;
+      const hasVal = f.v !== void 0;
+      const isStr = typeof f.v === "string";
+      const valDisplay = hasVal ? isStr ? JSON.stringify(f.v) : f.v !== null && typeof f.v === "object" ? safeJSONStringify(f.v) : String(f.v) : "\u672A\u5B9E\u4F8B\u5316";
+      return '<div class="viface-row' + (isHot ? " hot" : "") + '"><span class="viface-k">' + esc(f.k) + (f.optional ? '<span class="viface-opt">?</span>' : "") + "</span>" + (f.declaredType ? '<span class="viface-t">: ' + esc(f.declaredType) + "</span>" : "") + (hasVal ? '<span class="viface-eq">=</span><span class="viface-v' + (isStr ? " str" : "") + '">' + esc(valDisplay) + "</span>" : '<span class="viface-v schema-only">' + esc(valDisplay) + "</span>") + "</div>";
+    }).join("") : '<div class="viface-row"><span class="viface-v schema-only">\uFF08\u65E0\u5B9E\u4F8B\u5C5E\u6027\uFF09</span></div>';
+    return '<div class="viz"><div class="viface"><div class="viface-head"><span class="viface-kw">' + kwTxt + '</span><span class="viface-title">' + esc(ifaceTitle) + '</span><span class="viface-badge">' + esc(badgeTxt) + '</span></div><div class="viface-body">' + rows + "</div></div></div>";
+  }
+  function vizEventLoop(d) {
+    if (!d) return null;
+    const phaseMap = {
+      sync: { label: "Sync \xB7 \u540C\u6B65\u6808\u6267\u884C", cls: "sync" },
+      await_suspend: { label: "Await \xB7 \u534F\u7A0B\u6302\u8D77", cls: "suspend" },
+      await_resume: { label: "Await \xB7 \u534F\u7A0B\u6062\u590D", cls: "resume" },
+      microtask: { label: "Microtask \xB7 \u5FAE\u4EFB\u52A1\u51FA\u961F", cls: "micro" },
+      macrotask: { label: "Macrotask \xB7 \u5B8F\u4EFB\u52A1\u89E6\u53D1", cls: "macro" }
+    };
+    const ph = (d.phase ? phaseMap[d.phase] : void 0) || { label: d.phase || "Event Loop", cls: "sync" };
+    const nowMs = typeof d.now === "number" ? d.now : 0;
+    const coroutines = Array.isArray(d.coroutines) ? d.coroutines : [];
+    const coroHtml = coroutines.length ? coroutines.map((c) => {
+      const stCls = c.status === "running" ? "running" : c.status === "suspended" ? "suspended" : "completed";
+      const stLabel = c.status === "running" ? "\u25CF \u6267\u884C\u4E2D" : c.status === "suspended" ? `\u23F8 \u6302\u8D77 @L${c.line}` : "\u2713 \u5B8C\u6210";
+      const detail = c.status === "suspended" && c.awaitingExpr ? `<span class="vel-coro-expr">await ${esc(c.awaitingExpr)}</span>` : c.status === "completed" && c.returnVal !== void 0 ? `<span class="vel-coro-expr">\u21D2 ${esc(c.returnVal)}</span>` : "";
+      return `<div class="vel-chip coro-${stCls}"><span class="vel-chip-title">async ${esc(c.name)}()</span><span class="vel-chip-status">${esc(stLabel)}</span>` + detail + `</div>`;
+    }).join("") : '<span class="vel-empty">\u65E0\u6D3B\u8DC3\u534F\u7A0B</span>';
+    const microtasks = Array.isArray(d.microtasks) ? d.microtasks : [];
+    const microHtml = microtasks.length ? microtasks.map(
+      (m, idx) => `<div class="vel-qitem micro${idx === 0 ? " head" : ""}"><span class="vel-qidx">#${idx + 1}</span><span class="vel-qlabel">${esc(m.label)}</span>` + ((m.line ?? 0) > 0 ? `<span class="vel-qmeta">@L${m.line}</span>` : "") + `</div>`
+    ).join("") : '<span class="vel-empty">\u961F\u5217\u4E3A\u7A7A (0)</span>';
+    const macrotasks = Array.isArray(d.macrotasks) ? d.macrotasks : [];
+    const macroHtml = macrotasks.length ? macrotasks.map(
+      (t, idx) => `<div class="vel-qitem macro${idx === 0 ? " head" : ""}"><span class="vel-qidx">t=${t.due}ms</span><span class="vel-qlabel">${esc(t.label)}</span><span class="vel-qmeta">+${t.delay}ms</span></div>`
+    ).join("") : '<span class="vel-empty">\u65E0\u5F85\u89E6\u53D1\u5B9A\u65F6\u5668 (0)</span>';
+    const promises = Array.isArray(d.promises) ? d.promises : [];
+    const promHtml = promises.length ? promises.map((p) => {
+      const st = p.state || "pending";
+      const icon = st === "fulfilled" ? "\u2713" : st === "rejected" ? "\u2717" : "\u23F3";
+      const reactions = p.reactions ?? 0;
+      const valPart = st === "pending" ? reactions > 0 ? `<span class="vel-pval dim">${reactions} waiter${reactions > 1 ? "s" : ""}</span>` : '<span class="vel-pval dim">pending</span>' : `<span class="vel-pval">${esc(p.value)}</span>`;
+      return `<div class="vel-pcard ${esc(st)}"><span class="vel-phead"><span class="vel-picon">${icon}</span><span class="vel-pname">P#${p.id} \xB7 ${esc(p.label)}</span></span>` + valPart + `</div>`;
+    }).join("") : '<span class="vel-empty">\u6682\u65E0 Promise \u5B9E\u4F8B</span>';
+    return `<div class="viz"><div class="veventloop"><div class="vel-header"><span class="vel-phase ${ph.cls}">${esc(ph.label)}</span>` + (d.activeTask ? `<span class="vel-active">${esc(d.activeTask)}</span>` : "") + `<span class="vel-clock">\u23F1 \u865A\u62DF\u65F6\u949F ${nowMs}ms</span></div><div class="vel-grid"><div class="vel-lane"><div class="vel-lane-title">Async \u534F\u7A0B\u72B6\u6001</div><div class="vel-lane-body">` + coroHtml + '</div></div><div class="vel-lane"><div class="vel-lane-title">Microtask \u5FAE\u4EFB\u52A1\u961F\u5217 (FIFO)</div><div class="vel-lane-body">' + microHtml + '</div></div><div class="vel-lane"><div class="vel-lane-title">Macrotask \u5B8F\u4EFB\u52A1 / \u5B9A\u65F6\u5668</div><div class="vel-lane-body">' + macroHtml + '</div></div><div class="vel-lane"><div class="vel-lane-title">Promise \u72B6\u6001\u8868</div><div class="vel-lane-body vel-pgrid">' + promHtml + "</div></div></div></div></div>";
+  }
+  Object.assign(VIZ, {
+    array: vizArray,
+    map: vizMap,
+    set: vizSet,
+    stack: vizStack,
+    string: vizString,
+    grid: vizGrid,
+    list: vizList,
+    heap: vizHeap,
+    queue: vizQueue,
+    tree: vizTree,
+    graph: vizGraph,
+    uf: vizUF,
+    interface: vizInterface,
+    object: vizInterface,
+    eventloop: vizEventLoop
+  });
+  function renderPicker() {
+    const vars = discoverVars();
+    if (!vars.length) {
+      pickEl.innerHTML = '<span class="vempty">\u65E0\u7ED3\u6784\u53D8\u91CF</span>';
+      renderSlots();
+      return;
+    }
+    pickEl.innerHTML = vars.map(
+      (s) => '<div class="chip-pick' + (watched.has(s.id) ? " on" : "") + '" data-id="' + esc(s.id) + '">' + esc(s.name) + "</div>"
+    ).join("");
+    renderSlots();
+  }
+  function renderSlots() {
+    const stepAtCur = TRACE.steps[cur];
+    const st = stepAtCur || {};
+    const activeFrame = stepAtCur ? getActiveFrame(stepAtCur) : null;
+    const ds = Object.assign({}, activeFrame && activeFrame.ds || st.ds || {});
+    if (st.ds && st.ds.eventLoop && !ds.eventLoop) ds.eventLoop = st.ds.eventLoop;
+    const vars = discoverVars().filter((s) => watched.has(s.id) && ds[s.id] !== void 0);
+    if (slotsEl && slotsEl.classList && slotsEl.classList.toggle) {
+      slotsEl.classList.toggle("single-col", slotsEl.clientWidth > 0 && slotsEl.clientWidth < 420);
+    }
+    if (!vars.length) {
+      slotsEl.innerHTML = '<div class="slot" style="grid-column:1/-1"><div class="vempty">' + (TRACE.steps.length ? "\u70B9\u9009\u53D8\u91CF\u4EE5\u5173\u6CE8\uFF08\u6216\u672C\u6B65\u6682\u65E0\u7ED3\u6784\uFF09" : "\u751F\u6210\u8F68\u8FF9\u540E\u663E\u793A\u7ED3\u6784\u53EF\u89C6\u5316") + "</div></div>";
+      return;
+    }
+    const allocated = allocateSlotSpans(vars, ds);
+    slotsEl.innerHTML = allocated.map(({ s, d, kind, span }) => {
+      const fn = VIZ[kind];
+      const body = d ? fn ? fn(d) || '<div class="vempty">empty</div>' : '<div class="vempty">\u2026</div>' : '<div class="vempty">empty</div>';
+      const winTag = d && d.win ? `<span class="win-tag">[${d.win[0]}..${d.win[1]}]</span>` : "";
+      let sizeTag = "";
+      if (d) {
+        if (kind === "grid" && ((d.totalRows || 0) > 10 || (d.totalCols || 0) > 10)) {
+          sizeTag = `<span class="size-tag">${d.totalRows}\xD7${d.totalCols}</span>`;
+        } else if (typeof d.total === "number" && d.total > 20) {
+          sizeTag = `<span class="size-tag">\u5171 ${d.total} \u9879</span>`;
+        }
+      }
+      const isHotSlot = d && (d.hot !== void 0 || d.mark != null);
+      const kindPrefix = d && d.isClass ? "class" : "interface";
+      const kindBadge = kind === "interface" && d && d.interfaceName && d.interfaceName !== "object" && !d.isSchema ? `${kindPrefix} \xB7 ${d.interfaceName}` : kind === "interface" && d && d.isClass ? "class" : kind;
+      return '<div class="slot' + (span === 2 ? " span-2" : "") + (isHotSlot ? " pulse" : "") + '" data-var="' + esc(s.name) + '"><div class="name"><span>' + esc(s.name) + '</span><span class="kind">' + esc(kindBadge) + "</span>" + sizeTag + winTag + "</div>" + body + "</div>";
+    }).join("");
+  }
+  function updateControlButtons() {
+    const prevBtn = $("prev");
+    const nextBtn = $("next");
+    const ckptBtn = $("nextCheckpoint");
+    const autoBtn = $("auto");
+    const atEnd = Boolean(TRACE.steps.length > 0 && cur >= TRACE.steps.length - 1 && DEBUG_SESSION.finished);
+    if (prevBtn) prevBtn.disabled = !TRACE.steps.length || cur <= 0;
+    if (nextBtn) nextBtn.disabled = atEnd;
+    if (ckptBtn) ckptBtn.disabled = atEnd;
+    if (autoBtn) autoBtn.disabled = atEnd;
+  }
+  function renderStatic(i, withAnim = false) {
+    hideHoverTip();
+    const st = TRACE.steps[i];
+    const prevSt = i > 0 ? TRACE.steps[i - 1] : null;
+    if (!st) {
+      renderCallStack(null);
+      varsEl.innerHTML = "";
+      consoleEl.innerHTML = '<div><span class="p">\u203A</span><span class="dim">\u5F00\u542F Debug \u6A21\u5F0F\u540E\u5F53\u573A\u8BA1\u7B97\u5E76\u663E\u793A\u6BCF\u6B65\u6267\u884C\u8BE6\u60C5</span></div>';
+      cntEl.textContent = "\u672A\u5728\u8C03\u8BD5";
+      cntEl.className = "";
+      updateControlButtons();
+      renderSlots();
+      updateEditorChrome();
+      return;
+    }
+    renderCallStack(st);
+    const activeFrame = getActiveFrame(st);
+    const v = activeFrame && activeFrame.v || st.v || {};
+    const prevV = prevSt && prevSt.v || {};
+    const primEntries = Object.keys(v).map((k) => {
+      const val = v[k];
+      if (val !== null && typeof val === "object") return "";
+      const changed = Boolean(activeFrame && activeFrame.isTop && prevSt && prevV[k] !== val);
+      return '<div class="pair' + (changed ? " changed" : "") + '" data-var="' + esc(k) + '"><span class="k">' + esc(k) + '</span><span class="v">' + esc(val) + "</span></div>";
+    }).join("");
+    if (primEntries) {
+      varsEl.innerHTML = primEntries;
+    } else if (activeFrame && activeFrame.fn === "global") {
+      varsEl.innerHTML = '<div class="pair"><span class="k">scope</span><span class="v">global</span></div>' + (DEBUG_SESSION.callExpr && DEBUG_SESSION.callExpr !== "undefined" ? '<div class="pair"><span class="k">entry</span><span class="v">' + esc(DEBUG_SESSION.callExpr) + "</span></div>" : "");
+    } else {
+      varsEl.innerHTML = '<div class="vempty">\uFF08\u672C\u5E27\u65E0\u539F\u59CB\u7C7B\u578B\u5C40\u90E8\u53D8\u91CF\uFF09</div>';
+    }
+    let animDesc = "";
+    if (st.error) {
+      animDesc = `<div class="anim-desc" style="color:var(--red)">runtime error \xB7 \u5DF2\u505C\u6B62\u5728\u62A5\u9519\u884C (\u7B2C ${st.line} \u884C)</div>`;
+    } else if (st.anim) {
+      if (st.anim.type === "assign") animDesc = `<div class="anim-desc">assign \xB7 ${esc(st.anim.from)} \u2192 ${esc(st.anim.to)} = ${esc(st.anim.val)}</div>`;
+      else if (st.anim.type === "compare") animDesc = `<div class="anim-desc">compare \xB7 ${esc(st.anim.lhs)} ${esc(st.anim.op)} ${esc(st.anim.rhs)} \u21D2 ${esc(st.anim.result)}</div>`;
+      else if (st.anim.type === "call") animDesc = `<div class="anim-desc">call \xB7 ${esc(st.anim.fn)}(${esc((st.anim.argVals || []).join(", "))})</div>`;
+      else if (st.anim.type === "checkpoint") animDesc = `<div class="anim-desc" style="color:var(--cyan)">checkpoint \xB7 \u68C0\u67E5\u70B9\u5DF2\u547D\u4E2D (${esc((st.anim.argVals || []).join(", ") || "\u65E0\u53C2\u6570")})</div>`;
+    }
+    consoleEl.innerHTML = '<div><span class="p">\u203A</span>' + esc(st.note || "") + "</div>" + animDesc;
+    if (st.error) {
+      cntEl.textContent = "\u2717 \u8FD0\u884C\u65F6\u62A5\u9519";
+      cntEl.className = "err";
+    } else if (st.isCheckpoint) {
+      cntEl.textContent = "\u25C9 \u547D\u4E2D\u68C0\u67E5\u70B9";
+      cntEl.className = "ckpt";
+    } else if (DEBUG_SESSION.finished && i === TRACE.steps.length - 1) {
+      cntEl.textContent = "\u2713 \u6267\u884C\u5B8C\u6BD5";
+      cntEl.className = "done";
+    } else {
+      cntEl.textContent = "\u25CF \u8C03\u8BD5\u8FD0\u884C\u4E2D";
+      cntEl.className = "running";
+    }
+    updateControlButtons();
+    updateEditorChrome();
+    if (typeof VIEW_MODE !== "undefined" && VIEW_MODE === "notebook" && typeof globalThis.renderNotebookUI === "function") {
+      globalThis.renderNotebookUI(false);
+    } else {
+      scrollCodeTo(activeFrame ? activeFrame.line : st.line);
+    }
+    renderSlots();
+    if (withAnim && (typeof VIEW_MODE === "undefined" || VIEW_MODE !== "notebook")) {
+      playStepAnimation(st);
+    }
+  }
+  var renderMemory = renderSlots;
+  var renderAsyncQueues = vizEventLoop;
+  function drawArrows() {
+  }
+  function scheduleArrowRedraw() {
+  }
+  registerUiHooks({ renderPicker, renderStatic });
+
+  // src/ui/controls.ts
+  var controls_exports = {};
+  __export(controls_exports, {
+    addCheckpointFunction: () => addCheckpointFunction,
+    blurEditor: () => blurEditor,
+    btnExportMenu: () => btnExportMenu,
+    btnExportVideo: () => btnExportVideo,
+    btnExportVideoLabel: () => btnExportVideoLabel,
+    exportFileName: () => exportFileName,
+    exportMenuWrap: () => exportMenuWrap,
+    go: () => go,
+    isEditorFocused: () => isEditorFocused,
+    loadImportedSource: () => loadImportedSource,
+    onSourceChanged: () => onSourceChanged,
+    rebuildDebugAtPosition: () => rebuildDebugAtPosition,
+    recordEditorCursorLine: () => recordEditorCursorLine,
+    renderStep: () => renderStep,
+    runToNextCheckpoint: () => runToNextCheckpoint,
+    sanitizeFileName: () => sanitizeFileName,
+    scheduleRebuild: () => scheduleRebuild,
+    setFileName: () => setFileName,
+    setStatus: () => setStatus,
+    setVideoExportSpeed: () => setVideoExportSpeed,
+    staleTimer: () => staleTimer,
+    stepBack: () => stepBack,
+    stepForward: () => stepForward,
+    stepNext: () => stepNext,
+    stepPrev: () => stepPrev,
+    stopAuto: () => stopAuto,
+    togglePlay: () => togglePlay,
+    videoExportStatus: () => videoExportStatus,
+    videoSpeedBadge: () => videoSpeedBadge,
+    videoSpeedGroup: () => videoSpeedGroup
+  });
+  function stepPrev() {
+    stopAuto();
+    if (!TRACE.steps.length || cur <= 0) return;
+    SELECTED_FRAME_IDX = null;
+    if (document.body && document.body.classList) document.body.classList.remove("editing-code");
+    if (isEditorFocused()) blurEditor();
+    cur--;
+    renderPicker();
+    renderStatic(cur, true);
+  }
+  function stepNext(fromAuto = false) {
+    if (!fromAuto) stopAuto();
+    SELECTED_FRAME_IDX = null;
+    if (document.body && document.body.classList) document.body.classList.remove("editing-code");
+    if (isEditorFocused()) blurEditor();
+    if (!DEBUG_SESSION.active) {
+      startDebug(0);
+      return;
+    }
+    if (cur < TRACE.steps.length - 1) {
+      cur++;
+      renderPicker();
+      renderStatic(cur, true);
+      return;
+    }
+    if (DEBUG_SESSION.finished) return;
+    const ok = computeAndAppendNextStep();
+    if (ok) {
+      cur = TRACE.steps.length - 1;
+      renderPicker();
+      renderStatic(cur, true);
+    } else {
+      renderStatic(cur, false);
+    }
+  }
+  function runToNextCheckpoint() {
+    if (LANG === "python") return PY_ENGINE.runToNextCheckpoint();
+    stopAuto();
+    SELECTED_FRAME_IDX = null;
+    if (document.body && document.body.classList) document.body.classList.remove("editing-code");
+    if (isEditorFocused()) blurEditor();
+    if (!DEBUG_SESSION.active) {
+      if (!startDebug(0)) return;
+      const firstSt = TRACE.steps[0];
+      if (firstSt && (firstSt.isCheckpoint || firstSt.error || DEBUG_SESSION.finished)) {
+        if (firstSt.isCheckpoint) {
+          say("\u25C9 \u5DF2\u5230\u8FBE\u68C0\u67E5\u70B9 [\u7B2C " + firstSt.line + " \u884C] \xB7 " + (firstSt.note || ""), "ok");
+        }
+        return;
+      }
+    }
+    if (cur >= TRACE.steps.length - 1 && DEBUG_SESSION.finished) {
+      return;
+    }
+    let safety = 0;
+    while (safety++ < MAX_STEPS) {
+      if (cur < TRACE.steps.length - 1) {
+        cur++;
+        const st = TRACE.steps[cur];
+        if (st && (st.isCheckpoint || st.error || cur === TRACE.steps.length - 1 && DEBUG_SESSION.finished)) {
+          break;
+        }
+      } else {
+        if (DEBUG_SESSION.finished) break;
+        const added = computeAndAppendNextStep({ silent: true });
+        if (!added) break;
+        cur = TRACE.steps.length - 1;
+        const st = TRACE.steps[cur];
+        if (st && (st.isCheckpoint || st.error || DEBUG_SESSION.finished)) {
+          break;
+        }
+      }
+    }
+    renderPicker();
+    renderStatic(cur, true);
+    const finalSt = TRACE.steps[cur];
+    if (finalSt && finalSt.error) {
+    } else if (finalSt && finalSt.isCheckpoint) {
+      say("\u25C9 \u5DF2\u8FD0\u884C\u5230\u68C0\u67E5\u70B9 [\u7B2C " + finalSt.line + " \u884C] \xB7 " + (finalSt.note || ""), "ok");
+    } else if (DEBUG_SESSION.finished) {
+      say("\u2713 \u5DF2\u8FD0\u884C\u81F3\u7A0B\u5E8F\u7ED3\u675F\uFF08\u540E\u7EED\u65E0\u66F4\u591A\u68C0\u67E5\u70B9\uFF09  \u2192  " + safeJSONStringify(DEBUG_SESSION.returnValue), "ok");
+    }
+  }
+  function rebuildDebugAtPosition(newTargetLine, targetVisits, fallbackStepIdx) {
+    const src = editor.value.replace(/\r/g, "");
+    const unsupported = detectUnsupportedSyntax(src);
+    if (unsupported.length) {
+      unsupported.forEach((x) => say("\u2717 \u7B2C " + x.line + " \u884C\uFF1A\u6682\u4E0D\u652F\u6301 " + x.feature + " \u2014\u2014 " + x.hint, "err", x.line));
+      return false;
+    }
+    extractTsInterfaceMetadata(src);
+    const diags = typecheckTS(src, STRICT_TS);
+    if (diags.length > 0) {
+      reportTypeErrors(diags);
+      return false;
+    }
+    if (TYPE_ERROR_LINES.size || RUNTIME_ERROR_LINES.size) {
+      TYPE_ERROR_LINES.clear();
+      RUNTIME_ERROR_LINES.clear();
+    }
+    const originalLines = src.split("\n");
+    const enums = transpileEnums(src);
+    if (enums.error) {
+      say("\u2717 \u7B2C " + enums.error.line + " \u884C\uFF1A" + enums.error.message, "err", enums.error.line);
+      return false;
+    }
+    const js0 = stripTypes(enums.code);
+    const entry = resolveEntry(src, js0);
+    const expr = stripTypes(entry.expr || "undefined");
+    ENTRY_CALL_LINE = entry.line || 0;
+    const jsBody = entry.index >= 0 ? blankJsLine(js0, entry.index) : js0;
+    let compiledFn;
+    try {
+      const names = collectNames(jsBody);
+      const js = instrument(jsBody, originalLines, names);
+      const finHook = '\n;try{if(typeof __t==="function"&&__t.__fin)__t.__fin(' + snapFnExpr(names) + ");}catch(_){}\n";
+      const body = js + finHook + ";return (" + expr + ");";
+      compiledFn = new Function("__t", "console", body);
+    } catch (e) {
+      say("\u2717 \u7F16\u8BD1\u5931\u8D25: " + (e instanceof Error && e.message ? e.message : e), "err");
+      return false;
+    }
+    stopAuto();
+    clearFlyLayer();
+    const prevWatched = new Set(watched);
+    TRACE = {
+      title: "TypeScript Playground \xB7 Debug",
+      code: originalLines,
+      steps: []
+    };
+    DEBUG_SESSION = {
+      active: true,
+      finished: false,
+      crashed: false,
+      error: null,
+      errorLine: -1,
+      returnValue: void 0,
+      compiledFn,
+      originalLines,
+      callExpr: expr
+    };
+    cur = 0;
+    let visitsSeen = 0;
+    let safety = 0;
+    while (safety++ < MAX_STEPS) {
+      const ok = computeAndAppendNextStep({ silent: true });
+      if (!ok) break;
+      const latest = TRACE.steps[TRACE.steps.length - 1];
+      if (newTargetLine >= 1 && targetVisits >= 1) {
+        if (latest && latest.line === newTargetLine) {
+          visitsSeen++;
+          if (visitsSeen >= targetVisits) break;
+        }
+      } else if (TRACE.steps.length - 1 >= fallbackStepIdx) {
+        break;
+      }
+      if (DEBUG_SESSION.finished) break;
+    }
+    cur = Math.max(0, TRACE.steps.length - 1);
+    if (prevWatched.size > 0) {
+      watched = prevWatched;
+      discoverVars().forEach((s) => watched.add(s.id));
+    } else {
+      initWatchedVars();
+    }
+    renderPicker();
+    renderStatic(cur, false);
+    return true;
+  }
+  function addCheckpointFunction(preferredLine) {
+    if (LANG === "python") {
+      const text2 = editor.value.replace(/\r\n?/g, "\n");
+      const lines2 = text2.split("\n");
+      let line = preferredLine || TRACE.steps[cur]?.line || (window.__CM_CURSOR_LINE || lastEditorCursorLine) || lines2.length;
+      line = Math.max(1, Math.min(lines2.length, line));
+      const current = lines2[line - 1] || "";
+      const indent2 = (current.match(/^\s*/) || [""])[0];
+      if (/:\s*(?:#.*)?$/.test(current)) {
+        lines2.splice(line, 0, indent2 + "    checkpoint()");
+        line = line + 1;
+      } else {
+        lines2.splice(line - 1, 0, indent2 + "checkpoint()");
+      }
+      editor.value = lines2.join("\n");
+      lastEditorCursorLine = line;
+      resetTraceState();
+      PY_ENGINE.start(0);
+      say("\u2713 \u5DF2\u63D2\u5165 checkpoint()\uFF0C\u6B63\u5728\u91CD\u65B0\u5F55\u5236 Python \u6267\u884C\u6B65\u9AA4", "ok");
+      return;
+    }
+    const text = editor.value.replace(/\r\n?/g, "\n");
+    const lines = text.split("\n");
+    const curStep = TRACE.steps[cur];
+    const wasActive = Boolean(DEBUG_SESSION.active && TRACE.steps.length > 0 && curStep);
+    const origCurLine = curStep ? curStep.line : -1;
+    const origLineVisits = wasActive ? TRACE.steps.slice(0, cur + 1).filter((s) => s.line === origCurLine).length : 0;
+    const prevCurIdx = cur;
+    let fnOpenIdx = -1;
+    let fnCloseIdx = lines.length - 1;
+    let depth = 0;
+    for (let i = 0; i < lines.length; i++) {
+      const raw = lines[i] || "";
+      if (fnOpenIdx < 0 && /^\s*(?:export\s+)?(?:default\s+)?function\b/.test(raw)) {
+        fnOpenIdx = i;
+      }
+      if (fnOpenIdx >= 0) {
+        for (let k = 0; k < raw.length; k++) {
+          const ch = raw[k];
+          if (ch === '"' || ch === "'" || ch === "`") {
+            k = skipString(raw, k) - 1;
+            continue;
+          }
+          if (ch === "/" && raw[k + 1] === "/") break;
+          if (ch === "{") depth++;
+          else if (ch === "}") {
+            depth--;
+            if (depth === 0) {
+              fnCloseIdx = i;
+              break;
+            }
+          }
+        }
+        if (depth === 0 && fnCloseIdx >= fnOpenIdx) break;
+      }
+    }
+    let targetIdx;
+    const cursorLine = window.__CM_CURSOR_LINE || lastEditorCursorLine;
+    if (typeof preferredLine === "number" && preferredLine >= 1 && preferredLine <= lines.length) {
+      targetIdx = preferredLine - 1;
+    } else if (cursorLine >= 1 && cursorLine <= lines.length) {
+      targetIdx = cursorLine - 1;
+    } else if (wasActive) {
+      targetIdx = origCurLine - 1;
+    } else {
+      targetIdx = fnOpenIdx >= 0 ? fnOpenIdx + 1 : 0;
+    }
+    if (fnOpenIdx >= 0) {
+      if (targetIdx <= fnOpenIdx) targetIdx = fnOpenIdx + 1;
+      if (targetIdx >= fnCloseIdx) targetIdx = Math.max(fnOpenIdx + 1, fnCloseIdx);
+    }
+    const refLine = lines[targetIdx] || "";
+    const refTrim = refLine.trim();
+    if (typeof preferredLine === "number" && /^(?:checkpoint|断点)\s*\([^)]*\)\s*;?$/.test(refTrim)) {
+      const removedLine = targetIdx + 1;
+      lines.splice(targetIdx, 1);
+      editor.value = lines.join("\n");
+      if (staleTimer) clearTimeout(staleTimer);
+      if (wasActive) {
+        const newTargetLine = origCurLine > removedLine ? origCurLine - 1 : origCurLine === removedLine ? -1 : origCurLine;
+        rebuildDebugAtPosition(newTargetLine, origLineVisits, Math.max(0, prevCurIdx - 1));
+      } else {
+        startDebug(0);
+      }
+      const keepLine = Math.max(1, Math.min(lines.length, Math.min(removedLine, lines.length)));
+      scrollCodeTo(keepLine);
+      say("\xB7 \u5DF2\u79FB\u9664\u7B2C " + removedLine + " \u884C\u7684 checkpoint() \u68C0\u67E5\u70B9\u51FD\u6570\uFF08\u4FDD\u6301\u5F53\u524D\u8C03\u8BD5\u8FDB\u5EA6\uFF09", "dim");
+      return;
+    }
+    let insertIdx = targetIdx;
+    let indent = (refLine.match(/^\s*/) || ["  "])[0] || "  ";
+    if (refTrim.endsWith("{")) {
+      insertIdx = targetIdx + 1;
+      indent = indent + "  ";
+    }
+    const insertedLineNum = insertIdx + 1;
+    lines.splice(insertIdx, 0, indent + "checkpoint();");
+    editor.value = lines.join("\n");
+    lastEditorCursorLine = insertedLineNum;
+    if (staleTimer) clearTimeout(staleTimer);
+    if (wasActive) {
+      const newTargetLine = origCurLine >= insertedLineNum ? origCurLine + 1 : origCurLine;
+      rebuildDebugAtPosition(newTargetLine, origLineVisits, prevCurIdx);
+    } else {
+      startDebug(0);
+    }
+    scrollCodeTo(insertedLineNum);
+    say("\u2713 \u5DF2\u5728\u7B2C " + insertedLineNum + " \u884C\u6DFB\u52A0\u68C0\u67E5\u70B9\u51FD\u6570 checkpoint()\uFF08\u4FDD\u6301\u5F53\u524D\u8C03\u8BD5\u4F4D\u7F6E\uFF0C\u70B9\u51FB\u5DE6\u4E0B\u300C\u23ED \u8FD0\u884C\u5230\u4E0B\u4E00\u4E2A\u68C0\u67E5\u70B9\u300D\u5373\u53EF\u8FD0\u884C\u81F3\u68C0\u67E5\u70B9\uFF09", "ok");
+  }
+  function go(i) {
+    if (i > cur) stepNext();
+    else if (i < cur) stepPrev();
+  }
+  function stopAuto() {
+    if (timer) {
+      clearInterval(timer);
+      timer = null;
+      $("auto").textContent = "\u25B6 \u81EA\u52A8";
+    }
+  }
+  $("prev").onclick = () => stepPrev();
+  $("next").onclick = () => stepNext();
+  if ($("nextCheckpoint")) {
+    $("nextCheckpoint").onclick = () => runToNextCheckpoint();
+  }
+  if ($("btnAddCheckpoint")) {
+    $("btnAddCheckpoint").onclick = () => addCheckpointFunction();
+  }
+  if (gutterEl) {
+    gutterEl.addEventListener("click", (e) => {
+      const target = e.target;
+      const g = target && target.closest ? target.closest(".gline") : null;
+      if (!g || !g.dataset.line) return;
+      addCheckpointFunction(parseInt(g.dataset.line, 10));
+    });
+  }
+  $("auto").onclick = async () => {
+    if (timer) {
+      stopAuto();
+      return;
+    }
+    if (!DEBUG_SESSION.active || cur >= TRACE.steps.length - 1 && DEBUG_SESSION.finished) {
+      const ok = await Promise.resolve(startDebug(0));
+      if (!ok) return;
+    }
+    if (cur >= TRACE.steps.length - 1 && DEBUG_SESSION.finished) return;
+    $("auto").textContent = "\u23F8 \u6682\u505C";
+    timer = setInterval(() => {
+      if (cur >= TRACE.steps.length - 1 && DEBUG_SESSION.finished) {
+        stopAuto();
+        return;
+      }
+      stepNext(true);
+      const st = TRACE.steps[cur];
+      if (!st || st.error || cur >= TRACE.steps.length - 1 && DEBUG_SESSION.finished) {
+        stopAuto();
+      }
+    }, AUTO_PLAY_MS);
+  };
+  $("btnRun").onclick = () => {
+    stopAuto();
+    if (typeof VIEW_MODE !== "undefined" && VIEW_MODE === "notebook" && typeof globalThis.runNotebookCell === "function") {
+      globalThis.runNotebookCell(void 0, true);
+      return;
+    }
+    runOnce();
+  };
+  $("btnTrace").onclick = () => {
+    stopAuto();
+    if (document.body && document.body.classList) document.body.classList.remove("editing-code");
+    if (typeof VIEW_MODE !== "undefined" && VIEW_MODE === "notebook" && typeof globalThis.debugNotebookCell === "function") {
+      globalThis.debugNotebookCell(void 0);
+      return;
+    }
+    startDebug(0);
+  };
+  var exportMenuWrap = $("exportMenuWrap");
+  var btnExportMenu = $("btnExportMenu");
+  var videoSpeedGroup = $("videoSpeedGroup");
+  var videoSpeedBadge = $("videoSpeedBadge");
+  var btnExportVideo = $("btnExportVideo");
+  var btnExportVideoLabel = $("btnExportVideoLabel");
+  var videoExportStatus = $("videoExportStatus");
+  function setVideoExportSpeed(mult) {
+    const num = Number(mult);
+    if (!VIDEO_SPEED_OPTIONS.includes(num)) return VIDEO_EXPORT_SPEED;
+    VIDEO_EXPORT_SPEED = num;
+    if (videoSpeedGroup && videoSpeedGroup.querySelectorAll) {
+      const btns = videoSpeedGroup.querySelectorAll(".speed-opt");
+      btns.forEach((b) => {
+        if (b.classList) b.classList.toggle("active", Number(b.dataset.speed) === num);
+      });
+    }
+    if (videoSpeedBadge) {
+      videoSpeedBadge.textContent = num + "x \xB7 60fps";
+    }
+    return VIDEO_EXPORT_SPEED;
+  }
+  if (btnExportMenu && exportMenuWrap) {
+    btnExportMenu.onclick = (e) => {
+      e.stopPropagation();
+      if (exportMenuWrap.classList) exportMenuWrap.classList.toggle("open");
+    };
+    addEventListener("click", (e) => {
+      if (!exportMenuWrap.classList || !exportMenuWrap.classList.contains("open")) return;
+      if (exportMenuWrap.contains && exportMenuWrap.contains(e.target)) return;
+      exportMenuWrap.classList.remove("open");
+    });
+  }
+  if (videoSpeedGroup) {
+    videoSpeedGroup.addEventListener("click", (e) => {
+      const target = e.target;
+      const btn = target && target.closest ? target.closest(".speed-opt") : null;
+      if (!btn || !btn.dataset.speed) return;
+      e.stopPropagation();
+      setVideoExportSpeed(parseFloat(btn.dataset.speed));
+    });
+  }
+  function sanitizeFileName(name) {
+    const cleaned = String(name == null ? "" : name).replace(/[\\/:*?"<>|\u0000-\u001f]/g, "").replace(/\s+/g, " ").trim().replace(/[.\s]+$/, "");
+    return cleaned || (LANG === "python" ? "playground.py" : "playground.ts");
+  }
+  function exportFileName() {
+    const fallback = LANG === "python" ? "playground.py" : "playground.ts";
+    const name = FILE_NAME || fallback;
+    const ext = LANG === "python" ? ".py" : ".ts";
+    return /\.[A-Za-z0-9]{1,12}$/.test(name) ? name : name + ext;
+  }
+  function setFileName(name) {
+    FILE_NAME = sanitizeFileName(name);
+    if (fileNameEl && fileNameEl.value !== FILE_NAME) fileNameEl.value = FILE_NAME;
+    const tag = $("fileExportTag");
+    if (tag) tag.textContent = exportFileName();
+    if (typeof globalThis.syncActiveScriptTabFromFileName === "function") {
+      try {
+        globalThis.syncActiveScriptTabFromFileName(FILE_NAME);
+      } catch (_) {
+      }
+    }
+  }
+  function loadImportedSource(text, name) {
+    const src = String(text == null ? "" : text).replace(/\r\n?/g, "\n");
+    if (name && /\.ipynb$/i.test(name) && typeof globalThis.importNotebookFromJson === "function") {
+      if (globalThis.importNotebookFromJson(src, name)) return;
+    }
+    if (typeof VIEW_MODE !== "undefined" && VIEW_MODE === "notebook" && typeof globalThis.setViewMode === "function") {
+      globalThis.setViewMode("script");
+    }
+    editor.value = src;
+    setFileName(name || (LANG === "python" ? "imported.py" : "imported.ts"));
+    if (typeof globalThis.syncActiveScriptTabSource === "function") {
+      try {
+        globalThis.syncActiveScriptTabSource(src);
+      } catch (_) {
+      }
+    }
+    lastEditorCursorLine = -1;
+    resetTraceState();
+    updateEditorChrome();
+    clearLog("\u2713 \u5DF2\u5BFC\u5165 " + FILE_NAME + " \xB7 " + src.split("\n").length + " \u884C \xB7 \u70B9\u300C\u{1F41E} Debug \u8C03\u8BD5\u300D\u6216\u300C\u25B6 \u8FD0\u884C\u300D\u5F00\u59CB");
+  }
+  if (btnImportEl && fileInputEl) {
+    if (!$("importMenuWrap")) {
+      btnImportEl.onclick = () => fileInputEl.click();
+    }
+    fileInputEl.addEventListener("change", () => {
+      const file = fileInputEl.files && fileInputEl.files[0];
+      fileInputEl.value = "";
+      if (!file) return;
+      const read = typeof file.text === "function" ? file.text() : Promise.reject(new Error("\u5F53\u524D\u6D4F\u89C8\u5668\u4E0D\u652F\u6301\u8BFB\u53D6\u8BE5\u6587\u4EF6"));
+      Promise.resolve(read).then((text) => loadImportedSource(text, file.name)).catch((e) => say("\u2717 \u5BFC\u5165\u5931\u8D25: " + (e && e.message ? e.message : e), "err"));
+    });
+  }
+  if (fileNameEl) {
+    const commitName = () => setFileName(fileNameEl.value);
+    fileNameEl.addEventListener("change", commitName);
+    fileNameEl.addEventListener("blur", commitName);
+    fileNameEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        commitName();
+        fileNameEl.blur();
+      } else if (e.key === "Escape") {
+        fileNameEl.value = FILE_NAME;
+        fileNameEl.blur();
+      }
+    });
+  }
+  setFileName(FILE_NAME);
+  if ($("btnExportTs")) {
+    $("btnExportTs").onclick = () => {
+      try {
+        if (exportMenuWrap && exportMenuWrap.classList) exportMenuWrap.classList.remove("open");
+        const name = exportFileName();
+        const blob = new Blob([editor.value], { type: "text/plain;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = name;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        say("\u2713 \u5DF2\u5BFC\u51FA\u6587\u4EF6 " + name + "\uFF08" + editor.value.split("\n").length + " \u884C\uFF09", "ok");
+      } catch (e) {
+        say("\u2717 \u5BFC\u51FA\u5931\u8D25: " + (e instanceof Error && e.message ? e.message : e), "err");
+      }
+    };
+  }
+  if ($("btnShareLink")) {
+    $("btnShareLink").onclick = () => {
+      if (exportMenuWrap && exportMenuWrap.classList) exportMenuWrap.classList.remove("open");
+      const tag = $("shareLinkTag");
+      if (tag) tag.textContent = "\u6682\u672A\u5B9E\u73B0";
+      say("\u6682\u672A\u5B9E\u73B0", "dim");
+    };
+  }
+  $("sampleSel").onchange = () => uiHooks.loadSample($("sampleSel").value);
+  pickEl.addEventListener("click", (e) => {
+    const target = e.target;
+    const el = target && target.closest ? target.closest(".chip-pick") : null;
+    if (!el || !el.dataset.id) return;
+    const id = el.dataset.id;
+    if (watched.has(id)) watched.delete(id);
+    else watched.add(id);
+    renderPicker();
+  });
+  if (callStackBarEl) {
+    callStackBarEl.addEventListener("click", (e) => {
+      const target = e.target;
+      const btn = target && target.closest ? target.closest(".cs-crumb") : null;
+      if (!btn || btn.dataset.frameIdx === void 0) return;
+      selectStackFrame(parseInt(btn.dataset.frameIdx, 10));
+    });
+  }
+  (function initResizer() {
+    if (!resizerEl || !mainEl || !sidePanelEl) return;
+    let dragging = false;
+    function applySideWidth(clientX) {
+      const rect = mainEl.getBoundingClientRect();
+      if (!rect.width) return;
+      const minCodeW = 340;
+      const minSideW = 280;
+      const maxSideW = Math.max(minSideW, Math.min(rect.width - minCodeW, Math.round(rect.width * 0.65)));
+      const desiredSideW = Math.round(rect.right - clientX);
+      const clamped = Math.max(minSideW, Math.min(maxSideW, desiredSideW));
+      sidePanelEl.style.width = clamped + "px";
+      sidePanelEl.style.maxWidth = "none";
+      if (slotsEl && slotsEl.classList) {
+        slotsEl.classList.toggle("single-col", clamped < 440);
+      }
+      clearFlyLayer();
+    }
+    resizerEl.addEventListener("pointerdown", (e) => {
+      dragging = true;
+      resizerEl.classList.add("dragging");
+      document.body.classList.add("resizing");
+      if (resizerEl.setPointerCapture) {
+        try {
+          resizerEl.setPointerCapture(e.pointerId);
+        } catch {
+        }
+      }
+      e.preventDefault();
+    });
+    addEventListener("pointermove", (e) => {
+      if (!dragging) return;
+      applySideWidth(e.clientX);
+    });
+    function endDrag() {
+      if (!dragging) return;
+      dragging = false;
+      resizerEl.classList.remove("dragging");
+      document.body.classList.remove("resizing");
+    }
+    addEventListener("pointerup", endDrag);
+    addEventListener("pointercancel", endDrag);
+    resizerEl.addEventListener("dblclick", () => {
+      sidePanelEl.style.width = "40%";
+      sidePanelEl.style.maxWidth = "65%";
+      clearFlyLayer();
+    });
+  })();
+  function isEditorFocused() {
+    try {
+      if (window.PlaygroundCM && window.PlaygroundCM.hasFocus()) return true;
+    } catch (_) {
+    }
+    return document.activeElement === editor;
+  }
+  function blurEditor() {
+    try {
+      if (window.PlaygroundCM && window.PlaygroundCM.hasFocus()) {
+        window.PlaygroundCM.blur();
+        return;
+      }
+    } catch (_) {
+    }
+    if (editor.blur) editor.blur();
+  }
+  function recordEditorCursorLine() {
+    try {
+      const pos = editor.selectionStart || 0;
+      lastEditorCursorLine = editor.value.slice(0, pos).split("\n").length;
+    } catch {
+    }
+  }
+  editor.addEventListener("click", recordEditorCursorLine);
+  editor.addEventListener("keyup", recordEditorCursorLine);
+  editor.addEventListener("focus", () => {
+    recordEditorCursorLine();
+    if (TRACE.steps.length && document.body && document.body.classList) {
+      document.body.classList.add("editing-code");
+      clearFlyLayer();
+    }
+  });
+  editor.addEventListener("blur", () => {
+    if (document.body && document.body.classList) {
+      document.body.classList.remove("editing-code");
+    }
+  });
+  editor.addEventListener("keydown", (e) => {
+    if (e.key === "Tab") {
+      e.preventDefault();
+      const s = editor.selectionStart, t = editor.selectionEnd;
+      const indent = LANG === "python" ? "    " : "  ";
+      editor.value = editor.value.slice(0, s) + indent + editor.value.slice(t);
+      editor.selectionStart = editor.selectionEnd = s + indent.length;
+      onSourceChanged();
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+      e.preventDefault();
+      stopAuto();
+      if (e.shiftKey) {
+        if (document.body && document.body.classList) document.body.classList.remove("editing-code");
+        if (isEditorFocused()) blurEditor();
+        startDebug(0);
+      } else {
+        runOnce();
+      }
+    }
+  });
+  var staleTimer = null;
+  function onSourceChanged() {
+    recordEditorCursorLine();
+    TYPE_ERROR_LINES.clear();
+    RUNTIME_ERROR_LINES.clear();
+    if (LANG === "python") PY_DIAGS.length = 0;
+    hideHoverTip();
+    updateEditorChrome();
+    if (TRACE.steps.length || DEBUG_SESSION.active) {
+      if (staleTimer) clearTimeout(staleTimer);
+      staleTimer = setTimeout(() => {
+        resetTraceState();
+        clearLog("\u6E90\u7801\u5DF2\u4FEE\u6539\uFF0C\u5F53\u524D\u8C03\u8BD5\u4F1A\u8BDD\u5DF2\u91CD\u7F6E \xB7 \u53EF\u70B9\u51FB\u300C\u{1F41E} Debug \u8C03\u8BD5\u300D\u6216\u5DE6\u4E0B\u300C\u8FD0\u884C\u5230\u4E0B\u4E00\u4E2A\u68C0\u67E5\u70B9\u300D\u91CD\u65B0\u5F00\u59CB");
+      }, 300);
+    }
+  }
+  editor.addEventListener("input", onSourceChanged);
+  editor.addEventListener("scroll", () => {
+    clearFlyLayer();
+    hideHoverTip();
+    syncScroll();
+  });
+  if (editor && editor.addEventListener) {
+    editor.addEventListener("mousemove", (e) => {
+      if (!TRACE.steps.length || e && e.buttons) {
+        hideHoverTip();
+        return;
+      }
+      const hit = hoverHitFromEvent(e);
+      const word = hit ? hoverWordAt(hit.text, hit.col) : null;
+      if (!word) {
+        hideHoverTip();
+        return;
+      }
+      hoverTipForName(word.word, e.clientX, e.clientY);
+    });
+    editor.addEventListener("mouseleave", hideHoverTip);
+    editor.addEventListener("mousedown", hideHoverTip);
+  }
+  if (sidePanelEl && sidePanelEl.addEventListener) {
+    sidePanelEl.addEventListener("mousemove", (e) => {
+      const target = e && e.target;
+      const card = target && target.closest ? target.closest("[data-var]") : null;
+      if (!card || !card.getAttribute) {
+        hideHoverTip();
+        return;
+      }
+      hoverTipForName(card.getAttribute("data-var"), e.clientX, e.clientY);
+    });
+    sidePanelEl.addEventListener("mouseleave", hideHoverTip);
+  }
+  addEventListener("resize", () => positionStepViz());
+  addEventListener("keydown", (e) => {
+    if (isEditorFocused()) return;
+    const target = e.target;
+    if (e.key === "ArrowRight" || e.key === " ") {
+      if (target && target.closest && target.closest("button,select,input,textarea")) return;
+      e.preventDefault();
+      stepNext();
+    }
+    if (e.key === "ArrowLeft") {
+      if (target && target.closest && target.closest("button,select,input,textarea")) return;
+      e.preventDefault();
+      stepPrev();
+    }
+  });
+  (function initCheckerInfo() {
+    const badge = $("checkerBadge");
+    const modal = $("checkerModal");
+    const close = $("checkerModalClose");
+    if (!badge || !modal) return;
+    const open = () => {
+      modal.hidden = false;
+    };
+    const hide = () => {
+      modal.hidden = true;
+    };
+    badge.onclick = open;
+    badge.onkeydown = (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        open();
+      }
+    };
+    if (close) close.onclick = hide;
+    if (modal.addEventListener) {
+      modal.addEventListener("click", (e) => {
+        if (e.target === modal) hide();
+      });
+    }
+    if (document.addEventListener) {
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") hide();
+      });
+    }
+  })();
+  var stepForward = stepNext;
+  var stepBack = stepPrev;
+  var renderStep = renderStatic;
+  var scheduleRebuild = onSourceChanged;
+  function togglePlay() {
+    const autoBtn = $("auto");
+    if (autoBtn && typeof autoBtn.onclick === "function") Reflect.apply(autoBtn.onclick, autoBtn, []);
+  }
+  function setStatus(msg, cls) {
+    say(msg, cls);
+  }
+  registerUiHooks({ stopAuto });
+
+  // src/ui/share.ts
+  var share_exports = {};
+  __export(share_exports, {
+    boot: () => boot,
+    drawVizCardOnCanvas: () => drawVizCardOnCanvas,
+    initApp: () => initApp,
+    loadSample: () => loadSample,
+    renderVideoFrameToCanvas: () => renderVideoFrameToCanvas,
+    roundRectPath: () => roundRectPath,
+    tokenizeCodeForCanvas: () => tokenizeCodeForCanvas
+  });
+  function roundRectPath(ctx, x, y, w, h, r) {
+    const rad = Math.max(0, Math.min(r, w / 2, h / 2));
+    ctx.beginPath();
+    ctx.moveTo(x + rad, y);
+    ctx.lineTo(x + w - rad, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + rad);
+    ctx.lineTo(x + w, y + h - rad);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - rad, y + h);
+    ctx.lineTo(x + rad, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - rad);
+    ctx.lineTo(x, y + rad);
+    ctx.quadraticCurveTo(x, y, x + rad, y);
+    ctx.closePath();
+  }
+  function tokenizeCodeForCanvas(line) {
+    const re = new RegExp("(\\/\\/.*$)|(\"(?:[^\"\\\\]|\\\\.)*\"|'(?:[^'\\\\]|\\\\.)*'|`(?:[^`\\\\]|\\\\.)*`)|\\b(function|const|let|var|new|class|extends|typeof|instanceof|import|export|from|async|await|interface|type|as|satisfies)\\b|\\b(for|if|else|return|while|do|switch|case|break|continue|try|catch|finally|throw|yield)\\b|\\b(number|string|boolean|void|any|unknown|never|Math|Map|Set|Array|Object|JSON|Number|String|Boolean|Promise|Record|Error)\\b|\\b(true|false|null|undefined|\\d+(?:\\.\\d+)?)\\b|(\\b[A-Za-z_$][\\w$]*)(?=\\s*\\()|(?<=\\.)([A-Za-z_$][\\w$]*)\\b|(\\b[A-Za-z_$][\\w$]*)\\b|(===|!==|>=|<=|=>|&&|\\|\\||\\+\\+|--)", "g");
+    const tokens = [];
+    let last = 0, m;
+    while (m = re.exec(line)) {
+      if (m.index > last) tokens.push({ text: line.slice(last, m.index), color: "#d8e2ef" });
+      let color = "#d8e2ef";
+      if (m[1]) color = "#637488";
+      else if (m[2]) color = "#9ece6a";
+      else if (m[3]) color = "#ff7b72";
+      else if (m[4]) color = "#c792ea";
+      else if (m[5]) color = "#38bdf8";
+      else if (m[6]) color = "#ffb454";
+      else if (m[7]) color = "#79c0ff";
+      else if (m[8] || m[9]) color = "#9cdcfe";
+      else if (m[10]) color = "#89ddff";
+      tokens.push({ text: m[0], color });
+      last = m.index + m[0].length;
+    }
+    if (last < line.length) tokens.push({ text: line.slice(last), color: "#d8e2ef" });
+    return tokens;
+  }
+  function drawVizCardOnCanvas(ctx, x, y, w, h, s, d, kind) {
+    roundRectPath(ctx, x, y, w, h, 10);
+    ctx.fillStyle = "#070a0f";
+    ctx.fill();
+    const isHot = d && (d.hot !== void 0 || d.mark != null);
+    ctx.strokeStyle = isHot ? "rgba(255,180,84,0.68)" : "#1c2432";
+    ctx.lineWidth = isHot ? 1.5 : 1;
+    ctx.stroke();
+    ctx.font = '700 13px "Cascadia Code", Consolas, monospace';
+    ctx.fillStyle = "#cbd5e1";
+    ctx.fillText(String(s.name || ""), x + 12, y + 20);
+    const nameW = ctx.measureText(String(s.name || "")).width;
+    ctx.font = '500 11px "Cascadia Code", Consolas, monospace';
+    ctx.fillStyle = "#64748b";
+    ctx.fillText(String(kind || ""), x + 18 + nameW, y + 20);
+    if (d && d.win) {
+      const winTxt = `[${d.win[0]}..${d.win[1]}]`;
+      const ww = ctx.measureText(winTxt).width + 12;
+      roundRectPath(ctx, x + w - ww - 10, y + 7, ww, 18, 9);
+      ctx.fillStyle = "rgba(56,189,248,0.16)";
+      ctx.fill();
+      ctx.fillStyle = "#38bdf8";
+      ctx.fillText(winTxt, x + w - ww - 4, y + 20);
+    }
+    if (!d) {
+      ctx.fillStyle = "#64748b";
+      ctx.fillText("empty", x + 14, y + 52);
+      return;
+    }
+    const bx = x + 12, by = y + 32, bw = w - 24, bh = h - 40;
+    if (kind === "array" || kind === "queue" || kind === "heap" || kind === "uf" || kind === "set" || kind === "list") {
+      const items = d.items || [];
+      const maxShow = Math.min(items.length, Math.max(4, Math.floor(bw / 44)));
+      const cw = Math.min(44, Math.max(28, Math.floor((bw - (maxShow - 1) * 6) / Math.max(1, maxShow))));
+      const ch = 36;
+      const cy = by + Math.max(4, Math.floor((bh - ch - 12) / 2));
+      for (let i = 0; i < maxShow; i++) {
+        const cx = bx + i * (cw + 6);
+        const isCellHot = d.hot === i || kind === "set" && d.hot === items[i];
+        const isWin = d.win && i >= d.win[0] && i <= d.win[1];
+        const isMark = d.mark === i || kind === "heap" && i === 0 || kind === "queue" && i === 0;
+        roundRectPath(ctx, cx, cy - (isCellHot ? 2 : 0), cw, ch, 6);
+        ctx.fillStyle = isCellHot ? "rgba(255,180,84,0.22)" : isWin ? "rgba(56,189,248,0.14)" : "#121823";
+        ctx.fill();
+        ctx.strokeStyle = isCellHot ? "#ffb454" : isMark ? "rgba(96,165,250,0.65)" : isWin ? "rgba(56,189,248,0.65)" : "#253042";
+        ctx.lineWidth = isCellHot ? 1.8 : 1;
+        ctx.stroke();
+        ctx.font = '700 13px "Cascadia Code", Consolas, monospace';
+        ctx.fillStyle = isCellHot ? "#ffb454" : "#f7f9fc";
+        const valStr = String(items[i]);
+        const vw = ctx.measureText(valStr).width;
+        ctx.fillText(valStr, cx + Math.max(3, (cw - vw) / 2), cy + 19);
+        ctx.font = '500 9px "Cascadia Code", Consolas, monospace';
+        ctx.fillStyle = isCellHot ? "#ffb454" : "#64748b";
+        const idxStr = String(i);
+        const iw = ctx.measureText(idxStr).width;
+        ctx.fillText(idxStr, cx + (cw - iw) / 2, cy + 32);
+      }
+      return;
+    }
+    if (kind === "stack") {
+      const items = d.items || [];
+      const shown = items.slice(-5);
+      const cw = Math.min(110, bw - 8);
+      const ch = 22;
+      shown.forEach((val, idx) => {
+        const abs = items.length - shown.length + idx;
+        const isTop = abs === items.length - 1;
+        const isCellHot = d.hot === abs;
+        const ry = by + (shown.length - 1 - idx) * (ch + 4);
+        if (ry + ch > y + h - 4) return;
+        roundRectPath(ctx, bx + 4, ry, cw, ch, 5);
+        ctx.fillStyle = isCellHot ? "rgba(255,180,84,0.22)" : "#121823";
+        ctx.fill();
+        ctx.strokeStyle = isCellHot ? "#ffb454" : isTop ? "rgba(96,165,250,0.65)" : "#253042";
+        ctx.stroke();
+        ctx.font = '700 12px "Cascadia Code", Consolas, monospace';
+        ctx.fillStyle = isCellHot ? "#ffb454" : "#f7f9fc";
+        ctx.fillText(String(val), bx + 12, ry + 15);
+        if (isTop) {
+          ctx.font = '600 9px "Cascadia Code", Consolas, monospace';
+          ctx.fillStyle = "#60a5fa";
+          ctx.fillText("top", bx + cw - 24, ry + 15);
+        }
+      });
+      return;
+    }
+    if (kind === "map") {
+      const entries = d.entries || [];
+      let curX = bx, curY = by + 4;
+      entries.slice(0, 8).forEach((e) => {
+        const pairTxt = `${e.k} \u2192 ${e.v}`;
+        ctx.font = '600 12px "Cascadia Code", Consolas, monospace';
+        const pw = ctx.measureText(pairTxt).width + 18;
+        if (curX + pw > bx + bw && curX > bx) {
+          curX = bx;
+          curY += 30;
+        }
+        if (curY + 24 > y + h - 4) return;
+        const isPairHot = d.hot === e.k;
+        roundRectPath(ctx, curX, curY, pw, 24, 6);
+        ctx.fillStyle = isPairHot ? "rgba(255,180,84,0.2)" : "#121823";
+        ctx.fill();
+        ctx.strokeStyle = isPairHot ? "#ffb454" : "#253042";
+        ctx.stroke();
+        ctx.fillStyle = isPairHot ? "#ffb454" : "#93c5fd";
+        ctx.fillText(pairTxt, curX + 9, curY + 16);
+        curX += pw + 6;
+      });
+      return;
+    }
+    if (kind === "tree" && d.nodes && d.nodes.length) {
+      let layout2 = function(idx, depth, xMin, xMax) {
+        if (idx == null || !nodes[idx] || coords.has(idx) || depth > 4) return;
+        const node = nodes[idx];
+        if (!node) return;
+        const nx = (xMin + xMax) / 2;
+        const ny = by + 16 + depth * 32;
+        coords.set(idx, { x: nx, y: ny, val: node.val, left: node.left, right: node.right });
+        layout2(node.left, depth + 1, xMin, nx);
+        layout2(node.right, depth + 1, nx, xMax);
+      };
+      var layout = layout2;
+      const nodes = d.nodes;
+      const root = d.root ?? 0;
+      const coords = /* @__PURE__ */ new Map();
+      layout2(root, 0, bx + 16, bx + bw - 16);
+      ctx.strokeStyle = "#334155";
+      ctx.lineWidth = 1.5;
+      coords.forEach((info) => {
+        [info.left, info.right].forEach((ch) => {
+          if (ch != null && coords.has(ch)) {
+            const c = coords.get(ch);
+            if (c) {
+              ctx.beginPath();
+              ctx.moveTo(info.x, info.y);
+              ctx.lineTo(c.x, c.y);
+              ctx.stroke();
+            }
+          }
+        });
+      });
+      coords.forEach((info, idx) => {
+        const isNodeHot = d.hot === idx;
+        ctx.beginPath();
+        ctx.arc(info.x, info.y, 12, 0, Math.PI * 2);
+        ctx.fillStyle = isNodeHot ? "#2a1f10" : "#121823";
+        ctx.fill();
+        ctx.strokeStyle = isNodeHot ? "#ffb454" : idx === root ? "#60a5fa" : "#334155";
+        ctx.lineWidth = 1.6;
+        ctx.stroke();
+        ctx.font = '700 11px "Cascadia Code", Consolas, monospace';
+        ctx.fillStyle = isNodeHot ? "#ffb454" : "#f7f9fc";
+        const txt = String(info.val);
+        ctx.fillText(txt, info.x - ctx.measureText(txt).width / 2, info.y + 4);
+      });
+      return;
+    }
+    if (kind === "graph" && d.nodes && d.nodes.length) {
+      const byId = /* @__PURE__ */ new Map();
+      const scaleX = bw / 180;
+      const scaleY = Math.min(1.15, bh / 136);
+      d.nodes.forEach((n, idx) => {
+        byId.set(n.id ?? idx, {
+          id: n.id ?? idx,
+          label: n.label ?? (n.id ?? idx),
+          x: bx + (n.x ?? 0) * scaleX,
+          y: by + (n.y ?? 0) * scaleY
+        });
+      });
+      ctx.strokeStyle = "#334155";
+      ctx.lineWidth = 1.5;
+      (d.edges || []).forEach((e) => {
+        const e0 = Array.isArray(e) ? e[0] : e.from ?? 0;
+        const e1 = Array.isArray(e) ? e[1] : e.to ?? 0;
+        const a = byId.get(e0), b = byId.get(e1);
+        if (a && b) {
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.stroke();
+        }
+      });
+      byId.forEach((n) => {
+        const isNodeHot = d.hot === n.id;
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, 12, 0, Math.PI * 2);
+        ctx.fillStyle = isNodeHot ? "#2a1f10" : "#121823";
+        ctx.fill();
+        ctx.strokeStyle = isNodeHot ? "#ffb454" : "#334155";
+        ctx.lineWidth = 1.6;
+        ctx.stroke();
+        ctx.font = '700 11px "Cascadia Code", Consolas, monospace';
+        ctx.fillStyle = isNodeHot ? "#ffb454" : "#f7f9fc";
+        const txt = String(n.label);
+        ctx.fillText(txt, n.x - ctx.measureText(txt).width / 2, n.y + 4);
+      });
+      return;
+    }
+    if (kind === "grid" && d.cells && d.cells.length) {
+      const rows = Math.min(d.cells.length, 6);
+      const cols = Math.min((d.cells[0] || []).length, 10);
+      const cellS = Math.min(24, Math.floor(Math.min(bw / Math.max(1, cols), bh / Math.max(1, rows))));
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const gx = bx + c * (cellS + 3);
+          const gy = by + r * (cellS + 3);
+          const isCellHot = Array.isArray(d.mark) && d.mark[0] === r && d.mark[1] === c;
+          roundRectPath(ctx, gx, gy, cellS, cellS, 4);
+          ctx.fillStyle = isCellHot ? "rgba(255,180,84,0.24)" : "#121823";
+          ctx.fill();
+          ctx.strokeStyle = isCellHot ? "#ffb454" : "#222b38";
+          ctx.stroke();
+          ctx.font = '600 11px "Cascadia Code", Consolas, monospace';
+          ctx.fillStyle = isCellHot ? "#ffb454" : "#cbd5e1";
+          const vStr = String(d.cells[r]?.[c] ?? "\xB7");
+          ctx.fillText(vStr, gx + (cellS - ctx.measureText(vStr).width) / 2, gy + cellS / 2 + 4);
+        }
+      }
+      return;
+    }
+    if (kind === "interface" || kind === "object") {
+      const fields = d.fields || (d.entries ? d.entries.map((e) => ({ k: String(e.k), v: e.v, declaredType: typeof e.v })) : []);
+      const rowH = 22;
+      fields.slice(0, 5).forEach((f, idx) => {
+        const ry = by + idx * (rowH + 4);
+        if (ry + rowH > y + h - 4) return;
+        const isRowHot = d.hot === f.k;
+        roundRectPath(ctx, bx, ry, bw, rowH, 5);
+        ctx.fillStyle = isRowHot ? "rgba(255,180,84,0.22)" : "#121823";
+        ctx.fill();
+        ctx.strokeStyle = isRowHot ? "#ffb454" : "#232c3b";
+        ctx.stroke();
+        ctx.font = '700 11px "Cascadia Code", Consolas, monospace';
+        ctx.fillStyle = "#9cdcfe";
+        const keyTxt = f.k + (f.optional ? "?" : "");
+        ctx.fillText(keyTxt, bx + 8, ry + 15);
+        const kw = ctx.measureText(keyTxt).width;
+        if (f.declaredType) {
+          ctx.font = '600 10px "Cascadia Code", Consolas, monospace';
+          ctx.fillStyle = "#4ec9b0";
+          ctx.fillText(": " + f.declaredType, bx + 12 + kw, ry + 15);
+        }
+        if (f.v !== void 0) {
+          const valTxt = typeof f.v === "string" ? JSON.stringify(f.v) : String(f.v);
+          ctx.font = '700 11px "Cascadia Code", Consolas, monospace';
+          ctx.fillStyle = typeof f.v === "string" ? "#9ece6a" : "#ffb454";
+          const vw = ctx.measureText(valTxt).width;
+          ctx.fillText(valTxt, Math.max(bx + 90, bx + bw - vw - 8), ry + 15);
+        }
+      });
+      return;
+    }
+    if (kind === "string" && d.items) {
+      const chars = d.items.slice(0, 24);
+      chars.forEach((ch, idx) => {
+        const cx = bx + idx * 24;
+        if (cx + 22 > bx + bw) return;
+        const isHotCh = d.hot === idx;
+        roundRectPath(ctx, cx, by + 10, 21, 26, 4);
+        ctx.fillStyle = isHotCh ? "rgba(255,180,84,0.22)" : "#121823";
+        ctx.fill();
+        ctx.strokeStyle = isHotCh ? "#ffb454" : "#253042";
+        ctx.stroke();
+        ctx.font = '700 12px "Cascadia Code", Consolas, monospace';
+        ctx.fillStyle = isHotCh ? "#ffb454" : "#f7f9fc";
+        ctx.fillText(String(ch), cx + 6, by + 27);
+      });
+    }
+  }
+  function renderVideoFrameToCanvas(ctx, stepIdx, subProgress, speedMult) {
+    const W = VIDEO_WIDTH, H = VIDEO_HEIGHT;
+    const st = TRACE.steps[stepIdx] || TRACE.steps[0];
+    const prevSt = stepIdx > 0 ? TRACE.steps[stepIdx - 1] : null;
+    const codeLines = TRACE.code && TRACE.code.length ? TRACE.code : editor.value.replace(/\r/g, "").split("\n");
+    ctx.fillStyle = "#07090d";
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = "#0a0e14";
+    ctx.fillRect(0, 0, W, 56);
+    ctx.strokeStyle = "#1d232e";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, 56);
+    ctx.lineTo(W, 56);
+    ctx.stroke();
+    ctx.font = '700 20px "Segoe UI", "PingFang SC", sans-serif';
+    ctx.fillStyle = "#f7f9fc";
+    ctx.fillText("TypeScript Playground \xB7 Debug Trace", 24, 35);
+    const badgeText = `${speedMult}x Speed \xB7 1920\xD71080 \xB7 60fps`;
+    ctx.font = '600 13px "Cascadia Code", Consolas, monospace';
+    const bw = ctx.measureText(badgeText).width + 28;
+    roundRectPath(ctx, W - bw - 24, 13, bw, 30, 15);
+    ctx.fillStyle = "rgba(56,189,248,0.14)";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(56,189,248,0.5)";
+    ctx.stroke();
+    ctx.fillStyle = "#38bdf8";
+    ctx.fillText(badgeText, W - bw - 10, 33);
+    const splitX = 1110;
+    const mainTop = 56, mainBottom = H - 56, mainH = mainBottom - mainTop;
+    ctx.fillStyle = "#0a0e14";
+    ctx.fillRect(0, mainTop, splitX, mainH);
+    ctx.strokeStyle = "#1d232e";
+    ctx.beginPath();
+    ctx.moveTo(splitX, mainTop);
+    ctx.lineTo(splitX, mainBottom);
+    ctx.stroke();
+    ctx.font = '700 12px "Segoe UI", sans-serif';
+    ctx.fillStyle = "#98a2b3";
+    ctx.fillText("SOURCE", 22, mainTop + 26);
+    const curLine = st ? st.line : -1;
+    const lh = 26;
+    const codeStartY = mainTop + 46;
+    const maxVisibleLines = Math.floor((mainH - 64) / lh);
+    let startLineIdx = 0;
+    if (curLine > maxVisibleLines - 6) {
+      startLineIdx = Math.max(0, Math.min(codeLines.length - maxVisibleLines, curLine - Math.floor(maxVisibleLines / 2)));
+    }
+    for (let i = 0; i < maxVisibleLines && startLineIdx + i < codeLines.length; i++) {
+      const lineIdx = startLineIdx + i;
+      const lineNum = lineIdx + 1;
+      const raw = codeLines[lineIdx] || "";
+      const ly = codeStartY + i * lh;
+      const isCur = lineNum === curLine;
+      const hasCkpt = /^\s*(?:checkpoint|断点)\s*\(/.test(raw);
+      if (isCur) {
+        const pulseAlpha = 0.14 + 0.06 * Math.sin(subProgress * Math.PI);
+        ctx.fillStyle = st && st.error ? "rgba(248,113,113,0.20)" : `rgba(255,180,84,${pulseAlpha.toFixed(3)})`;
+        ctx.fillRect(0, ly - 17, splitX - 2, lh);
+        ctx.fillStyle = st && st.error ? "#f87171" : "#ffb454";
+        ctx.fillRect(0, ly - 17, 4, lh);
+      }
+      if (hasCkpt) {
+        ctx.beginPath();
+        ctx.arc(14, ly - 5, 4, 0, Math.PI * 2);
+        ctx.fillStyle = "#38bdf8";
+        ctx.fill();
+      }
+      ctx.font = (isCur ? "700 " : "500 ") + '14px "Cascadia Code", Consolas, monospace';
+      ctx.fillStyle = isCur ? "#ffb454" : "#4b5565";
+      const numStr = String(lineNum).padStart(2, " ");
+      ctx.fillText(numStr, 26, ly);
+      let tx = 68;
+      const tokens = tokenizeCodeForCanvas(raw);
+      tokens.forEach((tok) => {
+        ctx.fillStyle = tok.color;
+        ctx.fillText(tok.text, tx, ly);
+        tx += ctx.measureText(tok.text).width;
+      });
+    }
+    if (st && (st.anim || st.error)) {
+      const hudText = st.error ? `\u2717 RUNTIME ERROR: ${st.error}` : st.note || "";
+      ctx.font = '600 13px "Cascadia Code", Consolas, monospace';
+      const hudW = Math.min(splitX - 60, ctx.measureText(hudText).width + 32);
+      const hudX = 36, hudY = mainBottom - 54;
+      roundRectPath(ctx, hudX, hudY, hudW, 36, 9);
+      ctx.fillStyle = st.error ? "rgba(42,14,18,0.95)" : st.isCheckpoint ? "rgba(11,29,46,0.95)" : "rgba(19,27,40,0.95)";
+      ctx.fill();
+      ctx.strokeStyle = st.error ? "#f87171" : st.isCheckpoint ? "#38bdf8" : "#ffb454";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.fillStyle = st.error ? "#fecaca" : st.isCheckpoint ? "#bae6fd" : "#fde68a";
+      ctx.fillText(hudText.slice(0, 88), hudX + 14, hudY + 23);
+    }
+    const sideX = splitX + 1, sideW = W - sideX;
+    ctx.fillStyle = "#0d1219";
+    ctx.fillRect(sideX, mainTop, sideW, mainH);
+    ctx.font = '700 12px "Segoe UI", sans-serif';
+    ctx.fillStyle = "#98a2b3";
+    ctx.fillText("LOCALS", sideX + 20, mainTop + 24);
+    const stackFrames = st && Array.isArray(st.callStack) && st.callStack.length ? st.callStack : [{ label: "global" }];
+    const stackChainTxt = stackFrames.map((f) => f.label).join(" \u25B8 ");
+    roundRectPath(ctx, sideX + 20, mainTop + 32, sideW - 40, 26, 7);
+    ctx.fillStyle = "#0b1018";
+    ctx.fill();
+    ctx.strokeStyle = "#1e2736";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.font = '600 12px "Cascadia Code", Consolas, monospace';
+    ctx.fillStyle = "#7dd3fc";
+    ctx.fillText(stackChainTxt.slice(0, 72), sideX + 30, mainTop + 49);
+    const v = st && st.v || {};
+    const prevV = prevSt && prevSt.v || {};
+    let locX = sideX + 20, locY = mainTop + 66;
+    const primKeys = Object.keys(v).filter((k) => v[k] === null || typeof v[k] !== "object");
+    primKeys.forEach((k) => {
+      const valStr = String(v[k]);
+      const changed = prevSt && prevV[k] !== v[k];
+      ctx.font = '600 13px "Cascadia Code", Consolas, monospace';
+      const chipW = ctx.measureText(`${k} : ${valStr}`).width + 24;
+      if (locX + chipW > W - 20 && locX > sideX + 20) {
+        locX = sideX + 20;
+        locY += 34;
+      }
+      roundRectPath(ctx, locX, locY, chipW, 28, 7);
+      ctx.fillStyle = changed ? "rgba(255,180,84,0.16)" : "#121822";
+      ctx.fill();
+      ctx.strokeStyle = changed ? "rgba(255,180,84,0.65)" : "#1d2532";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.fillStyle = "#98a2b3";
+      ctx.fillText(k, locX + 10, locY + 19);
+      const kw = ctx.measureText(k).width;
+      ctx.fillStyle = "#ffb454";
+      ctx.fillText(valStr, locX + 18 + kw, locY + 19);
+      locX += chipW + 8;
+    });
+    const watchHeaderY = Math.max(mainTop + 124, locY + 46);
+    ctx.font = '700 12px "Segoe UI", sans-serif';
+    ctx.fillStyle = "#98a2b3";
+    ctx.fillText("WATCH \xB7 \u6570\u636E\u7ED3\u6784\u53EF\u89C6\u5316", sideX + 20, watchHeaderY);
+    const ds = st && st.ds || {};
+    const vars = discoverVars().filter((s) => watched.has(s.id) && ds[s.id] !== void 0);
+    const allocated = allocateSlotSpans(vars, ds);
+    const gridLeft = sideX + 20;
+    const gridW = sideW - 40;
+    const colGap = 12;
+    const colW = Math.floor((gridW - colGap) / 2);
+    let curRowY = watchHeaderY + 14;
+    let pendingSingle = null;
+    const consoleTop = mainBottom - 84;
+    function drawRowItems(items) {
+      const first = items[0];
+      const second = items[1];
+      if (!first || curRowY + 95 > consoleTop) return;
+      const isTall = items.some((it) => it.kind === "tree" || it.kind === "graph" || it.kind === "grid" || it.kind === "stack" || it.kind === "interface");
+      const cardH = Math.min(isTall ? 158 : 108, consoleTop - curRowY - 8);
+      if (cardH < 64) return;
+      if (items.length === 1 || !second) {
+        drawVizCardOnCanvas(ctx, gridLeft, curRowY, gridW, cardH, first.s, first.d, first.kind);
+      } else {
+        drawVizCardOnCanvas(ctx, gridLeft, curRowY, colW, cardH, first.s, first.d, first.kind);
+        drawVizCardOnCanvas(ctx, gridLeft + colW + colGap, curRowY, colW, cardH, second.s, second.d, second.kind);
+      }
+      curRowY += cardH + 10;
+    }
+    allocated.forEach((item) => {
+      if (item.span === 2) {
+        if (pendingSingle) {
+          drawRowItems([pendingSingle]);
+          pendingSingle = null;
+        }
+        drawRowItems([item]);
+      } else {
+        if (pendingSingle) {
+          drawRowItems([pendingSingle, item]);
+          pendingSingle = null;
+        } else {
+          pendingSingle = item;
+        }
+      }
+    });
+    if (pendingSingle) drawRowItems([pendingSingle]);
+    ctx.fillStyle = "#070a0f";
+    ctx.fillRect(sideX, consoleTop, sideW, mainBottom - consoleTop);
+    ctx.strokeStyle = "#1d232e";
+    ctx.beginPath();
+    ctx.moveTo(sideX, consoleTop);
+    ctx.lineTo(W, consoleTop);
+    ctx.stroke();
+    ctx.font = '600 13px "Cascadia Code", Consolas, monospace';
+    ctx.fillStyle = "#ffb454";
+    ctx.fillText("\u203A", sideX + 20, consoleTop + 30);
+    ctx.fillStyle = st && st.error ? "#f87171" : "#cbd5e1";
+    ctx.fillText(String(st && st.note || "").slice(0, 76), sideX + 36, consoleTop + 30);
+    ctx.fillStyle = "#0a0e14";
+    ctx.fillRect(0, mainBottom, W, 56);
+    ctx.strokeStyle = "#1d232e";
+    ctx.beginPath();
+    ctx.moveTo(0, mainBottom);
+    ctx.lineTo(W, mainBottom);
+    ctx.stroke();
+    let statusLabel = "\u25CF \u8C03\u8BD5\u8FD0\u884C\u4E2D";
+    let statusColor = "#4ade80";
+    if (st && st.error) {
+      statusLabel = "\u2717 \u8FD0\u884C\u65F6\u62A5\u9519";
+      statusColor = "#f87171";
+    } else if (st && st.isCheckpoint) {
+      statusLabel = "\u25C9 \u547D\u4E2D\u68C0\u67E5\u70B9";
+      statusColor = "#38bdf8";
+    } else if (DEBUG_SESSION.finished && stepIdx === TRACE.steps.length - 1) {
+      statusLabel = "\u2713 \u6267\u884C\u5B8C\u6BD5";
+      statusColor = "#ffb454";
+    }
+    roundRectPath(ctx, 24, mainBottom + 12, 136, 32, 16);
+    ctx.fillStyle = "#111722";
+    ctx.fill();
+    ctx.strokeStyle = statusColor;
+    ctx.stroke();
+    ctx.font = '600 13px "Cascadia Code", Consolas, monospace';
+    ctx.fillStyle = statusColor;
+    ctx.fillText(statusLabel, 42, mainBottom + 33);
+    ctx.font = '500 13px "Segoe UI", sans-serif';
+    ctx.fillStyle = "#64748b";
+    ctx.fillText(`TypeScript Playground \xB7 1920\xD71080 60fps \u89C6\u9891\u5BFC\u51FA (${speedMult}x \u500D\u901F)`, 184, mainBottom + 33);
+  }
+  function loadSample(key) {
+    if (LANG === "python") {
+      PY_ENGINE.loadSample(key);
+      return;
+    }
+    const targetKey = SAMPLES[key] ? key : "showcase";
+    if ($("sampleSel")) $("sampleSel").value = targetKey;
+    const src = SAMPLES[targetKey] || "";
+    if (typeof globalThis.openSampleScriptTab === "function") {
+      globalThis.openSampleScriptTab(targetKey + ".ts", src, "ts");
+    } else {
+      editor.value = src;
+      setFileName(targetKey + ".ts");
+    }
+    lastEditorCursorLine = -1;
+    clearLog("\u5DF2\u52A0\u8F7D\u6837\u4F8B \xB7 \u81EA\u52A8\u5F00\u542F Debug \u8C03\u8BD5\u6A21\u5F0F\uFF08\u53EF\u6309 \u2190 / \u2192 \u9010\u6B65\u5F53\u573A\u8BA1\u7B97\uFF0C\u6216\u70B9\u51FB\u5DE6\u4E0B\u300C\u8FD0\u884C\u5230\u4E0B\u4E00\u4E2A\u68C0\u67E5\u70B9\u300D\uFF09");
+    resetTraceState();
+    const defaultStep = SAMPLE_DEFAULT_STEP[targetKey] || 0;
+    startDebug(defaultStep);
+  }
+  function boot() {
+    window.__BOOT_DEFERRED = false;
+    try {
+      const hash = typeof location !== "undefined" && location.hash || "";
+      const qs0 = typeof location !== "undefined" && location.search ? new URLSearchParams(location.search) : null;
+      const hasUrlChoice = Boolean(qs0 && (qs0.has("trace") || qs0.has("sample") || qs0.has("step")));
+      const wantsPython = Boolean(qs0 && qs0.get("lang") === "python");
+      let hasSaved = false;
+      if (!hasUrlChoice && !wantsPython && typeof localStorage !== "undefined") {
+        try {
+          hasSaved = Boolean(localStorage.getItem("ts-playground-session-v1"));
+        } catch (_) {
+        }
+      }
+      if (hash.startsWith("#s=") || wantsPython || hasSaved) {
+        window.__BOOT_DEFERRED = true;
+        editor.value = "";
+        clearLog("\u6B63\u5728\u6062\u590D\u4E0A\u6B21\u4F1A\u8BDD / \u5206\u4EAB\u4EE3\u7801\u2026");
+        updateEditorChrome();
+        return;
+      }
+    } catch (_) {
+    }
+    let sampleKey = "showcase";
+    let customStep = null;
+    try {
+      const qs = typeof location !== "undefined" && location.search ? new URLSearchParams(location.search) : null;
+      if (qs) {
+        const tr = qs.get("trace") || qs.get("sample");
+        const aliasMap = { demo: "showcase", tour: "structures", stress: "lcs" };
+        if (tr) {
+          const mapped = aliasMap[tr] || tr;
+          if (SAMPLES[mapped]) sampleKey = mapped;
+        }
+        if (qs.has("watch")) {
+          const w = qs.get("watch");
+          URL_WATCH = w ? w.split(",").map((s) => s.trim()).filter(Boolean) : [];
+        }
+        if (qs.get("still") === "1") {
+          IS_STILL = true;
+          if (document.body && document.body.classList) document.body.classList.add("still");
+        }
+        if (qs.has("step")) {
+          customStep = parseInt(qs.get("step") || "0", 10) || 0;
+        }
+      }
+    } catch {
+    }
+    if ($("sampleSel")) $("sampleSel").value = sampleKey;
+    const initialSrc = SAMPLES[sampleKey] || SAMPLES.showcase || "";
+    if (typeof globalThis.openSampleScriptTab === "function") {
+      globalThis.openSampleScriptTab(sampleKey + ".ts", initialSrc, "ts");
+    } else {
+      editor.value = initialSrc;
+      setFileName(sampleKey + ".ts");
+    }
+    updateEditorChrome();
+    const initialStep = customStep !== null ? customStep : SAMPLE_DEFAULT_STEP[sampleKey] || 0;
+    generateTrace(initialStep);
+  }
+  var initApp = boot;
+  registerUiHooks({ loadSample });
+
+  // src/ui/video-webm.ts
+  var video_webm_exports = {};
+  __export(video_webm_exports, {
+    concatUint8Arrays: () => concatUint8Arrays,
+    ebmlAsciiBytes: () => ebmlAsciiBytes,
+    ebmlElement: () => ebmlElement,
+    ebmlFloat64Bytes: () => ebmlFloat64Bytes,
+    ebmlUintBytes: () => ebmlUintBytes,
+    ebmlVintSize: () => ebmlVintSize,
+    encodeVideoFastWebCodecs: () => encodeVideoFastWebCodecs,
+    exportVideo: () => exportVideo,
+    fixWebmDuration: () => fixWebmDuration,
+    muxWebmChunks: () => muxWebmChunks
+  });
+  var btnExportVideo2 = $("btnExportVideo");
+  var btnExportVideoLabel2 = $("btnExportVideoLabel");
+  var videoExportStatus2 = $("videoExportStatus");
+  function ebmlUintBytes(num) {
+    let v = Math.max(0, Math.floor(Number(num) || 0));
+    if (v === 0) return new Uint8Array([0]);
+    const bytes = [];
+    while (v > 0) {
+      bytes.unshift(v & 255);
+      v = Math.floor(v / 256);
+    }
+    return new Uint8Array(bytes);
+  }
+  function ebmlFloat64Bytes(val) {
+    const buf = new ArrayBuffer(8);
+    new DataView(buf).setFloat64(0, Number(val) || 0, false);
+    return new Uint8Array(buf);
+  }
+  function ebmlAsciiBytes(str) {
+    const s = String(str || "");
+    const out = new Uint8Array(s.length);
+    for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i) & 127;
+    return out;
+  }
+  function ebmlVintSize(len) {
+    const n = Math.max(0, Math.floor(len));
+    if (n < 127) return new Uint8Array([128 | n]);
+    if (n < 16383) return new Uint8Array([64 | n >> 8, n & 255]);
+    if (n < 2097151) return new Uint8Array([32 | n >> 16, n >> 8 & 255, n & 255]);
+    if (n < 268435455) {
+      return new Uint8Array([
+        16 | n >>> 24 & 15,
+        n >>> 16 & 255,
+        n >>> 8 & 255,
+        n & 255
+      ]);
+    }
+    const hi = Math.floor(n / 4294967296);
+    const lo = n >>> 0;
+    return new Uint8Array([
+      1,
+      hi >>> 16 & 255,
+      hi >>> 8 & 255,
+      hi & 255,
+      lo >>> 24 & 255,
+      lo >>> 16 & 255,
+      lo >>> 8 & 255,
+      lo & 255
+    ]);
+  }
+  function concatUint8Arrays(arrays) {
+    let total = 0;
+    for (const arr of arrays) total += arr.length;
+    const out = new Uint8Array(total);
+    let offset = 0;
+    for (const arr of arrays) {
+      out.set(arr, offset);
+      offset += arr.length;
+    }
+    return out;
+  }
+  function ebmlElement(idBytes, payload) {
+    const idArr = idBytes instanceof Uint8Array ? idBytes : new Uint8Array(idBytes);
+    const body = Array.isArray(payload) ? payload[0] instanceof Uint8Array ? concatUint8Arrays(payload) : new Uint8Array(payload) : payload instanceof Uint8Array ? payload : new Uint8Array(payload);
+    const sizeArr = ebmlVintSize(body.length);
+    return concatUint8Arrays([idArr, sizeArr, body]);
+  }
+  function muxWebmChunks(frames, durationMs, width = VIDEO_WIDTH, height = VIDEO_HEIGHT, fps = VIDEO_FPS, codecId = "V_VP8") {
+    const ebmlHeader = ebmlElement([26, 69, 223, 163], [
+      ebmlElement([66, 134], ebmlUintBytes(1)),
+      ebmlElement([66, 247], ebmlUintBytes(1)),
+      ebmlElement([66, 242], ebmlUintBytes(4)),
+      ebmlElement([66, 243], ebmlUintBytes(8)),
+      ebmlElement([66, 130], ebmlAsciiBytes("webm")),
+      ebmlElement([66, 135], ebmlUintBytes(4)),
+      ebmlElement([66, 133], ebmlUintBytes(2))
+    ]);
+    const infoElem = ebmlElement([21, 73, 169, 102], [
+      ebmlElement([42, 215, 177], ebmlUintBytes(1e6)),
+      ebmlElement([68, 137], ebmlFloat64Bytes(durationMs)),
+      ebmlElement([77, 128], ebmlAsciiBytes("TSPlaygroundVisual")),
+      ebmlElement([87, 65], ebmlAsciiBytes("TSPlaygroundVisual"))
+    ]);
+    const defaultDurNs = Math.round(1e9 / fps);
+    const tracksElem = ebmlElement([22, 84, 174, 107], [
+      ebmlElement([174], [
+        ebmlElement([215], ebmlUintBytes(1)),
+        ebmlElement([115, 197], ebmlUintBytes(1)),
+        ebmlElement([156], ebmlUintBytes(0)),
+        ebmlElement([34, 181, 156], ebmlAsciiBytes("und")),
+        ebmlElement([134], ebmlAsciiBytes(codecId)),
+        ebmlElement([131], ebmlUintBytes(1)),
+        ebmlElement([35, 227, 131], ebmlUintBytes(defaultDurNs)),
+        ebmlElement([224], [
+          ebmlElement([176], ebmlUintBytes(width)),
+          ebmlElement([186], ebmlUintBytes(height))
+        ])
+      ])
+    ]);
+    const clusters = [];
+    let curCluster = null;
+    for (const f of frames) {
+      const tMs = Math.max(0, Math.round(f.timestampMs));
+      if (!curCluster || f.isKey || tMs - curCluster.timecodeMs >= 2e3) {
+        curCluster = { timecodeMs: tMs, blocks: [] };
+        clusters.push(curCluster);
+      }
+      const relMs = Math.max(0, Math.min(32767, tMs - curCluster.timecodeMs));
+      const blockHeader = new Uint8Array([
+        129,
+        relMs >> 8 & 255,
+        relMs & 255,
+        f.isKey ? 128 : 0
+      ]);
+      const simpleBlock = ebmlElement([163], [blockHeader, f.data]);
+      curCluster.blocks.push(simpleBlock);
+    }
+    let segOffset = infoElem.length + tracksElem.length;
+    const clusterElems = [];
+    const cuePoints = [];
+    for (const cl of clusters) {
+      const tcElem = ebmlElement([231], ebmlUintBytes(cl.timecodeMs));
+      const clElem = ebmlElement([31, 67, 182, 117], [tcElem, ...cl.blocks]);
+      cuePoints.push(
+        ebmlElement([187], [
+          ebmlElement([179], ebmlUintBytes(cl.timecodeMs)),
+          ebmlElement([183], [
+            ebmlElement([247], ebmlUintBytes(1)),
+            ebmlElement([241], ebmlUintBytes(segOffset))
+          ])
+        ])
+      );
+      clusterElems.push(clElem);
+      segOffset += clElem.length;
+    }
+    const cuesElem = ebmlElement([28, 83, 187, 107], cuePoints);
+    const segmentBody = concatUint8Arrays([infoElem, tracksElem, ...clusterElems, cuesElem]);
+    const segmentSize8 = new Uint8Array([
+      1,
+      0,
+      0,
+      0,
+      segmentBody.length >>> 24 & 255,
+      segmentBody.length >>> 16 & 255,
+      segmentBody.length >>> 8 & 255,
+      segmentBody.length & 255
+    ]);
+    const segmentElem = concatUint8Arrays([new Uint8Array([24, 83, 128, 103]), segmentSize8, segmentBody]);
+    return new Blob([ebmlHeader, segmentElem], { type: "video/webm" });
+  }
+  async function fixWebmDuration(blob, durationMs) {
+    if (!blob || !(durationMs > 0)) return blob;
+    try {
+      const buf = await blob.arrayBuffer();
+      const bytes = new Uint8Array(buf);
+      const searchLimit = Math.min(bytes.length - 12, 16384);
+      let infoPos = -1;
+      let tracksPos = -1;
+      for (let i = 0; i < searchLimit; i++) {
+        if (infoPos < 0 && bytes[i] === 21 && bytes[i + 1] === 73 && bytes[i + 2] === 169 && bytes[i + 3] === 102) {
+          infoPos = i;
+        } else if (infoPos >= 0 && bytes[i] === 22 && bytes[i + 1] === 84 && bytes[i + 2] === 174 && bytes[i + 3] === 107) {
+          tracksPos = i;
+          break;
+        }
+      }
+      if (infoPos < 0) return blob;
+      const sizeIdx = infoPos + 4;
+      const firstByte = bytes[sizeIdx] ?? 0;
+      let vintLen = 1;
+      let mask = 128;
+      while (vintLen <= 8 && !(firstByte & mask)) {
+        mask >>= 1;
+        vintLen++;
+      }
+      if (vintLen > 8) return blob;
+      let parsedInfoSize = firstByte & mask - 1;
+      for (let k = 1; k < vintLen; k++) {
+        parsedInfoSize = parsedInfoSize * 256 + (bytes[sizeIdx + k] ?? 0);
+      }
+      const isUnknownInfoSize = vintLen === 8 && bytes[sizeIdx + 1] === 255 && bytes[sizeIdx + 2] === 255 || parsedInfoSize === Math.pow(2, 7 * vintLen) - 1;
+      const infoDataStart = sizeIdx + vintLen;
+      const infoDataEnd = tracksPos > infoDataStart ? tracksPos : !isUnknownInfoSize ? Math.min(bytes.length, infoDataStart + parsedInfoSize) : Math.min(bytes.length, infoDataStart + 64);
+      let existingDurUpdated = false;
+      for (let i = infoDataStart; i <= infoDataEnd - 11; i++) {
+        if (bytes[i] === 68 && bytes[i + 1] === 137 && bytes[i + 2] === 136) {
+          new DataView(bytes.buffer, bytes.byteOffset + i + 3, 8).setFloat64(0, durationMs, false);
+          existingDurUpdated = true;
+          break;
+        }
+      }
+      let outBytes = bytes;
+      let tailStartInOut = infoDataEnd;
+      if (!existingDurUpdated) {
+        const durElem = new Uint8Array(11);
+        durElem[0] = 68;
+        durElem[1] = 137;
+        durElem[2] = 136;
+        new DataView(durElem.buffer).setFloat64(3, durationMs, false);
+        const origInfoPayload = bytes.subarray(infoDataStart, infoDataEnd);
+        const newInfoPayloadLen = durElem.length + origInfoPayload.length;
+        const newSizeVint = new Uint8Array([
+          16 | newInfoPayloadLen >>> 24 & 15,
+          newInfoPayloadLen >>> 16 & 255,
+          newInfoPayloadLen >>> 8 & 255,
+          newInfoPayloadLen & 255
+        ]);
+        const head = bytes.subarray(0, infoPos + 4);
+        const tail = bytes.subarray(infoDataEnd);
+        outBytes = concatUint8Arrays([head, newSizeVint, durElem, origInfoPayload, tail]);
+        tailStartInOut = head.length + newSizeVint.length + durElem.length + origInfoPayload.length;
+      }
+      for (let i = 0; i < Math.min(infoPos, 128); i++) {
+        if (outBytes[i] === 24 && outBytes[i + 1] === 83 && outBytes[i + 2] === 128 && outBytes[i + 3] === 103) {
+          if (outBytes[i + 4] === 1 && outBytes[i + 5] === 255 && outBytes[i + 6] === 255) {
+            const segPayloadLen = outBytes.length - (i + 12);
+            outBytes[i + 4] = 1;
+            outBytes[i + 5] = 0;
+            outBytes[i + 6] = 0;
+            outBytes[i + 7] = 0;
+            outBytes[i + 8] = segPayloadLen >>> 24 & 255;
+            outBytes[i + 9] = segPayloadLen >>> 16 & 255;
+            outBytes[i + 10] = segPayloadLen >>> 8 & 255;
+            outBytes[i + 11] = segPayloadLen & 255;
+          }
+          break;
+        }
+      }
+      let firstClusterTc = null;
+      for (let i = tailStartInOut; i < outBytes.length - 16; i++) {
+        if (outBytes[i] === 31 && outBytes[i + 1] === 67 && outBytes[i + 2] === 182 && outBytes[i + 3] === 117) {
+          const b0 = outBytes[i + 4] ?? 0;
+          let vLen = 1, m = 128;
+          while (vLen <= 8 && !(b0 & m)) {
+            m >>= 1;
+            vLen++;
+          }
+          const tcPos = i + 4 + vLen;
+          if (tcPos + 2 < outBytes.length && outBytes[tcPos] === 231) {
+            const tcSizeByte = outBytes[tcPos + 1] ?? 0;
+            const tcLen = tcSizeByte & 127;
+            if (tcLen >= 1 && tcLen <= 8 && tcPos + 2 + tcLen <= outBytes.length) {
+              let val = 0;
+              for (let b = 0; b < tcLen; b++) {
+                val = val * 256 + (outBytes[tcPos + 2 + b] ?? 0);
+              }
+              if (firstClusterTc === null) {
+                firstClusterTc = val;
+              }
+              if (firstClusterTc > 0) {
+                let rebased = Math.max(0, Math.min(Math.round(durationMs), val - firstClusterTc));
+                for (let b = tcLen - 1; b >= 0; b--) {
+                  outBytes[tcPos + 2 + b] = rebased & 255;
+                  rebased = Math.floor(rebased / 256);
+                }
+              }
+            }
+          }
+        }
+      }
+      return new Blob([outBytes], { type: "video/webm" });
+    } catch (_) {
+      return blob;
+    }
+  }
+  async function encodeVideoFastWebCodecs(canvas, ctx, totalSteps, stepDurationMs, mult) {
+    if (typeof VideoEncoder !== "function" || typeof VideoFrame !== "function") return null;
+    const codecCandidates = [
+      { codec: "vp8", webmId: "V_VP8" },
+      { codec: "vp09.00.10.08", webmId: "V_VP9" }
+    ];
+    let chosen = null;
+    for (const c of codecCandidates) {
+      try {
+        const sup = await VideoEncoder.isConfigSupported({
+          codec: c.codec,
+          width: VIDEO_WIDTH,
+          height: VIDEO_HEIGHT,
+          bitrate: 8e6,
+          framerate: VIDEO_FPS,
+          latencyMode: "realtime"
+        });
+        if (sup && sup.supported) {
+          chosen = c;
+          break;
+        }
+      } catch (_) {
+      }
+    }
+    if (!chosen) return null;
+    const encodedFrames = [];
+    let encoderError = null;
+    const encoder = new VideoEncoder({
+      output: (chunk) => {
+        const data = new Uint8Array(chunk.byteLength);
+        chunk.copyTo(data);
+        encodedFrames.push({
+          data,
+          timestampMs: Math.max(0, Math.round(chunk.timestamp / 1e3)),
+          isKey: chunk.type === "key"
+        });
+      },
+      error: (err) => {
+        encoderError = err;
+      }
+    });
+    encoder.configure({
+      codec: chosen.codec,
+      width: VIDEO_WIDTH,
+      height: VIDEO_HEIGHT,
+      bitrate: 8e6,
+      framerate: VIDEO_FPS,
+      latencyMode: "realtime"
+    });
+    const frameDurMs = 1e3 / VIDEO_FPS;
+    const totalDurationMs = totalSteps * stepDurationMs;
+    const subFramesPerStep = 6;
+    for (let s = 0; s < totalSteps; s++) {
+      if (encoderError) throw encoderError;
+      if (videoExportStatus2 && (s % 2 === 0 || s === totalSteps - 1)) {
+        const pct = Math.round((s + 1) / totalSteps * 100);
+        videoExportStatus2.textContent = `\u6B63\u5728\u6781\u901F\u7F16\u7801 1920\xD71080 60fps (${mult}x) \xB7 ${pct}%`;
+        await new Promise((r) => setTimeout(r, 0));
+      }
+      const stepStartMs = s * stepDurationMs;
+      for (let k = 0; k < subFramesPerStep; k++) {
+        const frac = k / subFramesPerStep;
+        const rawMs = stepStartMs + frac * stepDurationMs;
+        const tickIdx = Math.round(rawMs / frameDurMs);
+        const tMs = Math.min(totalDurationMs - 17, Math.round(tickIdx * frameDurMs));
+        const tUs = tMs * 1e3;
+        if (k === 0 || k === 3) {
+          renderVideoFrameToCanvas(ctx, s, frac, mult);
+        }
+        const vf = new VideoFrame(canvas, {
+          timestamp: tUs,
+          duration: Math.round(stepDurationMs / subFramesPerStep * 1e3)
+        });
+        encoder.encode(vf, { keyFrame: k === 0 });
+        vf.close();
+      }
+      if (s === totalSteps - 1) {
+        const endMs = Math.max(0, Math.round(totalDurationMs - frameDurMs));
+        const vfEnd = new VideoFrame(canvas, {
+          timestamp: endMs * 1e3,
+          duration: Math.round(frameDurMs * 1e3)
+        });
+        encoder.encode(vfEnd, { keyFrame: false });
+        vfEnd.close();
+      }
+      while (encoder.encodeQueueSize > 12) {
+        await new Promise((r) => setTimeout(r, 4));
+      }
+    }
+    await encoder.flush();
+    encoder.close();
+    if (encoderError || !encodedFrames.length) return null;
+    return {
+      blob: muxWebmChunks(encodedFrames, totalDurationMs, VIDEO_WIDTH, VIDEO_HEIGHT, VIDEO_FPS, chosen.webmId),
+      durationMs: totalDurationMs
+    };
+  }
+  async function exportVideo(speedMult = VIDEO_EXPORT_SPEED) {
+    if (IS_EXPORTING_VIDEO) return false;
+    const mult = setVideoExportSpeed(speedMult);
+    stopAuto();
+    const savedCur = cur;
+    if (!startDebug(0)) {
+      say("\u2717 \u4EE3\u7801\u7F16\u8BD1\u672A\u901A\u8FC7\uFF0C\u65E0\u6CD5\u5BFC\u51FA\u89C6\u9891", "err");
+      return false;
+    }
+    while (!DEBUG_SESSION.finished && TRACE.steps.length < MAX_STEPS) {
+      if (!computeAndAppendNextStep({ silent: true })) break;
+    }
+    initWatchedVars();
+    if (!TRACE.steps.length) {
+      say("\u2717 \u5F53\u524D\u4EE3\u7801\u672A\u4EA7\u751F\u53EF\u5F55\u5236\u7684\u8C03\u8BD5\u6B65\u9AA4", "err");
+      return false;
+    }
+    IS_EXPORTING_VIDEO = true;
+    if (btnExportVideo2) btnExportVideo2.disabled = true;
+    if (btnExportVideoLabel2) btnExportVideoLabel2.textContent = "\u23FA \u6B63\u5728\u6781\u901F\u5BFC\u51FA...";
+    if (videoExportStatus2) {
+      videoExportStatus2.classList.add("active");
+      videoExportStatus2.textContent = `\u51C6\u5907\u6781\u901F\u5BFC\u51FA 1920\xD71080 @ ${VIDEO_FPS}fps (${mult}x \u500D\u901F)...`;
+    }
+    say(`\u{1F3AC} \u5F00\u59CB\u6781\u901F\u5BFC\u51FA\u89C6\u9891\uFF1A\u5206\u8FA8\u7387 ${VIDEO_WIDTH}\xD7${VIDEO_HEIGHT} \xB7 ${VIDEO_FPS}fps \xB7 \u500D\u901F ${mult}x`, "ok");
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = VIDEO_WIDTH;
+      canvas.height = VIDEO_HEIGHT;
+      const ctx = canvas.getContext("2d");
+      const stepDurationMs = Math.max(120, Math.round(AUTO_PLAY_MS / mult));
+      const totalSteps = TRACE.steps.length;
+      const targetTotalDurationMs = totalSteps * stepDurationMs;
+      const fastRes = ctx ? await encodeVideoFastWebCodecs(canvas, ctx, totalSteps, stepDurationMs, mult) : null;
+      if (fastRes && fastRes.blob) {
+        cur = Math.min(savedCur, Math.max(0, TRACE.steps.length - 1));
+        renderPicker();
+        renderStatic(cur, false);
+        const url2 = URL.createObjectURL(fastRes.blob);
+        const a2 = document.createElement("a");
+        a2.href = url2;
+        a2.download = `ts-playground-1080p-60fps-${mult}x.webm`;
+        document.body.appendChild(a2);
+        a2.click();
+        document.body.removeChild(a2);
+        URL.revokeObjectURL(url2);
+        const secTxt2 = (fastRes.durationMs / 1e3).toFixed(1) + "s";
+        if (videoExportStatus2) {
+          videoExportStatus2.textContent = `\u2713 \u5DF2\u6781\u901F\u5BFC\u51FA (${secTxt2}) ts-playground-1080p-60fps-${mult}x.webm`;
+        }
+        say(`\u2713 \u89C6\u9891\u6781\u901F\u5BFC\u51FA\u5B8C\u6210\uFF1Ats-playground-1080p-60fps-${mult}x.webm (1920\xD71080 \xB7 60fps \xB7 ${mult}x \u500D\u901F \xB7 \u7CBE\u786E\u65F6\u957F ${secTxt2})`, "ok");
+        return true;
+      }
+      if (typeof canvas.captureStream !== "function" || typeof MediaRecorder === "undefined") {
+        if (ctx) renderVideoFrameToCanvas(ctx, totalSteps - 1, 1, mult);
+        return true;
+      }
+      const mimeCandidates = [
+        "video/webm;codecs=vp8",
+        "video/webm;codecs=vp9",
+        "video/webm"
+      ];
+      let mimeType = "";
+      for (const m of mimeCandidates) {
+        if (typeof MediaRecorder.isTypeSupported === "function" && MediaRecorder.isTypeSupported(m)) {
+          mimeType = m;
+          break;
+        }
+      }
+      if (ctx) renderVideoFrameToCanvas(ctx, 0, 0, mult);
+      const stream = canvas.captureStream(VIDEO_FPS);
+      const videoTrack = stream.getVideoTracks && stream.getVideoTracks()[0];
+      const recorderOpts = { videoBitsPerSecond: 8e6 };
+      if (mimeType) recorderOpts.mimeType = mimeType;
+      const recorder = new MediaRecorder(stream, recorderOpts);
+      const chunks = [];
+      recorder.ondataavailable = (ev) => {
+        if (ev.data && ev.data.size > 0) chunks.push(ev.data);
+      };
+      const stoppedPromise = new Promise((resolve, reject) => {
+        recorder.onstop = resolve;
+        recorder.onerror = (ev) => reject(ev.error || new Error("MediaRecorder error"));
+      });
+      const recStartWall = performance.now();
+      recorder.start(100);
+      const frameIntervalMs = 1e3 / VIDEO_FPS;
+      for (let s = 0; s < totalSteps; s++) {
+        if (videoExportStatus2 && (s % 2 === 0 || s === totalSteps - 1)) {
+          const pct = Math.round((s + 1) / totalSteps * 100);
+          videoExportStatus2.textContent = `\u6B63\u5728\u5408\u6210 1920\xD71080 60fps (${mult}x) \xB7 ${pct}%`;
+        }
+        const stepStart = performance.now();
+        if (ctx) renderVideoFrameToCanvas(ctx, s, 0.5, mult);
+        while (true) {
+          const now = performance.now();
+          const elapsedStep = now - stepStart;
+          if (elapsedStep >= stepDurationMs) break;
+          if (videoTrack && typeof videoTrack.requestFrame === "function") {
+            try {
+              videoTrack.requestFrame();
+            } catch (_) {
+            }
+          }
+          const waitMs = Math.max(1, Math.min(frameIntervalMs, stepDurationMs - elapsedStep));
+          await new Promise((r) => setTimeout(r, waitMs));
+        }
+      }
+      const actualDurationMs = Math.max(200, Math.round(performance.now() - recStartWall));
+      recorder.stop();
+      await stoppedPromise;
+      stream.getTracks().forEach((t) => t.stop());
+      cur = Math.min(savedCur, Math.max(0, TRACE.steps.length - 1));
+      renderPicker();
+      renderStatic(cur, false);
+      let blob = new Blob(chunks, { type: mimeType || "video/webm" });
+      blob = await fixWebmDuration(blob, actualDurationMs || targetTotalDurationMs);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `ts-playground-1080p-60fps-${mult}x.webm`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      const secTxt = (actualDurationMs / 1e3).toFixed(1) + "s";
+      if (videoExportStatus2) {
+        videoExportStatus2.textContent = `\u2713 \u5DF2\u5BFC\u51FA (${secTxt}) ts-playground-1080p-60fps-${mult}x.webm`;
+      }
+      say(`\u2713 \u89C6\u9891\u5BFC\u51FA\u5B8C\u6210\uFF1Ats-playground-1080p-60fps-${mult}x.webm (1920\xD71080 \xB7 60fps \xB7 ${mult}x \u500D\u901F \xB7 \u65F6\u957F ${secTxt})`, "ok");
+      return true;
+    } catch (err) {
+      const msg = err instanceof Error && err.message ? err.message : String(err);
+      if (videoExportStatus2) videoExportStatus2.textContent = "\u2717 \u5BFC\u51FA\u5931\u8D25: " + msg;
+      say("\u2717 \u89C6\u9891\u5BFC\u51FA\u5931\u8D25: " + msg, "err");
+      return false;
+    } finally {
+      IS_EXPORTING_VIDEO = false;
+      if (btnExportVideo2) btnExportVideo2.disabled = false;
+      if (btnExportVideoLabel2) btnExportVideoLabel2.textContent = "\u{1F3AC} \u5BFC\u51FA\u89C6\u9891";
+    }
+  }
+  if (btnExportVideo2) {
+    btnExportVideo2.onclick = (e) => {
+      e.stopPropagation();
+      exportVideo(VIDEO_EXPORT_SPEED);
+    };
+  }
+
+  // src/ui/vfs.ts
+  var vfs_exports = {};
+  __export(vfs_exports, {
     VFS_EXPANDED_FOLDERS: () => VFS_EXPANDED_FOLDERS,
     VFS_NODES: () => VFS_NODES,
     VFS_STORAGE_KEY: () => VFS_STORAGE_KEY,
     bindGlobalVfsApi: () => bindGlobalVfsApi,
-    copyNotebookCell: () => copyNotebookCell,
-    cutNotebookCell: () => cutNotebookCell,
-    debugNotebookCell: () => debugNotebookCell,
-    deleteNotebookCell: () => deleteNotebookCell,
-    duplicateNotebookCell: () => duplicateNotebookCell,
-    ensureLangNotebooks: () => ensureLangNotebooks,
     ensureParentFoldersExist: () => ensureParentFoldersExist,
-    ensureScriptTabsForLang: () => ensureScriptTabsForLang,
     ensureVfsInitialized: () => ensureVfsInitialized,
-    exportActiveNotebookIpynb: () => exportActiveNotebookIpynb,
-    getActiveCell: () => getActiveCell,
-    getActiveNotebook: () => getActiveNotebook,
-    getActiveScriptTab: () => getActiveScriptTab,
-    getPySamplesDict: () => getPySamplesDict,
-    importNotebookFromJson: () => importNotebookFromJson,
-    initNotebookUI: () => initNotebookUI,
-    initScriptTabsAndImportEvents: () => initScriptTabsAndImportEvents,
     initVfsSidebarEvents: () => initVfsSidebarEvents,
-    insertNotebookCell: () => insertNotebookCell,
-    isScriptTabSyncing: () => isScriptTabSyncing,
-    moveNotebookCell: () => moveNotebookCell,
-    nextCellId: () => nextCellId,
-    nextDocId: () => nextDocId,
-    nextScriptTabId: () => nextScriptTabId,
-    openSampleScriptTab: () => openSampleScriptTab,
     openVfsFile: () => openVfsFile,
-    pasteNotebookCell: () => pasteNotebookCell,
     persistVfsToClientStorage: () => persistVfsToClientStorage,
-    renderImportSampleMenu: () => renderImportSampleMenu,
-    renderMarkdownHtml: () => renderMarkdownHtml,
-    renderNotebookUI: () => renderNotebookUI,
-    renderScriptTabsUI: () => renderScriptTabsUI,
     renderVfsTreeUI: () => renderVfsTreeUI,
-    resolveWorkspacePath: () => resolveWorkspacePath,
-    restartNotebookKernel: () => restartNotebookKernel,
-    runAllNotebookCells: () => runAllNotebookCells,
-    runNotebookCell: () => runNotebookCell,
-    setScriptTabSyncing: () => setScriptTabSyncing,
-    setViewMode: () => setViewMode,
-    syncActiveScriptTabFromFileName: () => syncActiveScriptTabFromFileName,
-    syncActiveScriptTabSource: () => syncActiveScriptTabSource,
-    syncNotebookGlobalsToSidePanel: () => syncNotebookGlobalsToSidePanel,
-    typecheckNotebookCellTS: () => typecheckNotebookCellTS
+    resolveWorkspacePath: () => resolveWorkspacePath
   });
-
-  // src/ui/script-tabs.ts
-  var scriptTabSeq = 1;
-  var syncingScriptTab = false;
-  function nextScriptTabId() {
-    return "stab_" + ++scriptTabSeq;
-  }
-  function isScriptTabSyncing() {
-    return syncingScriptTab;
-  }
-  function setScriptTabSyncing(val) {
-    syncingScriptTab = val;
-  }
-  var SCRIPT_TABS = {
-    ts: { activeTabId: "", tabs: [] },
-    python: { activeTabId: "", tabs: [] }
-  };
-  var TS_SAMPLE_METADATA = [
-    { key: "showcase", label: "showcase.ts \xB7 \u7EFC\u5408\u6F14\u793A", desc: "\u6ED1\u52A8\u7A97\u53E3 + \u5355\u8C03\u6808 + Map + \u6811\u4E0E\u56FE" },
-    { key: "mergesort", label: "mergesort.ts \xB7 \u5F52\u5E76\u6392\u5E8F", desc: "\u5206\u6CBB\u9012\u5F52\u4E0E\u5DE6\u53F3\u5B50\u6570\u7EC4\u5F52\u5E76" },
-    { key: "debug_crash", label: "debug_crash.ts \xB7 \u8D8A\u754C\u6392\u9519", desc: "\u4E8C\u5206\u67E5\u627E <= \u8D8A\u754C Bug \u73B0\u573A\u5B9A\u4F4D" },
-    { key: "lcs", label: "lcs.ts \xB7 \u6700\u957F\u516C\u5171\u5B50\u5E8F\u5217", desc: "\u4E8C\u7EF4 DP \u7F51\u683C\u89C4\u5212" },
-    { key: "analyze", label: "analyze.ts \xB7 \u9891\u7387\u7EDF\u8BA1", desc: "\u6570\u7EC4\u4E0E Map \u54C8\u5E0C\u7EDF\u8BA1" },
-    { key: "window", label: "window.ts \xB7 \u6ED1\u52A8\u7A97\u53E3", desc: "\u53CC\u6307\u9488\u5B9A\u957F\u6ED1\u52A8\u7A97\u53E3" },
-    { key: "structures", label: "structures.ts \xB7 \u6570\u636E\u7ED3\u6784\u5168\u5BB6\u6876", desc: "\u6808 / \u961F\u5217 / \u5806 / \u5E76\u67E5\u96C6 / \u6811 / \u56FE" },
-    { key: "counter", label: "counter.ts \xB7 \u95ED\u5305\u8BA1\u6570\u5668", desc: "\u9AD8\u9636\u51FD\u6570\u4E0E\u8BCD\u6CD5\u4F5C\u7528\u57DF\u95ED\u5305" },
-    { key: "classes", label: "classes.ts \xB7 \u7C7B\u4E0E\u7EE7\u627F", desc: "class / extends / super \u5B9E\u4F8B\u65B9\u6CD5" },
-    { key: "async_loop", label: "async_loop.ts \xB7 \u4E8B\u4EF6\u5FAA\u73AF", desc: "async / await \u4E0E\u5FAE\u4EFB\u52A1\u961F\u5217" }
-  ];
-  var PY_SAMPLE_METADATA = [
-    { key: "quickstart", label: "quickstart.py \xB7 \u5192\u6CE1\u6392\u5E8F", desc: "Python \u5217\u8868\u539F\u5730\u4EA4\u6362\u4E0E\u53CC\u5C42\u5FAA\u73AF" },
-    { key: "binary_search", label: "binary_search.py \xB7 \u4E8C\u5206\u67E5\u627E", desc: "\u53CC\u6307\u9488\u6298\u534A\u641C\u7D22\u4E0E checkpoint()" },
-    { key: "bfs", label: "bfs.py \xB7 BFS \u5E7F\u5EA6\u4F18\u5148\u641C\u7D22", desc: "deque \u961F\u5217\u4E0E\u96C6\u5408\u8BBF\u95EE\u6807\u8BB0" },
-    { key: "lcs", label: "lcs.py \xB7 DP \u6700\u957F\u516C\u5171\u5B50\u5E8F\u5217", desc: "\u4E8C\u7EF4\u5217\u8868\u63A8\u5BFC\u5F0F\u4E0E\u52A8\u6001\u89C4\u5212" },
-    { key: "structures", label: "structures.py \xB7 \u7ED3\u6784\u96C6\u5408", desc: "TreeNode / ListNode / \u5B57\u5178 / \u96C6\u5408" },
-    { key: "classes", label: "classes.py \xB7 \u7C7B\u4E0E\u5B9E\u4F8B", desc: "Counter \u7C7B\u6784\u9020\u4E0E\u5B9E\u4F8B\u5C5E\u6027\u8FFD\u8E2A" }
-  ];
-  function getPySamplesDict() {
-    const eng = typeof PY_ENGINE !== "undefined" ? PY_ENGINE : null;
-    return eng && eng.samples ? eng.samples : {};
-  }
-  function ensureScriptTabsForLang(lang) {
-    ensureVfsInitialized();
-    const store = SCRIPT_TABS[lang];
-    if (store.tabs.length === 0) {
-      const defaultTitle = lang === "python" ? LANG === "python" && FILE_NAME ? FILE_NAME : "quickstart.py" : LANG !== "python" && FILE_NAME ? FILE_NAME : "showcase.ts";
-      const defaultSrc = lang === "python" ? LANG === "python" && editor && editor.value ? editor.value : getPySamplesDict().quickstart || "" : LANG !== "python" && editor && editor.value ? editor.value : SAMPLES.showcase || "";
-      const tabId = nextScriptTabId();
-      store.tabs.push({
-        id: tabId,
-        title: defaultTitle,
-        lang,
-        source: defaultSrc,
-        vfsPath: "",
-        isSample: true
-      });
-      store.activeTabId = tabId;
-    }
-    const firstTab = store.tabs[0];
-    if (firstTab && !store.tabs.some((t) => t.id === store.activeTabId)) {
-      store.activeTabId = firstTab.id;
-    }
-    return store;
-  }
-  function getActiveScriptTab(lang) {
-    const targetLang = lang || (LANG === "python" ? "python" : "ts");
-    const store = ensureScriptTabsForLang(targetLang);
-    const found = store.tabs.find((t) => t.id === store.activeTabId) ?? store.tabs[0];
-    if (found) return found;
-    return {
-      id: "stab_0",
-      title: targetLang === "python" ? "quickstart.py" : "showcase.ts",
-      lang: targetLang,
-      source: "",
-      vfsPath: "",
-      isSample: true
-    };
-  }
-  function openSampleScriptTab(title, source, lang) {
-    const targetLang = lang || (LANG === "python" ? "python" : "ts");
-    if (editor && editor.value) {
-      syncActiveScriptTabSource(editor.value);
-    }
-    const store = ensureScriptTabsForLang(targetLang);
-    let tab = store.tabs.find((t) => (t.isSample || !t.vfsPath) && t.title === title);
-    if (!tab) {
-      tab = {
-        id: nextScriptTabId(),
-        title,
-        lang: targetLang,
-        source,
-        vfsPath: "",
-        isSample: true
-      };
-      store.tabs.push(tab);
-    } else {
-      tab.source = source;
-      tab.vfsPath = "";
-      tab.isSample = true;
-    }
-    store.activeTabId = tab.id;
-    syncingScriptTab = true;
-    if (editor) editor.value = source;
-    setFileName(title);
-    syncingScriptTab = false;
-    renderScriptTabsUI();
-    renderVfsTreeUI();
-  }
-  function syncActiveScriptTabFromFileName(newFileName) {
-    if (syncingScriptTab) return;
-    const lang = LANG === "python" ? "python" : "ts";
-    const store = ensureScriptTabsForLang(lang);
-    const activeTab = store.tabs.find((t) => t.id === store.activeTabId);
-    if (!activeTab) return;
-    const oldPath = activeTab.vfsPath;
-    activeTab.title = newFileName;
-    activeTab.source = editor ? editor.value : activeTab.source;
-    if (!activeTab.isSample && oldPath && VFS_NODES.has(oldPath)) {
-      activeTab.vfsPath = newFileName;
-      VFS_NODES.delete(oldPath);
-      VFS_NODES.set(activeTab.vfsPath, {
-        path: activeTab.vfsPath,
-        name: newFileName,
-        type: "file",
-        parentPath: "",
-        content: activeTab.source
-      });
-      persistVfsToClientStorage();
-    }
-    renderScriptTabsUI();
-    renderVfsTreeUI();
-  }
-  function syncActiveScriptTabSource(src) {
-    const lang = LANG === "python" ? "python" : "ts";
-    const activeTab = getActiveScriptTab(lang);
-    if (!activeTab) return;
-    activeTab.source = src;
-    if (!activeTab.isSample && activeTab.vfsPath) {
-      const node = VFS_NODES.get(activeTab.vfsPath);
-      if (node && node.type === "file") {
-        node.content = src;
-        persistVfsToClientStorage();
-      }
-    }
-  }
-  function renderScriptTabsUI() {
-    const tabsEl = $("scriptTabsList");
-    if (!tabsEl) return;
-    const lang = LANG === "python" ? "python" : "ts";
-    const store = ensureScriptTabsForLang(lang);
-    const activeTab = getActiveScriptTab(lang);
-    tabsEl.innerHTML = store.tabs.map((t) => {
-      const isAct = t.id === activeTab.id;
-      const iconCls = lang === "python" ? "py-icon" : "ts-icon";
-      return `<div class="nb-tab${isAct ? " active" : ""}" data-script-tab-id="${esc(t.id)}" title="\u5355\u51FB\u5207\u6362\u6807\u7B7E\u9875 \xB7 \u53CC\u51FB\u6587\u4EF6\u540D\u91CD\u547D\u540D"><span class="nb-tab-icon ${iconCls}" aria-hidden="true"></span><span class="nb-tab-title">${esc(t.title)}</span>` + (store.tabs.length > 1 ? `<button type="button" class="nb-tab-close" data-close-script-tab="${esc(t.id)}" title="\u5173\u95ED\u6807\u7B7E\u9875">\xD7</button>` : "") + `</div>`;
-    }).join("") + `<button type="button" class="nb-tab-add" id="scriptBtnNewTab" title="\u65B0\u5EFA\u4EE3\u7801\u6587\u4EF6\u6807\u7B7E\u9875">\uFF0B</button>`;
-  }
-  function renderImportSampleMenu() {
-    const listEl = $("importSampleList");
-    if (!listEl) return;
-    const isPy = LANG === "python";
-    const items = isPy ? PY_SAMPLE_METADATA : TS_SAMPLE_METADATA;
-    const folderPrefix = isPy ? "examples/python/" : "examples/ts/";
-    const nbItemHtml = `<button type="button" class="import-sample-item" data-import-sample-notebook="Intro.ipynb"><span class="import-sample-name">\u{1F4D3} Intro.ipynb \xB7 \u4EA4\u4E92\u5F0F\u7B14\u8BB0\u672C\u793A\u4F8B</span><span class="import-sample-path">examples/notebooks/</span></button>`;
-    listEl.innerHTML = (VIEW_MODE === "notebook" ? nbItemHtml : "") + items.map(
-      (item) => `<button type="button" class="import-sample-item" data-import-sample-key="${esc(item.key)}" title="${esc(item.desc)}"><span class="import-sample-name">${esc(item.label)}</span><span class="import-sample-path">${esc(folderPrefix + item.key + (isPy ? ".py" : ".ts"))}</span></button>`
-    ).join("") + (VIEW_MODE !== "notebook" ? nbItemHtml : "");
-  }
-  function initScriptTabsAndImportEvents() {
-    const importMenuWrap = $("importMenuWrap");
-    const btnImport = $("btnImport");
-    const btnUploadLocalFile = $("btnUploadLocalFile");
-    const importSampleList = $("importSampleList");
-    const fileInput = $("fileInput");
-    if (btnImport && importMenuWrap) {
-      btnImport.onclick = (e) => {
-        if (e && typeof e.stopPropagation === "function") e.stopPropagation();
-        renderImportSampleMenu();
-        if (importMenuWrap.classList) {
-          importMenuWrap.classList.toggle("open");
-        }
-      };
-      addEventListener("click", (e) => {
-        if (!importMenuWrap.classList || !importMenuWrap.classList.contains("open")) return;
-        if (importMenuWrap.contains && importMenuWrap.contains(e.target)) return;
-        importMenuWrap.classList.remove("open");
-      });
-    }
-    if (btnUploadLocalFile && fileInput) {
-      btnUploadLocalFile.onclick = (e) => {
-        if (e && typeof e.stopPropagation === "function") e.stopPropagation();
-        if (importMenuWrap && importMenuWrap.classList) importMenuWrap.classList.remove("open");
-        fileInput.click();
-      };
-    }
-    if (importSampleList && importSampleList.addEventListener) {
-      importSampleList.addEventListener("click", (e) => {
-        const target = e.target;
-        const btn = target && target.closest ? target.closest(".import-sample-item") : null;
-        if (!btn) return;
-        if (importMenuWrap && importMenuWrap.classList) importMenuWrap.classList.remove("open");
-        const nbFile = btn.getAttribute("data-import-sample-notebook");
-        if (nbFile) {
-          setViewMode("notebook");
-          say(`\u2713 \u5DF2\u52A0\u8F7D\u5185\u7F6E\u793A\u4F8B\u7B14\u8BB0\u672C ${nbFile}`, "ok");
-          return;
-        }
-        const sampleKey = btn.getAttribute("data-import-sample-key");
-        if (sampleKey) {
-          if (VIEW_MODE === "notebook") {
-            const code = LANG === "python" ? getPySamplesDict()[sampleKey] || "" : SAMPLES[sampleKey] || "";
-            if (code) {
-              const doc = getActiveNotebook();
-              const newCell = {
-                id: nextCellId(),
-                type: "code",
-                source: code.trim(),
-                executionCount: null,
-                status: "idle",
-                output: null
-              };
-              doc.cells.push(newCell);
-              doc.activeCellId = newCell.id;
-              renderNotebookUI(true);
-              say(`\u2713 \u5DF2\u5C06\u793A\u4F8B ${sampleKey} \u5BFC\u5165\u5230\u5F53\u524D Notebook \u65B0\u5355\u5143\u683C`, "ok");
-            }
-            return;
-          }
-          loadSample(sampleKey);
-        }
-      });
-    }
-    const scriptTabsEl = $("scriptTabsList");
-    if (scriptTabsEl && scriptTabsEl.addEventListener) {
-      scriptTabsEl.addEventListener("click", (e) => {
-        const target = e.target;
-        if (!target) return;
-        const lang = LANG === "python" ? "python" : "ts";
-        const store = ensureScriptTabsForLang(lang);
-        const closeBtn = target.closest ? target.closest("[data-close-script-tab]") : null;
-        if (closeBtn) {
-          e.stopPropagation();
-          const closeId = closeBtn.getAttribute("data-close-script-tab");
-          if (store.tabs.length <= 1) return;
-          const idx = store.tabs.findIndex((t) => t.id === closeId);
-          if (idx >= 0) {
-            store.tabs.splice(idx, 1);
-            if (store.activeTabId === closeId) {
-              const fallbackTab = store.tabs[Math.max(0, idx - 1)];
-              if (fallbackTab) store.activeTabId = fallbackTab.id;
-              const nextTab = getActiveScriptTab(lang);
-              syncingScriptTab = true;
-              editor.value = nextTab.source;
-              setFileName(nextTab.title);
-              syncingScriptTab = false;
-              resetTraceState();
-              updateEditorChrome();
-            }
-            renderScriptTabsUI();
-            renderVfsTreeUI();
-          }
-          return;
-        }
-        const newBtn = target.closest ? target.closest("#scriptBtnNewTab") : null;
-        if (newBtn) {
-          syncActiveScriptTabSource(editor ? editor.value : "");
-          const ext = lang === "python" ? ".py" : ".ts";
-          const newTitle = `untitled-${store.tabs.length + 1}${ext}`;
-          const newTab = {
-            id: nextScriptTabId(),
-            title: newTitle,
-            lang,
-            source: lang === "python" ? "# \u65B0\u5EFA Python \u811A\u672C\n" : "// \u65B0\u5EFA TypeScript \u811A\u672C\n",
-            vfsPath: "",
-            isSample: false
-          };
-          store.tabs.push(newTab);
-          store.activeTabId = newTab.id;
-          syncingScriptTab = true;
-          editor.value = newTab.source;
-          setFileName(newTab.title);
-          syncingScriptTab = false;
-          resetTraceState();
-          updateEditorChrome();
-          renderScriptTabsUI();
-          renderVfsTreeUI();
-          if (editor && typeof editor.focus === "function") editor.focus();
-          return;
-        }
-        const tabEl = target.closest ? target.closest("[data-script-tab-id]") : null;
-        if (tabEl) {
-          const tabId = tabEl.getAttribute("data-script-tab-id");
-          if (tabId && store.activeTabId !== tabId) {
-            syncActiveScriptTabSource(editor ? editor.value : "");
-            store.activeTabId = tabId;
-            const nextTab = getActiveScriptTab(lang);
-            syncingScriptTab = true;
-            editor.value = nextTab.source;
-            setFileName(nextTab.title);
-            syncingScriptTab = false;
-            resetTraceState();
-            updateEditorChrome();
-            renderScriptTabsUI();
-            renderVfsTreeUI();
-          }
-        }
-      });
-      scriptTabsEl.addEventListener("dblclick", (e) => {
-        const target = e.target;
-        const tabEl = target && target.closest ? target.closest("[data-script-tab-id]") : null;
-        if (!tabEl) return;
-        const tabId = tabEl.getAttribute("data-script-tab-id");
-        const lang = LANG === "python" ? "python" : "ts";
-        const store = ensureScriptTabsForLang(lang);
-        const targetTab = store.tabs.find((t) => t.id === tabId);
-        if (!targetTab) return;
-        const titleSpan = tabEl.querySelector ? tabEl.querySelector(".nb-tab-title") : null;
-        if (!titleSpan) return;
-        const input = document.createElement("input");
-        input.type = "text";
-        input.className = "nb-tab-rename-input";
-        input.value = targetTab.title;
-        titleSpan.replaceWith(input);
-        input.focus();
-        input.select();
-        let committed = false;
-        const commit = () => {
-          if (committed) return;
-          committed = true;
-          const rawVal = input.value.trim();
-          if (rawVal) {
-            const ext = lang === "python" ? ".py" : ".ts";
-            const nextName = /\.[A-Za-z0-9]{1,12}$/.test(rawVal) ? rawVal : rawVal + ext;
-            const oldPath = targetTab.vfsPath;
-            targetTab.title = nextName;
-            if (!targetTab.isSample && oldPath && VFS_NODES.has(oldPath)) {
-              targetTab.vfsPath = nextName;
-              VFS_NODES.delete(oldPath);
-              VFS_NODES.set(targetTab.vfsPath, {
-                path: targetTab.vfsPath,
-                name: nextName,
-                type: "file",
-                parentPath: "",
-                content: targetTab.source
-              });
-              persistVfsToClientStorage();
-            }
-            if (store.activeTabId === targetTab.id) {
-              syncingScriptTab = true;
-              setFileName(nextName);
-              syncingScriptTab = false;
-            }
-            say(`\u2713 \u6587\u4EF6\u5DF2\u91CD\u547D\u540D\u4E3A ${nextName}`, "ok");
-          }
-          renderScriptTabsUI();
-          renderVfsTreeUI();
-        };
-        input.addEventListener("blur", commit);
-        input.addEventListener("keydown", (ev) => {
-          if (ev.key === "Enter") {
-            ev.preventDefault();
-            input.blur();
-          } else if (ev.key === "Escape") {
-            committed = true;
-            renderScriptTabsUI();
-          }
-        });
-      });
-    }
-    if (editor && editor.addEventListener) {
-      editor.addEventListener("input", () => {
-        syncActiveScriptTabSource(editor.value);
-      });
-    }
-  }
-
-  // src/ui/vfs.ts
   var VFS_STORAGE_KEY = "ts-visual-vfs-workspace-v2";
   var vfsBootInitialized = false;
   var pendingVfsDeletePath = null;
@@ -13569,7 +13188,7 @@ runAsyncDemo()
     const treeEl = $("vfsTreeList");
     if (!treeEl) return;
     ensureVfsInitialized();
-    const activePath = VIEW_MODE === "notebook" ? getActiveNotebook().title : getActiveScriptTab().vfsPath;
+    const activePath = uiHooks.getActiveWorkspacePath();
     const childrenOf = (parentPath) => {
       const list = [];
       VFS_NODES.forEach((node) => {
@@ -13630,19 +13249,7 @@ runAsyncDemo()
     const node = VFS_NODES.get(path);
     if (!node || node.type !== "file") return;
     if (node.name.endsWith(".ipynb")) {
-      const lang2 = LANG === "python" ? "python" : "ts";
-      const store2 = ensureLangNotebooks(lang2);
-      const existing = store2.docs.find((d) => d.title === node.name);
-      if (existing) {
-        store2.activeDocId = existing.id;
-        setViewMode("notebook");
-        renderNotebookUI();
-        return;
-      }
-      if (node.content && importNotebookFromJson(node.content, node.name)) {
-        return;
-      }
-      setViewMode("notebook");
+      uiHooks.openVfsNotebookFile(node.name, node.content);
       return;
     }
     const isPyFile = node.name.endsWith(".py");
@@ -13651,36 +13258,8 @@ runAsyncDemo()
     } else if (node.name.endsWith(".ts") && LANG === "python" && typeof PY_ENGINE !== "undefined" && PY_ENGINE.setLang) {
       PY_ENGINE.setLang("ts");
     }
-    setViewMode("script");
-    const lang = LANG === "python" ? "python" : "ts";
-    if (editor && editor.value) {
-      syncActiveScriptTabSource(editor.value);
-    }
-    const store = ensureScriptTabsForLang(lang);
-    let tab = store.tabs.find((t) => !t.isSample && t.vfsPath === node.path);
-    if (!tab) {
-      tab = {
-        id: nextScriptTabId(),
-        title: node.name,
-        lang,
-        source: node.content || "",
-        vfsPath: node.path,
-        isSample: false
-      };
-      store.tabs.push(tab);
-    } else {
-      tab.source = node.content ?? tab.source;
-      tab.vfsPath = node.path;
-      tab.isSample = false;
-    }
-    store.activeTabId = tab.id;
-    setScriptTabSyncing(true);
-    editor.value = tab.source;
-    setFileName(tab.title);
-    setScriptTabSyncing(false);
-    resetTraceState();
-    updateEditorChrome();
-    renderScriptTabsUI();
+    uiHooks.setViewMode("script");
+    uiHooks.openVfsScriptFile(node.path, node.name, node.content || "");
     renderVfsTreeUI();
     say(`\u{1F4C2} \u5DF2\u6253\u5F00 ${node.path}`, "ok");
   }
@@ -14035,16 +13614,8 @@ runAsyncDemo()
               VFS_NODES.delete(k);
             }
           });
-          ["ts", "python"].forEach((l) => {
-            const st = SCRIPT_TABS[l];
-            st.tabs.forEach((t) => {
-              if (t.vfsPath === delPath || t.vfsPath.startsWith(prefix)) {
-                t.vfsPath = "";
-              }
-            });
-          });
           persistVfsToClientStorage();
-          renderScriptTabsUI();
+          uiHooks.onVfsFileDeleted(delPath);
           renderVfsTreeUI();
           say(`\u{1F5D1} \u5DF2\u4ECE\u6587\u4EF6\u76EE\u5F55\u79FB\u9664 ${delPath}`, "dim");
         } else {
@@ -14083,7 +13654,7 @@ runAsyncDemo()
       if (fileRow) {
         const filePath = fileRow.getAttribute("data-vfs-file");
         if (filePath) {
-          const curActivePath = VIEW_MODE === "notebook" ? getActiveNotebook().title : getActiveScriptTab().vfsPath;
+          const curActivePath = uiHooks.getActiveWorkspacePath();
           if (filePath !== curActivePath || editor.value !== (VFS_NODES.get(filePath)?.content ?? "")) {
             openVfsFile(filePath);
           }
@@ -14119,19 +13690,7 @@ runAsyncDemo()
           node.path = nextPath;
           VFS_NODES.set(nextPath, node);
           persistVfsToClientStorage();
-          const lang = LANG === "python" ? "python" : "ts";
-          const store = ensureScriptTabsForLang(lang);
-          const matchingTab = store.tabs.find((t) => t.vfsPath === oldPath);
-          if (matchingTab) {
-            matchingTab.title = nextName;
-            matchingTab.vfsPath = nextPath;
-            if (store.activeTabId === matchingTab.id) {
-              setScriptTabSyncing(true);
-              setFileName(nextName);
-              setScriptTabSyncing(false);
-            }
-            renderScriptTabsUI();
-          }
+          uiHooks.onVfsFileRenamed(oldPath, nextPath, nextName);
           say(`\u2713 \u5DF2\u91CD\u547D\u540D\u4E3A ${nextPath}`, "ok");
         }
         renderVfsTreeUI();
@@ -14149,7 +13708,484 @@ runAsyncDemo()
     });
   }
 
+  // src/ui/script-tabs.ts
+  var script_tabs_exports = {};
+  __export(script_tabs_exports, {
+    PY_SAMPLE_METADATA: () => PY_SAMPLE_METADATA,
+    SCRIPT_TABS: () => SCRIPT_TABS,
+    TS_SAMPLE_METADATA: () => TS_SAMPLE_METADATA,
+    ensureScriptTabsForLang: () => ensureScriptTabsForLang,
+    getActiveScriptTab: () => getActiveScriptTab,
+    getPySamplesDict: () => getPySamplesDict,
+    initScriptTabsAndImportEvents: () => initScriptTabsAndImportEvents,
+    isScriptTabSyncing: () => isScriptTabSyncing,
+    nextScriptTabId: () => nextScriptTabId,
+    onVfsFileDeleted: () => onVfsFileDeleted,
+    onVfsFileRenamed: () => onVfsFileRenamed,
+    openSampleScriptTab: () => openSampleScriptTab,
+    openVfsScriptFile: () => openVfsScriptFile,
+    renderImportSampleMenu: () => renderImportSampleMenu,
+    renderScriptTabsUI: () => renderScriptTabsUI,
+    setScriptTabSyncing: () => setScriptTabSyncing,
+    syncActiveScriptTabFromFileName: () => syncActiveScriptTabFromFileName,
+    syncActiveScriptTabSource: () => syncActiveScriptTabSource
+  });
+  var scriptTabSeq = 1;
+  var syncingScriptTab = false;
+  function nextScriptTabId() {
+    return "stab_" + ++scriptTabSeq;
+  }
+  function isScriptTabSyncing() {
+    return syncingScriptTab;
+  }
+  function setScriptTabSyncing(val) {
+    syncingScriptTab = val;
+  }
+  var SCRIPT_TABS = {
+    ts: { activeTabId: "", tabs: [] },
+    python: { activeTabId: "", tabs: [] }
+  };
+  var TS_SAMPLE_METADATA = [
+    { key: "showcase", label: "showcase.ts \xB7 \u7EFC\u5408\u6F14\u793A", desc: "\u6ED1\u52A8\u7A97\u53E3 + \u5355\u8C03\u6808 + Map + \u6811\u4E0E\u56FE" },
+    { key: "mergesort", label: "mergesort.ts \xB7 \u5F52\u5E76\u6392\u5E8F", desc: "\u5206\u6CBB\u9012\u5F52\u4E0E\u5DE6\u53F3\u5B50\u6570\u7EC4\u5F52\u5E76" },
+    { key: "debug_crash", label: "debug_crash.ts \xB7 \u8D8A\u754C\u6392\u9519", desc: "\u4E8C\u5206\u67E5\u627E <= \u8D8A\u754C Bug \u73B0\u573A\u5B9A\u4F4D" },
+    { key: "lcs", label: "lcs.ts \xB7 \u6700\u957F\u516C\u5171\u5B50\u5E8F\u5217", desc: "\u4E8C\u7EF4 DP \u7F51\u683C\u89C4\u5212" },
+    { key: "analyze", label: "analyze.ts \xB7 \u9891\u7387\u7EDF\u8BA1", desc: "\u6570\u7EC4\u4E0E Map \u54C8\u5E0C\u7EDF\u8BA1" },
+    { key: "window", label: "window.ts \xB7 \u6ED1\u52A8\u7A97\u53E3", desc: "\u53CC\u6307\u9488\u5B9A\u957F\u6ED1\u52A8\u7A97\u53E3" },
+    { key: "structures", label: "structures.ts \xB7 \u6570\u636E\u7ED3\u6784\u5168\u5BB6\u6876", desc: "\u6808 / \u961F\u5217 / \u5806 / \u5E76\u67E5\u96C6 / \u6811 / \u56FE" },
+    { key: "counter", label: "counter.ts \xB7 \u95ED\u5305\u8BA1\u6570\u5668", desc: "\u9AD8\u9636\u51FD\u6570\u4E0E\u8BCD\u6CD5\u4F5C\u7528\u57DF\u95ED\u5305" },
+    { key: "classes", label: "classes.ts \xB7 \u7C7B\u4E0E\u7EE7\u627F", desc: "class / extends / super \u5B9E\u4F8B\u65B9\u6CD5" },
+    { key: "async_loop", label: "async_loop.ts \xB7 \u4E8B\u4EF6\u5FAA\u73AF", desc: "async / await \u4E0E\u5FAE\u4EFB\u52A1\u961F\u5217" }
+  ];
+  var PY_SAMPLE_METADATA = [
+    { key: "quickstart", label: "quickstart.py \xB7 \u5192\u6CE1\u6392\u5E8F", desc: "Python \u5217\u8868\u539F\u5730\u4EA4\u6362\u4E0E\u53CC\u5C42\u5FAA\u73AF" },
+    { key: "binary_search", label: "binary_search.py \xB7 \u4E8C\u5206\u67E5\u627E", desc: "\u53CC\u6307\u9488\u6298\u534A\u641C\u7D22\u4E0E checkpoint()" },
+    { key: "bfs", label: "bfs.py \xB7 BFS \u5E7F\u5EA6\u4F18\u5148\u641C\u7D22", desc: "deque \u961F\u5217\u4E0E\u96C6\u5408\u8BBF\u95EE\u6807\u8BB0" },
+    { key: "lcs", label: "lcs.py \xB7 DP \u6700\u957F\u516C\u5171\u5B50\u5E8F\u5217", desc: "\u4E8C\u7EF4\u5217\u8868\u63A8\u5BFC\u5F0F\u4E0E\u52A8\u6001\u89C4\u5212" },
+    { key: "structures", label: "structures.py \xB7 \u7ED3\u6784\u96C6\u5408", desc: "TreeNode / ListNode / \u5B57\u5178 / \u96C6\u5408" },
+    { key: "classes", label: "classes.py \xB7 \u7C7B\u4E0E\u5B9E\u4F8B", desc: "Counter \u7C7B\u6784\u9020\u4E0E\u5B9E\u4F8B\u5C5E\u6027\u8FFD\u8E2A" }
+  ];
+  function getPySamplesDict() {
+    const eng = typeof PY_ENGINE !== "undefined" ? PY_ENGINE : null;
+    return eng && eng.samples ? eng.samples : {};
+  }
+  function ensureScriptTabsForLang(lang) {
+    ensureVfsInitialized();
+    const store = SCRIPT_TABS[lang];
+    if (store.tabs.length === 0) {
+      const defaultTitle = lang === "python" ? LANG === "python" && FILE_NAME ? FILE_NAME : "quickstart.py" : LANG !== "python" && FILE_NAME ? FILE_NAME : "showcase.ts";
+      const defaultSrc = lang === "python" ? LANG === "python" && editor && editor.value ? editor.value : getPySamplesDict().quickstart || "" : LANG !== "python" && editor && editor.value ? editor.value : SAMPLES.showcase || "";
+      const tabId = nextScriptTabId();
+      store.tabs.push({
+        id: tabId,
+        title: defaultTitle,
+        lang,
+        source: defaultSrc,
+        vfsPath: "",
+        isSample: true
+      });
+      store.activeTabId = tabId;
+    }
+    const firstTab = store.tabs[0];
+    if (firstTab && !store.tabs.some((t) => t.id === store.activeTabId)) {
+      store.activeTabId = firstTab.id;
+    }
+    return store;
+  }
+  function getActiveScriptTab(lang) {
+    const targetLang = lang || (LANG === "python" ? "python" : "ts");
+    const store = ensureScriptTabsForLang(targetLang);
+    const found = store.tabs.find((t) => t.id === store.activeTabId) ?? store.tabs[0];
+    if (found) return found;
+    return {
+      id: "stab_0",
+      title: targetLang === "python" ? "quickstart.py" : "showcase.ts",
+      lang: targetLang,
+      source: "",
+      vfsPath: "",
+      isSample: true
+    };
+  }
+  function openSampleScriptTab(title, source, lang) {
+    const targetLang = lang || (LANG === "python" ? "python" : "ts");
+    if (editor && editor.value) {
+      syncActiveScriptTabSource(editor.value);
+    }
+    const store = ensureScriptTabsForLang(targetLang);
+    let tab = store.tabs.find((t) => (t.isSample || !t.vfsPath) && t.title === title);
+    if (!tab) {
+      tab = {
+        id: nextScriptTabId(),
+        title,
+        lang: targetLang,
+        source,
+        vfsPath: "",
+        isSample: true
+      };
+      store.tabs.push(tab);
+    } else {
+      tab.source = source;
+      tab.vfsPath = "";
+      tab.isSample = true;
+    }
+    store.activeTabId = tab.id;
+    syncingScriptTab = true;
+    if (editor) editor.value = source;
+    setFileName(title);
+    syncingScriptTab = false;
+    renderScriptTabsUI();
+    renderVfsTreeUI();
+  }
+  function syncActiveScriptTabFromFileName(newFileName) {
+    if (syncingScriptTab) return;
+    const lang = LANG === "python" ? "python" : "ts";
+    const store = ensureScriptTabsForLang(lang);
+    const activeTab = store.tabs.find((t) => t.id === store.activeTabId);
+    if (!activeTab) return;
+    const oldPath = activeTab.vfsPath;
+    activeTab.title = newFileName;
+    activeTab.source = editor ? editor.value : activeTab.source;
+    if (!activeTab.isSample && oldPath && VFS_NODES.has(oldPath)) {
+      activeTab.vfsPath = newFileName;
+      VFS_NODES.delete(oldPath);
+      VFS_NODES.set(activeTab.vfsPath, {
+        path: activeTab.vfsPath,
+        name: newFileName,
+        type: "file",
+        parentPath: "",
+        content: activeTab.source
+      });
+      persistVfsToClientStorage();
+    }
+    renderScriptTabsUI();
+    renderVfsTreeUI();
+  }
+  function syncActiveScriptTabSource(src) {
+    const lang = LANG === "python" ? "python" : "ts";
+    const activeTab = getActiveScriptTab(lang);
+    if (!activeTab) return;
+    activeTab.source = src;
+    if (!activeTab.isSample && activeTab.vfsPath) {
+      const node = VFS_NODES.get(activeTab.vfsPath);
+      if (node && node.type === "file") {
+        node.content = src;
+        persistVfsToClientStorage();
+      }
+    }
+  }
+  function renderScriptTabsUI() {
+    const tabsEl = $("scriptTabsList");
+    if (!tabsEl) return;
+    const lang = LANG === "python" ? "python" : "ts";
+    const store = ensureScriptTabsForLang(lang);
+    const activeTab = getActiveScriptTab(lang);
+    tabsEl.innerHTML = store.tabs.map((t) => {
+      const isAct = t.id === activeTab.id;
+      const iconCls = lang === "python" ? "py-icon" : "ts-icon";
+      return `<div class="nb-tab${isAct ? " active" : ""}" data-script-tab-id="${esc(t.id)}" title="\u5355\u51FB\u5207\u6362\u6807\u7B7E\u9875 \xB7 \u53CC\u51FB\u6587\u4EF6\u540D\u91CD\u547D\u540D"><span class="nb-tab-icon ${iconCls}" aria-hidden="true"></span><span class="nb-tab-title">${esc(t.title)}</span>` + (store.tabs.length > 1 ? `<button type="button" class="nb-tab-close" data-close-script-tab="${esc(t.id)}" title="\u5173\u95ED\u6807\u7B7E\u9875">\xD7</button>` : "") + `</div>`;
+    }).join("") + `<button type="button" class="nb-tab-add" id="scriptBtnNewTab" title="\u65B0\u5EFA\u4EE3\u7801\u6587\u4EF6\u6807\u7B7E\u9875">\uFF0B</button>`;
+  }
+  function renderImportSampleMenu() {
+    const listEl = $("importSampleList");
+    if (!listEl) return;
+    const isPy = LANG === "python";
+    const items = isPy ? PY_SAMPLE_METADATA : TS_SAMPLE_METADATA;
+    const folderPrefix = isPy ? "examples/python/" : "examples/ts/";
+    const nbItemHtml = `<button type="button" class="import-sample-item" data-import-sample-notebook="Intro.ipynb"><span class="import-sample-name">\u{1F4D3} Intro.ipynb \xB7 \u4EA4\u4E92\u5F0F\u7B14\u8BB0\u672C\u793A\u4F8B</span><span class="import-sample-path">examples/notebooks/</span></button>`;
+    listEl.innerHTML = (VIEW_MODE === "notebook" ? nbItemHtml : "") + items.map(
+      (item) => `<button type="button" class="import-sample-item" data-import-sample-key="${esc(item.key)}" title="${esc(item.desc)}"><span class="import-sample-name">${esc(item.label)}</span><span class="import-sample-path">${esc(folderPrefix + item.key + (isPy ? ".py" : ".ts"))}</span></button>`
+    ).join("") + (VIEW_MODE !== "notebook" ? nbItemHtml : "");
+  }
+  function initScriptTabsAndImportEvents() {
+    const importMenuWrap = $("importMenuWrap");
+    const btnImport = $("btnImport");
+    const btnUploadLocalFile = $("btnUploadLocalFile");
+    const importSampleList = $("importSampleList");
+    const fileInput = $("fileInput");
+    if (btnImport && importMenuWrap) {
+      btnImport.onclick = (e) => {
+        if (e && typeof e.stopPropagation === "function") e.stopPropagation();
+        renderImportSampleMenu();
+        if (importMenuWrap.classList) {
+          importMenuWrap.classList.toggle("open");
+        }
+      };
+      addEventListener("click", (e) => {
+        if (!importMenuWrap.classList || !importMenuWrap.classList.contains("open")) return;
+        if (importMenuWrap.contains && importMenuWrap.contains(e.target)) return;
+        importMenuWrap.classList.remove("open");
+      });
+    }
+    if (btnUploadLocalFile && fileInput) {
+      btnUploadLocalFile.onclick = (e) => {
+        if (e && typeof e.stopPropagation === "function") e.stopPropagation();
+        if (importMenuWrap && importMenuWrap.classList) importMenuWrap.classList.remove("open");
+        fileInput.click();
+      };
+    }
+    if (importSampleList && importSampleList.addEventListener) {
+      importSampleList.addEventListener("click", (e) => {
+        const target = e.target;
+        const btn = target && target.closest ? target.closest(".import-sample-item") : null;
+        if (!btn) return;
+        if (importMenuWrap && importMenuWrap.classList) importMenuWrap.classList.remove("open");
+        const nbFile = btn.getAttribute("data-import-sample-notebook");
+        if (nbFile) {
+          uiHooks.setViewMode("notebook");
+          say(`\u2713 \u5DF2\u52A0\u8F7D\u5185\u7F6E\u793A\u4F8B\u7B14\u8BB0\u672C ${nbFile}`, "ok");
+          return;
+        }
+        const sampleKey = btn.getAttribute("data-import-sample-key");
+        if (sampleKey) {
+          if (VIEW_MODE === "notebook") {
+            const code = LANG === "python" ? getPySamplesDict()[sampleKey] || "" : SAMPLES[sampleKey] || "";
+            if (code) {
+              uiHooks.importSampleIntoNotebook(code, sampleKey);
+            }
+            return;
+          }
+          loadSample(sampleKey);
+        }
+      });
+    }
+    const scriptTabsEl = $("scriptTabsList");
+    if (scriptTabsEl && scriptTabsEl.addEventListener) {
+      scriptTabsEl.addEventListener("click", (e) => {
+        const target = e.target;
+        if (!target) return;
+        const lang = LANG === "python" ? "python" : "ts";
+        const store = ensureScriptTabsForLang(lang);
+        const closeBtn = target.closest ? target.closest("[data-close-script-tab]") : null;
+        if (closeBtn) {
+          e.stopPropagation();
+          const closeId = closeBtn.getAttribute("data-close-script-tab");
+          if (store.tabs.length <= 1) return;
+          const idx = store.tabs.findIndex((t) => t.id === closeId);
+          if (idx >= 0) {
+            store.tabs.splice(idx, 1);
+            if (store.activeTabId === closeId) {
+              const fallbackTab = store.tabs[Math.max(0, idx - 1)];
+              if (fallbackTab) store.activeTabId = fallbackTab.id;
+              const nextTab = getActiveScriptTab(lang);
+              syncingScriptTab = true;
+              editor.value = nextTab.source;
+              setFileName(nextTab.title);
+              syncingScriptTab = false;
+              resetTraceState();
+              updateEditorChrome();
+            }
+            renderScriptTabsUI();
+            renderVfsTreeUI();
+          }
+          return;
+        }
+        const newBtn = target.closest ? target.closest("#scriptBtnNewTab") : null;
+        if (newBtn) {
+          syncActiveScriptTabSource(editor ? editor.value : "");
+          const ext = lang === "python" ? ".py" : ".ts";
+          const newTitle = `untitled-${store.tabs.length + 1}${ext}`;
+          const newTab = {
+            id: nextScriptTabId(),
+            title: newTitle,
+            lang,
+            source: lang === "python" ? "# \u65B0\u5EFA Python \u811A\u672C\n" : "// \u65B0\u5EFA TypeScript \u811A\u672C\n",
+            vfsPath: "",
+            isSample: false
+          };
+          store.tabs.push(newTab);
+          store.activeTabId = newTab.id;
+          syncingScriptTab = true;
+          editor.value = newTab.source;
+          setFileName(newTab.title);
+          syncingScriptTab = false;
+          resetTraceState();
+          updateEditorChrome();
+          renderScriptTabsUI();
+          renderVfsTreeUI();
+          if (editor && typeof editor.focus === "function") editor.focus();
+          return;
+        }
+        const tabEl = target.closest ? target.closest("[data-script-tab-id]") : null;
+        if (tabEl) {
+          const tabId = tabEl.getAttribute("data-script-tab-id");
+          if (tabId && store.activeTabId !== tabId) {
+            syncActiveScriptTabSource(editor ? editor.value : "");
+            store.activeTabId = tabId;
+            const nextTab = getActiveScriptTab(lang);
+            syncingScriptTab = true;
+            editor.value = nextTab.source;
+            setFileName(nextTab.title);
+            syncingScriptTab = false;
+            resetTraceState();
+            updateEditorChrome();
+            renderScriptTabsUI();
+            renderVfsTreeUI();
+          }
+        }
+      });
+      scriptTabsEl.addEventListener("dblclick", (e) => {
+        const target = e.target;
+        const tabEl = target && target.closest ? target.closest("[data-script-tab-id]") : null;
+        if (!tabEl) return;
+        const tabId = tabEl.getAttribute("data-script-tab-id");
+        const lang = LANG === "python" ? "python" : "ts";
+        const store = ensureScriptTabsForLang(lang);
+        const targetTab = store.tabs.find((t) => t.id === tabId);
+        if (!targetTab) return;
+        const titleSpan = tabEl.querySelector ? tabEl.querySelector(".nb-tab-title") : null;
+        if (!titleSpan) return;
+        const input = document.createElement("input");
+        input.type = "text";
+        input.className = "nb-tab-rename-input";
+        input.value = targetTab.title;
+        titleSpan.replaceWith(input);
+        input.focus();
+        input.select();
+        let committed = false;
+        const commit = () => {
+          if (committed) return;
+          committed = true;
+          const rawVal = input.value.trim();
+          if (rawVal) {
+            const ext = lang === "python" ? ".py" : ".ts";
+            const nextName = /\.[A-Za-z0-9]{1,12}$/.test(rawVal) ? rawVal : rawVal + ext;
+            const oldPath = targetTab.vfsPath;
+            targetTab.title = nextName;
+            if (!targetTab.isSample && oldPath && VFS_NODES.has(oldPath)) {
+              targetTab.vfsPath = nextName;
+              VFS_NODES.delete(oldPath);
+              VFS_NODES.set(targetTab.vfsPath, {
+                path: targetTab.vfsPath,
+                name: nextName,
+                type: "file",
+                parentPath: "",
+                content: targetTab.source
+              });
+              persistVfsToClientStorage();
+            }
+            if (store.activeTabId === targetTab.id) {
+              syncingScriptTab = true;
+              setFileName(nextName);
+              syncingScriptTab = false;
+            }
+            say(`\u2713 \u6587\u4EF6\u5DF2\u91CD\u547D\u540D\u4E3A ${nextName}`, "ok");
+          }
+          renderScriptTabsUI();
+          renderVfsTreeUI();
+        };
+        input.addEventListener("blur", commit);
+        input.addEventListener("keydown", (ev) => {
+          if (ev.key === "Enter") {
+            ev.preventDefault();
+            input.blur();
+          } else if (ev.key === "Escape") {
+            committed = true;
+            renderScriptTabsUI();
+          }
+        });
+      });
+    }
+    if (editor && editor.addEventListener) {
+      editor.addEventListener("input", () => {
+        syncActiveScriptTabSource(editor.value);
+      });
+    }
+  }
+  function openVfsScriptFile(path, name, content) {
+    const lang = LANG === "python" ? "python" : "ts";
+    if (editor && editor.value) {
+      syncActiveScriptTabSource(editor.value);
+    }
+    const store = ensureScriptTabsForLang(lang);
+    let tab = store.tabs.find((t) => !t.isSample && t.vfsPath === path);
+    if (!tab) {
+      tab = {
+        id: nextScriptTabId(),
+        title: name,
+        lang,
+        source: content,
+        vfsPath: path,
+        isSample: false
+      };
+      store.tabs.push(tab);
+    } else {
+      tab.source = content;
+      tab.vfsPath = path;
+      tab.isSample = false;
+    }
+    store.activeTabId = tab.id;
+    setScriptTabSyncing(true);
+    editor.value = tab.source;
+    setFileName(tab.title);
+    setScriptTabSyncing(false);
+    resetTraceState();
+    updateEditorChrome();
+    renderScriptTabsUI();
+  }
+  function onVfsFileDeleted(delPath) {
+    const prefix = delPath + "/";
+    ["ts", "python"].forEach((l) => {
+      const st = SCRIPT_TABS[l];
+      st.tabs.forEach((t) => {
+        if (t.vfsPath === delPath || t.vfsPath.startsWith(prefix)) {
+          t.vfsPath = "";
+        }
+      });
+    });
+    renderScriptTabsUI();
+  }
+  function onVfsFileRenamed(oldPath, nextPath, nextName) {
+    const lang = LANG === "python" ? "python" : "ts";
+    const store = ensureScriptTabsForLang(lang);
+    const matchingTab = store.tabs.find((t) => t.vfsPath === oldPath);
+    if (matchingTab) {
+      matchingTab.title = nextName;
+      matchingTab.vfsPath = nextPath;
+      if (store.activeTabId === matchingTab.id) {
+        setScriptTabSyncing(true);
+        setFileName(nextName);
+        setScriptTabSyncing(false);
+      }
+      renderScriptTabsUI();
+    }
+  }
+  registerUiHooks({
+    getActiveWorkspacePath: () => getActiveScriptTab().vfsPath,
+    openVfsScriptFile,
+    onVfsFileDeleted,
+    onVfsFileRenamed
+  });
+
   // src/ui/notebook.ts
+  var notebook_exports = {};
+  __export(notebook_exports, {
+    copyNotebookCell: () => copyNotebookCell,
+    cutNotebookCell: () => cutNotebookCell,
+    debugNotebookCell: () => debugNotebookCell,
+    deleteNotebookCell: () => deleteNotebookCell,
+    duplicateNotebookCell: () => duplicateNotebookCell,
+    ensureLangNotebooks: () => ensureLangNotebooks,
+    exportActiveNotebookIpynb: () => exportActiveNotebookIpynb,
+    getActiveCell: () => getActiveCell,
+    getActiveNotebook: () => getActiveNotebook,
+    importNotebookFromJson: () => importNotebookFromJson,
+    importSampleIntoNotebook: () => importSampleIntoNotebook,
+    initNotebookUI: () => initNotebookUI,
+    insertNotebookCell: () => insertNotebookCell,
+    moveNotebookCell: () => moveNotebookCell,
+    nextCellId: () => nextCellId,
+    nextDocId: () => nextDocId,
+    openVfsNotebookFile: () => openVfsNotebookFile,
+    pasteNotebookCell: () => pasteNotebookCell,
+    renderMarkdownHtml: () => renderMarkdownHtml,
+    renderNotebookUI: () => renderNotebookUI,
+    restartNotebookKernel: () => restartNotebookKernel,
+    runAllNotebookCells: () => runAllNotebookCells,
+    runNotebookCell: () => runNotebookCell,
+    setViewMode: () => setViewMode,
+    syncNotebookGlobalsToSidePanel: () => syncNotebookGlobalsToSidePanel,
+    typecheckNotebookCellTS: () => typecheckNotebookCellTS
+  });
   var nbClipboardCell = null;
   var nbCellSeq = 100;
   var nbDocSeq = 10;
@@ -15755,6 +15791,42 @@ runAsyncDemo()
       };
     }
   }
+  function openVfsNotebookFile(name, content) {
+    const lang = LANG === "python" ? "python" : "ts";
+    const store = ensureLangNotebooks(lang);
+    const existing = store.docs.find((d) => d.title === name);
+    if (existing) {
+      store.activeDocId = existing.id;
+      setViewMode("notebook");
+      renderNotebookUI();
+      return;
+    }
+    if (content && importNotebookFromJson(content, name)) {
+      return;
+    }
+    setViewMode("notebook");
+  }
+  function importSampleIntoNotebook(code, sampleKey) {
+    const doc = getActiveNotebook();
+    const newCell = {
+      id: nextCellId(),
+      type: "code",
+      source: code.trim(),
+      executionCount: null,
+      status: "idle",
+      output: null
+    };
+    doc.cells.push(newCell);
+    doc.activeCellId = newCell.id;
+    renderNotebookUI(true);
+    say(`\u2713 \u5DF2\u5C06\u793A\u4F8B ${sampleKey} \u5BFC\u5165\u5230\u5F53\u524D Notebook \u65B0\u5355\u5143\u683C`, "ok");
+  }
+  registerUiHooks({
+    setViewMode,
+    openVfsNotebookFile,
+    importSampleIntoNotebook,
+    getActiveWorkspacePath: () => VIEW_MODE === "notebook" ? getActiveNotebook().title : getActiveScriptTab().vfsPath
+  });
 
   // src/main.ts
   bindStateGlobals();
@@ -15772,6 +15844,9 @@ runAsyncDemo()
     ...memory_graph_exports,
     ...controls_exports,
     ...share_exports,
+    ...video_webm_exports,
+    ...vfs_exports,
+    ...script_tabs_exports,
     ...notebook_exports
   };
   Object.assign(globalThis, allExports);

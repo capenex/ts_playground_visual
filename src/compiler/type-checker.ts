@@ -10,8 +10,7 @@ import {
   RESERVED_WORDS,
 } from "./comments";
 import { extractBindingNames } from "./instrumenter";
-import { say } from "../runtime/event-loop";
-import { updateEditorChrome, revealErrorLine } from "../viz/highlight";
+import { uiHooks } from "../state";
 import { Diag } from "../types";
 import {
   createTypeCheckContext,
@@ -1461,9 +1460,7 @@ export function ensureTsWorker() {
       _TS_WORKER_STATE.lastDiags = newDiags;
       if (_TYPECHECK_CACHE.src === data.src && newDiags.length > 0) {
         _TYPECHECK_CACHE = { src: null, strict: null, diags: [] };
-        if (typeof updateEditorChrome === 'function') {
-          try { updateEditorChrome(); } catch (_) {}
-        }
+        try { uiHooks.updateEditorChrome(); } catch (_) {}
       }
     };
     w.onerror = (ev) => {
@@ -1491,16 +1488,6 @@ export function requestTsWorkerCheck(src: string, strict: boolean) {
       w.postMessage({ id, type: 'check', src: _TS_WORKER_STATE.pendingSrc, strict: Boolean(strict) });
     } catch (_) {}
   }, 60);
-}
-
-export function reportTypeErrors(diags: Array<{ line: number; code?: string | number; message?: string }>) {
-  TYPE_ERROR_LINES = new Set(diags.map(d => d.line));
-  updateEditorChrome();
-  say(`✗ TypeScript 严格类型检查未通过 (共 ${diags.length} 处错误)：`, 'err');
-  diags.forEach(d => {
-    say(`  • ${d.code} [第 ${d.line} 行]: ${d.message}`, 'err', d.line);
-  });
-  if (diags[0]?.line) revealErrorLine(diags[0].line);
 }
 
 export const typeCheck = typecheckTS;

@@ -15,6 +15,9 @@ import * as highlightMod from './viz/highlight';
 import * as memoryGraphMod from './viz/memory-graph';
 import * as controlsMod from './ui/controls';
 import * as shareMod from './ui/share';
+import * as videoWebmMod from './ui/video-webm';
+import * as vfsMod from './ui/vfs';
+import * as scriptTabsMod from './ui/script-tabs';
 import * as notebookMod from './ui/notebook';
 
 stateMod.bindStateGlobals();
@@ -33,6 +36,9 @@ const allExports = {
   ...memoryGraphMod,
   ...controlsMod,
   ...shareMod,
+  ...videoWebmMod,
+  ...vfsMod,
+  ...scriptTabsMod,
   ...notebookMod,
 };
 

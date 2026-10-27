@@ -18,6 +18,7 @@ import {
 } from "../viz/memory-graph";
 import { hl, hlActiveLine, collectDeclaredNames } from "../viz/highlight";
 import { buildStepVizRow, clearFlyLayer } from "../viz/ast-view";
+import { registerUiHooks } from "../state";
 import { stopAuto } from "./controls";
 import {
   bindGlobalVfsApi,
@@ -27,13 +28,11 @@ import {
   VFS_NODES,
 } from "./vfs";
 import {
+  getActiveScriptTab,
   initScriptTabsAndImportEvents,
   renderImportSampleMenu,
   renderScriptTabsUI,
 } from "./script-tabs";
-
-export * from "./vfs";
-export * from "./script-tabs";
 
 let nbClipboardCell: NotebookCell | null = null;
 let nbCellSeq = 100;
@@ -1927,3 +1926,46 @@ export function initNotebookUI() {
     };
   }
 }
+
+export function openVfsNotebookFile(name: string, content: string | undefined): void {
+  const lang = LANG === "python" ? "python" : "ts";
+  const store = ensureLangNotebooks(lang);
+  const existing = store.docs.find((d) => d.title === name);
+  if (existing) {
+    store.activeDocId = existing.id;
+    setViewMode("notebook");
+    renderNotebookUI();
+    return;
+  }
+  if (content && importNotebookFromJson(content, name)) {
+    return;
+  }
+  setViewMode("notebook");
+}
+
+export function importSampleIntoNotebook(code: string, sampleKey: string): void {
+  const doc = getActiveNotebook();
+  const newCell: NotebookCell = {
+    id: nextCellId(),
+    type: "code",
+    source: code.trim(),
+    executionCount: null,
+    status: "idle",
+    output: null,
+  };
+  doc.cells.push(newCell);
+  doc.activeCellId = newCell.id;
+  renderNotebookUI(true);
+  say(`✓ 已将示例 ${sampleKey} 导入到当前 Notebook 新单元格`, "ok");
+}
+
+registerUiHooks({
+  setViewMode,
+  openVfsNotebookFile,
+  importSampleIntoNotebook,
+  getActiveWorkspacePath: () =>
+    VIEW_MODE === "notebook"
+      ? getActiveNotebook().title
+      : getActiveScriptTab().vfsPath,
+});
+

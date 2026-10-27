@@ -3,12 +3,12 @@
    ================================================================ */
 import { stripTypes, transpileEnums } from "../compiler/transpile";
 import { collectNames, instrument, resolveEntry, blankJsLine, snapFnExpr } from "../compiler/instrumenter";
-import { typecheckTS, reportTypeErrors, extractTsInterfaceMetadata } from "../compiler/type-checker";
+import { typecheckTS, extractTsInterfaceMetadata } from "../compiler/type-checker";
+import { uiHooks } from "../state";
 import { Frame, InterfaceFieldMeta, StepAnim, StepSnapshot } from "../types";
 import {
   say,
   sourceLineFromStack,
-  safeJSONStringify,
   hasAsyncConstructs,
   createVirtualEventLoop,
   formatCallFrameLabel,
@@ -16,19 +16,27 @@ import {
 } from "./event-loop";
 import {
   cloneDeepBounded,
+  formatShortVal,
+  safeJSONStringify,
+} from "../utils/format";
+import {
   classifyValue,
   populateInterfaceSchemas,
   enrichFromNote,
   detectWindowRange,
-  formatShortVal,
   deriveAnimAndNote,
   discoverVars,
-  renderPicker,
-  renderStatic,
-} from "../viz/memory-graph";
-import { updateEditorChrome, revealErrorLine } from "../viz/highlight";
-import { clearFlyLayer } from "../viz/ast-view";
-import { stopAuto } from "../ui/controls";
+} from "../viz/memory-normalizers";
+
+export function reportTypeErrors(diags: Array<{ line: number; code?: string | number; message?: string }>) {
+  TYPE_ERROR_LINES = new Set(diags.map(d => d.line));
+  uiHooks.updateEditorChrome();
+  say(`✗ TypeScript 严格类型检查未通过 (共 ${diags.length} 处错误)：`, 'err');
+  diags.forEach(d => {
+    say(`  • ${d.code} [第 ${d.line} 行]: ${d.message}`, 'err', d.line);
+  });
+  if (diags[0]?.line) uiHooks.revealErrorLine(diags[0].line);
+}
 
 interface TraceHookFn {
   (line?: number, note?: string, snap?: unknown, self?: unknown): void;
@@ -118,7 +126,7 @@ export function runOnce(budgetMs?: number) {
   const unsupported = detectUnsupportedSyntax(src);
   if (unsupported.length && unsupported[0]) {
     unsupported.forEach(x => say('✗ 第 ' + x.line + ' 行：暂不支持 ' + x.feature + ' —— ' + x.hint, 'err', x.line));
-    revealErrorLine(unsupported[0].line);
+    uiHooks.revealErrorLine(unsupported[0].line);
     return;
   }
   const diags = typecheckTS(src, STRICT_TS);
@@ -129,12 +137,12 @@ export function runOnce(budgetMs?: number) {
   if (TYPE_ERROR_LINES.size || RUNTIME_ERROR_LINES.size) {
     TYPE_ERROR_LINES.clear();
     RUNTIME_ERROR_LINES.clear();
-    updateEditorChrome();
+    uiHooks.updateEditorChrome();
   }
   const enums = transpileEnums(src);
   if (enums.error) {
     say('✗ 第 ' + enums.error.line + ' 行：' + enums.error.message, 'err', enums.error.line);
-    revealErrorLine(enums.error.line);
+    uiHooks.revealErrorLine(enums.error.line);
     return;
   }
   const js = stripTypes(enums.code);
@@ -167,8 +175,8 @@ export function runOnce(budgetMs?: number) {
       const snippet = line ? (originalLines[line - 1] || '').trim().slice(0, 90) : '';
       if (line) {
         RUNTIME_ERROR_LINES.add(line);
-        updateEditorChrome();
-        revealErrorLine(line);
+        uiHooks.updateEditorChrome();
+        uiHooks.revealErrorLine(line);
       }
       say(
         '✗ 运行超过 ' + (budget / 1000) + 's 仍未结束，已强制终止（疑似死循环 / 计算量过大）' +
@@ -183,9 +191,9 @@ export function runOnce(budgetMs?: number) {
       const line = r.line || sourceLineFromStack(r.stack, originalLines.length);
       if (line) {
         RUNTIME_ERROR_LINES.add(line);
-        updateEditorChrome();
+        uiHooks.updateEditorChrome();
         say('✗ 第 ' + line + ' 行运行时报错: ' + r.error, 'err', line);
-        revealErrorLine(line);
+        uiHooks.revealErrorLine(line);
       } else {
         say('✗ 调用失败: ' + r.error, 'err');
       }
@@ -633,7 +641,7 @@ export function startDebug(initialStep = 0) {
   if (unsupported.length && unsupported[0]) {
     resetTraceState();
     unsupported.forEach(x => say('✗ 第 ' + x.line + ' 行：暂不支持 ' + x.feature + ' —— ' + x.hint, 'err', x.line));
-    revealErrorLine(unsupported[0].line);
+    uiHooks.revealErrorLine(unsupported[0].line);
     return false;
   }
   extractTsInterfaceMetadata(src);
@@ -653,7 +661,7 @@ export function startDebug(initialStep = 0) {
   if (enums.error) {
     resetTraceState();
     say('✗ 第 ' + enums.error.line + ' 行：' + enums.error.message, 'err', enums.error.line);
-    revealErrorLine(enums.error.line);
+    uiHooks.revealErrorLine(enums.error.line);
     return false;
   }
   const js0 = stripTypes(enums.code);
@@ -680,8 +688,8 @@ export function startDebug(initialStep = 0) {
     return false;
   }
 
-  stopAuto();
-  clearFlyLayer();
+  uiHooks.stopAuto();
+  uiHooks.clearFlyLayer();
   TRACE = {
     title: 'TypeScript Playground · Debug',
     code: originalLines,
@@ -712,8 +720,8 @@ export function startDebug(initialStep = 0) {
 
   cur = Math.max(0, TRACE.steps.length - 1);
   initWatchedVars();
-  renderPicker();
-  renderStatic(cur, false);
+  uiHooks.renderPicker();
+  uiHooks.renderStatic(cur, false);
 
   if (!DEBUG_SESSION.crashed) {
     say('✓ 编译通过 · 已进入 Debug 模式（每走一步当场计算，可随时步进或运行到下一个检查点）', 'ok');

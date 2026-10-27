@@ -4,9 +4,10 @@
 import { skipString } from "../compiler/comments";
 import { stripTypes, transpileEnums, detectUnsupportedSyntax } from "../compiler/transpile";
 import { collectNames, instrument, resolveEntry, blankJsLine, snapFnExpr } from "../compiler/instrumenter";
-import { typecheckTS, reportTypeErrors, extractTsInterfaceMetadata } from "../compiler/type-checker";
+import { typecheckTS, extractTsInterfaceMetadata } from "../compiler/type-checker";
 import { say, clearLog, safeJSONStringify, resetTraceState } from "../runtime/event-loop";
-import { computeAndAppendNextStep, startDebug, initWatchedVars, runOnce } from "../runtime/runner";
+import { computeAndAppendNextStep, startDebug, initWatchedVars, runOnce, reportTypeErrors } from "../runtime/runner";
+import { registerUiHooks, uiHooks } from "../state";
 import { discoverVars, renderPicker, renderStatic, selectStackFrame } from "../viz/memory-graph";
 import {
   updateEditorChrome,
@@ -18,7 +19,6 @@ import {
   hoverTipForName,
 } from "../viz/highlight";
 import { clearFlyLayer, positionStepViz } from "../viz/ast-view";
-import { loadSample } from "./share";
 
 export function stepPrev() {
   stopAuto();
@@ -538,7 +538,7 @@ if ($('btnShareLink')) {
 }
 
 
-$<HTMLSelectElement>('sampleSel').onchange = () => loadSample($<HTMLSelectElement>('sampleSel').value);
+$<HTMLSelectElement>('sampleSel').onchange = () => uiHooks.loadSample($<HTMLSelectElement>('sampleSel').value);
 
 pickEl.addEventListener('click', (e: MouseEvent) => {
   const target = e.target as HTMLElement | null;
@@ -771,3 +771,6 @@ export function togglePlay(): void {
 export function setStatus(msg: string, cls?: string): void {
   say(msg, cls);
 }
+
+registerUiHooks({ stopAuto });
+

@@ -1,25 +1,8 @@
 /* ================================================================
    Client-Side Virtual File System (/workspace) & Node fs Shim (src/ui/vfs.ts)
    ================================================================ */
-import { say, resetTraceState } from "../runtime/event-loop";
-import { updateEditorChrome } from "../viz/highlight";
-import { setFileName } from "./controls";
-import {
-  ensureScriptTabsForLang,
-  getActiveScriptTab,
-  nextScriptTabId,
-  renderScriptTabsUI,
-  setScriptTabSyncing,
-  syncActiveScriptTabSource,
-  SCRIPT_TABS,
-} from "./script-tabs";
-import {
-  ensureLangNotebooks,
-  getActiveNotebook,
-  importNotebookFromJson,
-  renderNotebookUI,
-  setViewMode,
-} from "./notebook";
+import { say } from "../runtime/event-loop";
+import { uiHooks } from "../state";
 
 export interface VfsNode {
   path: string;
@@ -167,10 +150,7 @@ export function renderVfsTreeUI() {
   if (!treeEl) return;
   ensureVfsInitialized();
 
-  const activePath =
-    VIEW_MODE === "notebook"
-      ? getActiveNotebook().title
-      : getActiveScriptTab().vfsPath;
+  const activePath = uiHooks.getActiveWorkspacePath();
 
   const childrenOf = (parentPath: string): VfsNode[] => {
     const list: VfsNode[] = [];
@@ -276,19 +256,7 @@ export function openVfsFile(rawPath: string) {
   if (!node || node.type !== "file") return;
 
   if (node.name.endsWith(".ipynb")) {
-    const lang = LANG === "python" ? "python" : "ts";
-    const store = ensureLangNotebooks(lang);
-    const existing = store.docs.find((d) => d.title === node.name);
-    if (existing) {
-      store.activeDocId = existing.id;
-      setViewMode("notebook");
-      renderNotebookUI();
-      return;
-    }
-    if (node.content && importNotebookFromJson(node.content, node.name)) {
-      return;
-    }
-    setViewMode("notebook");
+    uiHooks.openVfsNotebookFile(node.name, node.content);
     return;
   }
 
@@ -299,36 +267,8 @@ export function openVfsFile(rawPath: string) {
     PY_ENGINE.setLang("ts");
   }
 
-  setViewMode("script");
-  const lang = LANG === "python" ? "python" : "ts";
-  if (editor && editor.value) {
-    syncActiveScriptTabSource(editor.value);
-  }
-  const store = ensureScriptTabsForLang(lang);
-  let tab = store.tabs.find((t) => !t.isSample && t.vfsPath === node.path);
-  if (!tab) {
-    tab = {
-      id: nextScriptTabId(),
-      title: node.name,
-      lang,
-      source: node.content || "",
-      vfsPath: node.path,
-      isSample: false,
-    };
-    store.tabs.push(tab);
-  } else {
-    tab.source = node.content ?? tab.source;
-    tab.vfsPath = node.path;
-    tab.isSample = false;
-  }
-  store.activeTabId = tab.id;
-  setScriptTabSyncing(true);
-  editor.value = tab.source;
-  setFileName(tab.title);
-  setScriptTabSyncing(false);
-  resetTraceState();
-  updateEditorChrome();
-  renderScriptTabsUI();
+  uiHooks.setViewMode("script");
+  uiHooks.openVfsScriptFile(node.path, node.name, node.content || "");
   renderVfsTreeUI();
   say(`📂 已打开 ${node.path}`, "ok");
 }
@@ -696,16 +636,8 @@ export function initVfsSidebarEvents() {
             VFS_NODES.delete(k);
           }
         });
-        (["ts", "python"] as const).forEach((l) => {
-          const st = SCRIPT_TABS[l];
-          st.tabs.forEach((t) => {
-            if (t.vfsPath === delPath || t.vfsPath.startsWith(prefix)) {
-              t.vfsPath = "";
-            }
-          });
-        });
         persistVfsToClientStorage();
-        renderScriptTabsUI();
+        uiHooks.onVfsFileDeleted(delPath);
         renderVfsTreeUI();
         say(`🗑 已从文件目录移除 ${delPath}`, "dim");
       } else {
@@ -748,10 +680,7 @@ export function initVfsSidebarEvents() {
     if (fileRow) {
       const filePath = fileRow.getAttribute("data-vfs-file");
       if (filePath) {
-        const curActivePath =
-          VIEW_MODE === "notebook"
-            ? getActiveNotebook().title
-            : getActiveScriptTab().vfsPath;
+        const curActivePath = uiHooks.getActiveWorkspacePath();
         if (filePath !== curActivePath || editor.value !== (VFS_NODES.get(filePath)?.content ?? "")) {
           openVfsFile(filePath);
         }
@@ -790,20 +719,7 @@ export function initVfsSidebarEvents() {
         node.path = nextPath;
         VFS_NODES.set(nextPath, node);
         persistVfsToClientStorage();
-
-        const lang = LANG === "python" ? "python" : "ts";
-        const store = ensureScriptTabsForLang(lang);
-        const matchingTab = store.tabs.find((t) => t.vfsPath === oldPath);
-        if (matchingTab) {
-          matchingTab.title = nextName;
-          matchingTab.vfsPath = nextPath;
-          if (store.activeTabId === matchingTab.id) {
-            setScriptTabSyncing(true);
-            setFileName(nextName);
-            setScriptTabSyncing(false);
-          }
-          renderScriptTabsUI();
-        }
+        uiHooks.onVfsFileRenamed(oldPath, nextPath, nextName);
         say(`✓ 已重命名为 ${nextPath}`, "ok");
       }
       renderVfsTreeUI();

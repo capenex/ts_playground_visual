@@ -1,44 +1,14 @@
 /* ================================================================
    Call Stack & Data Structure Card Renderers (src/viz/memory-graph.ts)
    ================================================================ */
-import { Frame, StepAnim, StepSnapshot } from "../types";
-import { safeJSONStringify } from "../runtime/event-loop";
+import { registerUiHooks } from "../state";
+import { Frame, StepSnapshot } from "../types";
+import { safeJSONStringify } from "../utils/format";
 import { hideHoverTip, updateEditorChrome, scrollCodeTo } from "./highlight";
 import { playStepAnimation } from "./ast-view";
+import { allocateSlotSpans, discoverVars, DiscoveredVar, getActiveFrame, VIZ } from "./memory-normalizers";
 
 export * from "./memory-normalizers";
-
-export function getActiveFrame(st: StepSnapshot | Frame | null | undefined) {
-  if (!st) return null;
-  const stack = Array.isArray(st.callStack) && st.callStack.length ? st.callStack : null;
-  if (!stack) {
-    return {
-      idx: 0,
-      total: 1,
-      isTop: true,
-      fn: 'global',
-      label: 'global',
-      line: st.line,
-      v: st.v || {},
-      ds: st.ds || {},
-    };
-  }
-  const topIdx = stack.length - 1;
-  const idx = (SELECTED_FRAME_IDX !== null && SELECTED_FRAME_IDX >= 0 && SELECTED_FRAME_IDX < stack.length)
-    ? SELECTED_FRAME_IDX
-    : topIdx;
-  const frame = stack[idx] || stack[topIdx];
-  return {
-    idx,
-    total: stack.length,
-    isTop: idx === topIdx,
-    fn: frame.fn || 'global',
-    label: frame.label || 'global',
-    line: frame.line || st.line,
-    v: frame.v || (idx === topIdx ? st.v : {}) || {},
-    ds: (frame.ds && Object.keys(frame.ds).length ? frame.ds : st.ds) || {},
-  };
-}
 
 export function selectStackFrame(frameIdx: number | string) {
   const st = TRACE.steps[cur];
@@ -462,114 +432,13 @@ export function vizEventLoop(d: Frame | null | undefined) {
     '</div></div>';
 }
 
-export const VIZ: Record<string, (d: Frame | null | undefined) => string | null> = {
+Object.assign(VIZ, {
   array: vizArray, map: vizMap, set: vizSet, stack: vizStack,
   string: vizString, grid: vizGrid, list: vizList,
   heap: vizHeap, queue: vizQueue, tree: vizTree, graph: vizGraph, uf: vizUF,
   interface: vizInterface, object: vizInterface,
   eventloop: vizEventLoop,
-};
-
-export function pressure(d: Frame | null | undefined) {
-  if (!d) return 0;
-  let n = 0;
-  if (typeof d.total === 'number') n = d.total;
-  else if (d.items) n = d.items.length;
-  else if (d.fields) n = d.fields.length;
-  else if (d.entries) n = d.entries.length;
-  else if (d.nodes) n = d.nodes.length;
-  else if (d.cells) n = (d.totalRows || d.cells.length) * (d.totalCols || (d.cells[0] ? d.cells[0].length : 1));
-  switch (d.kind) {
-    case 'eventloop': return 1;
-    case 'grid': return Math.min(1, Math.max(0.5, n / 12));
-    case 'array':
-    case 'queue':
-    case 'uf': return Math.min(1, n / 11);
-    case 'heap': return Math.min(1, Math.max(0.46, n / 11));
-    case 'list': return Math.min(1, n / 7);
-    case 'map': return Math.min(1, n / 7);
-    case 'interface':
-    case 'object': return Math.min(1, n / 6);
-    case 'set': return Math.min(1, n / 9);
-    case 'string': return Math.min(1, n / 18);
-    case 'tree': return n >= 6 ? 0.38 : 0.28;
-    case 'graph': return n >= 5 ? 0.36 : 0.26;
-    case 'stack': return Math.min(0.35, n / 16);
-    default: return Math.min(1, n / 10);
-  }
-}
-const SPAN_UP = 0.45, SPAN_DOWN = 0.28;
-export function decideSpan(id: string, p: number): number {
-  const curSpan = layoutSpan[id] || 1;
-  if (curSpan < 2 && p >= SPAN_UP) layoutSpan[id] = 2;
-  else if (curSpan > 1 && p <= SPAN_DOWN) layoutSpan[id] = 1;
-  return layoutSpan[id] || 1;
-}
-
-export interface DiscoveredVar {
-  id: string;
-  name: string;
-  kind?: string;
-}
-
-export function allocateSlotSpans(vars: DiscoveredVar[], ds: Record<string, StepAnim>) {
-  const meta = vars.map((s: DiscoveredVar, idx: number) => {
-    const d: Frame | undefined = ds[s.id];
-    const kind: string = (d && d.kind) || s.kind || 'array';
-    const p = pressure(d);
-    const span = decideSpan(s.id, p);
-    return { s, d, kind, p, span, idx };
-  });
-
-  const oneColItems = meta.filter(m => m.span === 1);
-  if (oneColItems.length % 2 === 1) {
-    let promote = oneColItems[0];
-    if (promote) {
-      for (let i = 1; i < oneColItems.length; i++) {
-        const candidate = oneColItems[i];
-        if (candidate && candidate.p >= promote.p) {
-          promote = candidate;
-        }
-      }
-      promote.span = 2;
-    }
-  }
-
-  return meta;
-}
-
-let _DISCOVER_CACHE: { traceRef: unknown; scannedSteps: number; map: Map<string, DiscoveredVar>; list: DiscoveredVar[] } = {
-  traceRef: null,
-  scannedSteps: 0,
-  map: new Map(),
-  list: [],
-};
-
-export function discoverVars(): DiscoveredVar[] {
-  const steps = (TRACE && TRACE.steps) || [];
-  if (_DISCOVER_CACHE.traceRef !== TRACE || steps.length < _DISCOVER_CACHE.scannedSteps) {
-    _DISCOVER_CACHE = { traceRef: TRACE, scannedSteps: 0, map: new Map(), list: [] };
-  }
-  if (_DISCOVER_CACHE.scannedSteps < steps.length) {
-    let changed = false;
-    for (let i = _DISCOVER_CACHE.scannedSteps; i < steps.length; i++) {
-      const st = steps[i];
-      const ds = (st && st.ds) || {};
-      const keys = Object.keys(ds);
-      for (let k = 0; k < keys.length; k++) {
-        const name = keys[k];
-        const item = name ? ds[name] : undefined;
-        if (name && item && !_DISCOVER_CACHE.map.has(name)) {
-          _DISCOVER_CACHE.map.set(name, { id: name, name, kind: item.kind || name });
-          changed = true;
-        }
-      }
-    }
-    _DISCOVER_CACHE.scannedSteps = steps.length;
-    if (changed) _DISCOVER_CACHE.list = [..._DISCOVER_CACHE.map.values()];
-  }
-  return _DISCOVER_CACHE.list;
-}
+});
 
 export function renderPicker() {
   const vars = discoverVars();
@@ -716,3 +585,6 @@ export const renderMemory = renderSlots;
 export const renderAsyncQueues = vizEventLoop;
 export function drawArrows(): void {}
 export function scheduleArrowRedraw(): void {}
+
+registerUiHooks({ renderPicker, renderStatic });
+

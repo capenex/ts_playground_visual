@@ -2,14 +2,13 @@
    Canvas 1080p Frame Renderer, Sample Loader & Boot Logic (src/ui/share.ts)
    ================================================================ */
 import { SAMPLES, SAMPLE_DEFAULT_STEP } from "../samples/ts-samples";
+import { registerUiHooks } from "../state";
 import { Frame } from "../types";
 import { clearLog, resetTraceState } from "../runtime/event-loop";
 import { startDebug, generateTrace } from "../runtime/runner";
 import { discoverVars, allocateSlotSpans } from "../viz/memory-graph";
 import { updateEditorChrome } from "../viz/highlight";
 import { setFileName } from "./controls";
-
-export * from "./video-webm";
 
 export function roundRectPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
   const rad = Math.max(0, Math.min(r, w / 2, h / 2));
@@ -681,3 +680,6 @@ export function boot() {
 }
 
 export const initApp = boot;
+
+registerUiHooks({ loadSample });
+

@@ -1,8 +1,8 @@
 /* ================================================================
    Single-File Mode Multi-Tab Bar & Sample Import Menu (src/ui/script-tabs.ts)
    ================================================================ */
-import type { NotebookCell } from "../types";
 import { say, resetTraceState } from "../runtime/event-loop";
+import { registerUiHooks, uiHooks } from "../state";
 import { updateEditorChrome } from "../viz/highlight";
 import { setFileName } from "./controls";
 import { SAMPLES } from "../samples/ts-samples";
@@ -13,12 +13,6 @@ import {
   renderVfsTreeUI,
   VFS_NODES,
 } from "./vfs";
-import {
-  getActiveNotebook,
-  nextCellId,
-  renderNotebookUI,
-  setViewMode,
-} from "./notebook";
 
 export interface ScriptTabDoc {
   id: string;
@@ -284,7 +278,7 @@ export function initScriptTabsAndImportEvents() {
       if (importMenuWrap && importMenuWrap.classList) importMenuWrap.classList.remove("open");
       const nbFile = btn.getAttribute("data-import-sample-notebook");
       if (nbFile) {
-        setViewMode("notebook");
+        uiHooks.setViewMode("notebook");
         say(`✓ 已加载内置示例笔记本 ${nbFile}`, "ok");
         return;
       }
@@ -293,19 +287,7 @@ export function initScriptTabsAndImportEvents() {
         if (VIEW_MODE === "notebook") {
           const code = LANG === "python" ? (getPySamplesDict()[sampleKey] || "") : (SAMPLES[sampleKey] || "");
           if (code) {
-            const doc = getActiveNotebook();
-            const newCell: NotebookCell = {
-              id: nextCellId(),
-              type: "code",
-              source: code.trim(),
-              executionCount: null,
-              status: "idle",
-              output: null,
-            };
-            doc.cells.push(newCell);
-            doc.activeCellId = newCell.id;
-            renderNotebookUI(true);
-            say(`✓ 已将示例 ${sampleKey} 导入到当前 Notebook 新单元格`, "ok");
+            uiHooks.importSampleIntoNotebook(code, sampleKey);
           }
           return;
         }
@@ -464,3 +446,72 @@ export function initScriptTabsAndImportEvents() {
     });
   }
 }
+
+export function openVfsScriptFile(path: string, name: string, content: string): void {
+  const lang = LANG === "python" ? "python" : "ts";
+  if (editor && editor.value) {
+    syncActiveScriptTabSource(editor.value);
+  }
+  const store = ensureScriptTabsForLang(lang);
+  let tab = store.tabs.find((t) => !t.isSample && t.vfsPath === path);
+  if (!tab) {
+    tab = {
+      id: nextScriptTabId(),
+      title: name,
+      lang,
+      source: content,
+      vfsPath: path,
+      isSample: false,
+    };
+    store.tabs.push(tab);
+  } else {
+    tab.source = content;
+    tab.vfsPath = path;
+    tab.isSample = false;
+  }
+  store.activeTabId = tab.id;
+  setScriptTabSyncing(true);
+  editor.value = tab.source;
+  setFileName(tab.title);
+  setScriptTabSyncing(false);
+  resetTraceState();
+  updateEditorChrome();
+  renderScriptTabsUI();
+}
+
+export function onVfsFileDeleted(delPath: string): void {
+  const prefix = delPath + "/";
+  (["ts", "python"] as const).forEach((l) => {
+    const st = SCRIPT_TABS[l];
+    st.tabs.forEach((t) => {
+      if (t.vfsPath === delPath || t.vfsPath.startsWith(prefix)) {
+        t.vfsPath = "";
+      }
+    });
+  });
+  renderScriptTabsUI();
+}
+
+export function onVfsFileRenamed(oldPath: string, nextPath: string, nextName: string): void {
+  const lang = LANG === "python" ? "python" : "ts";
+  const store = ensureScriptTabsForLang(lang);
+  const matchingTab = store.tabs.find((t) => t.vfsPath === oldPath);
+  if (matchingTab) {
+    matchingTab.title = nextName;
+    matchingTab.vfsPath = nextPath;
+    if (store.activeTabId === matchingTab.id) {
+      setScriptTabSyncing(true);
+      setFileName(nextName);
+      setScriptTabSyncing(false);
+    }
+    renderScriptTabsUI();
+  }
+}
+
+registerUiHooks({
+  getActiveWorkspacePath: () => getActiveScriptTab().vfsPath,
+  openVfsScriptFile,
+  onVfsFileDeleted,
+  onVfsFileRenamed,
+});
+

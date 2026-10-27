@@ -11,7 +11,7 @@ import {
   stripInlineCommentSafe,
   RESERVED_WORDS,
 } from "./comments";
-import { isMapLike, isSetLike } from "../viz/memory-graph";
+import { isMapLike, isSetLike } from "../utils/format";
 import { Frame, InterfaceSchemaMeta, StepAnim } from "../types";
 
 export interface TypeParamInfo {

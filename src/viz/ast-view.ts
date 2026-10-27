@@ -2,8 +2,9 @@
    AST View & Inter-line Step Capsule / Flying Value Animation (src/viz/ast-view.ts)
    ================================================================ */
 import { splitStatements, stripInlineCommentSafe } from "../compiler/comments";
+import { registerUiHooks } from "../state";
 import { StepAnim, StepSnapshot } from "../types";
-import { hoverMetrics } from "./highlight";
+import { hoverMetrics } from "./memory-normalizers";
 
 export interface AstNode {
   kind: string;
@@ -271,3 +272,6 @@ export function playStepAnimation(st: StepSnapshot | null | undefined) {
     if (chip.parentNode) chip.parentNode.removeChild(chip);
   }, 620);
 }
+
+registerUiHooks({ clearFlyLayer });
+

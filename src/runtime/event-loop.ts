@@ -2,13 +2,18 @@
    Virtual Event Loop Scheduler & Console Log Utilities (src/runtime/event-loop.ts)
    ================================================================ */
 import { blankStrings } from "../compiler/comments";
-import { formatShortVal, isMapLike, isSetLike, renderPicker, renderStatic } from "../viz/memory-graph";
-import { revealErrorLine, updateEditorChrome } from "../viz/highlight";
-import { clearFlyLayer } from "../viz/ast-view";
-import { stopAuto } from "../ui/controls";
+import { uiHooks } from "../state";
+import { formatShortVal, isMapLike, isSetLike, safeJSONStringify } from "../utils/format";
 import { EventLoopSnapshot } from "../types";
-import { createVirtualPromiseAndFsEnv, rethrowIfControlSignal } from "./event-loop-env";
+import {
+  createVirtualPromiseAndFsEnv,
+  rethrowIfControlSignal,
+  VirtualLoopState,
+  VirtualMacrotaskEntry,
+  VirtualMicrotaskEntry,
+} from "./event-loop-env";
 
+export { safeJSONStringify };
 export * from "./event-loop-env";
 
 export function say(msg: string, cls?: string, line?: number) {
@@ -32,7 +37,7 @@ if (logEl && logEl.addEventListener) {
     const el = e && (e.target as HTMLElement | null);
     const target = el && el.closest ? el.closest('.diag') : null;
     if (!target || !target.getAttribute) return;
-    revealErrorLine(parseInt(target.getAttribute('data-line') || '0', 10), true);
+    uiHooks.revealErrorLine(parseInt(target.getAttribute('data-line') || '0', 10), true);
   });
 }
 
@@ -70,87 +75,10 @@ export function sourceLineFromStack(stack: unknown, lineCount?: number) {
   return line;
 }
 
-export function safeJSONStringify(val: unknown) {
-  if (val === undefined) return '(undefined)';
-  try {
-    const seen = new WeakSet();
-    return JSON.stringify(val, (_k, v) => {
-      if (v !== null && typeof v === 'object') {
-        if (seen.has(v)) return '[Circular]';
-        seen.add(v);
-        if (Array.isArray(v) && v.length > 60) {
-          return [
-            ...v.slice(0, 20),
-            `… (共 ${v.length} 项)`,
-            ...v.slice(v.length - 5),
-          ];
-        }
-      }
-      return v;
-    });
-  } catch (_) {
-    try { return String(val); } catch (__) { return '[Object]'; }
-  }
-}
-
 export function hasAsyncConstructs(src: unknown) {
   if (!src || typeof src !== 'string') return false;
   const clean = blankStrings(src);
   return /\b(?:async|await|Promise|setTimeout|queueMicrotask|sleep)\b/.test(clean);
-}
-
-export interface VirtualMicrotaskEntry {
-  id: number;
-  label: string;
-  line: number;
-  status: string;
-  isInternalAwait: boolean;
-  run: () => void;
-  rawCb: unknown;
-}
-
-export interface VirtualMacrotaskEntry {
-  id: number;
-  label: string;
-  delay: number;
-  fireAt: number;
-  line: number;
-  status: string;
-  cb: ((...a: unknown[]) => unknown) | null | undefined;
-  args: unknown[];
-}
-
-export interface VirtualCoroutineEntry {
-  id: number;
-  name: string;
-  line: number;
-  status: string;
-  awaitExpr: string | null;
-  fid: number;
-}
-
-export interface VirtualPromiseLike {
-  __isVirtualPromise: boolean;
-  id: number;
-  label: string;
-  state: string;
-  value: unknown;
-  reason: unknown;
-  line: number;
-  _internal?: boolean;
-  reactions?: unknown[];
-}
-
-export interface VirtualLoopState {
-  used: boolean;
-  virtualTime: number;
-  phase: string;
-  activeTaskLabel: string;
-  coroutines: VirtualCoroutineEntry[];
-  microtasks: VirtualMicrotaskEntry[];
-  macrotasks: VirtualMacrotaskEntry[];
-  promises: VirtualPromiseLike[];
-  globalSnapFn: (() => Record<string, unknown>) | null;
 }
 
 export function createVirtualEventLoop(
@@ -500,8 +428,8 @@ export function formatCallFrameLabel(fnName: string, _paramNames: unknown, param
 }
 
 export function resetTraceState() {
-  stopAuto();
-  clearFlyLayer();
+  uiHooks.stopAuto();
+  uiHooks.clearFlyLayer();
   TRACE = { title: 'TypeScript Playground · Debug', code: [], steps: [] };
   DEBUG_SESSION = {
     active: false,
@@ -519,7 +447,7 @@ export function resetTraceState() {
   watched = new Set();
   SEEN_VARS_EVER = new Set();
   layoutSpan = Object.create(null);
-  renderPicker();
-  renderStatic(0);
-  updateEditorChrome();
+  uiHooks.renderPicker();
+  uiHooks.renderStatic(0);
+  uiHooks.updateEditorChrome();
 }

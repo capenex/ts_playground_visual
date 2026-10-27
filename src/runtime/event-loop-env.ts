@@ -1,13 +1,63 @@
 /* ================================================================
    Virtual Promise, Virtual FS Module Shims & Async Coroutine Driver (src/runtime/event-loop-env.ts)
    ================================================================ */
-import { formatShortVal } from "../viz/memory-graph";
+import { formatShortVal } from "../utils/format";
 import type { VfsClientApi } from "../globals";
-import type {
-  VirtualLoopState,
-  VirtualMicrotaskEntry,
-  VirtualPromiseLike,
-} from "./event-loop";
+
+export interface VirtualMicrotaskEntry {
+  id: number;
+  label: string;
+  line: number;
+  status: string;
+  isInternalAwait: boolean;
+  run: () => void;
+  rawCb: unknown;
+}
+
+export interface VirtualMacrotaskEntry {
+  id: number;
+  label: string;
+  delay: number;
+  fireAt: number;
+  line: number;
+  status: string;
+  cb: ((...a: unknown[]) => unknown) | null | undefined;
+  args: unknown[];
+}
+
+export interface VirtualCoroutineEntry {
+  id: number;
+  name: string;
+  line: number;
+  status: string;
+  awaitExpr: string | null;
+  fid: number;
+}
+
+export interface VirtualPromiseLike {
+  __isVirtualPromise: boolean;
+  id: number;
+  label: string;
+  state: string;
+  value: unknown;
+  reason: unknown;
+  line: number;
+  _internal?: boolean;
+  reactions?: unknown[];
+}
+
+export interface VirtualLoopState {
+  used: boolean;
+  virtualTime: number;
+  phase: string;
+  activeTaskLabel: string;
+  coroutines: VirtualCoroutineEntry[];
+  microtasks: VirtualMicrotaskEntry[];
+  macrotasks: VirtualMacrotaskEntry[];
+  promises: VirtualPromiseLike[];
+  globalSnapFn: (() => Record<string, unknown>) | null;
+}
+
 
 export function rethrowIfControlSignal(err: unknown) {
   const ctrl = (err && typeof err === 'object')

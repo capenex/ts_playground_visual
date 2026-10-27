@@ -4,10 +4,15 @@
 import { blankStrings, isIdentPart, RESERVED_WORDS } from "../compiler/comments";
 import { stripTypes } from "../compiler/transpile";
 import { collectNames } from "../compiler/instrumenter";
-import { typecheckTS, inferRuntimeTsType } from "../compiler/type-checker";
+import { typecheckTS } from "../compiler/type-checker";
+import { inferRuntimeTsType } from "../compiler/tc-types";
+import { registerUiHooks } from "../state";
 import { Diag, StepAnim } from "../types";
+import { isMapLike, isSetLike, formatShortVal } from "../utils/format";
 import { updateStepViz, positionStepViz } from "./ast-view";
-import { getActiveFrame, isMapLike, isSetLike, formatShortVal, VIZ } from "./memory-graph";
+import { getActiveFrame, VIZ, hoverMetrics } from "./memory-normalizers";
+
+export { hoverMetrics };
 
 export const HIGHLIGHT_BUILTINS = new Set([
   'checkpoint', '断点', 'this', 'console', 'window', 'document', 'globalThis',
@@ -302,33 +307,7 @@ export function revealErrorLine(line: number | string, focus?: boolean) {
 }
 
 /* ── hover inspector: value / visualization for the variable under the cursor (debug mode) ── */
-const HOVER_GEOM = { charW: 0, lh: 24, padLeft: 16, padTop: 12 };
 let hoverTipKey = '';
-
-export function hoverMetrics() {
-  let lh = 24, padLeft = 16, padTop = 12;
-  try {
-    const cs = typeof getComputedStyle === 'function' ? getComputedStyle(editor) : null;
-    if (cs) {
-      lh = parseFloat(cs.lineHeight) || lh;
-      padLeft = parseFloat(cs.paddingLeft) || padLeft;
-      padTop = parseFloat(cs.paddingTop) || padTop;
-      if (!HOVER_GEOM.charW && document.createElement) {
-        const cv = document.createElement('canvas');
-        const ctx = cv && cv.getContext ? cv.getContext('2d') : null;
-        if (ctx) {
-          ctx.font = (cs.fontWeight || '400') + ' ' + (cs.fontSize || '15px') + ' ' + (cs.fontFamily || 'monospace');
-          const w = ctx.measureText('MMMMMMMMMM').width / 10;
-          if (w > 0 && isFinite(w)) HOVER_GEOM.charW = w;
-        }
-      }
-    }
-  } catch (_) { /* fall back to defaults */ }
-  HOVER_GEOM.lh = lh;
-  HOVER_GEOM.padLeft = padLeft;
-  HOVER_GEOM.padTop = padTop;
-  return { lh, padLeft, padTop, charW: HOVER_GEOM.charW || 8.5 };
-}
 
 export function hoverColumnAt(lineText: string, x: number, charW: number) {
   let acc = 0;
@@ -570,3 +549,6 @@ export function scrollCodeTo(line: number) {
 }
 
 export const highlightTS = hl;
+
+registerUiHooks({ updateEditorChrome, revealErrorLine });
+

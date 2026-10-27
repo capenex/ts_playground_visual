@@ -3,61 +3,17 @@
    ================================================================ */
 import { RESERVED_WORDS, skipString, splitTopLevel, splitTopLevelSemicolons } from "../compiler/comments";
 import { stripTypes } from "../compiler/transpile";
-import { inferRuntimeTsType, matchInterfaceForObject } from "../compiler/type-checker";
-import { Frame, InterfaceFieldMeta, StepAnim } from "../types";
+import { inferRuntimeTsType, matchInterfaceForObject } from "../compiler/tc-types";
+import { Frame, InterfaceFieldMeta, StepAnim, StepSnapshot } from "../types";
+import {
+  isMapLike,
+  isSetLike,
+  defineHidden,
+  formatShortVal,
+  cloneDeepBounded,
+} from "../utils/format";
 
-export function isMapLike(v: unknown) {
-  return Object.prototype.toString.call(v) === '[object Map]';
-}
-export function isSetLike(v: unknown) {
-  return Object.prototype.toString.call(v) === '[object Set]';
-}
-
-export function defineHidden(obj: unknown, key: string, val: unknown) {
-  if (!obj || typeof obj !== 'object') return;
-  try {
-    Object.defineProperty(obj, key, {
-      value: val, enumerable: false, configurable: true, writable: true,
-    });
-  } catch (_) {}
-}
-
-export function cloneDeepBounded(val: unknown, depth = 0): unknown {
-  if (val === null || typeof val !== 'object') return val;
-  const obj = val as Frame;
-  if (obj.__isVirtualPromise) {
-    if (obj.state === 'pending') return 'Promise <pending>';
-    if (obj.state === 'fulfilled') return 'Promise <fulfilled: ' + formatShortVal(obj.value) + '>';
-    return 'Promise <rejected: ' + formatShortVal(obj.reason) + '>';
-  }
-  if (depth >= 4) return String(val);
-  if (Array.isArray(val)) return val.slice(0, 40).map((x: unknown): unknown => cloneDeepBounded(x, depth + 1));
-  if (isMapLike(val)) {
-    const entries: Array<{ k: unknown; v: unknown }> = [];
-    for (const [k, v] of val as Map<unknown, unknown>) {
-      if (entries.length >= 40) break;
-      entries.push({ k: cloneDeepBounded(k, depth + 1), v: cloneDeepBounded(v, depth + 1) });
-    }
-    return entries;
-  }
-  if (isSetLike(val)) {
-    const items: unknown[] = [];
-    for (const v of val as Set<unknown>) {
-      if (items.length >= 40) break;
-      items.push(cloneDeepBounded(v, depth + 1));
-    }
-    return items;
-  }
-  const out: Record<string, unknown> = {};
-  const clsName = obj.__py_cls__ || (val.constructor && val.constructor !== Object && val.constructor.name ? val.constructor.name : '');
-  if (clsName) {
-    defineHidden(out, '__py_cls__', clsName);
-  }
-  Object.keys(obj).slice(0, 20).forEach(k => {
-    out[k] = cloneDeepBounded(obj[k], depth + 1);
-  });
-  return out;
-}
+export { isMapLike, isSetLike, defineHidden, formatShortVal, cloneDeepBounded };
 
 export function normalizeTree(value: Frame | null | undefined) {
   if (value && Array.isArray(value.nodes)) {
@@ -756,23 +712,6 @@ export function enrichFromNote(ds: Record<string, StepAnim> | null | undefined, 
   });
 }
 
-export function formatShortVal(val: unknown): string {
-  if (val === undefined) return 'undefined';
-  if (val === null) return 'null';
-  if (typeof val === 'string') return JSON.stringify(val.length > 16 ? val.slice(0, 14) + '…' : val);
-  if (typeof val === 'number' || typeof val === 'boolean') return String(val);
-  if (Array.isArray(val)) return '[' + val.slice(0, 4).map(formatShortVal).join(', ') + (val.length > 4 ? ', …' : '') + ']';
-  if (isMapLike(val)) return 'Map(' + (val as Map<unknown, unknown>).size + ')';
-  if (isSetLike(val)) return 'Set(' + (val as Set<unknown>).size + ')';
-  if (typeof val === 'object') {
-    const rec = val as Record<string, unknown>;
-    const keys = Object.keys(rec);
-    if (keys.length > 0 && keys.length <= 4 && keys.every(k => rec[k] === null || typeof rec[k] !== 'object')) {
-      return '{ ' + keys.map((k: string): string => k + ': ' + formatShortVal(rec[k])).join(', ') + ' }';
-    }
-  }
-  return '{…}';
-}
 
 export function safeEvalExpr(expr: string | null | undefined, v: StepAnim | null | undefined) {
   if (!expr || !v) return undefined;
@@ -958,3 +897,168 @@ export function deriveAnimAndNote(
 
   return { anim: null, note: rawLine.trim() };
 }
+
+export function pressure(d: Frame | null | undefined) {
+  if (!d) return 0;
+  let n = 0;
+  if (typeof d.total === 'number') n = d.total;
+  else if (d.items) n = d.items.length;
+  else if (d.fields) n = d.fields.length;
+  else if (d.entries) n = d.entries.length;
+  else if (d.nodes) n = d.nodes.length;
+  else if (d.cells) n = (d.totalRows || d.cells.length) * (d.totalCols || (d.cells[0] ? d.cells[0].length : 1));
+  switch (d.kind) {
+    case 'eventloop': return 1;
+    case 'grid': return Math.min(1, Math.max(0.5, n / 12));
+    case 'array':
+    case 'queue':
+    case 'uf': return Math.min(1, n / 11);
+    case 'heap': return Math.min(1, Math.max(0.46, n / 11));
+    case 'list': return Math.min(1, n / 7);
+    case 'map': return Math.min(1, n / 7);
+    case 'interface':
+    case 'object': return Math.min(1, n / 6);
+    case 'set': return Math.min(1, n / 9);
+    case 'string': return Math.min(1, n / 18);
+    case 'tree': return n >= 6 ? 0.38 : 0.28;
+    case 'graph': return n >= 5 ? 0.36 : 0.26;
+    case 'stack': return Math.min(0.35, n / 16);
+    default: return Math.min(1, n / 10);
+  }
+}
+
+const SPAN_UP = 0.45, SPAN_DOWN = 0.28;
+export function decideSpan(id: string, p: number): number {
+  const curSpan = layoutSpan[id] || 1;
+  if (curSpan < 2 && p >= SPAN_UP) layoutSpan[id] = 2;
+  else if (curSpan > 1 && p <= SPAN_DOWN) layoutSpan[id] = 1;
+  return layoutSpan[id] || 1;
+}
+
+export interface DiscoveredVar {
+  id: string;
+  name: string;
+  kind?: string;
+}
+
+export function allocateSlotSpans(vars: DiscoveredVar[], ds: Record<string, StepAnim>) {
+  const meta = vars.map((s: DiscoveredVar, idx: number) => {
+    const d: Frame | undefined = ds[s.id];
+    const kind: string = (d && d.kind) || s.kind || 'array';
+    const p = pressure(d);
+    const span = decideSpan(s.id, p);
+    return { s, d, kind, p, span, idx };
+  });
+
+  const oneColItems = meta.filter(m => m.span === 1);
+  if (oneColItems.length % 2 === 1) {
+    let promote = oneColItems[0];
+    if (promote) {
+      for (let i = 1; i < oneColItems.length; i++) {
+        const candidate = oneColItems[i];
+        if (candidate && candidate.p >= promote.p) {
+          promote = candidate;
+        }
+      }
+      promote.span = 2;
+    }
+  }
+
+  return meta;
+}
+
+let _DISCOVER_CACHE: { traceRef: unknown; scannedSteps: number; map: Map<string, DiscoveredVar>; list: DiscoveredVar[] } = {
+  traceRef: null,
+  scannedSteps: 0,
+  map: new Map(),
+  list: [],
+};
+
+export function discoverVars(): DiscoveredVar[] {
+  const steps = (TRACE && TRACE.steps) || [];
+  if (_DISCOVER_CACHE.traceRef !== TRACE || steps.length < _DISCOVER_CACHE.scannedSteps) {
+    _DISCOVER_CACHE = { traceRef: TRACE, scannedSteps: 0, map: new Map(), list: [] };
+  }
+  if (_DISCOVER_CACHE.scannedSteps < steps.length) {
+    let changed = false;
+    for (let i = _DISCOVER_CACHE.scannedSteps; i < steps.length; i++) {
+      const st = steps[i];
+      const ds = (st && st.ds) || {};
+      const keys = Object.keys(ds);
+      for (let k = 0; k < keys.length; k++) {
+        const name = keys[k];
+        const item = name ? ds[name] : undefined;
+        if (name && item && !_DISCOVER_CACHE.map.has(name)) {
+          _DISCOVER_CACHE.map.set(name, { id: name, name, kind: item.kind || name });
+          changed = true;
+        }
+      }
+    }
+    _DISCOVER_CACHE.scannedSteps = steps.length;
+    if (changed) _DISCOVER_CACHE.list = [..._DISCOVER_CACHE.map.values()];
+  }
+  return _DISCOVER_CACHE.list;
+}
+
+export const VIZ: Record<string, (d: Frame | null | undefined) => string | null> = {};
+
+export function getActiveFrame(st: StepSnapshot | Frame | null | undefined) {
+  if (!st) return null;
+  const stack = Array.isArray(st.callStack) && st.callStack.length ? st.callStack : null;
+  if (!stack) {
+    return {
+      idx: 0,
+      total: 1,
+      isTop: true,
+      fn: 'global',
+      label: 'global',
+      line: st.line,
+      v: st.v || {},
+      ds: st.ds || {},
+    };
+  }
+  const topIdx = stack.length - 1;
+  const idx = (SELECTED_FRAME_IDX !== null && SELECTED_FRAME_IDX >= 0 && SELECTED_FRAME_IDX < stack.length)
+    ? SELECTED_FRAME_IDX
+    : topIdx;
+  const frame = stack[idx] || stack[topIdx];
+  return {
+    idx,
+    total: stack.length,
+    isTop: idx === topIdx,
+    fn: frame.fn || 'global',
+    label: frame.label || 'global',
+    line: frame.line || st.line,
+    v: frame.v || (idx === topIdx ? st.v : {}) || {},
+    ds: (frame.ds && Object.keys(frame.ds).length ? frame.ds : st.ds) || {},
+  };
+}
+
+const HOVER_GEOM = { charW: 0, lh: 24, padLeft: 16, padTop: 12 };
+
+export function hoverMetrics() {
+  let lh = 24, padLeft = 16, padTop = 12;
+  try {
+    const cs = typeof getComputedStyle === 'function' ? getComputedStyle(editor) : null;
+    if (cs) {
+      lh = parseFloat(cs.lineHeight) || lh;
+      padLeft = parseFloat(cs.paddingLeft) || padLeft;
+      padTop = parseFloat(cs.paddingTop) || padTop;
+      if (!HOVER_GEOM.charW && document.createElement) {
+        const cv = document.createElement('canvas');
+        const ctx = cv && cv.getContext ? cv.getContext('2d') : null;
+        if (ctx) {
+          ctx.font = (cs.fontWeight || '400') + ' ' + (cs.fontSize || '15px') + ' ' + (cs.fontFamily || 'monospace');
+          const w = ctx.measureText('MMMMMMMMMM').width / 10;
+          if (w > 0 && isFinite(w)) HOVER_GEOM.charW = w;
+        }
+      }
+    }
+  } catch (_) { /* fall back to defaults */ }
+  HOVER_GEOM.lh = lh;
+  HOVER_GEOM.padLeft = padLeft;
+  HOVER_GEOM.padTop = padTop;
+  return { lh, padLeft, padTop, charW: HOVER_GEOM.charW || 8.5 };
+}
+
+

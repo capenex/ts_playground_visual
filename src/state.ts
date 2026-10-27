@@ -164,4 +164,43 @@ export function bindStateGlobals(target: object = globalThis): void {
   });
 }
 
+export interface RuntimeUiHooks {
+  stopAuto: () => void;
+  clearFlyLayer: () => void;
+  renderPicker: () => void;
+  renderStatic: (idx: number, animate?: boolean) => void;
+  updateEditorChrome: () => void;
+  revealErrorLine: (line: number | string, focus?: boolean) => void;
+  loadSample: (key: string) => void;
+  getActiveWorkspacePath: () => string;
+  openVfsNotebookFile: (name: string, content: string | undefined) => void;
+  openVfsScriptFile: (path: string, name: string, content: string) => void;
+  onVfsFileDeleted: (delPath: string) => void;
+  onVfsFileRenamed: (oldPath: string, nextPath: string, nextName: string) => void;
+  setViewMode: (mode: 'script' | 'notebook') => void;
+  importSampleIntoNotebook: (code: string, sampleKey: string) => void;
+}
+
+export const uiHooks: RuntimeUiHooks = {
+  stopAuto: () => {},
+  clearFlyLayer: () => {},
+  renderPicker: () => {},
+  renderStatic: () => {},
+  updateEditorChrome: () => {},
+  revealErrorLine: () => {},
+  loadSample: () => {},
+  getActiveWorkspacePath: () => '',
+  openVfsNotebookFile: () => {},
+  openVfsScriptFile: () => {},
+  onVfsFileDeleted: () => {},
+  onVfsFileRenamed: () => {},
+  setViewMode: () => {},
+  importSampleIntoNotebook: () => {},
+};
+
+export function registerUiHooks(hooks: Partial<RuntimeUiHooks>): void {
+  Object.assign(uiHooks, hooks);
+}
+
 bindStateGlobals();
+
