@@ -135,6 +135,7 @@ export function initScriptTabsAndImportEvents() {
   const importMenuWrap = $("importMenuWrap");
   const btnImport = $<HTMLButtonElement>("btnImport");
   const btnUploadLocalFile = $<HTMLButtonElement>("btnUploadLocalFile");
+  const btnOpenTsTutorials = $<HTMLButtonElement>("btnOpenTsTutorials");
   const importSampleList = $("importSampleList");
   const fileInput = $<HTMLInputElement>("fileInput");
 
@@ -158,6 +159,14 @@ export function initScriptTabsAndImportEvents() {
       if (e && typeof e.stopPropagation === "function") e.stopPropagation();
       if (importMenuWrap && importMenuWrap.classList) importMenuWrap.classList.remove("open");
       fileInput.click();
+    };
+  }
+
+  if (btnOpenTsTutorials) {
+    btnOpenTsTutorials.onclick = (e: MouseEvent) => {
+      if (e && typeof e.stopPropagation === "function") e.stopPropagation();
+      if (importMenuWrap && importMenuWrap.classList) importMenuWrap.classList.remove("open");
+      uiHooks.openTutorialModal();
     };
   }
 

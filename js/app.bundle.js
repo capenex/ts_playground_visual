@@ -162,6 +162,9 @@
     },
     importSampleIntoNotebook: () => {
     },
+    openTutorialModal: () => {
+    },
+    importTutorialNotebook: () => false,
     appendConsoleLog: () => {
     },
     clearConsoleDom: () => {
@@ -185,6 +188,7 @@
     $: () => $,
     bindDomGlobals: () => bindDomGlobals,
     btnImportEl: () => btnImportEl,
+    btnOpenTsTutorialsEl: () => btnOpenTsTutorialsEl,
     callStackBarEl: () => callStackBarEl,
     callStackHintEl: () => callStackHintEl,
     clearConsoleDom: () => clearConsoleDom,
@@ -218,6 +222,10 @@
     sidePanelEl: () => sidePanelEl,
     slotsEl: () => slotsEl,
     stepVizEl: () => stepVizEl,
+    tutorialModalCloseEl: () => tutorialModalCloseEl,
+    tutorialModalDetailEl: () => tutorialModalDetailEl,
+    tutorialModalEl: () => tutorialModalEl,
+    tutorialModalListEl: () => tutorialModalListEl,
     varsEl: () => varsEl
   });
   var $ = (id) => document.getElementById(id);
@@ -280,6 +288,11 @@
   var fileNameEl = $("fileName");
   var fileInputEl = $("fileInput");
   var btnImportEl = $("btnImport");
+  var btnOpenTsTutorialsEl = $("btnOpenTsTutorials");
+  var tutorialModalEl = $("tutorialModal");
+  var tutorialModalCloseEl = $("tutorialModalClose");
+  var tutorialModalListEl = $("tutorialModalList");
+  var tutorialModalDetailEl = $("tutorialModalDetail");
   var dom = {
     $,
     editor,
@@ -302,7 +315,12 @@
     stepVizEl,
     fileNameEl,
     fileInputEl,
-    btnImportEl
+    btnImportEl,
+    btnOpenTsTutorialsEl,
+    tutorialModalEl,
+    tutorialModalCloseEl,
+    tutorialModalListEl,
+    tutorialModalDetailEl
   };
   function renderConsoleLogEntry(entry) {
     if (!logEl || typeof document === "undefined" || !document.createElement) return;
@@ -14177,6 +14195,7 @@ runAsyncDemo()
     const importMenuWrap = $("importMenuWrap");
     const btnImport = $("btnImport");
     const btnUploadLocalFile = $("btnUploadLocalFile");
+    const btnOpenTsTutorials = $("btnOpenTsTutorials");
     const importSampleList = $("importSampleList");
     const fileInput = $("fileInput");
     if (btnImport && importMenuWrap) {
@@ -14198,6 +14217,13 @@ runAsyncDemo()
         if (e && typeof e.stopPropagation === "function") e.stopPropagation();
         if (importMenuWrap && importMenuWrap.classList) importMenuWrap.classList.remove("open");
         fileInput.click();
+      };
+    }
+    if (btnOpenTsTutorials) {
+      btnOpenTsTutorials.onclick = (e) => {
+        if (e && typeof e.stopPropagation === "function") e.stopPropagation();
+        if (importMenuWrap && importMenuWrap.classList) importMenuWrap.classList.remove("open");
+        uiHooks.openTutorialModal();
       };
     }
     if (importSampleList && importSampleList.addEventListener) {
@@ -14405,10 +14431,13 @@ runAsyncDemo()
   // src/ui/notebook.ts
   var notebook_exports = {};
   __export(notebook_exports, {
+    TS_NOTEBOOK_TUTORIALS: () => TS_NOTEBOOK_TUTORIALS,
     buildTsPreambleFromHistory: () => buildTsPreambleFromHistory,
     buildTsTypecheckContext: () => buildTsTypecheckContext,
+    closeTutorialModal: () => closeTutorialModal,
     copyNotebookCell: () => copyNotebookCell,
     createDefaultNotebooks: () => createDefaultNotebooks,
+    createTutorialNotebookDocument: () => createTutorialNotebookDocument,
     cutNotebookCell: () => cutNotebookCell,
     debugNotebookCell: () => debugNotebookCell,
     debugPythonNotebookCell: () => debugPythonNotebookCell,
@@ -14423,8 +14452,10 @@ runAsyncDemo()
     getActiveCell: () => getActiveCell,
     getActiveNotebook: () => getActiveNotebook,
     getClipboardCell: () => getClipboardCell,
+    importAllTutorialNotebooks: () => importAllTutorialNotebooks,
     importNotebookFromJson: () => importNotebookFromJson,
     importSampleIntoNotebook: () => importSampleIntoNotebook,
+    importTutorialNotebook: () => importTutorialNotebook,
     initNotebookUI: () => initNotebookUI,
     insertCellInModel: () => insertCellInModel,
     insertNotebookCell: () => insertNotebookCell,
@@ -14435,17 +14466,20 @@ runAsyncDemo()
     nextDocId: () => nextDocId,
     normalizeCellTsForNotebook: () => normalizeCellTsForNotebook,
     notebooksByLang: () => notebooksByLang,
+    openTutorialModal: () => openTutorialModal,
     openVfsNotebookFile: () => openVfsNotebookFile,
     parseIpynbJsonToDocument: () => parseIpynbJsonToDocument,
     pasteNotebookCell: () => pasteNotebookCell,
     renderMarkdownHtml: () => renderMarkdownHtml,
     renderNotebookUI: () => renderNotebookUI,
+    renderTutorialModalUI: () => renderTutorialModalUI,
     restartNotebookKernel: () => restartNotebookKernel,
     runAllNotebookCells: () => runAllNotebookCells,
     runNotebookCell: () => runNotebookCell,
     runPythonNotebookCell: () => runPythonNotebookCell,
     runTsNotebookCell: () => runTsNotebookCell,
     serializeNotebookToIpynbJson: () => serializeNotebookToIpynbJson,
+    serializeTutorialToIpynbJson: () => serializeTutorialToIpynbJson,
     setClipboardCell: () => setClipboardCell,
     setViewMode: () => setViewMode,
     syncNotebookGlobalsToSidePanel: () => syncNotebookGlobalsToSidePanel,
@@ -14910,6 +14944,237 @@ runAsyncDemo()
     }
     return Math.max(92, visualLines * 26 + 28);
   }
+  var TS_NOTEBOOK_TUTORIALS = [
+    {
+      id: "ts-adv-01-interfaces-structural",
+      codeBadge: "01",
+      fileName: "01-Interfaces-Structural.ipynb",
+      title: "01 \xB7 \u63A5\u53E3\u5951\u7EA6\u4E0E\u7ED3\u6784\u5316\u7C7B\u578B\u7CFB\u7EDF (interface / readonly)",
+      category: "\u7C7B\u578B\u7CFB\u7EDF\u8FDB\u9636",
+      level: "\u8FDB\u9636 \xB7 \u6838\u5FC3\u5FC5\u5B66",
+      summary: "\u6DF1\u5165\u7406\u89E3 TypeScript \u7684\u7ED3\u6784\u5316\u5B50\u7C7B\u578B\uFF08Duck Typing\uFF09\u3001interface \u5951\u7EA6\u8BBE\u8BA1\u3001readonly \u53EA\u8BFB\u4E0D\u53EF\u53D8\u5C5E\u6027\u4E0E\u53EF\u9009\u5B57\u6BB5 ? \u7684\u63A7\u5236\u6D41\u5B89\u5168\u6536\u7A84\u3002",
+      highlights: [
+        "interface \u7ED3\u6784\u5316\u5951\u7EA6\u5EFA\u6A21",
+        "readonly \u53EA\u8BFB\u5C5E\u6027\u9632\u7BE1\u6539",
+        "\u53EF\u9009\u5C5E\u6027 ? \u4E0E\u9ED8\u8BA4\u503C\u6536\u7A84",
+        "\u8DE8\u5355\u5143\u683C\u5BF9\u8C61\u6570\u7EC4\u4E0E\u5065\u5EB7\u7B5B\u67E5\u8C03\u8BD5"
+      ],
+      cells: [
+        {
+          type: "markdown",
+          source: "### \u{1F393} 01 \xB7 \u63A5\u53E3\u5951\u7EA6\u4E0E\u7ED3\u6784\u5316\u7C7B\u578B\u7CFB\u7EDF (`interface` / `readonly`)\nTypeScript \u91C7\u7528**\u7ED3\u6784\u5316\u7C7B\u578B\u7CFB\u7EDF\uFF08Structural Subtyping\uFF09**\uFF1A\u53EA\u8981\u5BF9\u8C61\u7684\u5C5E\u6027\u5F62\u72B6\u6EE1\u8DB3 `interface` \u58F0\u660E\u7684\u5951\u7EA6\uFF0C\u5373\u88AB\u5224\u5B9A\u4E3A\u7C7B\u578B\u517C\u5BB9\u3002\n- **`readonly` \u53EA\u8BFB\u4FEE\u9970\u7B26**\uFF1A\u5728\u7F16\u8BD1\u671F\u9501\u5B9A\u5173\u952E\u6807\u8BC6\u5B57\u6BB5\uFF0C\u9632\u6B62\u4E1A\u52A1\u4EE3\u7801\u610F\u5916\u8986\u5199\u3002\n- **\u53EF\u9009\u5C5E\u6027 `?`**\uFF1A\u663E\u5F0F\u58F0\u660E\u53EF\u80FD\u7F3A\u7701\u7684\u914D\u7F6E\u9879\uFF0C\u914D\u5408\u6761\u4EF6\u5206\u652F\u5B9E\u73B0\u5B89\u5168\u7684\u7C7B\u578B\u6536\u7A84\u3002"
+        },
+        {
+          type: "code",
+          source: '// 1. \u5B9A\u4E49\u5FAE\u670D\u52A1\u8282\u70B9\u5951\u7EA6\uFF1A\u5305\u542B readonly \u53EA\u8BFB\u4E3B\u952E\u4E0E\u53EF\u9009 tag \u6807\u7B7E\ninterface ServiceNode {\n  readonly id: string;\n  host: string;\n  latencyMs: number;\n  healthy: boolean;\n  tag?: string;\n}\n\nconst cluster: ServiceNode[] = [\n  { id: "gw-01", host: "10.0.1.11", latencyMs: 18, healthy: true, tag: "edge" },\n  { id: "db-01", host: "10.0.2.20", latencyMs: 145, healthy: true, tag: "primary" },\n  { id: "cache-01", host: "10.0.3.15", latencyMs: 6, healthy: false }\n];\n\nconsole.log("\u5DF2\u6CE8\u518C\u96C6\u7FA4\u8282\u70B9\u6570:", cluster.length);'
+        },
+        {
+          type: "code",
+          source: '// 2. \u8DE8\u5355\u5143\u683C\u590D\u7528 ServiceNode \u5951\u7EA6\uFF0C\u7F16\u5199\u5E26\u53EF\u9009\u5C5E\u6027\u6536\u7A84\u7684\u683C\u5F0F\u5316\u51FD\u6570\nfunction formatNodeBadge(node: ServiceNode): string {\n  const role: string = node.tag ? node.tag : "general";\n  const state: string = node.healthy ? "UP" : "DOWN";\n  return "[" + state + "] " + node.id + " (" + role + ") - " + node.latencyMs + "ms";\n}\n\nconst badges: string[] = [];\nfor (let i: number = 0; i < cluster.length; i++) {\n  badges.push(formatNodeBadge(cluster[i]));\n}\nconsole.log("\u96C6\u7FA4\u72B6\u6001\u5FEB\u7167:", badges.join(" | "));'
+        },
+        {
+          type: "code",
+          source: '// 3. \u70B9\u51FB\u53F3\u4E0A\u89D2 \u{1F41E} \u5355\u6B65\u8C03\u8BD5\uFF1A\u7B5B\u9009\u4F4E\u5EF6\u8FDF\u5065\u5EB7\u8282\u70B9\u5E76\u89C2\u5BDF\u53F3\u4FA7 WATCH \u9762\u677F\nconst fastHosts: string[] = [];\nlet totalLatency: number = 0;\n\nfor (let i: number = 0; i < cluster.length; i++) {\n  const item: ServiceNode = cluster[i];\n  checkpoint(i, item.id, item.latencyMs);\n  if (item.healthy && item.latencyMs < 100) {\n    fastHosts.push(item.host);\n    totalLatency = totalLatency + item.latencyMs;\n  }\n}\n\nconsole.log("\u4F18\u9009\u4F4E\u5EF6\u8FDF\u8282\u70B9:", fastHosts, "\u603B\u5EF6\u8FDF(ms):", totalLatency);'
+        }
+      ]
+    },
+    {
+      id: "ts-adv-02-enums-unions-narrowing",
+      codeBadge: "02",
+      fileName: "02-Enums-Unions-Narrowing.ipynb",
+      title: "02 \xB7 \u679A\u4E3E\u3001\u8054\u5408\u7C7B\u578B\u4E0E\u63A7\u5236\u6D41\u6536\u7A84 (enum / Union)",
+      category: "\u7C7B\u578B\u6536\u7A84\u4E0E\u72B6\u6001\u673A",
+      level: "\u8FDB\u9636 \xB7 \u72B6\u6001\u5EFA\u6A21",
+      summary: "\u638C\u63E1 enum \u7F16\u8BD1\u671F\u53CC\u5411\u6620\u5C04\u5C55\u5F00\u3001type \u8054\u5408\u7C7B\u578B\u522B\u540D\uFF08Union Types\uFF09\u4E0E typeof \u63A7\u5236\u6D41\u7C7B\u578B\u6536\u7A84\uFF0C\u6784\u5EFA\u96F6\u9B54\u672F\u5E38\u91CF\u7684\u6709\u9650\u72B6\u6001\u673A\u3002",
+      highlights: [
+        "enum \u53CC\u5411\u6620\u5C04\u4E0E\u72B6\u6001\u5E38\u91CF",
+        "type \u8054\u5408\u7C7B\u578B\u522B\u540D (number | string)",
+        "typeof \u63A7\u5236\u6D41\u7A84\u5316 (Narrowing)",
+        "Map<string, number> \u72B6\u6001\u6876\u5B9E\u65F6\u53EF\u89C6\u5316"
+      ],
+      cells: [
+        {
+          type: "markdown",
+          source: "### \u{1F393} 02 \xB7 \u679A\u4E3E\u3001\u8054\u5408\u7C7B\u578B\u4E0E\u63A7\u5236\u6D41\u6536\u7A84 (`enum` / `Union`)\n\u5728\u590D\u6742\u72B6\u6001\u673A\u4E0E\u591A\u6001\u8F93\u5165\u5904\u7406\u4E2D\uFF0C\u907F\u514D\u786C\u7F16\u7801\u9B54\u672F\u6570\u5B57\u662F\u9AD8\u8D28\u91CF TypeScript \u5DE5\u7A0B\u7684\u6838\u5FC3\uFF1A\n- **`enum` \u679A\u4E3E**\uFF1A\u7F16\u8BD1\u671F\u63D0\u4F9B\u5177\u540D\u7C7B\u578B\u7EA6\u675F\uFF0C\u8FD0\u884C\u671F\u81EA\u52A8\u5C55\u5F00\u4E3A\u53CC\u5411\u6620\u5C04\u5B57\u5178\u5BF9\u8C61\u3002\n- **\u8054\u5408\u7C7B\u578B (`number | string`)**\uFF1A\u914D\u5408 `typeof` \u6761\u4EF6\u5B88\u536B\uFF0C\u8BA9\u7F16\u8BD1\u5668\u5728\u5404\u5206\u652F\u5185\u81EA\u52A8\u6536\u7A84\u5177\u4F53\u7C7B\u578B\u3002"
+        },
+        {
+          type: "code",
+          source: '// 1. \u5B9A\u4E49\u4EFB\u52A1\u72B6\u6001\u679A\u4E3E\u4E0E\u8054\u5408\u7C7B\u578B\u8F93\u5165\u89E3\u6790\u51FD\u6570\nenum JobStatus {\n  Queued = 0,\n  Running = 1,\n  Completed = 2,\n  Failed = 3\n}\n\ntype MetricInput = number | string;\n\nfunction normalizeWeight(raw: MetricInput): number {\n  if (typeof raw === "number") {\n    return raw;\n  }\n  return raw.length * 10;\n}\n\nconst combinedWeight: number = normalizeWeight(60) + normalizeWeight("high");\nconsole.log("\u6536\u7A84\u8BA1\u7B97\u6743\u91CD:", combinedWeight, "\u521D\u59CB\u679A\u4E3E\u503C:", JobStatus.Queued);'
+        },
+        {
+          type: "code",
+          source: '// 2. \u7F16\u5199\u786E\u5B9A\u6027\u72B6\u6001\u8F6C\u79FB\u51FD\u6570 stepStatus\nfunction stepStatus(cur: JobStatus, ok: boolean): JobStatus {\n  if (cur === JobStatus.Queued) {\n    return JobStatus.Running;\n  }\n  if (cur === JobStatus.Running) {\n    return ok ? JobStatus.Completed : JobStatus.Failed;\n  }\n  return cur;\n}\n\nlet stDemo: JobStatus = JobStatus.Queued;\nstDemo = stepStatus(stDemo, true);\nstDemo = stepStatus(stDemo, true);\nconsole.log("\u72B6\u6001\u6D41\u8F6C\u7EC8\u70B9:", stDemo, "\u540D\u79F0:", JobStatus[stDemo]);'
+        },
+        {
+          type: "code",
+          source: '// 3. \u70B9\u51FB\u53F3\u4E0A\u89D2 \u{1F41E} \u5355\u6B65\u8C03\u8BD5\uFF1A\u6279\u91CF\u9A71\u52A8\u72B6\u6001\u673A\u5E76\u5728\u53F3\u4FA7 WATCH \u89C2\u5BDF Map \u54C8\u5E0C\u7EDF\u8BA1\u6876\nconst signals: boolean[] = [true, false, true, true, false];\nconst stats = new Map<string, number>();\nstats.set("Completed", 0);\nstats.set("Failed", 0);\n\nfor (let i: number = 0; i < signals.length; i++) {\n  let st: JobStatus = JobStatus.Queued;\n  st = stepStatus(st, true);\n  st = stepStatus(st, signals[i]);\n  const key: string = st === JobStatus.Completed ? "Completed" : "Failed";\n  const prev: number = stats.get(key) || 0;\n  stats.set(key, prev + 1);\n  checkpoint(i, key, stats.get(key));\n}\n\nconsole.log("\u6210\u529F\u4EFB\u52A1\u6570:", stats.get("Completed"), "\u5931\u8D25\u4EFB\u52A1\u6570:", stats.get("Failed"));'
+        }
+      ]
+    },
+    {
+      id: "ts-adv-03-classes-oop-inheritance",
+      codeBadge: "03",
+      fileName: "03-Classes-OOP-Inheritance.ipynb",
+      title: "03 \xB7 \u9762\u5411\u5BF9\u8C61\u8FDB\u9636\uFF1A\u8BBF\u95EE\u63A7\u5236\u3001\u53C2\u6570\u5C5E\u6027\u4E0E\u7EE7\u627F (class / extends)",
+      category: "\u9762\u5411\u5BF9\u8C61\u4E0E\u5185\u5B58\u6A21\u578B",
+      level: "\u8FDB\u9636 \xB7 OOP \u67B6\u6784",
+      summary: "\u638C\u63E1\u6784\u9020\u51FD\u6570\u53C2\u6570\u5C5E\u6027\u8BED\u6CD5\u7CD6\u3001public / protected / private / readonly \u5C01\u88C5\u8FB9\u754C\u68C0\u67E5\uFF0C\u4EE5\u53CA extends \u6D3E\u751F\u7C7B\u7EE7\u627F\u4E0E super() \u534F\u540C\u3002",
+      highlights: [
+        "constructor \u53C2\u6570\u5C5E\u6027\u8BED\u6CD5\u7CD6",
+        "private / protected / readonly \u5C01\u88C5",
+        "extends \u7EE7\u627F\u94FE\u4E0E super() \u8C03\u7528",
+        "\u5806\u5185\u5B58\u5B9E\u4F8B\u5361\u7247\u4E0E\u5F15\u7528\u5B9E\u65F6\u8FFD\u8E2A"
+      ],
+      cells: [
+        {
+          type: "markdown",
+          source: "### \u{1F393} 03 \xB7 \u9762\u5411\u5BF9\u8C61\u8FDB\u9636\uFF1A\u8BBF\u95EE\u63A7\u5236\u3001\u53C2\u6570\u5C5E\u6027\u4E0E\u7EE7\u627F (`class` / `extends`)\nTypeScript \u6269\u5C55\u4E86\u6807\u51C6\u7C7B\u7684\u5C01\u88C5\u4E0E\u591A\u6001\u80FD\u529B\uFF1A\n- **\u8BBF\u95EE\u4FEE\u9970\u7B26**\uFF1A`private`\uFF08\u4EC5\u672C\u7C7B\u53EF\u89C1\uFF09\u3001`protected`\uFF08\u672C\u7C7B\u4E0E\u5B50\u7C7B\u53EF\u89C1\uFF09\u3001`public`\uFF08\u516C\u5F00\uFF09\u4E0E `readonly`\uFF08\u53EA\u8BFB\uFF09\u3002\n- **\u53C2\u6570\u5C5E\u6027**\uFF1A\u5728 `constructor(public readonly name: string, protected quota: number)` \u4E2D\u4E00\u952E\u5B8C\u6210\u5B57\u6BB5\u58F0\u660E\u4E0E\u8D4B\u503C\u3002"
+        },
+        {
+          type: "code",
+          source: '// 1. \u5B9A\u4E49\u5E26\u53C2\u6570\u5C5E\u6027\u4E0E\u8BBF\u95EE\u4FEE\u9970\u7B26\u7684\u914D\u989D\u9650\u6D41\u5668\u57FA\u7C7B RateLimiter\nclass RateLimiter {\n  private used: number = 0;\n\n  constructor(public readonly service: string, protected quota: number) {}\n\n  public acquire(cost: number): boolean {\n    if (this.used + cost > this.quota) {\n      return false;\n    }\n    this.used = this.used + cost;\n    return true;\n  }\n\n  public remaining(): number {\n    return this.quota - this.used;\n  }\n}\n\nconst baseLimiter = new RateLimiter("auth-svc", 10);\nconsole.log("\u7533\u8BF7 4 \u5355\u4F4D\u914D\u989D:", baseLimiter.acquire(4), "\u5269\u4F59:", baseLimiter.remaining());'
+        },
+        {
+          type: "code",
+          source: '// 2. \u901A\u8FC7 extends \u7EE7\u627F RateLimiter\uFF0C\u6269\u5C55\u652F\u6301\u7A81\u53D1\u6D41\u91CF\u6C60\u7684 BurstLimiter\nclass BurstLimiter extends RateLimiter {\n  private burstUsed: number = 0;\n\n  constructor(service: string, quota: number, public readonly burstMax: number) {\n    super(service, quota);\n  }\n\n  public requestToken(cost: number): string {\n    if (this.acquire(cost)) {\n      return "NORMAL_OK";\n    }\n    if (this.burstUsed + cost <= this.burstMax) {\n      this.burstUsed = this.burstUsed + cost;\n      return "BURST_OK";\n    }\n    return "REJECTED";\n  }\n}\n\nconst gatewayLimiter = new BurstLimiter("edge-gateway", 10, 5);\nconsole.log("\u7F51\u5173\u9650\u6D41\u5668\u521D\u59CB\u5316\u5B8C\u6210:", gatewayLimiter.service, "\u7A81\u53D1\u4E0A\u9650:", gatewayLimiter.burstMax);'
+        },
+        {
+          type: "code",
+          source: '// 3. \u70B9\u51FB\u53F3\u4E0A\u89D2 \u{1F41E} \u5355\u6B65\u8C03\u8BD5\uFF1A\u6A21\u62DF\u6D41\u91CF\u6D2A\u5CF0\u5E76\u5728\u53F3\u4FA7\u89C2\u5BDF\u5806\u5B9E\u4F8B\u5C5E\u6027\u53D8\u5316\nconst requests: number[] = [4, 5, 4, 3, 2];\nconst verdicts: string[] = [];\n\nfor (let i: number = 0; i < requests.length; i++) {\n  const cost: number = requests[i];\n  const res: string = gatewayLimiter.requestToken(cost);\n  verdicts.push(res);\n  checkpoint(cost, res, gatewayLimiter.remaining());\n}\n\nconsole.log("\u6D41\u91CF\u88C1\u51B3\u5E8F\u5217:", verdicts.join(" -> "));'
+        }
+      ]
+    },
+    {
+      id: "ts-adv-04-generics-collections",
+      codeBadge: "04",
+      fileName: "04-Generics-Collections-Trees.ipynb",
+      title: "04 \xB7 \u6CDB\u578B\u7F16\u7A0B\u4E0E\u5F3A\u7C7B\u578B\u6811/\u94FE\u8868\u53EF\u89C6\u5316 (<T> / Tree / List)",
+      category: "\u6CDB\u578B\u4E0E\u6570\u636E\u7ED3\u6784",
+      level: "\u9AD8\u9636 \xB7 \u7B97\u6CD5\u5DE5\u7A0B",
+      summary: "\u638C\u63E1\u6CDB\u578B\u7C7B class ValueBox<T>\u3001\u6CDB\u578B\u51FD\u6570\u4E0E\u81EA\u5F15\u7528\u6811/\u94FE\u8868\u7ED3\u6784\u5B9A\u4E49\uFF0C\u5728\u53F3\u4FA7 WATCH \u9762\u677F\u5B9E\u65F6\u8054\u52A8 SVG \u4E8C\u53C9\u6811\u4E0E\u94FE\u8868\u89C6\u56FE\u3002",
+      highlights: [
+        "\u6CDB\u578B\u5BB9\u5668\u7C7B class ValueBox<T>",
+        "\u6CDB\u578B\u51FD\u6570 <T> \u7C7B\u578B\u53C2\u6570\u63A8\u5BFC",
+        "SVG \u4E8C\u53C9\u6811\u4E0E\u94FE\u8868\u81EA\u52A8\u8BC6\u522B\u6E32\u67D3",
+        "\u5355\u6B65\u8FFD\u8E2A\u6811\u7ED3\u6784\u4E0E\u6808\u8F68\u8FF9"
+      ],
+      cells: [
+        {
+          type: "markdown",
+          source: "### \u{1F393} 04 \xB7 \u6CDB\u578B\u7F16\u7A0B\u4E0E\u5F3A\u7C7B\u578B\u6570\u636E\u7ED3\u6784 (`<T>` / `Tree` / `LinkedList`)\n\u6CDB\u578B\uFF08Generics\uFF09\u5C06\u7C7B\u578B\u53C2\u6570\u5316\uFF0C\u4F7F\u5BB9\u5668\u4E0E\u7B97\u6CD5\u517C\u5177\u590D\u7528\u6027\u4E0E\u4E25\u683C\u7C7B\u578B\u6821\u9A8C\uFF1A\n- **\u6CDB\u578B\u7C7B\u4E0E\u6CDB\u578B\u51FD\u6570**\uFF1A\u901A\u8FC7 `<T>` \u5C06\u5143\u7D20\u7C7B\u578B\u7ED1\u5B9A\u5230\u5B9E\u4F8B\u4E0E\u8FD4\u56DE\u503C\u3002\n- **\u6811\u4E0E\u94FE\u8868\u81EA\u52A8\u53EF\u89C6\u5316**\uFF1A\u5305\u542B `val` + `left` / `right` \u7684\u5BF9\u8C61\u81EA\u52A8\u6E32\u67D3\u4E3A **SVG \u5C42\u6B21\u4E8C\u53C9\u6811**\uFF1B\u5305\u542B `val` + `next` \u7684\u5BF9\u8C61\u81EA\u52A8\u6E32\u67D3\u4E3A **\u6C34\u5E73\u94FE\u8868**\u3002"
+        },
+        {
+          type: "code",
+          source: '// 1. \u5B9A\u4E49\u6CDB\u578B\u5386\u53F2\u8BB0\u5F55\u5BB9\u5668\u7C7B ValueBox<T>\nclass ValueBox<T> {\n  history: T[] = [];\n\n  constructor(public current: T) {\n    this.history.push(current);\n  }\n\n  update(nextVal: T): T {\n    this.current = nextVal;\n    this.history.push(nextVal);\n    return this.current;\n  }\n}\n\nconst scoreBox = new ValueBox<number>(100);\nscoreBox.update(180);\nscoreBox.update(260);\nconsole.log("\u5F53\u524D\u6CDB\u578B\u76D2\u503C:", scoreBox.current, "\u5386\u53F2\u8BB0\u5F55:", scoreBox.history);'
+        },
+        {
+          type: "code",
+          source: '// 2. \u6784\u5EFA\u5F3A\u7C7B\u578B\u4E8C\u53C9\u6811 tree \u4E0E\u5355\u94FE\u8868 list\uFF08\u8FD0\u884C\u540E\u53F3\u4FA7 WATCH \u81EA\u52A8\u6E32\u67D3\u56FE\u5F62\uFF09\nconst list = {\n  val: 10,\n  next: { val: 20, next: { val: 30, next: null } }\n};\n\nconst tree = {\n  val: 50,\n  left: {\n    val: 30,\n    left: { val: 20, left: null, right: null },\n    right: { val: 40, left: null, right: null }\n  },\n  right: {\n    val: 70,\n    left: { val: 60, left: null, right: null },\n    right: { val: 85, left: null, right: null }\n  }\n};\n\nconsole.log("\u6811\u6839:", tree.val, "\u94FE\u8868\u5934:", list.val);'
+        },
+        {
+          type: "code",
+          source: '// 3. \u70B9\u51FB\u53F3\u4E0A\u89D2 \u{1F41E} \u5355\u6B65\u8C03\u8BD5\uFF1A\u7ED3\u5408\u6808\u4E0E\u96C6\u5408\u7EDF\u8BA1\u6811\u7279\u5F81\u503C\nconst levelValues: number[] = [tree.val, tree.left.val, tree.right.val, tree.left.left.val, tree.right.right.val];\nconst visited = new Set<number>();\nconst stack: number[] = [];\nlet treeSum: number = 0;\n\nfor (let i: number = 0; i < levelValues.length; i++) {\n  const v: number = levelValues[i];\n  visited.add(v);\n  stack.push(v);\n  treeSum = treeSum + v;\n  checkpoint(i, v, treeSum);\n}\n\nconsole.log("\u91C7\u6837\u8282\u70B9\u7D2F\u8BA1\u548C:", treeSum, "\u53BB\u91CD\u96C6\u5408\u5927\u5C0F:", visited.size);'
+        }
+      ]
+    },
+    {
+      id: "ts-adv-05-async-event-loop",
+      codeBadge: "05",
+      fileName: "05-Async-Await-EventLoop.ipynb",
+      title: "05 \xB7 \u5F02\u6B65\u7F16\u7A0B\u3001Promise \u4E0E\u786E\u5B9A\u6027\u4E8B\u4EF6\u5FAA\u73AF (async / await)",
+      category: "\u5F02\u6B65\u5E76\u53D1\u4E0E\u8C03\u5EA6",
+      level: "\u9AD8\u9636 \xB7 \u8FD0\u884C\u65F6\u673A\u5236",
+      summary: "\u6DF1\u5165\u5256\u6790 async / await \u534F\u7A0B\u6302\u8D77\u6062\u590D\u3001Promise.then / queueMicrotask \u5FAE\u4EFB\u52A1\u961F\u5217\u4E0E setTimeout \u5B8F\u4EFB\u52A1\u961F\u5217\u7684\u786E\u5B9A\u6027\u6267\u884C\u65F6\u5E8F\u3002",
+      highlights: [
+        "\u540C\u6B65\u8C03\u7528\u6808 vs \u5FAE\u4EFB\u52A1 vs \u5B8F\u4EFB\u52A1",
+        "async / await \u534F\u7A0B\u6302\u8D77\u4E0E\u6062\u590D",
+        "queueMicrotask \u4E0E Promise.then \u4F18\u5148\u7EA7",
+        "\u786E\u5B9A\u6027\u865A\u62DF\u4E8B\u4EF6\u5FAA\u73AF\u5355\u6B65\u53EF\u89C6\u5316"
+      ],
+      cells: [
+        {
+          type: "markdown",
+          source: "### \u{1F393} 05 \xB7 \u5F02\u6B65\u7F16\u7A0B\u4E0E\u786E\u5B9A\u6027\u4E8B\u4EF6\u5FAA\u73AF (`async / await` / `Microtask` / `Macrotask`)\n\u672C\u5F15\u64CE\u5185\u7F6E\u4E86**\u786E\u5B9A\u6027\u865A\u62DF\u4E8B\u4EF6\u5FAA\u73AF\u6C99\u7BB1**\uFF0C\u65E0\u9700\u771F\u5B9E\u7B49\u5F85\u5B9A\u65F6\u5668\u5373\u53EF\u7CBE\u786E\u91CD\u73B0\u6807\u51C6\u5E76\u53D1\u8C03\u5EA6\u89C4\u5219\uFF1A\n1. **\u540C\u6B65\u4EE3\u7801\uFF08Call Stack\uFF09** \u6700\u5148\u6267\u884C\u5B8C\u6BD5\uFF1B\n2. **\u5FAE\u4EFB\u52A1\u961F\u5217\uFF08Microtasks\uFF09**\uFF1A\u5982 `Promise.resolve().then(...)`\u3001`queueMicrotask(...)`\u3001`await` \u540E\u7EED\u4EE3\u7801\uFF0C\u5728\u5F53\u524D\u5B8F\u4EFB\u52A1\u672B\u5C3E**\u4E00\u6B21\u6027\u5168\u90E8\u6E05\u7A7A**\uFF1B\n3. **\u5B8F\u4EFB\u52A1\u961F\u5217\uFF08Macrotasks\uFF09**\uFF1A\u5982 `setTimeout(fn, delay)`\uFF0C\u6309\u865A\u62DF\u65F6\u95F4\u987A\u5E8F\u4F9D\u6B21\u89E6\u53D1\u3002"
+        },
+        {
+          type: "code",
+          source: '// 1. \u7ECF\u5178\u9762\u8BD5\u9898\u5B9E\u8BC1\uFF1A\u540C\u6B65\u6808\u3001\u5FAE\u4EFB\u52A1\u4E0E\u5B8F\u4EFB\u52A1\u7684\u7CBE\u786E\u51FA\u961F\u987A\u5E8F\nconst orderLog: string[] = [];\n\norderLog.push("1:sync-start");\n\nsetTimeout(() => {\n  orderLog.push("5:timeout-0ms");\n}, 0);\n\nPromise.resolve("p1").then((tag: string) => {\n  orderLog.push("3:promise-then-" + tag);\n});\n\nqueueMicrotask(() => {\n  orderLog.push("4:queue-microtask");\n});\n\norderLog.push("2:sync-end");\nconsole.log("\u4E8B\u4EF6\u5FAA\u73AF\u5B9E\u6D4B\u65F6\u5E8F:", orderLog.join(" -> "));'
+        },
+        {
+          type: "code",
+          source: '// 2. \u5B9A\u4E49 async \u5F02\u6B65\u51FD\u6570\uFF0C\u7406\u89E3 await \u524D\u540E\u7684\u540C\u6B65\u4E0E\u5FAE\u4EFB\u52A1\u5207\u5206\nconst traceEvents: string[] = [];\n\nasync function loadRemoteConfig(envName: string): Promise<string> {\n  traceEvents.push("2:enter-async-" + envName);\n  const tag: string = await Promise.resolve("cfg-" + envName);\n  traceEvents.push("4:after-await-" + tag);\n  return tag;\n}\n\ntraceEvents.push("1:before-call");\nloadRemoteConfig("prod");\ntraceEvents.push("3:after-call-sync");\nconsole.log("\u534F\u7A0B\u6062\u590D\u8F68\u8FF9:", traceEvents.join(" -> "));'
+        },
+        {
+          type: "code",
+          source: '// 3. \u70B9\u51FB\u53F3\u4E0A\u89D2 \u{1F41E} \u5355\u6B65\u8C03\u8BD5\uFF1A\u89C2\u5BDF\u53F3\u4FA7 Event Loop \u9762\u677F\u4E2D\u534F\u7A0B\u3001\u5FAE\u4EFB\u52A1\u4E0E\u5B9A\u65F6\u5668\u7684\u6D41\u8F6C\nasync function computeStage(uid: number): Promise<number> {\n  const base: number = await Promise.resolve(uid * 100);\n  return base + 25;\n}\n\nasync function runAsyncPipeline(): Promise<string> {\n  const timeline: string[] = ["1:pipeline-start"];\n\n  setTimeout(() => {\n    timeline.push("5:timer-10ms");\n  }, 10);\n\n  Promise.resolve("fast").then((x: string) => {\n    timeline.push("3:micro-" + x);\n  });\n\n  timeline.push("2:before-await");\n  const quota: number = await computeStage(2);\n  timeline.push("4:after-await-" + quota);\n  checkpoint(timeline, quota);\n  return timeline.join(" -> ");\n}\n\nrunAsyncPipeline()'
+        }
+      ]
+    },
+    {
+      id: "ts-adv-06-type-diagnostics-lab",
+      codeBadge: "06",
+      fileName: "06-Type-Diagnostics-DP-Lab.ipynb",
+      title: "06 \xB7 \u9759\u6001\u7C7B\u578B\u8BCA\u65AD\u4E0E\u4E8C\u7EF4\u77E9\u9635\u7B97\u6CD5\u5B9E\u6218 (Type Checker & 2D DP)",
+      category: "\u7C7B\u578B\u5B89\u5168\u4E0E\u7B97\u6CD5\u53EF\u89C6\u5316",
+      level: "\u5B9E\u6218 \xB7 \u7EFC\u5408\u6F14\u7EC3",
+      summary: "\u7ED3\u5408\u5185\u7F6E\u6559\u80B2\u7EA7\u9759\u6001\u7C7B\u578B\u68C0\u67E5\u5668\u4F53\u9A8C\u5B9E\u65F6\u884C\u5C3E\u9519\u8BEF\u5FBD\u7AE0\u8BCA\u65AD\uFF0C\u5E76\u7528\u4E25\u683C\u7C7B\u578B\u5B9E\u73B0\u53CC\u6307\u9488\u6ED1\u52A8\u7A97\u53E3\u4E0E\u4E8C\u7EF4\u77E9\u9635\u52A8\u6001\u89C4\u5212\uFF082D Matrix \u53EF\u89C6\u5316\uFF09\u3002",
+      highlights: [
+        "\u5B9E\u65F6\u9759\u6001\u7C7B\u578B\u8BCA\u65AD\u5FBD\u7AE0\u5B9E\u9A8C\u5BA4",
+        "\u4E00\u7EF4\u6570\u7EC4\u53CC\u6307\u9488 [l..r] \u81EA\u52A8\u60AC\u6302",
+        "\u4E8C\u7EF4\u77E9\u9635 number[][] \u7F51\u683C\u52A8\u6001\u6E32\u67D3",
+        "\u7ED3\u5408 checkpoint() \u9010\u6B65\u63A8\u5BFC DP \u8F6C\u79FB\u65B9\u7A0B"
+      ],
+      cells: [
+        {
+          type: "markdown",
+          source: "### \u{1F393} 06 \xB7 \u9759\u6001\u7C7B\u578B\u8BCA\u65AD\u4E0E\u4E8C\u7EF4\u77E9\u9635\u7B97\u6CD5\u5B9E\u6218 (`Type Checker` + `2D Matrix`)\n\u672C\u8BFE\u7A0B\u5C55\u793A\u5982\u4F55\u5C06 **\u7F16\u8BD1\u671F\u9759\u6001\u7C7B\u578B\u9632\u5FA1** \u4E0E **\u8FD0\u884C\u671F\u7B97\u6CD5\u53EF\u89C6\u5316\u8C03\u8BD5** \u7ED3\u5408\uFF1A\n- **\u5B9E\u65F6\u7C7B\u578B\u8BCA\u65AD**\uFF1A\u5F53\u4EE3\u7801\u51FA\u73B0\u7C7B\u578B\u4E0D\u5339\u914D\u65F6\uFF0C\u7F16\u8F91\u5668\u884C\u5C3E\u4F1A\u7ACB\u5373\u63D0\u793A\u7EA2\u8272 `\u2717 TS` \u8BCA\u65AD\u5FBD\u7AE0\u3002\n- **\u53CC\u6307\u9488\u4E0E\u4E8C\u7EF4\u7F51\u683C**\uFF1A\u53D8\u91CF\u540D `l` / `r` \u4F1A\u81EA\u52A8\u60AC\u6302\u5728\u4E00\u7EF4\u6570\u7EC4\u4E0B\u65B9\uFF1B`dp: number[][]` \u4F1A\u81EA\u52A8\u6E32\u67D3\u4E3A\u4E8C\u7EF4\u77E9\u9635\u8868\u683C\u3002"
+        },
+        {
+          type: "code",
+          source: '// 1. \u9759\u6001\u7C7B\u578B\u9632\u9519\u5B9E\u9A8C\u5BA4\uFF08\u53EF\u5C1D\u8BD5\u53D6\u6D88\u5012\u6570\u7B2C\u4E8C\u884C\u6CE8\u91CA\uFF0C\u4F53\u9A8C\u884C\u5C3E\u5B9E\u65F6\u7EA2\u8272 TS \u8BCA\u65AD\u5FBD\u7AE0\uFF09\ninterface RiskRule {\n  readonly baseScore: number;\n  multiplier: number;\n}\n\nfunction evaluateRisk(rule: RiskRule, factor: number): number {\n  return rule.baseScore + rule.multiplier * factor;\n}\n\nconst prodRule: RiskRule = { baseScore: 50, multiplier: 9 };\nconst safeScore: number = evaluateRisk(prodRule, 4);\n// \u8BD5\u4E00\u8BD5\uFF1A\u53D6\u6D88\u4E0B\u4E00\u884C\u6CE8\u91CA\u5C06\u89E6\u53D1\u9759\u6001\u7C7B\u578B\u9519\u8BEF\uFF08string \u4E0D\u80FD\u8D4B\u7ED9 number\uFF09\n// const brokenScore: number = "type_mismatch";\nconsole.log("\u98CE\u63A7\u8BC4\u4F30\u5408\u89C4\u5F97\u5206:", safeScore);'
+        },
+        {
+          type: "code",
+          source: '// 2. \u70B9\u51FB\u53F3\u4E0A\u89D2 \u{1F41E} \u5355\u6B65\u8C03\u8BD5\uFF1A\u89C2\u5BDF\u4E00\u7EF4\u6570\u7EC4\u4E0B\u65B9\u81EA\u52A8\u60AC\u6302\u7684 [l, r] \u53CC\u6307\u9488\u6807\u7B7E\nconst nums: number[] = [4, 9, 2, 11, 6, 8, 5];\nlet l: number = 0;\nlet r: number = nums.length - 1;\nlet windowBest: number = 0;\n\nwhile (l < r) {\n  const pairVal: number = nums[l] + nums[r];\n  if (pairVal > windowBest) {\n    windowBest = pairVal;\n  }\n  checkpoint(l, r, pairVal, windowBest);\n  l = l + 1;\n  r = r - 1;\n}\nconsole.log("\u53CC\u6307\u9488\u6700\u5927\u914D\u5BF9\u548C:", windowBest);'
+        },
+        {
+          type: "code",
+          source: '// 3. \u70B9\u51FB\u53F3\u4E0A\u89D2 \u{1F41E} \u5355\u6B65\u8C03\u8BD5\uFF1A\u5728\u53F3\u4FA7 WATCH \u9762\u677F\u89C2\u5BDF\u4E8C\u7EF4\u77E9\u9635 dp: number[][] \u7684\u9010\u683C\u586B\u5145\nconst rows: number = 3;\nconst cols: number = 4;\nconst dp: number[][] = [\n  [1, 1, 1, 1],\n  [1, 0, 0, 0],\n  [1, 0, 0, 0]\n];\n\nfor (let i: number = 1; i < rows; i++) {\n  for (let j: number = 1; j < cols; j++) {\n    dp[i][j] = dp[i - 1][j] + dp[i][j - 1];\n    checkpoint(i, j, dp[i][j]);\n  }\n}\n\nconsole.log("\u7F51\u683C\u53F3\u4E0B\u89D2\u4E0D\u540C\u8DEF\u5F84\u603B\u6570:", dp[rows - 1][cols - 1]);'
+        }
+      ]
+    }
+  ];
+  function createTutorialNotebookDocument(tutorialId) {
+    const item = TS_NOTEBOOK_TUTORIALS.find((t) => t.id === tutorialId || t.fileName === tutorialId);
+    if (!item) return null;
+    const cells = item.cells.map((seed) => ({
+      id: nextCellId(),
+      type: seed.type,
+      source: seed.source,
+      executionCount: null,
+      status: "idle",
+      output: null,
+      markdownRendered: seed.type === "markdown"
+    }));
+    const firstCodeCell = cells.find((c) => c.type === "code") ?? cells[0];
+    return {
+      id: nextDocId(),
+      title: item.fileName,
+      lang: "ts",
+      execCounter: 0,
+      activeCellId: firstCodeCell ? firstCodeCell.id : "",
+      debuggingCellId: null,
+      cells,
+      executedHistory: [],
+      lastGlobalVars: {},
+      lastGlobalDs: {}
+    };
+  }
+  function serializeTutorialToIpynbJson(tutorialId) {
+    const doc = createTutorialNotebookDocument(tutorialId);
+    if (!doc) return null;
+    return serializeNotebookToIpynbJson(doc);
+  }
 
   // src/notebook/notebook-kernel.ts
   function normalizeCellTsForNotebook(src) {
@@ -15169,12 +15434,46 @@ runAsyncDemo()
         recordLogs = true;
       }
     };
-    const fnBody = "var checkpoint = function(){}, \u65AD\u70B9 = checkpoint;\n" + preambleJs + "\n;console.EnableRecording();\n" + jsCellBody + "\n;var __ret = (" + tailExpr + ");\nreturn { ok: true, value: __ret, vars: (" + snapExpr + ")() };";
     doc.execCounter += 1;
     cell.executionCount = doc.execCounter;
     try {
-      const fn = new Function("console", fnBody);
-      const res = fn(customConsole);
+      let res;
+      if (hasAsyncConstructs(combinedTs)) {
+        const instrumentedBody = instrument(jsCellBody, rawSrc.split("\n"), combinedNames);
+        const asyncEnvHeader = "var checkpoint = function(){}, \u65AD\u70B9 = checkpoint;\nvar Promise = (__t && __t.__env && __t.__env.Promise) || globalThis.Promise, setTimeout = (__t && __t.__env && __t.__env.setTimeout) || globalThis.setTimeout, clearTimeout = (__t && __t.__env && __t.__env.clearTimeout) || globalThis.clearTimeout, queueMicrotask = (__t && __t.__env && __t.__env.queueMicrotask) || globalThis.queueMicrotask;\n";
+        const asyncFnBody = asyncEnvHeader + preambleJs + "\n;console.EnableRecording();\n" + instrumentedBody + "\n;var __ret = (" + tailExpr + ");\nif (typeof __t === 'function' && __t.__drain) { __ret = __t.__drain(__ret, " + snapExpr + "); }\nreturn { ok: true, value: __ret, vars: (" + snapExpr + ")() };";
+        let lastLine = 1;
+        const traceStub = function(line) {
+          if (line) lastLine = line;
+        };
+        const evLoop = createVirtualEventLoop(traceStub, () => lastLine);
+        traceStub.__env = evLoop.env;
+        traceStub.__async = evLoop.runAsyncCoroutine;
+        traceStub.__await = (val, fid, line, exprText) => ({
+          __isAwait: true,
+          value: val,
+          fid,
+          line,
+          expr: exprText
+        });
+        traceStub.__drain = evLoop.drainEventLoop;
+        traceStub.__initGlobal = function(snapFn) {
+          evLoop.loop.globalSnapFn = snapFn;
+        };
+        traceStub.__enter = () => 0;
+        traceStub.__leave = () => {
+        };
+        traceStub.__ckpt = () => {
+        };
+        traceStub.__fin = () => {
+        };
+        const fn = new Function("__t", "console", asyncFnBody);
+        res = fn(traceStub, customConsole);
+      } else {
+        const fnBody = "var checkpoint = function(){}, \u65AD\u70B9 = checkpoint;\n" + preambleJs + "\n;console.EnableRecording();\n" + jsCellBody + "\n;var __ret = (" + tailExpr + ");\nreturn { ok: true, value: __ret, vars: (" + snapExpr + ")() };";
+        const fn = new Function("console", fnBody);
+        res = fn(customConsole);
+      }
       const elapsedMs = Date.now() - t0;
       const vRaw = isRecord(res) && isRecord(res.vars) ? res.vars : {};
       const v = {};
@@ -15188,7 +15487,7 @@ runAsyncDemo()
       populateInterfaceSchemas(ds);
       doc.lastGlobalVars = v;
       doc.lastGlobalDs = ds;
-      const rvStr = shouldEvalTailExpr && res.value !== void 0 ? safeJSONStringify(res.value) : null;
+      const rvStr = shouldEvalTailExpr && isRecord(res) && res.value !== void 0 ? safeJSONStringify(res.value) : null;
       cell.status = "success";
       cell.output = {
         logs,
@@ -15386,7 +15685,8 @@ runAsyncDemo()
       const allNames = Array.from(/* @__PURE__ */ new Set([...histNames, ...cellNames]));
       const instrumentedCellJs = instrument(jsBody, originalLines, allNames);
       const snapStr = snapFnExpr(allNames);
-      const body = preambleJs + "\n" + instrumentedCellJs + "\n;var __entryVal = (" + expr + ');\nif (typeof __t === "function" && __t.__drain) { __entryVal = __t.__drain(__entryVal, ' + snapStr + '); }\ntry{if(typeof __t==="function"&&__t.__fin)__t.__fin(' + snapStr + ");}catch(_){}\nreturn __entryVal;";
+      const asyncEnvHeader = "var Promise = (__t && __t.__env && __t.__env.Promise) || globalThis.Promise, setTimeout = (__t && __t.__env && __t.__env.setTimeout) || globalThis.setTimeout, clearTimeout = (__t && __t.__env && __t.__env.clearTimeout) || globalThis.clearTimeout, queueMicrotask = (__t && __t.__env && __t.__env.queueMicrotask) || globalThis.queueMicrotask;\n";
+      const body = asyncEnvHeader + preambleJs + "\n" + instrumentedCellJs + "\n;var __entryVal = (" + expr + ');\nif (typeof __t === "function" && __t.__drain) { __entryVal = __t.__drain(__entryVal, ' + snapStr + '); }\ntry{if(typeof __t==="function"&&__t.__fin)__t.__fin(' + snapStr + ");}catch(_){}\nreturn __entryVal;";
       compiledFn = new Function("__t", "console", body);
     } catch (e) {
       cell.status = "error";
@@ -16060,6 +16360,7 @@ runAsyncDemo()
     const nbWrap = $("notebookWrap");
     if (!nbWrap || !nbWrap.addEventListener) return;
     initNotebookTabsEvents();
+    initTutorialModalEvents();
     const bindBtn = (id, fn) => {
       const b = $(id);
       if (b) b.onclick = fn;
@@ -16094,6 +16395,178 @@ runAsyncDemo()
       };
     }
   }
+  var selectedTutorialId = TS_NOTEBOOK_TUTORIALS[0]?.id ?? "ts-adv-01-interfaces-structural";
+  function ensureTsLanguageActive() {
+    if (appState.LANG !== "ts") {
+      appState.LANG = "ts";
+      const langSel = $("langSel");
+      if (langSel) langSel.value = "ts";
+      if (typeof PY_ENGINE !== "undefined" && PY_ENGINE.setLang) {
+        PY_ENGINE.setLang("ts");
+      }
+    }
+  }
+  function syncTutorialDocToVfs(doc) {
+    ensureVfsInitialized();
+    const vfsPath = doc.title;
+    VFS_NODES.set(vfsPath, {
+      path: vfsPath,
+      name: doc.title,
+      type: "file",
+      parentPath: "",
+      content: serializeNotebookToIpynbJson(doc)
+    });
+    persistVfsToClientStorage();
+  }
+  function renderTutorialModalUI() {
+    const listEl = $("tutorialModalList");
+    const detailEl = $("tutorialModalDetail");
+    if (!listEl || !detailEl) return;
+    const store = ensureLangNotebooks("ts");
+    const openedTitles = new Set(store.docs.map((d) => d.title));
+    const current = TS_NOTEBOOK_TUTORIALS.find((t) => t.id === selectedTutorialId) ?? TS_NOTEBOOK_TUTORIALS[0];
+    if (!current) return;
+    selectedTutorialId = current.id;
+    listEl.innerHTML = TS_NOTEBOOK_TUTORIALS.map((item) => {
+      const isAct = item.id === current.id;
+      const isLoaded = openedTitles.has(item.fileName);
+      const codeCellCount = item.cells.filter((c) => c.type === "code").length;
+      return `<button type="button" class="tutorial-card-item${isAct ? " active" : ""}" data-tutorial-id="${esc(item.id)}" title="\u5355\u51FB\u9884\u89C8\u8BFE\u7A0B\u5927\u7EB2 \xB7 \u53CC\u51FB\u7ACB\u5373\u5BFC\u5165\u5E76\u6253\u5F00"><div class="tutorial-card-top"><span class="tutorial-card-badge">${esc(item.codeBadge)}</span><span class="tutorial-card-cat">${esc(item.category)}</span><span class="tutorial-card-lvl">${esc(item.level)}</span>` + (isLoaded ? `<span class="tutorial-card-loaded">\u5DF2\u5BFC\u5165</span>` : "") + `</div><div class="tutorial-card-title">${esc(item.title)}</div><div class="tutorial-card-meta"><span>\u{1F4D3} ${esc(item.fileName)}</span><span>\xB7 ${codeCellCount} \u4E2A\u4EE3\u7801\u683C</span></div></button>`;
+    }).join("");
+    const highlightsHtml = current.highlights.map((h) => `<span class="tutorial-hl-chip">\u2726 ${esc(h)}</span>`).join("");
+    const cellsPreviewHtml = current.cells.map((c, idx) => {
+      const isMd = c.type === "markdown";
+      const firstLine = (c.source.split("\n")[0] || "").replace(/^#+\s*/, "").trim();
+      const lineCount = c.source.split("\n").length;
+      return `<div class="tutorial-cell-prev ${isMd ? "md" : "code"}"><div class="tutorial-cell-prev-head"><span class="tutorial-cell-tag">${isMd ? "Markdown \u5BFC\u8BFB" : `Code [${idx}]`}</span><span class="tutorial-cell-lines">${lineCount} \u884C \xB7 ${esc(firstLine)}</span></div><pre class="tutorial-cell-code">${esc(c.source)}</pre></div>`;
+    }).join("");
+    const alreadyInWorkspace = openedTitles.has(current.fileName);
+    detailEl.innerHTML = `<div class="tutorial-detail-head"><div class="tutorial-detail-tags"><span class="tutorial-tag-cat">${esc(current.category)}</span><span class="tutorial-tag-lvl">${esc(current.level)}</span><span class="tutorial-tag-file">examples/notebooks/${esc(current.fileName)}</span></div><h4 class="tutorial-detail-title">${esc(current.title)}</h4><p class="tutorial-detail-summary">${esc(current.summary)}</p><div class="tutorial-hl-list">${highlightsHtml}</div></div><div class="tutorial-detail-cells-title">\u8BFE\u7A0B\u5355\u5143\u683C\u7ED3\u6784\u9884\u89C8\uFF08\u5171 ${current.cells.length} \u4E2A\u5355\u5143\u683C\uFF0C\u542B \u{1F41E} \u5355\u6B65\u53EF\u89C6\u5316\u8C03\u8BD5\u7EC3\u4E60\uFF09</div><div class="tutorial-detail-cells">${cellsPreviewHtml}</div><div class="tutorial-detail-foot"><button type="button" class="tutorial-btn secondary" data-tutorial-act="import-all" title="\u5C06\u5168\u90E8 6 \u95E8 TypeScript \u8FDB\u9636\u6559\u5B66\u8BFE\u7A0B\u4E00\u6B21\u6027\u5BFC\u5165\u5230 Notebook \u6807\u7B7E\u680F">\u{1F4DA} \u4E00\u952E\u5BFC\u5165\u5168\u90E8 6 \u95E8\u8BFE\u7A0B</button><button type="button" class="tutorial-btn primary" data-tutorial-act="import-one" data-tutorial-id="${esc(current.id)}">` + (alreadyInWorkspace ? "\u{1F4D3} \u5207\u6362\u5230\u6B64\u6559\u5B66 Notebook" : "\u{1F4E5} \u5BFC\u5165\u5E76\u6253\u5F00\u6B64\u6559\u5B66 Notebook") + `</button></div>`;
+  }
+  function openTutorialModal() {
+    const modal = $("tutorialModal");
+    if (!modal) return;
+    renderTutorialModalUI();
+    modal.hidden = false;
+  }
+  function closeTutorialModal() {
+    const modal = $("tutorialModal");
+    if (!modal) return;
+    modal.hidden = true;
+  }
+  function importTutorialNotebook(tutorialId) {
+    const item = TS_NOTEBOOK_TUTORIALS.find(
+      (t) => t.id === tutorialId || t.fileName === tutorialId
+    );
+    if (!item) return false;
+    ensureTsLanguageActive();
+    const store = ensureLangNotebooks("ts");
+    let targetDoc = store.docs.find((d) => d.title === item.fileName) ?? null;
+    let isNew = false;
+    if (!targetDoc) {
+      targetDoc = createTutorialNotebookDocument(item.id);
+      if (!targetDoc) return false;
+      store.docs.push(targetDoc);
+      syncTutorialDocToVfs(targetDoc);
+      isNew = true;
+    }
+    store.activeDocId = targetDoc.id;
+    selectedTutorialId = item.id;
+    closeTutorialModal();
+    setViewMode("notebook");
+    syncNotebookGlobalsToSidePanel(targetDoc);
+    renderNotebookUI();
+    renderVfsTreeUI();
+    say(
+      isNew ? `\u{1F393} \u5DF2\u5BFC\u5165\u5E76\u6253\u5F00 TS \u8FDB\u9636\u6559\u5B66\u300A${item.title}\u300B\uFF08\u5171 ${targetDoc.cells.length} \u4E2A\u5355\u5143\u683C\uFF0C\u53EF\u6309 Shift+Enter \u9010\u683C\u8FD0\u884C\u6216\u70B9 \u{1F41E} \u5355\u6B65\u8C03\u8BD5\uFF09` : `\u{1F393} \u5DF2\u5207\u6362\u5230 TS \u8FDB\u9636\u6559\u5B66\u300A${item.title}\u300B`,
+      "ok"
+    );
+    return true;
+  }
+  function importAllTutorialNotebooks() {
+    ensureTsLanguageActive();
+    const store = ensureLangNotebooks("ts");
+    let importedCount = 0;
+    let focusDoc = null;
+    for (const item of TS_NOTEBOOK_TUTORIALS) {
+      let doc = store.docs.find((d) => d.title === item.fileName) ?? null;
+      if (!doc) {
+        doc = createTutorialNotebookDocument(item.id);
+        if (doc) {
+          store.docs.push(doc);
+          syncTutorialDocToVfs(doc);
+          importedCount++;
+        }
+      }
+      if (doc && item.id === selectedTutorialId) {
+        focusDoc = doc;
+      }
+    }
+    const activeDoc = focusDoc ?? store.docs[store.docs.length - 1];
+    if (activeDoc) {
+      store.activeDocId = activeDoc.id;
+    }
+    closeTutorialModal();
+    setViewMode("notebook");
+    if (activeDoc) {
+      syncNotebookGlobalsToSidePanel(activeDoc);
+    }
+    renderNotebookUI();
+    renderVfsTreeUI();
+    say(
+      `\u{1F393} \u5DF2\u5BFC\u5165\u5168\u90E8 ${TS_NOTEBOOK_TUTORIALS.length} \u95E8 TypeScript \u8FDB\u9636\u6559\u5B66 Notebook\uFF08\u65B0\u589E ${importedCount} \u95E8\uFF09\uFF0C\u53EF\u5728\u4E0A\u65B9\u6807\u7B7E\u680F\u81EA\u7531\u5207\u6362`,
+      "ok"
+    );
+    return importedCount;
+  }
+  function initTutorialModalEvents() {
+    const modal = $("tutorialModal");
+    const closeBtn = $("tutorialModalClose");
+    const listEl = $("tutorialModalList");
+    const detailEl = $("tutorialModalDetail");
+    if (closeBtn) {
+      closeBtn.onclick = () => closeTutorialModal();
+    }
+    if (modal && modal.addEventListener) {
+      modal.addEventListener("click", (e) => {
+        if (e.target === modal) {
+          closeTutorialModal();
+        }
+      });
+    }
+    if (listEl && listEl.addEventListener) {
+      listEl.addEventListener("click", (e) => {
+        const card = closestElement(e, "[data-tutorial-id]");
+        if (!card) return;
+        const tid = card.getAttribute("data-tutorial-id");
+        if (tid && tid !== selectedTutorialId) {
+          selectedTutorialId = tid;
+          renderTutorialModalUI();
+        }
+      });
+      listEl.addEventListener("dblclick", (e) => {
+        const card = closestElement(e, "[data-tutorial-id]");
+        if (!card) return;
+        const tid = card.getAttribute("data-tutorial-id");
+        if (tid) {
+          importTutorialNotebook(tid);
+        }
+      });
+    }
+    if (detailEl && detailEl.addEventListener) {
+      detailEl.addEventListener("click", (e) => {
+        const actBtn = closestElement(e, "[data-tutorial-act]");
+        if (!actBtn) return;
+        const act = actBtn.getAttribute("data-tutorial-act");
+        if (act === "import-one") {
+          const tid = actBtn.getAttribute("data-tutorial-id") || selectedTutorialId;
+          importTutorialNotebook(tid);
+        } else if (act === "import-all") {
+          importAllTutorialNotebooks();
+        }
+      });
+    }
+  }
   function openVfsNotebookFile(name, content) {
     const lang = appState.LANG === "python" ? "python" : "ts";
     const store = ensureLangNotebooks(lang);
@@ -16105,6 +16578,9 @@ runAsyncDemo()
       return;
     }
     if (content && importNotebookFromJson(content, name)) {
+      return;
+    }
+    if (importTutorialNotebook(name)) {
       return;
     }
     setViewMode("notebook");
@@ -16128,6 +16604,8 @@ runAsyncDemo()
     setViewMode,
     openVfsNotebookFile,
     importSampleIntoNotebook,
+    openTutorialModal,
+    importTutorialNotebook,
     renderNotebookUI,
     getActiveWorkspacePath: () => appState.VIEW_MODE === "notebook" ? getActiveNotebook().title : getActiveScriptTab().vfsPath
   });

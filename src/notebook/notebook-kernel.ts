@@ -5,7 +5,7 @@
 import { blankJsLine, collectNames, instrument, resolveEntry, snapFnExpr } from "../compiler/instrumenter";
 import { stripTypes, transpileEnums } from "../compiler/transpile";
 import { extractTsInterfaceMetadata, typecheckTS } from "../compiler/type-checker";
-import { hasAsyncConstructs, resetTraceState, safeJSONStringify, say } from "../runtime/event-loop";
+import { createVirtualEventLoop, hasAsyncConstructs, resetTraceState, safeJSONStringify, say } from "../runtime/event-loop";
 import { computeAndAppendNextStep, initWatchedVars } from "../runtime/runner";
 import { appState, uiHooks } from "../state";
 import type { Diag, NotebookCell, NotebookDocument, StepAnim } from "../types";
@@ -316,24 +316,83 @@ export function runTsNotebookCell(
     },
   };
 
-  const fnBody =
-    "var checkpoint = function(){}, 断点 = checkpoint;\n" +
-    preambleJs +
-    "\n;console.EnableRecording();\n" +
-    jsCellBody +
-    "\n;var __ret = (" +
-    tailExpr +
-    ");\n" +
-    "return { ok: true, value: __ret, vars: (" +
-    snapExpr +
-    ")() };";
-
   doc.execCounter += 1;
   cell.executionCount = doc.execCounter;
 
   try {
-    const fn = new Function("console", fnBody);
-    const res = fn(customConsole);
+    let res: unknown;
+    if (hasAsyncConstructs(combinedTs)) {
+      const instrumentedBody = instrument(jsCellBody, rawSrc.split("\n"), combinedNames);
+      const asyncEnvHeader =
+        "var checkpoint = function(){}, 断点 = checkpoint;\n" +
+        "var Promise = (__t && __t.__env && __t.__env.Promise) || globalThis.Promise, " +
+        "setTimeout = (__t && __t.__env && __t.__env.setTimeout) || globalThis.setTimeout, " +
+        "clearTimeout = (__t && __t.__env && __t.__env.clearTimeout) || globalThis.clearTimeout, " +
+        "queueMicrotask = (__t && __t.__env && __t.__env.queueMicrotask) || globalThis.queueMicrotask;\n";
+      const asyncFnBody =
+        asyncEnvHeader +
+        preambleJs +
+        "\n;console.EnableRecording();\n" +
+        instrumentedBody +
+        "\n;var __ret = (" +
+        tailExpr +
+        ");\n" +
+        "if (typeof __t === 'function' && __t.__drain) { __ret = __t.__drain(__ret, " +
+        snapExpr +
+        "); }\n" +
+        "return { ok: true, value: __ret, vars: (" +
+        snapExpr +
+        ")() };";
+      let lastLine = 1;
+      const traceStub: {
+        (line?: number): void;
+        __env?: unknown;
+        __async?: unknown;
+        __await?: (val: unknown, fid: number, line: number, exprText: string) => unknown;
+        __drain?: unknown;
+        __initGlobal?: (snapFn: (() => Record<string, unknown>) | null) => void;
+        __enter?: () => number;
+        __leave?: () => void;
+        __ckpt?: () => void;
+        __fin?: () => void;
+      } = function (line?: number) {
+        if (line) lastLine = line;
+      };
+      const evLoop = createVirtualEventLoop(traceStub, () => lastLine);
+      traceStub.__env = evLoop.env;
+      traceStub.__async = evLoop.runAsyncCoroutine;
+      traceStub.__await = (val: unknown, fid: number, line: number, exprText: string) => ({
+        __isAwait: true,
+        value: val,
+        fid,
+        line,
+        expr: exprText,
+      });
+      traceStub.__drain = evLoop.drainEventLoop;
+      traceStub.__initGlobal = function (snapFn: (() => Record<string, unknown>) | null) {
+        evLoop.loop.globalSnapFn = snapFn;
+      };
+      traceStub.__enter = () => 0;
+      traceStub.__leave = () => {};
+      traceStub.__ckpt = () => {};
+      traceStub.__fin = () => {};
+      const fn = new Function("__t", "console", asyncFnBody);
+      res = fn(traceStub, customConsole);
+    } else {
+      const fnBody =
+        "var checkpoint = function(){}, 断点 = checkpoint;\n" +
+        preambleJs +
+        "\n;console.EnableRecording();\n" +
+        jsCellBody +
+        "\n;var __ret = (" +
+        tailExpr +
+        ");\n" +
+        "return { ok: true, value: __ret, vars: (" +
+        snapExpr +
+        ")() };";
+      const fn = new Function("console", fnBody);
+      res = fn(customConsole);
+    }
     const elapsedMs = Date.now() - t0;
 
     const vRaw: Record<string, unknown> = isRecord(res) && isRecord(res.vars) ? res.vars : {};
@@ -350,7 +409,9 @@ export function runTsNotebookCell(
     doc.lastGlobalDs = ds;
 
     const rvStr =
-      shouldEvalTailExpr && res.value !== undefined ? safeJSONStringify(res.value) : null;
+      shouldEvalTailExpr && isRecord(res) && res.value !== undefined
+        ? safeJSONStringify(res.value)
+        : null;
 
     cell.status = "success";
     cell.output = {
@@ -581,7 +642,13 @@ export function debugTsNotebookCell(
     const allNames = Array.from(new Set([...histNames, ...cellNames]));
     const instrumentedCellJs = instrument(jsBody, originalLines, allNames);
     const snapStr = snapFnExpr(allNames);
+    const asyncEnvHeader =
+      "var Promise = (__t && __t.__env && __t.__env.Promise) || globalThis.Promise, " +
+      "setTimeout = (__t && __t.__env && __t.__env.setTimeout) || globalThis.setTimeout, " +
+      "clearTimeout = (__t && __t.__env && __t.__env.clearTimeout) || globalThis.clearTimeout, " +
+      "queueMicrotask = (__t && __t.__env && __t.__env.queueMicrotask) || globalThis.queueMicrotask;\n";
     const body =
+      asyncEnvHeader +
       preambleJs +
       "\n" +
       instrumentedCellJs +

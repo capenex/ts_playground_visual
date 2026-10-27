@@ -54,6 +54,10 @@
         <span>📤 上传本地文件…</span>
         <span class="sub-tag">.ts / .py / .ipynb</span>
       </button>
+      <button type="button" id="btnOpenTsTutorials" class="menu-item tutorial-menu-btn" title="打开窗口选择并导入 TypeScript 进阶交互式教学 Notebook (.ipynb)">
+        <span>🎓 TS 进阶教学资料…</span>
+        <span class="sub-tag">6 门 Notebook</span>
+      </button>
       <div class="menu-divider"></div>
       <div class="menu-sec">
         <div class="menu-sec-head">
@@ -228,6 +232,25 @@
       <h3>Python 模式</h3>
       <p>只做运行前语法检查（<code>ast.parse</code> / <code>compile</code>），不做静态类型检查；类型注解不参与校验。</p>
       <p class="warn">因此可能出现漏报（错误没标红）或误报（合法写法被标红）。以实际运行结果和官方 <code>tsc</code> 为准。</p>
+    </div>
+  </div>
+</div>
+
+<div id="tutorialModal" class="checker-modal tutorial-modal" hidden>
+  <div class="checker-modal-box tutorial-modal-box" role="dialog" aria-modal="true" aria-labelledby="tutorialModalTitle">
+    <div class="checker-modal-head tutorial-modal-head">
+      <div class="tutorial-modal-title-wrap">
+        <span class="tutorial-modal-icon" aria-hidden="true">🎓</span>
+        <div>
+          <span id="tutorialModalTitle">TypeScript 进阶交互式教学资料库 (Notebook 课程)</span>
+          <div class="tutorial-modal-subtitle">选择一门课程导入到 Notebook 工作区 · 支持跨单元格共享上下文、实时静态类型诊断与 🐞 单步可视化调试</div>
+        </div>
+      </div>
+      <button id="tutorialModalClose" type="button">关闭</button>
+    </div>
+    <div class="tutorial-modal-body">
+      <div class="tutorial-modal-sidebar" id="tutorialModalList" role="listbox" aria-label="TS 进阶教学课程列表"></div>
+      <div class="tutorial-modal-detail" id="tutorialModalDetail"></div>
     </div>
   </div>
 </div>

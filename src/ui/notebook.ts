@@ -13,6 +13,7 @@ import {
   typecheckNotebookCellTS,
 } from "../notebook/notebook-kernel";
 import {
+  createTutorialNotebookDocument,
   deleteCellInModel,
   duplicateCellInModel,
   ensureLangNotebooks,
@@ -28,6 +29,7 @@ import {
   renderMarkdownHtml,
   serializeNotebookToIpynbJson,
   setClipboardCell,
+  TS_NOTEBOOK_TUTORIALS,
 } from "../notebook/notebook-model";
 import { resetTraceState, say } from "../runtime/event-loop";
 import { appState, esc, registerUiHooks } from "../state";
@@ -52,6 +54,7 @@ import {
   bindGlobalVfsApi,
   ensureVfsInitialized,
   initVfsSidebarEvents,
+  persistVfsToClientStorage,
   renderVfsTreeUI,
   VFS_NODES,
 } from "./vfs";
@@ -778,6 +781,7 @@ export function initNotebookUI() {
   if (!nbWrap || !nbWrap.addEventListener) return;
 
   initNotebookTabsEvents();
+  initTutorialModalEvents();
 
   const bindBtn = (id: string, fn: () => void) => {
     const b = $(id);
@@ -816,6 +820,249 @@ export function initNotebookUI() {
   }
 }
 
+/* ── TypeScript Advanced Interactive Tutorial Selector Modal ── */
+let selectedTutorialId: string =
+  TS_NOTEBOOK_TUTORIALS[0]?.id ?? "ts-adv-01-interfaces-structural";
+
+function ensureTsLanguageActive(): void {
+  if (appState.LANG !== "ts") {
+    appState.LANG = "ts";
+    const langSel = $<HTMLSelectElement>("langSel");
+    if (langSel) langSel.value = "ts";
+    if (typeof PY_ENGINE !== "undefined" && PY_ENGINE.setLang) {
+      PY_ENGINE.setLang("ts");
+    }
+  }
+}
+
+function syncTutorialDocToVfs(doc: NotebookDocument): void {
+  ensureVfsInitialized();
+  const vfsPath = doc.title;
+  VFS_NODES.set(vfsPath, {
+    path: vfsPath,
+    name: doc.title,
+    type: "file",
+    parentPath: "",
+    content: serializeNotebookToIpynbJson(doc),
+  });
+  persistVfsToClientStorage();
+}
+
+export function renderTutorialModalUI(): void {
+  const listEl = $("tutorialModalList");
+  const detailEl = $("tutorialModalDetail");
+  if (!listEl || !detailEl) return;
+
+  const store = ensureLangNotebooks("ts");
+  const openedTitles = new Set(store.docs.map((d) => d.title));
+  const current =
+    TS_NOTEBOOK_TUTORIALS.find((t) => t.id === selectedTutorialId) ??
+    TS_NOTEBOOK_TUTORIALS[0];
+  if (!current) return;
+  selectedTutorialId = current.id;
+
+  listEl.innerHTML = TS_NOTEBOOK_TUTORIALS.map((item) => {
+    const isAct = item.id === current.id;
+    const isLoaded = openedTitles.has(item.fileName);
+    const codeCellCount = item.cells.filter((c) => c.type === "code").length;
+    return (
+      `<button type="button" class="tutorial-card-item${isAct ? " active" : ""}" data-tutorial-id="${esc(item.id)}" title="单击预览课程大纲 · 双击立即导入并打开">` +
+      `<div class="tutorial-card-top">` +
+      `<span class="tutorial-card-badge">${esc(item.codeBadge)}</span>` +
+      `<span class="tutorial-card-cat">${esc(item.category)}</span>` +
+      `<span class="tutorial-card-lvl">${esc(item.level)}</span>` +
+      (isLoaded ? `<span class="tutorial-card-loaded">已导入</span>` : "") +
+      `</div>` +
+      `<div class="tutorial-card-title">${esc(item.title)}</div>` +
+      `<div class="tutorial-card-meta">` +
+      `<span>📓 ${esc(item.fileName)}</span>` +
+      `<span>· ${codeCellCount} 个代码格</span>` +
+      `</div>` +
+      `</button>`
+    );
+  }).join("");
+
+  const highlightsHtml = current.highlights
+    .map((h) => `<span class="tutorial-hl-chip">✦ ${esc(h)}</span>`)
+    .join("");
+
+  const cellsPreviewHtml = current.cells
+    .map((c, idx) => {
+      const isMd = c.type === "markdown";
+      const firstLine = (c.source.split("\n")[0] || "").replace(/^#+\s*/, "").trim();
+      const lineCount = c.source.split("\n").length;
+      return (
+        `<div class="tutorial-cell-prev ${isMd ? "md" : "code"}">` +
+        `<div class="tutorial-cell-prev-head">` +
+        `<span class="tutorial-cell-tag">${isMd ? "Markdown 导读" : `Code [${idx}]`}</span>` +
+        `<span class="tutorial-cell-lines">${lineCount} 行 · ${esc(firstLine)}</span>` +
+        `</div>` +
+        `<pre class="tutorial-cell-code">${esc(c.source)}</pre>` +
+        `</div>`
+      );
+    })
+    .join("");
+
+  const alreadyInWorkspace = openedTitles.has(current.fileName);
+
+  detailEl.innerHTML =
+    `<div class="tutorial-detail-head">` +
+    `<div class="tutorial-detail-tags">` +
+    `<span class="tutorial-tag-cat">${esc(current.category)}</span>` +
+    `<span class="tutorial-tag-lvl">${esc(current.level)}</span>` +
+    `<span class="tutorial-tag-file">examples/notebooks/${esc(current.fileName)}</span>` +
+    `</div>` +
+    `<h4 class="tutorial-detail-title">${esc(current.title)}</h4>` +
+    `<p class="tutorial-detail-summary">${esc(current.summary)}</p>` +
+    `<div class="tutorial-hl-list">${highlightsHtml}</div>` +
+    `</div>` +
+    `<div class="tutorial-detail-cells-title">课程单元格结构预览（共 ${current.cells.length} 个单元格，含 🐞 单步可视化调试练习）</div>` +
+    `<div class="tutorial-detail-cells">${cellsPreviewHtml}</div>` +
+    `<div class="tutorial-detail-foot">` +
+    `<button type="button" class="tutorial-btn secondary" data-tutorial-act="import-all" title="将全部 6 门 TypeScript 进阶教学课程一次性导入到 Notebook 标签栏">📚 一键导入全部 6 门课程</button>` +
+    `<button type="button" class="tutorial-btn primary" data-tutorial-act="import-one" data-tutorial-id="${esc(current.id)}">` +
+    (alreadyInWorkspace ? "📓 切换到此教学 Notebook" : "📥 导入并打开此教学 Notebook") +
+    `</button>` +
+    `</div>`;
+}
+
+export function openTutorialModal(): void {
+  const modal = $("tutorialModal");
+  if (!modal) return;
+  renderTutorialModalUI();
+  modal.hidden = false;
+}
+
+export function closeTutorialModal(): void {
+  const modal = $("tutorialModal");
+  if (!modal) return;
+  modal.hidden = true;
+}
+
+export function importTutorialNotebook(tutorialId: string): boolean {
+  const item = TS_NOTEBOOK_TUTORIALS.find(
+    (t) => t.id === tutorialId || t.fileName === tutorialId
+  );
+  if (!item) return false;
+
+  ensureTsLanguageActive();
+  const store = ensureLangNotebooks("ts");
+  let targetDoc = store.docs.find((d) => d.title === item.fileName) ?? null;
+  let isNew = false;
+
+  if (!targetDoc) {
+    targetDoc = createTutorialNotebookDocument(item.id);
+    if (!targetDoc) return false;
+    store.docs.push(targetDoc);
+    syncTutorialDocToVfs(targetDoc);
+    isNew = true;
+  }
+
+  store.activeDocId = targetDoc.id;
+  selectedTutorialId = item.id;
+  closeTutorialModal();
+  setViewMode("notebook");
+  syncNotebookGlobalsToSidePanel(targetDoc);
+  renderNotebookUI();
+  renderVfsTreeUI();
+  say(
+    isNew
+      ? `🎓 已导入并打开 TS 进阶教学《${item.title}》（共 ${targetDoc.cells.length} 个单元格，可按 Shift+Enter 逐格运行或点 🐞 单步调试）`
+      : `🎓 已切换到 TS 进阶教学《${item.title}》`,
+    "ok"
+  );
+  return true;
+}
+
+export function importAllTutorialNotebooks(): number {
+  ensureTsLanguageActive();
+  const store = ensureLangNotebooks("ts");
+  let importedCount = 0;
+  let focusDoc: NotebookDocument | null = null;
+
+  for (const item of TS_NOTEBOOK_TUTORIALS) {
+    let doc = store.docs.find((d) => d.title === item.fileName) ?? null;
+    if (!doc) {
+      doc = createTutorialNotebookDocument(item.id);
+      if (doc) {
+        store.docs.push(doc);
+        syncTutorialDocToVfs(doc);
+        importedCount++;
+      }
+    }
+    if (doc && item.id === selectedTutorialId) {
+      focusDoc = doc;
+    }
+  }
+
+  const activeDoc = focusDoc ?? store.docs[store.docs.length - 1];
+  if (activeDoc) {
+    store.activeDocId = activeDoc.id;
+  }
+  closeTutorialModal();
+  setViewMode("notebook");
+  if (activeDoc) {
+    syncNotebookGlobalsToSidePanel(activeDoc);
+  }
+  renderNotebookUI();
+  renderVfsTreeUI();
+  say(
+    `🎓 已导入全部 ${TS_NOTEBOOK_TUTORIALS.length} 门 TypeScript 进阶教学 Notebook（新增 ${importedCount} 门），可在上方标签栏自由切换`,
+    "ok"
+  );
+  return importedCount;
+}
+
+function initTutorialModalEvents(): void {
+  const modal = $("tutorialModal");
+  const closeBtn = $("tutorialModalClose");
+  const listEl = $("tutorialModalList");
+  const detailEl = $("tutorialModalDetail");
+
+  if (closeBtn) {
+    closeBtn.onclick = () => closeTutorialModal();
+  }
+  if (modal && modal.addEventListener) {
+    modal.addEventListener("click", (e: MouseEvent) => {
+      if (e.target === modal) {
+        closeTutorialModal();
+      }
+    });
+  }
+  if (listEl && listEl.addEventListener) {
+    listEl.addEventListener("click", (e: MouseEvent) => {
+      const card = closestElement(e, "[data-tutorial-id]");
+      if (!card) return;
+      const tid = card.getAttribute("data-tutorial-id");
+      if (tid && tid !== selectedTutorialId) {
+        selectedTutorialId = tid;
+        renderTutorialModalUI();
+      }
+    });
+    listEl.addEventListener("dblclick", (e: MouseEvent) => {
+      const card = closestElement(e, "[data-tutorial-id]");
+      if (!card) return;
+      const tid = card.getAttribute("data-tutorial-id");
+      if (tid) {
+        importTutorialNotebook(tid);
+      }
+    });
+  }
+  if (detailEl && detailEl.addEventListener) {
+    detailEl.addEventListener("click", (e: MouseEvent) => {
+      const actBtn = closestElement(e, "[data-tutorial-act]");
+      if (!actBtn) return;
+      const act = actBtn.getAttribute("data-tutorial-act");
+      if (act === "import-one") {
+        const tid = actBtn.getAttribute("data-tutorial-id") || selectedTutorialId;
+        importTutorialNotebook(tid);
+      } else if (act === "import-all") {
+        importAllTutorialNotebooks();
+      }
+    });
+  }
+}
+
 export function openVfsNotebookFile(name: string, content: string | undefined): void {
   const lang = appState.LANG === "python" ? "python" : "ts";
   const store = ensureLangNotebooks(lang);
@@ -827,6 +1074,9 @@ export function openVfsNotebookFile(name: string, content: string | undefined): 
     return;
   }
   if (content && importNotebookFromJson(content, name)) {
+    return;
+  }
+  if (importTutorialNotebook(name)) {
     return;
   }
   setViewMode("notebook");
@@ -852,6 +1102,8 @@ registerUiHooks({
   setViewMode,
   openVfsNotebookFile,
   importSampleIntoNotebook,
+  openTutorialModal,
+  importTutorialNotebook,
   renderNotebookUI,
   getActiveWorkspacePath: () =>
     appState.VIEW_MODE === "notebook"

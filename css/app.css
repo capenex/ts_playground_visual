@@ -1359,4 +1359,162 @@
     overflow:hidden;text-overflow:ellipsis;flex:none;
   }
 
+  /* ── TypeScript Advanced Notebook Tutorials Button & Selector Modal ── */
+  .top-menu-pop .menu-item.tutorial-menu-btn{
+    background:linear-gradient(135deg,rgba(56,189,248,.13),rgba(255,180,84,.10)) !important;
+    border-color:rgba(56,189,248,.38) !important;color:#e0f2fe;
+  }
+  .top-menu-pop .menu-item.tutorial-menu-btn:hover:not(:disabled){
+    background:linear-gradient(135deg,rgba(56,189,248,.22),rgba(255,180,84,.18)) !important;
+    border-color:rgba(56,189,248,.68) !important;
+    box-shadow:0 0 14px rgba(56,189,248,.16);
+  }
+  .top-menu-pop .menu-item.tutorial-menu-btn .sub-tag{
+    color:var(--accent);border-color:rgba(255,180,84,.45);background:rgba(255,180,84,.12);
+  }
+  .tutorial-modal-box{
+    width:min(980px,95vw);max-height:86vh;display:flex;flex-direction:column;overflow:hidden;
+  }
+  .tutorial-modal-head{
+    padding:14px 20px;background:#0a0f17;
+  }
+  .tutorial-modal-title-wrap{
+    display:flex;align-items:center;gap:12px;
+  }
+  .tutorial-modal-icon{
+    width:36px;height:36px;border-radius:10px;flex:none;
+    display:inline-flex;align-items:center;justify-content:center;
+    font-size:18px;background:rgba(56,189,248,.14);border:1px solid rgba(56,189,248,.38);
+  }
+  .tutorial-modal-subtitle{
+    font:400 12px var(--ui-font);color:#94a3b8;margin-top:2px;
+  }
+  .tutorial-modal-body{
+    display:grid;grid-template-columns:340px 1fr;flex:1;min-height:0;overflow:hidden;
+  }
+  .tutorial-modal-sidebar{
+    border-right:1px solid #1d2532;background:#090d14;padding:12px;
+    overflow-y:auto;display:flex;flex-direction:column;gap:8px;
+  }
+  .tutorial-card-item{
+    width:100%;text-align:left;padding:10px 12px;border-radius:10px;
+    border:1px solid #1b2434;background:#0d131d;color:#cbd5e1;
+    cursor:pointer;display:flex;flex-direction:column;gap:5px;
+    transition:border-color .15s,background .15s,transform .12s;
+  }
+  .tutorial-card-item:hover{
+    border-color:#2e3e57;background:#121b29;
+  }
+  .tutorial-card-item.active{
+    border-color:rgba(56,189,248,.65);
+    background:linear-gradient(135deg,rgba(56,189,248,.14),rgba(15,23,42,.92));
+    box-shadow:0 4px 16px rgba(0,0,0,.35),inset 0 0 0 1px rgba(56,189,248,.22);
+  }
+  .tutorial-card-top{
+    display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+  }
+  .tutorial-card-badge{
+    font:800 10.5px var(--code-font);color:#06131f;background:var(--cyan);
+    padding:1px 6px;border-radius:5px;
+  }
+  .tutorial-card-cat{
+    font:600 11px var(--ui-font);color:#93c5fd;
+  }
+  .tutorial-card-lvl{
+    font:500 10.5px var(--code-font);color:#94a3b8;margin-left:auto;
+  }
+  .tutorial-card-loaded{
+    font:700 10px var(--ui-font);color:#4ade80;background:rgba(74,222,128,.14);
+    border:1px solid rgba(74,222,128,.4);padding:1px 6px;border-radius:999px;
+  }
+  .tutorial-card-title{
+    font:700 13px/1.4 var(--ui-font);color:#f8fafc;
+  }
+  .tutorial-card-meta{
+    display:flex;align-items:center;gap:6px;font:500 11px var(--code-font);color:#64748b;
+  }
+  .tutorial-modal-detail{
+    padding:16px 20px;overflow-y:auto;display:flex;flex-direction:column;gap:12px;
+    background:#0d1219;
+  }
+  .tutorial-detail-head{
+    display:flex;flex-direction:column;gap:8px;padding-bottom:12px;
+    border-bottom:1px solid #1b2433;
+  }
+  .tutorial-detail-tags{
+    display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  }
+  .tutorial-tag-cat{
+    font:700 11px var(--ui-font);color:#38bdf8;background:rgba(56,189,248,.12);
+    border:1px solid rgba(56,189,248,.35);padding:2px 8px;border-radius:6px;
+  }
+  .tutorial-tag-lvl{
+    font:600 11px var(--ui-font);color:var(--accent);background:rgba(255,180,84,.12);
+    border:1px solid rgba(255,180,84,.35);padding:2px 8px;border-radius:6px;
+  }
+  .tutorial-tag-file{
+    font:500 11px var(--code-font);color:#64748b;margin-left:auto;
+  }
+  .tutorial-detail-title{
+    font:700 16px/1.35 var(--ui-font);color:#f8fafc;margin:0;
+  }
+  .tutorial-detail-summary{
+    font:400 13px/1.6 var(--ui-font);color:#cbd5e1;margin:0;
+  }
+  .tutorial-hl-list{
+    display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:2px;
+  }
+  .tutorial-hl-chip{
+    font:600 11px var(--code-font);color:#bae6fd;background:#111b2a;
+    border:1px solid #22324a;padding:3px 8px;border-radius:6px;
+  }
+  .tutorial-detail-cells-title{
+    font:700 11.5px var(--code-font);color:#94a3b8;letter-spacing:.03em;
+  }
+  .tutorial-detail-cells{
+    display:flex;flex-direction:column;gap:8px;flex:1;min-height:160px;
+    max-height:300px;overflow-y:auto;padding-right:4px;
+  }
+  .tutorial-cell-prev{
+    border:1px solid #1b2536;border-radius:8px;background:#080c12;overflow:hidden;flex:none;
+  }
+  .tutorial-cell-prev.md{border-left:3px solid #60a5fa}
+  .tutorial-cell-prev.code{border-left:3px solid var(--accent)}
+  .tutorial-cell-prev-head{
+    display:flex;align-items:center;justify-content:space-between;gap:8px;
+    padding:5px 10px;background:#0c131e;border-bottom:1px solid #161f2e;
+    font:600 11px var(--code-font);
+  }
+  .tutorial-cell-tag{color:#93c5fd}
+  .tutorial-cell-prev.code .tutorial-cell-tag{color:var(--accent)}
+  .tutorial-cell-lines{
+    color:#64748b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .tutorial-cell-code{
+    margin:0;padding:8px 12px;font:400 11.5px/1.5 var(--code-font);color:#cbd5e1;
+    max-height:96px;overflow:auto;white-space:pre;
+  }
+  .tutorial-detail-foot{
+    display:flex;align-items:center;justify-content:flex-end;gap:10px;
+    padding-top:10px;border-top:1px solid #1b2433;margin-top:auto;
+  }
+  .tutorial-btn{
+    height:34px;padding:0 16px;border-radius:8px;font:600 13px var(--ui-font);
+    cursor:pointer;transition:background .15s,border-color .15s,box-shadow .15s;
+  }
+  .tutorial-btn.secondary{
+    background:#131c2b;border:1px solid #28374f;color:#cbd5e1;
+  }
+  .tutorial-btn.secondary:hover{
+    background:#1a273b;border-color:#3b5173;color:#fff;
+  }
+  .tutorial-btn.primary{
+    background:rgba(56,189,248,.2);border:1px solid rgba(56,189,248,.68);color:#e0f2fe;
+    box-shadow:0 0 14px rgba(56,189,248,.14);
+  }
+  .tutorial-btn.primary:hover{
+    background:rgba(56,189,248,.3);border-color:#38bdf8;color:#fff;
+    box-shadow:0 0 18px rgba(56,189,248,.25);
+  }
+
 

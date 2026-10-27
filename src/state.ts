@@ -180,6 +180,8 @@ export interface RuntimeUiHooks {
   onVfsFileRenamed: (oldPath: string, nextPath: string, nextName: string) => void;
   setViewMode: (mode: 'script' | 'notebook') => void;
   importSampleIntoNotebook: (code: string, sampleKey: string) => void;
+  openTutorialModal: () => void;
+  importTutorialNotebook: (tutorialId: string) => boolean;
   appendConsoleLog: (entry: ConsoleLogEntry) => void;
   clearConsoleDom: () => void;
   getEditorSource: () => string;
@@ -203,6 +205,8 @@ export const uiHooks: RuntimeUiHooks = {
   onVfsFileRenamed: () => {},
   setViewMode: () => {},
   importSampleIntoNotebook: () => {},
+  openTutorialModal: () => {},
+  importTutorialNotebook: () => false,
   appendConsoleLog: () => {},
   clearConsoleDom: () => {},
   getEditorSource: () => '',

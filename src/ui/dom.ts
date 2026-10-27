@@ -84,6 +84,11 @@ export const stepVizEl = $<StepVizElement>('stepViz');
 export const fileNameEl = $<HTMLInputElement>('fileName');
 export const fileInputEl = $<HTMLInputElement>('fileInput');
 export const btnImportEl = $<HTMLButtonElement>('btnImport');
+export const btnOpenTsTutorialsEl = $<HTMLButtonElement>('btnOpenTsTutorials');
+export const tutorialModalEl = $('tutorialModal');
+export const tutorialModalCloseEl = $<HTMLButtonElement>('tutorialModalClose');
+export const tutorialModalListEl = $('tutorialModalList');
+export const tutorialModalDetailEl = $('tutorialModalDetail');
 
 export const dom = {
   $,
@@ -108,6 +113,11 @@ export const dom = {
   fileNameEl,
   fileInputEl,
   btnImportEl,
+  btnOpenTsTutorialsEl,
+  tutorialModalEl,
+  tutorialModalCloseEl,
+  tutorialModalListEl,
+  tutorialModalDetailEl,
 };
 
 export function renderConsoleLogEntry(entry: ConsoleLogEntry): void {
