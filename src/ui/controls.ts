@@ -7,7 +7,7 @@ import { collectNames, instrument, resolveEntry, blankJsLine, snapFnExpr } from 
 import { typecheckTS, extractTsInterfaceMetadata } from "../compiler/type-checker";
 import { say, clearLog, safeJSONStringify, resetTraceState } from "../runtime/event-loop";
 import { computeAndAppendNextStep, startDebug, initWatchedVars, runOnce, reportTypeErrors } from "../runtime/runner";
-import { registerUiHooks, uiHooks } from "../state";
+import { appState, AUTO_PLAY_MS, MAX_STEPS, registerUiHooks, uiHooks, VIDEO_SPEED_OPTIONS } from "../state";
 import { discoverVars, renderPicker, renderStatic, selectStackFrame } from "../viz/memory-graph";
 import {
   updateEditorChrome,
@@ -19,55 +19,72 @@ import {
   hoverTipForName,
 } from "../viz/highlight";
 import { clearFlyLayer, positionStepViz } from "../viz/ast-view";
+import {
+  $,
+  btnImportEl,
+  callStackBarEl,
+  closestElement,
+  editor,
+  eventTargetElement,
+  eventTargetNode,
+  fileInputEl,
+  fileNameEl,
+  gutterEl,
+  mainEl,
+  pickEl,
+  resizerEl,
+  sidePanelEl,
+  slotsEl,
+} from "./dom";
 
 export function stepPrev() {
   stopAuto();
-  if (!TRACE.steps.length || cur <= 0) return;
-  SELECTED_FRAME_IDX = null;
+  if (!appState.TRACE.steps.length || appState.cur <= 0) return;
+  appState.SELECTED_FRAME_IDX = null;
   if (document.body && document.body.classList) document.body.classList.remove('editing-code');
   if (isEditorFocused()) blurEditor();
-  cur--;
+  appState.cur--;
   renderPicker();
-  renderStatic(cur, true);
+  renderStatic(appState.cur, true);
 }
 
 export function stepNext(fromAuto = false) {
   if (!fromAuto) stopAuto();
-  SELECTED_FRAME_IDX = null;
+  appState.SELECTED_FRAME_IDX = null;
   if (document.body && document.body.classList) document.body.classList.remove('editing-code');
   if (isEditorFocused()) blurEditor();
-  if (!DEBUG_SESSION.active) {
+  if (!appState.DEBUG_SESSION.active) {
     startDebug(0);
     return;
   }
-  if (cur < TRACE.steps.length - 1) {
-    cur++;
+  if (appState.cur < appState.TRACE.steps.length - 1) {
+    appState.cur++;
     renderPicker();
-    renderStatic(cur, true);
+    renderStatic(appState.cur, true);
     return;
   }
-  if (DEBUG_SESSION.finished) return;
+  if (appState.DEBUG_SESSION.finished) return;
   const ok = computeAndAppendNextStep();
   if (ok) {
-    cur = TRACE.steps.length - 1;
+    appState.cur = appState.TRACE.steps.length - 1;
     renderPicker();
-    renderStatic(cur, true);
+    renderStatic(appState.cur, true);
   } else {
-    renderStatic(cur, false);
+    renderStatic(appState.cur, false);
   }
 }
 
 export function runToNextCheckpoint() {
-  if (LANG === 'python') return PY_ENGINE.runToNextCheckpoint();
+  if (appState.LANG === 'python') return PY_ENGINE.runToNextCheckpoint();
   stopAuto();
-  SELECTED_FRAME_IDX = null;
+  appState.SELECTED_FRAME_IDX = null;
   if (document.body && document.body.classList) document.body.classList.remove('editing-code');
   if (isEditorFocused()) blurEditor();
 
-  if (!DEBUG_SESSION.active) {
+  if (!appState.DEBUG_SESSION.active) {
     if (!startDebug(0)) return;
-    const firstSt = TRACE.steps[0];
-    if (firstSt && (firstSt.isCheckpoint || firstSt.error || DEBUG_SESSION.finished)) {
+    const firstSt = appState.TRACE.steps[0];
+    if (firstSt && (firstSt.isCheckpoint || firstSt.error || appState.DEBUG_SESSION.finished)) {
       if (firstSt.isCheckpoint) {
         say('◉ 已到达检查点 [第 ' + firstSt.line + ' 行] · ' + (firstSt.note || ''), 'ok');
       }
@@ -75,40 +92,40 @@ export function runToNextCheckpoint() {
     }
   }
 
-  if (cur >= TRACE.steps.length - 1 && DEBUG_SESSION.finished) {
+  if (appState.cur >= appState.TRACE.steps.length - 1 && appState.DEBUG_SESSION.finished) {
     return;
   }
 
   let safety = 0;
   while (safety++ < MAX_STEPS) {
-    if (cur < TRACE.steps.length - 1) {
-      cur++;
-      const st = TRACE.steps[cur];
-      if (st && (st.isCheckpoint || st.error || (cur === TRACE.steps.length - 1 && DEBUG_SESSION.finished))) {
+    if (appState.cur < appState.TRACE.steps.length - 1) {
+      appState.cur++;
+      const st = appState.TRACE.steps[appState.cur];
+      if (st && (st.isCheckpoint || st.error || (appState.cur === appState.TRACE.steps.length - 1 && appState.DEBUG_SESSION.finished))) {
         break;
       }
     } else {
-      if (DEBUG_SESSION.finished) break;
+      if (appState.DEBUG_SESSION.finished) break;
       const added = computeAndAppendNextStep({ silent: true });
       if (!added) break;
-      cur = TRACE.steps.length - 1;
-      const st = TRACE.steps[cur];
-      if (st && (st.isCheckpoint || st.error || DEBUG_SESSION.finished)) {
+      appState.cur = appState.TRACE.steps.length - 1;
+      const st = appState.TRACE.steps[appState.cur];
+      if (st && (st.isCheckpoint || st.error || appState.DEBUG_SESSION.finished)) {
         break;
       }
     }
   }
 
   renderPicker();
-  renderStatic(cur, true);
+  renderStatic(appState.cur, true);
 
-  const finalSt = TRACE.steps[cur];
+  const finalSt = appState.TRACE.steps[appState.cur];
   if (finalSt && finalSt.error) {
     // Already logged by computeAndAppendNextStep
   } else if (finalSt && finalSt.isCheckpoint) {
     say('◉ 已运行到检查点 [第 ' + finalSt.line + ' 行] · ' + (finalSt.note || ''), 'ok');
-  } else if (DEBUG_SESSION.finished) {
-    say('✓ 已运行至程序结束（后续无更多检查点）  →  ' + safeJSONStringify(DEBUG_SESSION.returnValue), 'ok');
+  } else if (appState.DEBUG_SESSION.finished) {
+    say('✓ 已运行至程序结束（后续无更多检查点）  →  ' + safeJSONStringify(appState.DEBUG_SESSION.returnValue), 'ok');
   }
 }
 
@@ -120,14 +137,14 @@ export function rebuildDebugAtPosition(newTargetLine: number, targetVisits: numb
     return false;
   }
   extractTsInterfaceMetadata(src);
-  const diags = typecheckTS(src, STRICT_TS);
+  const diags = typecheckTS(src, appState.STRICT_TS);
   if (diags.length > 0) {
     reportTypeErrors(diags);
     return false;
   }
-  if (TYPE_ERROR_LINES.size || RUNTIME_ERROR_LINES.size) {
-    TYPE_ERROR_LINES.clear();
-    RUNTIME_ERROR_LINES.clear();
+  if (appState.TYPE_ERROR_LINES.size || appState.RUNTIME_ERROR_LINES.size) {
+    appState.TYPE_ERROR_LINES.clear();
+    appState.RUNTIME_ERROR_LINES.clear();
   }
 
   const originalLines = src.split('\n');
@@ -139,7 +156,7 @@ export function rebuildDebugAtPosition(newTargetLine: number, targetVisits: numb
   const js0 = stripTypes(enums.code);
   const entry = resolveEntry(src, js0);
   const expr = stripTypes(entry.expr || 'undefined');
-  ENTRY_CALL_LINE = entry.line || 0;
+  appState.ENTRY_CALL_LINE = entry.line || 0;
   const jsBody = entry.index >= 0 ? blankJsLine(js0, entry.index) : js0;
 
   let compiledFn;
@@ -156,13 +173,13 @@ export function rebuildDebugAtPosition(newTargetLine: number, targetVisits: numb
 
   stopAuto();
   clearFlyLayer();
-  const prevWatched = new Set(watched);
-  TRACE = {
+  const prevWatched = new Set(appState.watched);
+  appState.TRACE = {
     title: 'TypeScript Playground · Debug',
     code: originalLines,
     steps: [],
   };
-  DEBUG_SESSION = {
+  appState.DEBUG_SESSION = {
     active: true,
     finished: false,
     crashed: false,
@@ -173,42 +190,42 @@ export function rebuildDebugAtPosition(newTargetLine: number, targetVisits: numb
     originalLines,
     callExpr: expr,
   };
-  cur = 0;
+  appState.cur = 0;
 
   let visitsSeen = 0;
   let safety = 0;
   while (safety++ < MAX_STEPS) {
     const ok = computeAndAppendNextStep({ silent: true });
     if (!ok) break;
-    const latest = TRACE.steps[TRACE.steps.length - 1];
+    const latest = appState.TRACE.steps[appState.TRACE.steps.length - 1];
     if (newTargetLine >= 1 && targetVisits >= 1) {
       if (latest && latest.line === newTargetLine) {
         visitsSeen++;
         if (visitsSeen >= targetVisits) break;
       }
-    } else if (TRACE.steps.length - 1 >= fallbackStepIdx) {
+    } else if (appState.TRACE.steps.length - 1 >= fallbackStepIdx) {
       break;
     }
-    if (DEBUG_SESSION.finished) break;
+    if (appState.DEBUG_SESSION.finished) break;
   }
 
-  cur = Math.max(0, TRACE.steps.length - 1);
+  appState.cur = Math.max(0, appState.TRACE.steps.length - 1);
   if (prevWatched.size > 0) {
-    watched = prevWatched;
-    discoverVars().forEach((s: { id: string }) => watched.add(s.id));
+    appState.watched = prevWatched;
+    discoverVars().forEach((s: { id: string }) => appState.watched.add(s.id));
   } else {
     initWatchedVars();
   }
   renderPicker();
-  renderStatic(cur, false);
+  renderStatic(appState.cur, false);
   return true;
 }
 
 export function addCheckpointFunction(preferredLine?: number) {
-  if (LANG === 'python') {
+  if (appState.LANG === 'python') {
     const text = editor.value.replace(/\r\n?/g, '\n');
     const lines = text.split('\n');
-    let line = preferredLine || TRACE.steps[cur]?.line || (window.__CM_CURSOR_LINE || lastEditorCursorLine) || lines.length;
+    let line = preferredLine || appState.TRACE.steps[appState.cur]?.line || (window.__CM_CURSOR_LINE || appState.lastEditorCursorLine) || lines.length;
     line = Math.max(1, Math.min(lines.length, line));
     const current = lines[line - 1] || '';
     const indent = (current.match(/^\s*/) || [''])[0];
@@ -219,7 +236,7 @@ export function addCheckpointFunction(preferredLine?: number) {
       lines.splice(line - 1, 0, indent + 'checkpoint()');
     }
     editor.value = lines.join('\n');
-    lastEditorCursorLine = line;
+    appState.lastEditorCursorLine = line;
     resetTraceState();
     PY_ENGINE.start(0);
     say('✓ 已插入 checkpoint()，正在重新录制 Python 执行步骤', 'ok');
@@ -228,13 +245,13 @@ export function addCheckpointFunction(preferredLine?: number) {
   const text = editor.value.replace(/\r\n?/g, '\n');
   const lines = text.split('\n');
 
-  const curStep = TRACE.steps[cur];
-  const wasActive = Boolean(DEBUG_SESSION.active && TRACE.steps.length > 0 && curStep);
+  const curStep = appState.TRACE.steps[appState.cur];
+  const wasActive = Boolean(appState.DEBUG_SESSION.active && appState.TRACE.steps.length > 0 && curStep);
   const origCurLine = curStep ? curStep.line : -1;
   const origLineVisits = wasActive
-    ? TRACE.steps.slice(0, cur + 1).filter(s => s.line === origCurLine).length
+    ? appState.TRACE.steps.slice(0, appState.cur + 1).filter(s => s.line === origCurLine).length
     : 0;
-  const prevCurIdx = cur;
+  const prevCurIdx = appState.cur;
 
   let fnOpenIdx = -1;
   let fnCloseIdx = lines.length - 1;
@@ -263,7 +280,7 @@ export function addCheckpointFunction(preferredLine?: number) {
   }
 
   let targetIdx;
-  const cursorLine = window.__CM_CURSOR_LINE || lastEditorCursorLine;
+  const cursorLine = window.__CM_CURSOR_LINE || appState.lastEditorCursorLine;
   if (typeof preferredLine === 'number' && preferredLine >= 1 && preferredLine <= lines.length) {
     targetIdx = preferredLine - 1;
   } else if (cursorLine >= 1 && cursorLine <= lines.length) {
@@ -309,7 +326,7 @@ export function addCheckpointFunction(preferredLine?: number) {
   const insertedLineNum = insertIdx + 1;
   lines.splice(insertIdx, 0, indent + 'checkpoint();');
   editor.value = lines.join('\n');
-  lastEditorCursorLine = insertedLineNum;
+  appState.lastEditorCursorLine = insertedLineNum;
 
   if (staleTimer) clearTimeout(staleTimer);
   if (wasActive) {
@@ -323,12 +340,12 @@ export function addCheckpointFunction(preferredLine?: number) {
 }
 
 export function go(i: number) {
-  if (i > cur) stepNext();
-  else if (i < cur) stepPrev();
+  if (i > appState.cur) stepNext();
+  else if (i < appState.cur) stepPrev();
 }
 
 export function stopAuto() {
-  if (timer) { clearInterval(timer); timer = null; $('auto').textContent = '▶ 自动'; }
+  if (appState.timer) { clearInterval(appState.timer); appState.timer = null; $('auto').textContent = '▶ 自动'; }
 }
 
 $('prev').onclick = () => stepPrev();
@@ -341,26 +358,25 @@ if ($('btnAddCheckpoint')) {
 }
 if (gutterEl) {
   gutterEl.addEventListener('click', (e: MouseEvent) => {
-    const target = e.target as HTMLElement | null;
-    const g = target && target.closest ? (target.closest('.gline') as HTMLElement | null) : null;
+    const g = closestElement(e, '.gline');
     if (!g || !g.dataset.line) return;
     addCheckpointFunction(parseInt(g.dataset.line, 10));
   });
 }
 
 $('auto').onclick = async () => {
-  if (timer) { stopAuto(); return; }
-  if (!DEBUG_SESSION.active || (cur >= TRACE.steps.length - 1 && DEBUG_SESSION.finished)) {
+  if (appState.timer) { stopAuto(); return; }
+  if (!appState.DEBUG_SESSION.active || (appState.cur >= appState.TRACE.steps.length - 1 && appState.DEBUG_SESSION.finished)) {
     const ok = await Promise.resolve(startDebug(0));
     if (!ok) return;
   }
-  if (cur >= TRACE.steps.length - 1 && DEBUG_SESSION.finished) return;
+  if (appState.cur >= appState.TRACE.steps.length - 1 && appState.DEBUG_SESSION.finished) return;
   $('auto').textContent = '⏸ 暂停';
-  timer = setInterval(() => {
-    if (cur >= TRACE.steps.length - 1 && DEBUG_SESSION.finished) { stopAuto(); return; }
+  appState.timer = setInterval(() => {
+    if (appState.cur >= appState.TRACE.steps.length - 1 && appState.DEBUG_SESSION.finished) { stopAuto(); return; }
     stepNext(true);
-    const st = TRACE.steps[cur];
-    if (!st || st.error || (cur >= TRACE.steps.length - 1 && DEBUG_SESSION.finished)) {
+    const st = appState.TRACE.steps[appState.cur];
+    if (!st || st.error || (appState.cur >= appState.TRACE.steps.length - 1 && appState.DEBUG_SESSION.finished)) {
       stopAuto();
     }
   }, AUTO_PLAY_MS);
@@ -368,7 +384,7 @@ $('auto').onclick = async () => {
 
 $('btnRun').onclick = () => {
   stopAuto();
-  if (typeof VIEW_MODE !== 'undefined' && VIEW_MODE === 'notebook' && typeof globalThis.runNotebookCell === 'function') {
+  if (appState.VIEW_MODE === 'notebook' && typeof globalThis.runNotebookCell === 'function') {
     globalThis.runNotebookCell(undefined, true);
     return;
   }
@@ -377,7 +393,7 @@ $('btnRun').onclick = () => {
 $('btnTrace').onclick = () => {
   stopAuto();
   if (document.body && document.body.classList) document.body.classList.remove('editing-code');
-  if (typeof VIEW_MODE !== 'undefined' && VIEW_MODE === 'notebook' && typeof globalThis.debugNotebookCell === 'function') {
+  if (appState.VIEW_MODE === 'notebook' && typeof globalThis.debugNotebookCell === 'function') {
     globalThis.debugNotebookCell(undefined);
     return;
   }
@@ -395,8 +411,8 @@ export const videoExportStatus = $('videoExportStatus');
 
 export function setVideoExportSpeed(mult: number | string) {
   const num = Number(mult);
-  if (!VIDEO_SPEED_OPTIONS.includes(num)) return VIDEO_EXPORT_SPEED;
-  VIDEO_EXPORT_SPEED = num;
+  if (!VIDEO_SPEED_OPTIONS.includes(num)) return appState.VIDEO_EXPORT_SPEED;
+  appState.VIDEO_EXPORT_SPEED = num;
   if (videoSpeedGroup && videoSpeedGroup.querySelectorAll) {
     const btns = videoSpeedGroup.querySelectorAll<HTMLElement>('.speed-opt');
     btns.forEach((b: HTMLElement) => {
@@ -406,7 +422,7 @@ export function setVideoExportSpeed(mult: number | string) {
   if (videoSpeedBadge) {
     videoSpeedBadge.textContent = num + 'x · 60fps';
   }
-  return VIDEO_EXPORT_SPEED;
+  return appState.VIDEO_EXPORT_SPEED;
 }
 
 if (btnExportMenu && exportMenuWrap) {
@@ -416,15 +432,14 @@ if (btnExportMenu && exportMenuWrap) {
   };
   addEventListener('click', (e) => {
     if (!exportMenuWrap.classList || !exportMenuWrap.classList.contains('open')) return;
-    if (exportMenuWrap.contains && exportMenuWrap.contains(e.target as Node | null)) return;
+    if (exportMenuWrap.contains && exportMenuWrap.contains(eventTargetNode(e))) return;
     exportMenuWrap.classList.remove('open');
   });
 }
 
 if (videoSpeedGroup) {
   videoSpeedGroup.addEventListener('click', (e: MouseEvent) => {
-    const target = e.target as HTMLElement | null;
-    const btn = target && target.closest ? (target.closest('.speed-opt') as HTMLElement | null) : null;
+    const btn = closestElement(e, '.speed-opt');
     if (!btn || !btn.dataset.speed) return;
     e.stopPropagation();
     setVideoExportSpeed( parseFloat(btn.dataset.speed) );
@@ -438,24 +453,24 @@ export function sanitizeFileName(name: string | null | undefined) {
     .replace(/\s+/g, ' ')
     .trim()
     .replace(/[.\s]+$/, '');   // Windows rejects trailing dots/spaces
-  return cleaned || (LANG === 'python' ? 'playground.py' : 'playground.ts');
+  return cleaned || (appState.LANG === 'python' ? 'playground.py' : 'playground.ts');
 }
 
 /* Name actually written to disk: keep a real extension, otherwise append .ts */
 export function exportFileName() {
-  const fallback = LANG === 'python' ? 'playground.py' : 'playground.ts';
-  const name = FILE_NAME || fallback;
-  const ext = LANG === 'python' ? '.py' : '.ts';
+  const fallback = appState.LANG === 'python' ? 'playground.py' : 'playground.ts';
+  const name = appState.FILE_NAME || fallback;
+  const ext = appState.LANG === 'python' ? '.py' : '.ts';
   return /\.[A-Za-z0-9]{1,12}$/.test(name) ? name : name + ext;
 }
 
 export function setFileName(name: string | null | undefined) {
-  FILE_NAME = sanitizeFileName(name);
-  if (fileNameEl && fileNameEl.value !== FILE_NAME) fileNameEl.value = FILE_NAME;
+  appState.FILE_NAME = sanitizeFileName(name);
+  if (fileNameEl && fileNameEl.value !== appState.FILE_NAME) fileNameEl.value = appState.FILE_NAME;
   const tag = $('fileExportTag');
   if (tag) tag.textContent = exportFileName();
   if (typeof globalThis.syncActiveScriptTabFromFileName === 'function') {
-    try { globalThis.syncActiveScriptTabFromFileName(FILE_NAME); } catch (_) {}
+    try { globalThis.syncActiveScriptTabFromFileName(appState.FILE_NAME); } catch (_) {}
   }
 }
 
@@ -464,18 +479,18 @@ export function loadImportedSource(text: string | null | undefined, name?: strin
   if (name && /\.ipynb$/i.test(name) && typeof globalThis.importNotebookFromJson === 'function') {
     if (globalThis.importNotebookFromJson(src, name)) return;
   }
-  if (typeof VIEW_MODE !== 'undefined' && VIEW_MODE === 'notebook' && typeof globalThis.setViewMode === 'function') {
+  if (appState.VIEW_MODE === 'notebook' && typeof globalThis.setViewMode === 'function') {
     globalThis.setViewMode('script');
   }
   editor.value = src;
-  setFileName(name || (LANG === 'python' ? 'imported.py' : 'imported.ts'));
+  setFileName(name || (appState.LANG === 'python' ? 'imported.py' : 'imported.ts'));
   if (typeof globalThis.syncActiveScriptTabSource === 'function') {
     try { globalThis.syncActiveScriptTabSource(src); } catch (_) {}
   }
-  lastEditorCursorLine = -1;
+  appState.lastEditorCursorLine = -1;
   resetTraceState();
   updateEditorChrome();
-  clearLog('✓ 已导入 ' + FILE_NAME + ' · ' + src.split('\n').length + ' 行 · 点「🐞 Debug 调试」或「▶ 运行」开始');
+  clearLog('✓ 已导入 ' + appState.FILE_NAME + ' · ' + src.split('\n').length + ' 行 · 点「🐞 Debug 调试」或「▶ 运行」开始');
 }
 
 if (btnImportEl && fileInputEl) {
@@ -501,10 +516,10 @@ if (fileNameEl) {
   fileNameEl.addEventListener('blur', commitName);
   fileNameEl.addEventListener('keydown', (e: KeyboardEvent) => {
     if (e.key === 'Enter') { e.preventDefault(); commitName(); fileNameEl.blur(); }
-    else if (e.key === 'Escape') { fileNameEl.value = FILE_NAME; fileNameEl.blur(); }
+    else if (e.key === 'Escape') { fileNameEl.value = appState.FILE_NAME; fileNameEl.blur(); }
   });
 }
-setFileName(FILE_NAME);
+setFileName(appState.FILE_NAME);
 
 /* ── export the buffer as a real file, named by the editable file chip ── */
 if ($('btnExportTs')) {
@@ -541,18 +556,16 @@ if ($('btnShareLink')) {
 $<HTMLSelectElement>('sampleSel').onchange = () => uiHooks.loadSample($<HTMLSelectElement>('sampleSel').value);
 
 pickEl.addEventListener('click', (e: MouseEvent) => {
-  const target = e.target as HTMLElement | null;
-  const el = target && target.closest ? (target.closest('.chip-pick') as HTMLElement | null) : null;
+  const el = closestElement(e, '.chip-pick');
   if (!el || !el.dataset.id) return;
   const id = el.dataset.id;
-  if (watched.has(id)) watched.delete(id); else watched.add(id);
+  if (appState.watched.has(id)) appState.watched.delete(id); else appState.watched.add(id);
   renderPicker();
 });
 
 if (callStackBarEl) {
   callStackBarEl.addEventListener('click', (e: MouseEvent) => {
-    const target = e.target as HTMLElement | null;
-    const btn = target && target.closest ? (target.closest('.cs-crumb') as HTMLElement | null) : null;
+    const btn = closestElement(e, '.cs-crumb');
     if (!btn || btn.dataset.frameIdx === undefined) return;
     selectStackFrame(parseInt(btn.dataset.frameIdx, 10));
   });
@@ -631,7 +644,7 @@ export function blurEditor() {
 export function recordEditorCursorLine() {
   try {
     const pos = editor.selectionStart || 0;
-    lastEditorCursorLine = editor.value.slice(0, pos).split('\n').length;
+    appState.lastEditorCursorLine = editor.value.slice(0, pos).split('\n').length;
   } catch {}
 }
 editor.addEventListener('click', recordEditorCursorLine);
@@ -640,7 +653,7 @@ editor.addEventListener('keyup', recordEditorCursorLine);
 /* ── editor key handling ── */
 editor.addEventListener('focus', () => {
   recordEditorCursorLine();
-  if (TRACE.steps.length && document.body && document.body.classList) {
+  if (appState.TRACE.steps.length && document.body && document.body.classList) {
     document.body.classList.add('editing-code');
     clearFlyLayer();
   }
@@ -654,7 +667,7 @@ editor.addEventListener('keydown', (e: KeyboardEvent) => {
   if (e.key === 'Tab') {
     e.preventDefault();
     const s = editor.selectionStart, t = editor.selectionEnd;
-    const indent = LANG === 'python' ? '    ' : '  ';
+    const indent = appState.LANG === 'python' ? '    ' : '  ';
     editor.value = editor.value.slice(0, s) + indent + editor.value.slice(t);
     editor.selectionStart = editor.selectionEnd = s + indent.length;
     onSourceChanged();
@@ -675,12 +688,12 @@ editor.addEventListener('keydown', (e: KeyboardEvent) => {
 export let staleTimer: ReturnType<typeof setTimeout> | null = null;
 export function onSourceChanged() {
   recordEditorCursorLine();
-  TYPE_ERROR_LINES.clear();
-  RUNTIME_ERROR_LINES.clear();
-  if (LANG === 'python') PY_DIAGS.length = 0;
+  appState.TYPE_ERROR_LINES.clear();
+  appState.RUNTIME_ERROR_LINES.clear();
+  if (appState.LANG === 'python') appState.PY_DIAGS.length = 0;
   hideHoverTip();
   updateEditorChrome();
-  if (TRACE.steps.length || DEBUG_SESSION.active) {
+  if (appState.TRACE.steps.length || appState.DEBUG_SESSION.active) {
     if (staleTimer) clearTimeout(staleTimer);
     staleTimer = setTimeout(() => {
       resetTraceState();
@@ -694,7 +707,7 @@ editor.addEventListener('scroll', () => { clearFlyLayer(); hideHoverTip(); syncS
 /* ── hover inspector wiring: editor tokens + LOCALS/WATCH cards ── */
 if (editor && editor.addEventListener) {
   editor.addEventListener('mousemove', (e: MouseEvent) => {
-    if (!TRACE.steps.length || (e && e.buttons)) { hideHoverTip(); return; }
+    if (!appState.TRACE.steps.length || (e && e.buttons)) { hideHoverTip(); return; }
     const hit = hoverHitFromEvent(e);
     const word = hit ? hoverWordAt(hit.text, hit.col) : null;
     if (!word) { hideHoverTip(); return; }
@@ -705,8 +718,7 @@ if (editor && editor.addEventListener) {
 }
 if (sidePanelEl && sidePanelEl.addEventListener) {
   sidePanelEl.addEventListener('mousemove', (e: MouseEvent) => {
-    const target = e && (e.target as HTMLElement | null);
-    const card = target && target.closest ? target.closest('[data-var]') : null;
+    const card = closestElement(e, '[data-var]');
     if (!card || !card.getAttribute) { hideHoverTip(); return; }
     hoverTipForName(card.getAttribute('data-var'), e.clientX, e.clientY);
   });
@@ -718,7 +730,7 @@ addEventListener('resize', () => positionStepViz());
 
 addEventListener('keydown', e => {
   if (isEditorFocused()) return;
-  const target = e.target as HTMLElement | null;
+  const target = eventTargetElement(e);
   if (e.key === 'ArrowRight' || e.key === ' ') {
     if (target && target.closest && target.closest('button,select,input,textarea')) return;
     e.preventDefault();

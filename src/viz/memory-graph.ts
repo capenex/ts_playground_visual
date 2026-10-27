@@ -1,9 +1,10 @@
 /* ================================================================
    Call Stack & Data Structure Card Renderers (src/viz/memory-graph.ts)
    ================================================================ */
-import { registerUiHooks } from "../state";
+import { appState, esc, registerUiHooks } from "../state";
 import { Frame, StepSnapshot } from "../types";
-import { safeJSONStringify } from "../utils/format";
+import { $, callStackBarEl, callStackHintEl, cntEl, consoleEl, pickEl, slotsEl, varsEl } from "../ui/dom";
+import { isRecord, safeJSONStringify } from "../utils/format";
 import { hideHoverTip, updateEditorChrome, scrollCodeTo } from "./highlight";
 import { playStepAnimation } from "./ast-view";
 import { allocateSlotSpans, discoverVars, DiscoveredVar, getActiveFrame, VIZ } from "./memory-normalizers";
@@ -11,12 +12,12 @@ import { allocateSlotSpans, discoverVars, DiscoveredVar, getActiveFrame, VIZ } f
 export * from "./memory-normalizers";
 
 export function selectStackFrame(frameIdx: number | string) {
-  const st = TRACE.steps[cur];
+  const st = appState.TRACE.steps[appState.cur];
   if (!st || !Array.isArray(st.callStack) || !st.callStack.length) return;
   const topIdx = st.callStack.length - 1;
   const clamped = Math.max(0, Math.min(topIdx, Number(frameIdx) || 0));
-  SELECTED_FRAME_IDX = clamped === topIdx ? null : clamped;
-  renderStatic(cur, false);
+  appState.SELECTED_FRAME_IDX = clamped === topIdx ? null : clamped;
+  renderStatic(appState.cur, false);
 }
 
 export function renderCallStack(st: StepSnapshot | Frame | null | undefined) {
@@ -47,9 +48,9 @@ export function renderCallStack(st: StepSnapshot | Frame | null | undefined) {
   }
 }
 
-export function truncMap<T = unknown>(
-  arr: T[] | null | undefined,
-  render: (val: T, idx: number) => string,
+export function truncMap(
+  arr: readonly unknown[] | null | undefined,
+  render: (val: unknown, idx: number) => string,
   d?: Frame | null
 ): string {
   if (d && Array.isArray(d.windowed) && d.windowed.length) {
@@ -60,16 +61,16 @@ export function truncMap<T = unknown>(
           : '';
         return '<div class="vmore"' + tip + '>…<span class="vmore-cnt">+' + entry.count + '</span></div>';
       }
-      return render(entry.val as T, entry.idx ?? 0);
+      return render(entry.val, entry.idx ?? 0);
     }).join('');
   }
   const MAX = 20, HEAD = 10, TAIL = 5;
-  if (!arr || arr.length <= MAX) return (arr || []).map((x: T, i: number) => render(x, i)).join('');
+  if (!arr || arr.length <= MAX) return (arr || []).map((x: unknown, i: number) => render(x, i)).join('');
   const total = (d && typeof d.total === 'number' && d.total >= arr.length) ? d.total : arr.length;
   const hidden = Math.max(1, total - HEAD - TAIL);
-  const head = arr.slice(0, HEAD).map((x: T, i: number) => render(x, i)).join('');
+  const head = arr.slice(0, HEAD).map((x: unknown, i: number) => render(x, i)).join('');
   const tailStart = total - TAIL;
-  const tail = arr.slice(arr.length - TAIL).map((x: T, i: number) => render(x, tailStart + i)).join('');
+  const tail = arr.slice(arr.length - TAIL).map((x: unknown, i: number) => render(x, tailStart + i)).join('');
   return head + '<div class="vmore" title="省略 ' + hidden + ' 项">…<span class="vmore-cnt">+' + hidden + '</span></div>' + tail;
 }
 
@@ -130,12 +131,13 @@ export function vizUF(d: Frame | null | undefined) {
 
 export function vizMap(d: Frame | null | undefined) {
   if (!d || !d.entries || !d.entries.length) return null;
-  return '<div class="viz"><div class="viz-row vmap-row">' + truncMap(d.entries, (e: { k: unknown; v: unknown }) =>
-    '<div class="vpair' + (d.hot === e.k ? ' hot' : '') + '">' +
-      '<span class="vcell vk">' + esc(e.k) + '</span><span class="varr">→</span>' +
-      '<span class="vcell vv">' + esc(e.v) + '</span></div>',
-    d
-  ) + '</div></div>';
+  return '<div class="viz"><div class="viz-row vmap-row">' + truncMap(d.entries, (e: unknown) => {
+    const k = isRecord(e) ? e.k : '';
+    const v = isRecord(e) ? e.v : undefined;
+    return '<div class="vpair' + (d.hot === k ? ' hot' : '') + '">' +
+      '<span class="vcell vk">' + esc(k) + '</span><span class="varr">→</span>' +
+      '<span class="vcell vv">' + esc(v) + '</span></div>';
+  }, d) + '</div></div>';
 }
 
 export function vizSet(d: Frame | null | undefined) {
@@ -168,7 +170,7 @@ export function vizString(d: Frame | null | undefined) {
   if (!d || !d.items || !d.items.length) return null;
   const win = d.win;
   if (Array.isArray(d.windowed) && d.windowed.length) {
-    const cells = truncMap(d.items as string[], (ch: string, k: number) => {
+    const cells = truncMap(d.items, (ch: unknown, k: number) => {
       let cls = 'ch';
       if (win && k >= win[0] && k <= win[1]) cls += ' win';
       if (d.hot === k) cls += ' hot';
@@ -177,7 +179,7 @@ export function vizString(d: Frame | null | undefined) {
     }, d);
     return '<div class="viz"><div class="vstr">' + cells + '</div></div>';
   }
-  return '<div class="viz"><div class="vstr">' + (d.items as string[]).map((ch: string, k: number) => {
+  return '<div class="viz"><div class="vstr">' + d.items.map((ch: unknown, k: number) => {
     let cls = 'ch';
     if (win && k >= win[0] && k <= win[1]) cls += ' win';
     if (d.hot === k) cls += ' hot';
@@ -267,7 +269,7 @@ export function vizList(d: Frame | null | undefined) {
 
 export function vizTree(d: Frame | null | undefined) {
   if (!d || !d.nodes || !d.nodes.length) return null;
-  const nodes = d.nodes as Array<{ val: unknown; left?: number | null; right?: number | null }>;
+  const nodes = d.nodes;
   const root = d.root ?? 0;
   const coords = new Map<number, { x: number; y: number; val: unknown; left?: number | null; right?: number | null }>();
   let maxDepth = 0;
@@ -278,9 +280,11 @@ export function vizTree(d: Frame | null | undefined) {
     maxDepth = Math.max(maxDepth, depth);
     const x = (xMin + xMax) / 2;
     const y = 20 + depth * 36;
-    coords.set(idx, { x, y, val: node.val, left: node.left, right: node.right });
-    layout(node.left, depth + 1, xMin, x);
-    layout(node.right, depth + 1, x, xMax);
+    const leftIdx = typeof node.left === 'number' ? node.left : null;
+    const rightIdx = typeof node.right === 'number' ? node.right : null;
+    coords.set(idx, { x, y, val: node.val, left: leftIdx, right: rightIdx });
+    layout(leftIdx, depth + 1, xMin, x);
+    layout(rightIdx, depth + 1, x, xMax);
   }
   layout(root, 0, 14, 226);
   const h = Math.max(60, (maxDepth + 1) * 36 + 10);
@@ -448,24 +452,24 @@ export function renderPicker() {
     return;
   }
   pickEl.innerHTML = vars.map((s: DiscoveredVar) =>
-    '<div class="chip-pick' + (watched.has(s.id) ? ' on' : '') + '" data-id="' + esc(s.id) + '">' + esc(s.name) + '</div>'
+    '<div class="chip-pick' + (appState.watched.has(s.id) ? ' on' : '') + '" data-id="' + esc(s.id) + '">' + esc(s.name) + '</div>'
   ).join('');
   renderSlots();
 }
 
 export function renderSlots() {
-  const stepAtCur = TRACE.steps[cur];
+  const stepAtCur = appState.TRACE.steps[appState.cur];
   const st: Partial<StepSnapshot> = stepAtCur || {};
   const activeFrame = stepAtCur ? getActiveFrame(stepAtCur) : null;
   const ds = Object.assign({}, (activeFrame && activeFrame.ds) || st.ds || {});
   if (st.ds && st.ds.eventLoop && !ds.eventLoop) ds.eventLoop = st.ds.eventLoop;
-  const vars = discoverVars().filter((s: DiscoveredVar) => watched.has(s.id) && ds[s.id] !== undefined);
+  const vars = discoverVars().filter((s: DiscoveredVar) => appState.watched.has(s.id) && ds[s.id] !== undefined);
   if (slotsEl && slotsEl.classList && slotsEl.classList.toggle) {
     slotsEl.classList.toggle('single-col', slotsEl.clientWidth > 0 && slotsEl.clientWidth < 420);
   }
   if (!vars.length) {
     slotsEl.innerHTML = '<div class="slot" style="grid-column:1/-1"><div class="vempty">' +
-      (TRACE.steps.length ? '点选变量以关注（或本步暂无结构）' : '生成轨迹后显示结构可视化') +
+      (appState.TRACE.steps.length ? '点选变量以关注（或本步暂无结构）' : '生成轨迹后显示结构可视化') +
       '</div></div>';
     return;
   }
@@ -498,8 +502,8 @@ export function updateControlButtons() {
   const nextBtn = $<HTMLButtonElement>('next');
   const ckptBtn = $<HTMLButtonElement>('nextCheckpoint');
   const autoBtn = $<HTMLButtonElement>('auto');
-  const atEnd = Boolean(TRACE.steps.length > 0 && cur >= TRACE.steps.length - 1 && DEBUG_SESSION.finished);
-  if (prevBtn) prevBtn.disabled = !TRACE.steps.length || cur <= 0;
+  const atEnd = Boolean(appState.TRACE.steps.length > 0 && appState.cur >= appState.TRACE.steps.length - 1 && appState.DEBUG_SESSION.finished);
+  if (prevBtn) prevBtn.disabled = !appState.TRACE.steps.length || appState.cur <= 0;
   if (nextBtn) nextBtn.disabled = atEnd;
   if (ckptBtn) ckptBtn.disabled = atEnd;
   if (autoBtn) autoBtn.disabled = atEnd;
@@ -507,8 +511,8 @@ export function updateControlButtons() {
 
 export function renderStatic(i: number, withAnim = false) {
   hideHoverTip();
-  const st = TRACE.steps[i];
-  const prevSt = i > 0 ? TRACE.steps[i - 1] : null;
+  const st = appState.TRACE.steps[i];
+  const prevSt = i > 0 ? appState.TRACE.steps[i - 1] : null;
   if (!st) {
     renderCallStack(null);
     varsEl.innerHTML = '';
@@ -535,8 +539,8 @@ export function renderStatic(i: number, withAnim = false) {
     varsEl.innerHTML = primEntries;
   } else if (activeFrame && activeFrame.fn === 'global') {
     varsEl.innerHTML = '<div class="pair"><span class="k">scope</span><span class="v">global</span></div>' +
-      (DEBUG_SESSION.callExpr && DEBUG_SESSION.callExpr !== 'undefined'
-        ? '<div class="pair"><span class="k">entry</span><span class="v">' + esc(DEBUG_SESSION.callExpr) + '</span></div>'
+      (appState.DEBUG_SESSION.callExpr && appState.DEBUG_SESSION.callExpr !== 'undefined'
+        ? '<div class="pair"><span class="k">entry</span><span class="v">' + esc(appState.DEBUG_SESSION.callExpr) + '</span></div>'
         : '');
   } else {
     varsEl.innerHTML = '<div class="vempty">（本帧无原始类型局部变量）</div>';
@@ -559,7 +563,7 @@ export function renderStatic(i: number, withAnim = false) {
   } else if (st.isCheckpoint) {
     cntEl.textContent = '◉ 命中检查点';
     cntEl.className = 'ckpt';
-  } else if (DEBUG_SESSION.finished && i === TRACE.steps.length - 1) {
+  } else if (appState.DEBUG_SESSION.finished && i === appState.TRACE.steps.length - 1) {
     cntEl.textContent = '✓ 执行完毕';
     cntEl.className = 'done';
   } else {
@@ -569,14 +573,14 @@ export function renderStatic(i: number, withAnim = false) {
 
   updateControlButtons();
   updateEditorChrome();
-  if (typeof VIEW_MODE !== 'undefined' && VIEW_MODE === 'notebook' && typeof globalThis.renderNotebookUI === 'function') {
+  if (appState.VIEW_MODE === 'notebook' && typeof globalThis.renderNotebookUI === 'function') {
     globalThis.renderNotebookUI(false);
   } else {
     scrollCodeTo(activeFrame ? activeFrame.line : st.line);
   }
   renderSlots();
 
-  if (withAnim && (typeof VIEW_MODE === 'undefined' || VIEW_MODE !== 'notebook')) {
+  if (withAnim && appState.VIEW_MODE !== 'notebook') {
     playStepAnimation(st);
   }
 }

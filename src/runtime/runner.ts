@@ -4,7 +4,7 @@
 import { stripTypes, transpileEnums } from "../compiler/transpile";
 import { collectNames, instrument, resolveEntry, blankJsLine, snapFnExpr } from "../compiler/instrumenter";
 import { typecheckTS, extractTsInterfaceMetadata } from "../compiler/type-checker";
-import { uiHooks } from "../state";
+import { appState, MAX_EXEC_MS, MAX_STEPS, PAUSE_SIGNAL, RUN_TIMEOUT_MS, uiHooks } from "../state";
 import { Frame, InterfaceFieldMeta, StepAnim, StepSnapshot } from "../types";
 import {
   say,
@@ -17,6 +17,7 @@ import {
 import {
   cloneDeepBounded,
   formatShortVal,
+  isRecord,
   safeJSONStringify,
 } from "../utils/format";
 import {
@@ -29,7 +30,7 @@ import {
 } from "../viz/memory-normalizers";
 
 export function reportTypeErrors(diags: Array<{ line: number; code?: string | number; message?: string }>) {
-  TYPE_ERROR_LINES = new Set(diags.map(d => d.line));
+  appState.TYPE_ERROR_LINES = new Set(diags.map(d => d.line));
   uiHooks.updateEditorChrome();
   say(`✗ TypeScript 严格类型检查未通过 (共 ${diags.length} 处错误)：`, 'err');
   diags.forEach(d => {
@@ -51,6 +52,18 @@ interface TraceHookFn {
   __fin?: (snap: unknown) => void;
 }
 
+type SnapFn = () => Record<string, unknown>;
+
+function isSnapFn(val: unknown): val is SnapFn {
+  return typeof val === 'function';
+}
+
+function evalSnapOrObject(snap: unknown): Record<string, unknown> {
+  if (isSnapFn(snap)) return snap() || {};
+  if (isRecord(snap)) return snap;
+  return {};
+}
+
 export function evalCall(
   js: string,
   call?: string,
@@ -65,12 +78,11 @@ export function evalCall(
   let ticks = 0;
   let lastLine = 0;
   let expired = false;
-  const timeoutError = () => {
-    const err = new Error('RUN_TIMEOUT') as Error & { __timeout?: boolean; __line?: number };
-    err.__timeout = true;
-    err.__line = lastLine;
-    return err;
-  };
+  const timeoutError = () =>
+    Object.assign(new Error('RUN_TIMEOUT'), {
+      __timeout: true,
+      __line: lastLine,
+    });
   const __t: TraceHookFn = function (line?: number) {
     if (line) lastLine = line;
     if (!budgetMs) return;
@@ -105,12 +117,12 @@ export function evalCall(
     });
   } catch (e) {
     // A throw from top-level code (outside the evaluated expression) lands here.
-    const errObj = e && typeof e === 'object' ? (e as { message?: string; stack?: string; __line?: number; __timeout?: boolean }) : null;
+    const errObj = isRecord(e) ? e : null;
     r = {
       ok: false,
-      error: errObj && errObj.message ? errObj.message : String(e),
+      error: errObj && typeof errObj.message === 'string' && errObj.message ? errObj.message : String(e),
       stack: errObj && errObj.stack ? String(errObj.stack) : '',
-      line: (errObj && errObj.__line) || lastLine || entryLine || 0,
+      line: (errObj && typeof errObj.__line === 'number' ? errObj.__line : 0) || lastLine || entryLine || 0,
       timeout: Boolean(errObj && errObj.__timeout),
     };
   }
@@ -119,24 +131,24 @@ export function evalCall(
   return { ...r, logs, elapsedMs: Date.now() - t0 };
 }
 
-export function runOnce(budgetMs?: number) {
-  if (LANG === 'python') return PY_ENGINE.runOnly(budgetMs);
+export function runOnce(budgetMs?: number, sourceCode?: string) {
+  if (appState.LANG === 'python') return PY_ENGINE.runOnly(budgetMs);
   const budget = (typeof budgetMs === 'number' && budgetMs > 0) ? budgetMs : RUN_TIMEOUT_MS;
-  const src = editor.value;
+  const src = typeof sourceCode === 'string' ? sourceCode : uiHooks.getEditorSource();
   const unsupported = detectUnsupportedSyntax(src);
   if (unsupported.length && unsupported[0]) {
     unsupported.forEach(x => say('✗ 第 ' + x.line + ' 行：暂不支持 ' + x.feature + ' —— ' + x.hint, 'err', x.line));
     uiHooks.revealErrorLine(unsupported[0].line);
     return;
   }
-  const diags = typecheckTS(src, STRICT_TS);
+  const diags = typecheckTS(src, appState.STRICT_TS);
   if (diags.length > 0) {
     reportTypeErrors(diags);
     return;
   }
-  if (TYPE_ERROR_LINES.size || RUNTIME_ERROR_LINES.size) {
-    TYPE_ERROR_LINES.clear();
-    RUNTIME_ERROR_LINES.clear();
+  if (appState.TYPE_ERROR_LINES.size || appState.RUNTIME_ERROR_LINES.size) {
+    appState.TYPE_ERROR_LINES.clear();
+    appState.RUNTIME_ERROR_LINES.clear();
     uiHooks.updateEditorChrome();
   }
   const enums = transpileEnums(src);
@@ -149,7 +161,7 @@ export function runOnce(budgetMs?: number) {
   const originalLines = src.replace(/\r/g, '').split('\n');
   const entry = resolveEntry(src, js);
   const call = stripTypes(entry.expr || 'undefined');
-  ENTRY_CALL_LINE = entry.line || 0;
+  appState.ENTRY_CALL_LINE = entry.line || 0;
   const jsBody = entry.index >= 0 ? blankJsLine(js, entry.index) : js;
 
   // Instrument exactly like Debug does, so every loop iteration passes a watchdog hook.
@@ -174,7 +186,7 @@ export function runOnce(budgetMs?: number) {
       const line = r.line || 0;
       const snippet = line ? (originalLines[line - 1] || '').trim().slice(0, 90) : '';
       if (line) {
-        RUNTIME_ERROR_LINES.add(line);
+        appState.RUNTIME_ERROR_LINES.add(line);
         uiHooks.updateEditorChrome();
         uiHooks.revealErrorLine(line);
       }
@@ -190,7 +202,7 @@ export function runOnce(budgetMs?: number) {
     if (!r.ok) {
       const line = r.line || sourceLineFromStack(r.stack, originalLines.length);
       if (line) {
-        RUNTIME_ERROR_LINES.add(line);
+        appState.RUNTIME_ERROR_LINES.add(line);
         uiHooks.updateEditorChrome();
         say('✗ 第 ' + line + ' 行运行时报错: ' + r.error, 'err', line);
         uiHooks.revealErrorLine(line);
@@ -245,19 +257,19 @@ export function buildFrameSnapshotFromClosure(frame: Frame, fallbackLine: number
 
 /* ── On-demand step-by-step Debug Engine ── */
 export function computeAndAppendNextStep(opts: { silent?: boolean } = {}) {
-  if (!DEBUG_SESSION.active || DEBUG_SESSION.finished) return false;
-  const targetIdx = TRACE.steps.length;
+  if (!appState.DEBUG_SESSION.active || appState.DEBUG_SESSION.finished) return false;
+  const targetIdx = appState.TRACE.steps.length;
   if (targetIdx >= MAX_STEPS) {
-    DEBUG_SESSION.finished = true;
-    DEBUG_SESSION.crashed = true;
-    DEBUG_SESSION.error = '已达单次调试上限，自动熔断以防死循环';
-    say('✗ ' + DEBUG_SESSION.error, 'err');
+    appState.DEBUG_SESSION.finished = true;
+    appState.DEBUG_SESSION.crashed = true;
+    appState.DEBUG_SESSION.error = '已达单次调试上限，自动熔断以防死循环';
+    say('✗ ' + appState.DEBUG_SESSION.error, 'err');
     return false;
   }
 
-  const originalLines = DEBUG_SESSION.originalLines;
+  const originalLines = appState.DEBUG_SESSION.originalLines;
   const callIdx = originalLines.findIndex(l => /\/\/\s*调用[:：]/.test(l));
-  const globalCallLine = callIdx >= 0 ? callIdx + 1 : (ENTRY_CALL_LINE || 1);
+  const globalCallLine = callIdx >= 0 ? callIdx + 1 : (appState.ENTRY_CALL_LINE || 1);
 
   let count = 0;
   let frameSeq = 0;
@@ -266,7 +278,9 @@ export function computeAndAppendNextStep(opts: { silent?: boolean } = {}) {
   let unwindingPause = false;
   let pendingStep: StepSnapshot | null = null;
   let pendingStepSnapFn: (() => Record<string, unknown>) | Record<string, unknown> | null = null;
-  let pendingEventLoopPhase: { phase: string; activeTaskLabel: string; virtualTime: number } | null = null;
+  const phaseBox: { current: { phase: string; activeTaskLabel: string; virtualTime: number } | null } = {
+    current: null,
+  };
   let nextVRaw: Record<string, unknown> | null = null;
   const stepLogs: string[] = [];
   const t0 = Date.now();
@@ -305,7 +319,7 @@ export function computeAndAppendNextStep(opts: { silent?: boolean } = {}) {
       }
     }
   );
-  if (DEBUG_SESSION.hasAsync) {
+  if (appState.DEBUG_SESSION.hasAsync) {
     evLoop.loop.used = true;
   }
 
@@ -319,22 +333,21 @@ export function computeAndAppendNextStep(opts: { silent?: boolean } = {}) {
     const topFrame = liveCallStack[liveCallStack.length - 1];
     if (topFrame) {
       topFrame.lastLine = stepLine;
-      if (typeof snap === 'function') topFrame.snapFn = snap as () => Record<string, unknown>;
-      if (self && typeof self === 'object') topFrame.self = self as Record<string, unknown>;
+      if (isSnapFn(snap)) topFrame.snapFn = snap;
+      if (isRecord(self)) topFrame.self = self;
     }
     if (idx < targetIdx) {
       return;
     }
     if (idx === targetIdx) {
-      const effectiveSnap = (typeof snap === 'function' ? (snap as () => Record<string, unknown>) : null) ||
+      const effectiveSnap = (isSnapFn(snap) ? snap : null) ||
         (topFrame && topFrame.snapFn) ||
         evLoop.loop.globalSnapFn;
-      const vRaw: Record<string, unknown> = (typeof effectiveSnap === 'function' ? effectiveSnap() : (snap && typeof snap === 'object' ? (snap as Record<string, unknown>) : {})) || {};
-      if (self && typeof self === 'object') {
+      const vRaw: Record<string, unknown> = (typeof effectiveSnap === 'function' ? effectiveSnap() : evalSnapOrObject(snap)) || {};
+      if (isRecord(self)) {
         try {
           const selfCopy: Record<string, unknown> = {};
-          const selfRec = self as Record<string, unknown>;
-          for (const k in selfRec) { try { selfCopy[k] = selfRec[k]; } catch (e) {} }
+          for (const k in self) { try { selfCopy[k] = self[k]; } catch (e) {} }
           vRaw['this'] = selfCopy;
         } catch (e) {}
       }
@@ -356,7 +369,7 @@ export function computeAndAppendNextStep(opts: { silent?: boolean } = {}) {
         return buildFrameSnapshotFromClosure(fr, isTop ? stepLine : (fr.line || 1), fNote);
       });
       pendingStepSnapFn = effectiveSnap;
-      pendingEventLoopPhase = {
+      phaseBox.current = {
         phase: evLoop.loop.phase,
         activeTaskLabel: evLoop.loop.activeTaskLabel,
         virtualTime: evLoop.loop.virtualTime,
@@ -381,9 +394,7 @@ export function computeAndAppendNextStep(opts: { silent?: boolean } = {}) {
       activeRecording = false;
       unwindingPause = true;
       const sameScopeRaw = (typeof pendingStepSnapFn === 'function' ? pendingStepSnapFn() : null);
-      const fallbackRaw = typeof snap === 'function'
-        ? (snap as () => Record<string, unknown>)()
-        : (snap && typeof snap === 'object' ? (snap as Record<string, unknown>) : {});
+      const fallbackRaw = evalSnapOrObject(snap);
       nextVRaw = sameScopeRaw || fallbackRaw || {};
       throw PAUSE_SIGNAL;
     }
@@ -438,9 +449,7 @@ export function computeAndAppendNextStep(opts: { silent?: boolean } = {}) {
     if (activeRecording) {
       activeRecording = false;
       const sameScopeRaw = (typeof pendingStepSnapFn === 'function' ? pendingStepSnapFn() : null);
-      const fallbackRaw = typeof snap === 'function'
-        ? (snap as () => Record<string, unknown>)()
-        : (snap && typeof snap === 'object' ? (snap as Record<string, unknown>) : {});
+      const fallbackRaw = evalSnapOrObject(snap);
       nextVRaw = sameScopeRaw || fallbackRaw || {};
     }
   };
@@ -465,8 +474,8 @@ export function computeAndAppendNextStep(opts: { silent?: boolean } = {}) {
   let retVal = undefined;
 
   try {
-    if (DEBUG_SESSION.compiledFn) {
-      retVal = DEBUG_SESSION.compiledFn(__t, customConsole);
+    if (appState.DEBUG_SESSION.compiledFn) {
+      retVal = appState.DEBUG_SESSION.compiledFn(__t, customConsole);
     }
   } catch (e) {
     if (e === PAUSE_SIGNAL) {
@@ -497,18 +506,18 @@ export function computeAndAppendNextStep(opts: { silent?: boolean } = {}) {
         error: errMsg,
       };
       populateInterfaceSchemas(errStep.ds);
-      TRACE.steps.push(errStep);
-      RUNTIME_ERROR_LINES.add(callLine);
-      DEBUG_SESSION.finished = true;
-      DEBUG_SESSION.crashed = true;
-      DEBUG_SESSION.error = errMsg;
-      DEBUG_SESSION.errorLine = callLine;
+      appState.TRACE.steps.push(errStep);
+      appState.RUNTIME_ERROR_LINES.add(callLine);
+      appState.DEBUG_SESSION.finished = true;
+      appState.DEBUG_SESSION.crashed = true;
+      appState.DEBUG_SESSION.error = errMsg;
+      appState.DEBUG_SESSION.errorLine = callLine;
       say('✗ 运行时错误 [第 ' + callLine + ' 行]: ' + errMsg + '（已停止在报错处）', 'err');
       return true;
     }
     // If the file only defines interface/type schemas without executable steps yet, synthesize an inspection step
-    if (targetIdx === 0 && CURRENT_TS_META.interfaces && CURRENT_TS_META.interfaces.size > 0) {
-      const firstIface = [...CURRENT_TS_META.interfaces.values()][0];
+    if (targetIdx === 0 && appState.CURRENT_TS_META.interfaces && appState.CURRENT_TS_META.interfaces.size > 0) {
+      const firstIface = [...appState.CURRENT_TS_META.interfaces.values()][0];
       if (firstIface) {
         const schemaDs: Record<string, StepAnim> = {};
         populateInterfaceSchemas(schemaDs);
@@ -523,14 +532,14 @@ export function computeAndAppendNextStep(opts: { silent?: boolean } = {}) {
           error: null,
           isFinalReturn: true,
         };
-        TRACE.steps.push(schemaStep);
-        DEBUG_SESSION.finished = true;
-        DEBUG_SESSION.returnValue = retVal;
+        appState.TRACE.steps.push(schemaStep);
+        appState.DEBUG_SESSION.finished = true;
+        appState.DEBUG_SESSION.returnValue = retVal;
         return true;
       }
     }
-    DEBUG_SESSION.finished = true;
-    DEBUG_SESSION.returnValue = retVal;
+    appState.DEBUG_SESSION.finished = true;
+    appState.DEBUG_SESSION.returnValue = retVal;
     return false;
   }
 
@@ -560,7 +569,7 @@ export function computeAndAppendNextStep(opts: { silent?: boolean } = {}) {
 
   if (evLoop.loop.used) {
     const elSnap = evLoop.toVizSnapshot();
-    const phaseInfo = pendingEventLoopPhase as { phase: string; activeTaskLabel: string; virtualTime: number } | null;
+    const phaseInfo = phaseBox.current;
     if (phaseInfo) {
       elSnap.phase = phaseInfo.phase;
       elSnap.activeTaskLabel = phaseInfo.activeTaskLabel;
@@ -595,25 +604,25 @@ export function computeAndAppendNextStep(opts: { silent?: boolean } = {}) {
         : String(runtimeErr));
     stepObj.error = errMsg;
     stepObj.note = `${rawLine.trim()}  →  ✗ 运行时错误: ${errMsg}`;
-    RUNTIME_ERROR_LINES.add(stepObj.line);
-    DEBUG_SESSION.finished = true;
-    DEBUG_SESSION.crashed = true;
-    DEBUG_SESSION.error = errMsg;
-    DEBUG_SESSION.errorLine = stepObj.line;
+    appState.RUNTIME_ERROR_LINES.add(stepObj.line);
+    appState.DEBUG_SESSION.finished = true;
+    appState.DEBUG_SESSION.crashed = true;
+    appState.DEBUG_SESSION.error = errMsg;
+    appState.DEBUG_SESSION.errorLine = stepObj.line;
   } else if (!paused) {
-    DEBUG_SESSION.finished = true;
-    DEBUG_SESSION.returnValue = retVal;
+    appState.DEBUG_SESSION.finished = true;
+    appState.DEBUG_SESSION.returnValue = retVal;
     stepObj.isFinalReturn = true;
     stepObj.returnValue = retVal;
   }
 
-  TRACE.steps.push(stepObj);
+  appState.TRACE.steps.push(stepObj);
 
   discoverVars().forEach((s: { id: string }) => {
-    if (!SEEN_VARS_EVER.has(s.id)) {
-      SEEN_VARS_EVER.add(s.id);
-      if (!URL_WATCH || !URL_WATCH.length || URL_WATCH.includes(s.id)) {
-        watched.add(s.id);
+    if (!appState.SEEN_VARS_EVER.has(s.id)) {
+      appState.SEEN_VARS_EVER.add(s.id);
+      if (!appState.URL_WATCH || !appState.URL_WATCH.length || appState.URL_WATCH.includes(s.id)) {
+        appState.watched.add(s.id);
       }
     }
   });
@@ -633,10 +642,11 @@ function detectUnsupportedSyntax(_src: string): Array<{ line: number; feature: s
   return [];
 }
 
-export function startDebug(initialStep = 0) {
-  if (LANG === 'python') return PY_ENGINE.start(initialStep);
-  SELECTED_FRAME_IDX = null;
-  const src = editor.value.replace(/\r/g, '');
+export function startDebug(initialStep = 0, sourceCode?: string) {
+  if (appState.LANG === 'python') return PY_ENGINE.start(initialStep);
+  appState.SELECTED_FRAME_IDX = null;
+  const rawSrc = typeof sourceCode === 'string' ? sourceCode : uiHooks.getEditorSource();
+  const src = rawSrc.replace(/\r/g, '');
   const unsupported = detectUnsupportedSyntax(src);
   if (unsupported.length && unsupported[0]) {
     resetTraceState();
@@ -645,15 +655,15 @@ export function startDebug(initialStep = 0) {
     return false;
   }
   extractTsInterfaceMetadata(src);
-  const diags = typecheckTS(src, STRICT_TS);
+  const diags = typecheckTS(src, appState.STRICT_TS);
   if (diags.length > 0) {
     resetTraceState();
     reportTypeErrors(diags);
     return false;
   }
-  if (TYPE_ERROR_LINES.size || RUNTIME_ERROR_LINES.size) {
-    TYPE_ERROR_LINES.clear();
-    RUNTIME_ERROR_LINES.clear();
+  if (appState.TYPE_ERROR_LINES.size || appState.RUNTIME_ERROR_LINES.size) {
+    appState.TYPE_ERROR_LINES.clear();
+    appState.RUNTIME_ERROR_LINES.clear();
   }
 
   const originalLines = src.split('\n');
@@ -667,10 +677,10 @@ export function startDebug(initialStep = 0) {
   const js0 = stripTypes(enums.code);
   const entry = resolveEntry(src, js0);
   const expr = stripTypes(entry.expr || 'undefined');
-  ENTRY_CALL_LINE = entry.line || 0;
+  appState.ENTRY_CALL_LINE = entry.line || 0;
   const jsBody = entry.index >= 0 ? blankJsLine(js0, entry.index) : js0;
 
-  let compiledFn: (...args: unknown[]) => unknown;
+  let compiledFn: Function;
   try {
     const names = collectNames(jsBody);
     const js = instrument(jsBody, originalLines, names);
@@ -681,7 +691,7 @@ export function startDebug(initialStep = 0) {
       'if (typeof __t === "function" && __t.__drain) { __entryVal = __t.__drain(__entryVal, ' + snapStr + '); }\n' +
       'try{if(typeof __t==="function"&&__t.__fin)__t.__fin(' + snapStr + ');}catch(_){}\n' +
       'return __entryVal;';
-    compiledFn = new Function('__t', 'console', body) as (...args: unknown[]) => unknown;
+    compiledFn = new Function('__t', 'console', body);
   } catch (e) {
     resetTraceState();
     say('✗ 编译失败: ' + (e instanceof Error && e.message ? e.message : e), 'err');
@@ -690,12 +700,12 @@ export function startDebug(initialStep = 0) {
 
   uiHooks.stopAuto();
   uiHooks.clearFlyLayer();
-  TRACE = {
+  appState.TRACE = {
     title: 'TypeScript Playground · Debug',
     code: originalLines,
     steps: [],
   };
-  DEBUG_SESSION = {
+  appState.DEBUG_SESSION = {
     active: true,
     finished: false,
     crashed: false,
@@ -707,23 +717,23 @@ export function startDebug(initialStep = 0) {
     callExpr: expr,
     hasAsync: hasAsyncConstructs(src),
   };
-  cur = 0;
-  watched = new Set();
-  SEEN_VARS_EVER = new Set();
-  layoutSpan = Object.create(null);
+  appState.cur = 0;
+  appState.watched = new Set();
+  appState.SEEN_VARS_EVER = new Set();
+  appState.layoutSpan = Object.create(null);
 
   const target = Math.max(0, initialStep || 0);
   for (let s = 0; s <= target; s++) {
     const ok = computeAndAppendNextStep({ silent: s < target });
-    if (!ok || DEBUG_SESSION.finished) break;
+    if (!ok || appState.DEBUG_SESSION.finished) break;
   }
 
-  cur = Math.max(0, TRACE.steps.length - 1);
+  appState.cur = Math.max(0, appState.TRACE.steps.length - 1);
   initWatchedVars();
   uiHooks.renderPicker();
-  uiHooks.renderStatic(cur, false);
+  uiHooks.renderStatic(appState.cur, false);
 
-  if (!DEBUG_SESSION.crashed) {
+  if (!appState.DEBUG_SESSION.crashed) {
     say('✓ 编译通过 · 已进入 Debug 模式（每走一步当场计算，可随时步进或运行到下一个检查点）', 'ok');
   }
   return true;
@@ -733,13 +743,13 @@ export const generateTrace = startDebug;
 
 export function initWatchedVars() {
   const all = discoverVars().map((s: { id: string }) => s.id);
-  all.forEach((id: string) => SEEN_VARS_EVER.add(id));
-  const urlWatch = URL_WATCH;
+  all.forEach((id: string) => appState.SEEN_VARS_EVER.add(id));
+  const urlWatch = appState.URL_WATCH;
   if (urlWatch && urlWatch.length) {
     const filtered = all.filter((id: string) => urlWatch.includes(id));
-    watched = new Set(filtered.length ? filtered : all);
+    appState.watched = new Set(filtered.length ? filtered : all);
   } else {
-    watched = new Set(all);
+    appState.watched = new Set(all);
   }
 }
 

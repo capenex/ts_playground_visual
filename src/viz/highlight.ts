@@ -6,11 +6,12 @@ import { stripTypes } from "../compiler/transpile";
 import { collectNames } from "../compiler/instrumenter";
 import { typecheckTS } from "../compiler/type-checker";
 import { inferRuntimeTsType } from "../compiler/tc-types";
-import { registerUiHooks } from "../state";
+import { appState, esc, registerUiHooks } from "../state";
 import { Diag, StepAnim } from "../types";
-import { isMapLike, isSetLike, formatShortVal } from "../utils/format";
-import { updateStepViz, positionStepViz } from "./ast-view";
-import { getActiveFrame, VIZ, hoverMetrics } from "./memory-normalizers";
+import { editor, gutterEl, highlightEl, hoverTipEl } from "../ui/dom";
+import { isMapLike, isSetLike, isRecord, formatShortVal } from "../utils/format";
+import { updateStepViz, positionStepViz, hoverMetrics } from "./ast-view";
+import { getActiveFrame, VIZ } from "./memory-normalizers";
 
 export { hoverMetrics };
 
@@ -26,7 +27,7 @@ let DECLARED_NAMES_CACHE: { src: string | null; names: Set<string> } = { src: nu
 /* All names the current buffer actually declares: const/let/var (incl. destructuring),
    function & arrow params, loop/catch bindings, function/class/interface/type names. */
 export function collectDeclaredNames(src: string | null | undefined): Set<string> {
-  if (LANG === 'python') return PY_ENGINE.collectDeclared(src);
+  if (appState.LANG === 'python') return PY_ENGINE.collectDeclared(src);
   const text = String(src == null ? '' : src);
   if (DECLARED_NAMES_CACHE.src === text) return DECLARED_NAMES_CACHE.names;
 
@@ -57,7 +58,7 @@ export function collectDeclaredNames(src: string | null | undefined): Set<string
 }
 
 export function collectHighlightBuiltins(declared: Set<string>): Set<string> {
-  const source: Iterable<string> = LANG === 'python'
+  const source: Iterable<string> = appState.LANG === 'python'
     ? ((typeof PY_ENGINE !== 'undefined' && PY_ENGINE.builtins) || [])
     : HIGHLIGHT_BUILTINS;
   const out = new Set<string>();
@@ -68,7 +69,7 @@ export function collectHighlightBuiltins(declared: Set<string>): Set<string> {
 }
 
 export function hl(t: string, declared?: Set<string> | null): string {
-  if (LANG === 'python') return PY_ENGINE.hl(t, declared);
+  if (appState.LANG === 'python') return PY_ENGINE.hl(t, declared);
   const re = /(\/\/.*$)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)|\b(function|const|let|var|new|class|extends|typeof|instanceof|import|export|from|async|await|interface|type|as|satisfies)\b|\b(for|if|else|return|while|do|switch|case|break|continue|try|catch|finally|throw|yield)\b|\b(number|string|boolean|void|any|unknown|never|Math|Map|Set|Array|Object|JSON|Number|String|Boolean|Promise|Record|Error)\b|\b(true|false|null|undefined|\d+(?:\.\d+)?)\b|(\b[A-Za-z_$][\w$]*)(?=\s*\()|(?<=\.)([A-Za-z_$][\w$]*)\b|([{,][ \t]*)([A-Za-z_$][\w$]*)(?=[ \t]*:)|(^[ \t]*)([A-Za-z_$][\w$]*)(?=[ \t]*:)|\b([A-Za-z_$][\w$]*)\b|(===|!==|>=|<=|=>|&&|\|\||\+\+|--)/g;
   let out = '', last = 0, m;
   while ((m = re.exec(t))) {
@@ -121,7 +122,7 @@ export function findExprSpan(line: string, target: string, fromIndex = 0) {
 }
 
 export function hlActiveLine(rawLine: string, anim?: StepAnim | null, declared?: Set<string> | null): string {
-  if (LANG === 'python') return PY_ENGINE.hlActiveLine(rawLine, anim, declared);
+  if (appState.LANG === 'python') return PY_ENGINE.hlActiveLine(rawLine, anim, declared);
   if (!anim) return hl(rawLine, declared);
   const h = (s: string) => hl(s, declared);
 
@@ -228,7 +229,7 @@ export function updateEditorChrome() {
   const liveErrors = liveTypeDiags(text);
   const liveByLine = new Map<number, Diag>();
   liveErrors.forEach((d: Diag) => { if (d && d.line >= 1 && !liveByLine.has(d.line)) liveByLine.set(d.line, d); });
-  const st = TRACE.steps.length ? TRACE.steps[cur] : null;
+  const st = appState.TRACE.steps.length ? appState.TRACE.steps[appState.cur] : null;
   const activeFrame = st ? getActiveFrame(st) : null;
   const curLine = activeFrame ? activeFrame.line : (st ? st.line : -1);
   const showVizOnLine = Boolean(st && (!activeFrame || activeFrame.isTop) && (st.anim || st.error) && curLine >= 1 && curLine <= lines.length);
@@ -237,14 +238,14 @@ export function updateEditorChrome() {
     const d = liveByLine.get(lineNum);
     if (!d) return '';
     const tip = (d.code ? d.code + ': ' : '') + (d.message || '');
-    return '<span class="ln-err-badge" title="' + esc(tip) + '">✗ ' + esc(d.code || (LANG === 'python' ? 'PY' : 'TS')) + '</span>';
+    return '<span class="ln-err-badge" title="' + esc(tip) + '">✗ ' + esc(d.code || (appState.LANG === 'python' ? 'PY' : 'TS')) + '</span>';
   };
 
   if (window.PlaygroundCM) {
-    const errorLines = new Set([...liveByLine.keys(), ...TYPE_ERROR_LINES, ...RUNTIME_ERROR_LINES]);
+    const errorLines = new Set([...liveByLine.keys(), ...appState.TYPE_ERROR_LINES, ...appState.RUNTIME_ERROR_LINES]);
     if (st && st.error && curLine >= 1) errorLines.add(curLine);
     window.PlaygroundCM.syncFromApp({
-      language: LANG,
+      language: appState.LANG,
       text,
       lines,
       declared,
@@ -259,7 +260,7 @@ export function updateEditorChrome() {
       const lineNum = k + 1;
       const isCur = lineNum === curLine;
       const isLiveErr = liveByLine.has(lineNum);
-      const isErr = isLiveErr || TYPE_ERROR_LINES.has(lineNum) || RUNTIME_ERROR_LINES.has(lineNum) || Boolean(isCur && st && st.error);
+      const isErr = isLiveErr || appState.TYPE_ERROR_LINES.has(lineNum) || appState.RUNTIME_ERROR_LINES.has(lineNum) || Boolean(isCur && st && st.error);
       const inner = (isCur && (!activeFrame || activeFrame.isTop)) ? hlActiveLine(t, st && st.anim, declared) : hl(t, declared);
       const content = (inner || '&nbsp;') + (isLiveErr ? errorBadge(lineNum) : '');
       return '<span class="ln' + (isCur ? ' cur' : '') + (isErr ? ' err' : '') + '">' + content + '</span>';
@@ -268,7 +269,7 @@ export function updateEditorChrome() {
     gutterEl.innerHTML = lines.map((t: string, k: number) => {
       const lineNum = k + 1;
       const isCur = lineNum === curLine;
-      const isErr = liveByLine.has(lineNum) || TYPE_ERROR_LINES.has(lineNum) || RUNTIME_ERROR_LINES.has(lineNum) || Boolean(isCur && st && st.error);
+      const isErr = liveByLine.has(lineNum) || appState.TYPE_ERROR_LINES.has(lineNum) || appState.RUNTIME_ERROR_LINES.has(lineNum) || Boolean(isCur && st && st.error);
       const hasCkpt = /^\s*(?:checkpoint|断点)\s*\(/.test(t);
       return '<div class="gline' + (isCur ? ' cur' : '') + (hasCkpt ? ' ckpt' : '') + (isErr ? ' err' : '') + '" data-line="' + lineNum + '">' + lineNum + '</div>';
     }).join('');
@@ -280,11 +281,11 @@ export function updateEditorChrome() {
 
 let LIVE_TYPE_CACHE: { src: string | null; diags: Diag[] } = { src: null, diags: [] };
 export function liveTypeDiags(src: string | null | undefined): Diag[] {
-  if (LANG === 'python') return PY_DIAGS;
+  if (appState.LANG === 'python') return appState.PY_DIAGS;
   const text = String(src == null ? '' : src);
   if (LIVE_TYPE_CACHE.src === text) return LIVE_TYPE_CACHE.diags;
   let diags: Diag[] = [];
-  try { diags = typecheckTS(text, STRICT_TS) || []; } catch (_) { diags = []; }
+  try { diags = typecheckTS(text, appState.STRICT_TS) || []; } catch (_) { diags = []; }
   LIVE_TYPE_CACHE = { src: text, diags };
   return diags;
 }
@@ -356,9 +357,9 @@ export function hoverWordAt(lineText: string, col: number) {
 /* Value + structure snapshot for a name in the frame currently shown in LOCALS
    (falling back to the global frame so outer variables stay inspectable inside functions). */
 export function hoverInfoFor(name: string | null | undefined) {
-  if (!name || !TRACE.steps.length) return null;
+  if (!name || !appState.TRACE.steps.length) return null;
   if (typeof RESERVED_WORDS !== 'undefined' && RESERVED_WORDS.has(name) && name !== 'this') return null;
-  const st = TRACE.steps[cur];
+  const st = appState.TRACE.steps[appState.cur];
   if (!st) return null;
   const frame = getActiveFrame(st);
   let v = (frame && frame.v) || st.v || {};
@@ -381,7 +382,7 @@ export function hoverInfoFor(name: string | null | undefined) {
   const d = ds[lookupKey] || null;
   if (!hasVal && !d) return null;
   const val = hasVal ? v[lookupKey] : undefined;
-  const declaredType = (CURRENT_TS_META && CURRENT_TS_META.varTypes ? CURRENT_TS_META.varTypes.get(lookupKey) : null) ||
+  const declaredType = (appState.CURRENT_TS_META && appState.CURRENT_TS_META.varTypes ? appState.CURRENT_TS_META.varTypes.get(lookupKey) : null) ||
     (d && d.interfaceName && d.interfaceName !== 'object' ? d.interfaceName : null);
   const kindStr = d
     ? (d.kind === 'interface' && d.isClass ? (d.interfaceName ? 'class · ' + d.interfaceName : 'class') : d.kind)
@@ -408,12 +409,11 @@ export function formatHoverVal(val: unknown): string {
     const head: string = val.slice(0, 12).map(formatHoverVal).join(', ');
     return '[' + head + (val.length > 12 ? ', … (' + val.length + ' 项)' : '') + ']';
   }
-  if (isMapLike(val)) return 'Map(' + (val as Map<unknown, unknown>).size + ')';
-  if (isSetLike(val)) return 'Set(' + (val as Set<unknown>).size + ')';
-  if (typeof val === 'object') {
-    const record = val as Record<string, unknown>;
-    const keys = Object.keys(record);
-    const body: string = keys.slice(0, 8).map((k: string): string => k + ': ' + formatHoverVal(record[k])).join(', ');
+  if (isMapLike(val)) return 'Map(' + val.size + ')';
+  if (isSetLike(val)) return 'Set(' + val.size + ')';
+  if (isRecord(val)) {
+    const keys = Object.keys(val);
+    const body: string = keys.slice(0, 8).map((k: string): string => k + ': ' + formatHoverVal(val[k])).join(', ');
     return '{ ' + body + (keys.length > 8 ? ', …' : '') + ' }';
   }
   return String(val);
@@ -475,8 +475,7 @@ export function hoverTipHtml(info: HoverInfo | null | undefined) {
   if (info.declaredType) note.push('声明类型 ' + info.declaredType);
   if (info.frame) note.push('栈帧 ' + info.frame);
   if (note.length) parts.push('<div class="ht-note">' + esc(note.join(' · ')) + '</div>');
-  const vizMap = VIZ as Record<string, ((d: unknown) => string | null) | undefined>;
-  const vizFn = info.d && typeof info.d.kind === 'string' ? vizMap[info.d.kind] : null;
+  const vizFn = info.d && typeof info.d.kind === 'string' ? VIZ[info.d.kind] : null;
   if (typeof vizFn === 'function') {
     let viz = '';
     try { viz = vizFn(info.d) || ''; } catch (_) { viz = ''; }
@@ -516,10 +515,10 @@ export function showHoverTip(info: HoverInfo | null | undefined, clientX: number
 }
 
 export function hoverTipForName(name: string | null | undefined, clientX: number, clientY: number) {
-  if (!TRACE.steps.length) { hideHoverTip(); return false; }
+  if (!appState.TRACE.steps.length) { hideHoverTip(); return false; }
   const info = hoverInfoFor(name);
   if (!info) { hideHoverTip(); return false; }
-  const key = name + '@' + cur + '#' + TRACE.steps.length;
+  const key = name + '@' + appState.cur + '#' + appState.TRACE.steps.length;
   if (!(hoverTipEl && hoverTipEl.classList && hoverTipEl.classList.contains && hoverTipEl.classList.contains('on')) || hoverTipKey !== key) {
     hoverTipKey = key;
     showHoverTip(info, clientX, clientY);

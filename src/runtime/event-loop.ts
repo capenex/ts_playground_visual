@@ -2,47 +2,46 @@
    Virtual Event Loop Scheduler & Console Log Utilities (src/runtime/event-loop.ts)
    ================================================================ */
 import { blankStrings } from "../compiler/comments";
-import { uiHooks } from "../state";
-import { formatShortVal, isMapLike, isSetLike, safeJSONStringify } from "../utils/format";
-import { EventLoopSnapshot } from "../types";
+import { appState, notifyConsoleLog, uiHooks } from "../state";
+import { formatShortVal, isMapLike, isRecord, isSetLike, safeJSONStringify } from "../utils/format";
+import { ConsoleLogEntry, EventLoopSnapshot } from "../types";
 import {
   createVirtualPromiseAndFsEnv,
   rethrowIfControlSignal,
+  VirtualCoroutineEntry,
   VirtualLoopState,
   VirtualMacrotaskEntry,
   VirtualMicrotaskEntry,
 } from "./event-loop-env";
 
+interface AwaitYieldDescriptor {
+  __isAwait: boolean;
+  value?: unknown;
+  fid?: number;
+  line?: number;
+  expr?: string;
+}
+
+function isAwaitYieldDescriptor(val: unknown): val is AwaitYieldDescriptor {
+  return isRecord(val) && Boolean(val.__isAwait);
+}
+
 export { safeJSONStringify };
 export * from "./event-loop-env";
 
-export function say(msg: string, cls?: string, line?: number) {
-  const d = document.createElement('div');
-  if (cls) d.className = cls;
-  if (line) {
-    d.className = (cls ? cls + ' ' : '') + 'diag';
-    if (d.setAttribute) {
-      d.setAttribute('data-line', String(line));
-      d.setAttribute('title', '点击定位到第 ' + line + ' 行');
-    }
-  }
-  d.textContent = msg;
-  logEl.appendChild(d);
-  logEl.scrollTop = logEl.scrollHeight;
+export function say(msg: string, cls?: string, line?: number): void {
+  const entry: ConsoleLogEntry = { msg };
+  if (cls !== undefined) entry.cls = cls;
+  if (line !== undefined) entry.line = line;
+  appState.CONSOLE_LOGS.push(entry);
+  notifyConsoleLog('append', entry);
+  uiHooks.appendConsoleLog(entry);
 }
 
-/* clicking a diagnostic in the log jumps to (and highlights) its line */
-if (logEl && logEl.addEventListener) {
-  logEl.addEventListener('click', (e: MouseEvent) => {
-    const el = e && (e.target as HTMLElement | null);
-    const target = el && el.closest ? el.closest('.diag') : null;
-    if (!target || !target.getAttribute) return;
-    uiHooks.revealErrorLine(parseInt(target.getAttribute('data-line') || '0', 10), true);
-  });
-}
-
-export function clearLog(msg?: string) {
-  logEl.innerHTML = '';
+export function clearLog(msg?: string): void {
+  appState.CONSOLE_LOGS.length = 0;
+  notifyConsoleLog('clear');
+  uiHooks.clearConsoleDom();
   if (msg) say(msg, 'dim');
 }
 
@@ -190,12 +189,12 @@ export function createVirtualEventLoop(
     defLine?: number
   ) {
     loop.used = true;
-    const coro = {
+    const coro: VirtualCoroutineEntry = {
       id: ++coroSeq,
       name: fnName || 'async',
       line: defLine || getCurLine() || 1,
       status: 'running',
-      awaitExpr: null as string | null,
+      awaitExpr: null,
       fid: 0,
     };
     loop.coroutines.push(coro);
@@ -228,14 +227,11 @@ export function createVirtualEventLoop(
         return;
       }
       const yielded = stepRes.value;
-      const awaitDesc = (yielded && typeof yielded === 'object' && '__isAwait' in yielded)
-        ? (yielded as { __isAwait?: boolean; value?: unknown; fid?: number; line?: number; expr?: string })
-        : null;
-      const isAwaitDesc = Boolean(awaitDesc && awaitDesc.__isAwait);
-      const awaitedVal = isAwaitDesc && awaitDesc ? awaitDesc.value : yielded;
-      const fid = (isAwaitDesc && awaitDesc && awaitDesc.fid) ? awaitDesc.fid : 0;
-      const awaitLine = (isAwaitDesc && awaitDesc && awaitDesc.line) ? awaitDesc.line : getCurLine() || coro.line;
-      const awaitExpr = (isAwaitDesc && awaitDesc && awaitDesc.expr) ? awaitDesc.expr : 'await';
+      const isAwaitDesc = isAwaitYieldDescriptor(yielded);
+      const awaitedVal = isAwaitDesc ? yielded.value : yielded;
+      const fid = isAwaitDesc && typeof yielded.fid === 'number' ? yielded.fid : 0;
+      const awaitLine = isAwaitDesc && typeof yielded.line === 'number' ? yielded.line : getCurLine() || coro.line;
+      const awaitExpr = isAwaitDesc && typeof yielded.expr === 'string' && yielded.expr ? yielded.expr : 'await';
 
       coro.status = 'suspended';
       coro.line = awaitLine;
@@ -322,15 +318,12 @@ export function createVirtualEventLoop(
     loop.phase = 'idle';
     loop.activeTaskLabel = '事件循环已清空 (Idle)';
 
-    const vp = (entryVal && typeof entryVal === 'object' && '__isVirtualPromise' in entryVal)
-      ? (entryVal as { __isVirtualPromise?: boolean; state?: string; reason?: unknown; value?: unknown })
-      : null;
-    if (vp && vp.__isVirtualPromise) {
-      if (vp.state === 'rejected') {
-        throw vp.reason instanceof Error ? vp.reason : new Error(String(vp.reason));
+    if (isRecord(entryVal) && entryVal.__isVirtualPromise) {
+      if (entryVal.state === 'rejected') {
+        throw entryVal.reason instanceof Error ? entryVal.reason : new Error(String(entryVal.reason));
       }
-      if (vp.state === 'fulfilled') {
-        return vp.value;
+      if (entryVal.state === 'fulfilled') {
+        return entryVal.value;
       }
     }
     return entryVal;
@@ -430,8 +423,8 @@ export function formatCallFrameLabel(fnName: string, _paramNames: unknown, param
 export function resetTraceState() {
   uiHooks.stopAuto();
   uiHooks.clearFlyLayer();
-  TRACE = { title: 'TypeScript Playground · Debug', code: [], steps: [] };
-  DEBUG_SESSION = {
+  appState.TRACE = { title: 'TypeScript Playground · Debug', code: [], steps: [] };
+  appState.DEBUG_SESSION = {
     active: false,
     finished: false,
     crashed: false,
@@ -442,11 +435,11 @@ export function resetTraceState() {
     originalLines: [],
     callExpr: 'undefined',
   };
-  RUNTIME_ERROR_LINES.clear();
-  cur = 0;
-  watched = new Set();
-  SEEN_VARS_EVER = new Set();
-  layoutSpan = Object.create(null);
+  appState.RUNTIME_ERROR_LINES.clear();
+  appState.cur = 0;
+  appState.watched = new Set();
+  appState.SEEN_VARS_EVER = new Set();
+  appState.layoutSpan = Object.create(null);
   uiHooks.renderPicker();
   uiHooks.renderStatic(0);
   uiHooks.updateEditorChrome();

@@ -7,40 +7,38 @@
   };
 
   // src/state.ts
-  var $2 = (id) => typeof document !== "undefined" ? document.getElementById(id) : null;
-  var editor2 = $2("editor");
-  var logEl2 = $2("log");
-  var gutterEl2 = $2("gutter");
-  var highlightEl2 = $2("highlight");
-  var varsEl2 = $2("vars");
-  var pickEl2 = $2("pick");
-  var callStackBarEl2 = $2("callStackBar");
-  var callStackHintEl2 = $2("callStackHint");
-  var slotsEl2 = $2("slots");
-  var consoleEl2 = $2("console");
-  var cntEl2 = $2("cnt");
-  var ctlHint = $2("ctlHint");
-  var mainEl2 = $2("main");
-  var sidePanelEl2 = $2("sidePanel");
-  var resizerEl2 = $2("resizer");
-  var flyLayerEl2 = $2("flyLayer");
-  var hoverTipEl2 = $2("hoverTip");
-  var stepVizEl2 = $2("stepViz");
-  var fileNameEl2 = $2("fileName");
-  var fileInputEl2 = $2("fileInput");
-  var btnImportEl2 = $2("btnImport");
-  var MAX_STEPS2 = 5e3;
-  var MAX_EXEC_MS2 = 3500;
-  var RUN_TIMEOUT_MS2 = 2e3;
-  var AUTO_PLAY_MS2 = 900;
-  var VIDEO_WIDTH2 = 1920;
-  var VIDEO_HEIGHT2 = 1080;
-  var VIDEO_FPS2 = 60;
-  var VIDEO_SPEED_OPTIONS2 = [0.75, 1, 1.5, 2, 3];
-  var PAUSE_SIGNAL2 = { __debugPause: true };
-  function esc2(t) {
+  var state_exports = {};
+  __export(state_exports, {
+    AUTO_PLAY_MS: () => AUTO_PLAY_MS,
+    MAX_EXEC_MS: () => MAX_EXEC_MS,
+    MAX_STEPS: () => MAX_STEPS,
+    PAUSE_SIGNAL: () => PAUSE_SIGNAL,
+    RUN_TIMEOUT_MS: () => RUN_TIMEOUT_MS,
+    VIDEO_FPS: () => VIDEO_FPS,
+    VIDEO_HEIGHT: () => VIDEO_HEIGHT,
+    VIDEO_SPEED_OPTIONS: () => VIDEO_SPEED_OPTIONS,
+    VIDEO_WIDTH: () => VIDEO_WIDTH,
+    appState: () => appState,
+    bindStateGlobals: () => bindStateGlobals,
+    esc: () => esc,
+    notifyConsoleLog: () => notifyConsoleLog,
+    registerUiHooks: () => registerUiHooks,
+    subscribeConsoleLogs: () => subscribeConsoleLogs,
+    uiHooks: () => uiHooks
+  });
+  var MAX_STEPS = 5e3;
+  var MAX_EXEC_MS = 3500;
+  var RUN_TIMEOUT_MS = 2e3;
+  var AUTO_PLAY_MS = 900;
+  var VIDEO_WIDTH = 1920;
+  var VIDEO_HEIGHT = 1080;
+  var VIDEO_FPS = 60;
+  var VIDEO_SPEED_OPTIONS = [0.75, 1, 1.5, 2, 3];
+  var PAUSE_SIGNAL = { __debugPause: true };
+  function esc(t) {
     return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
+  var initialLayoutSpan = {};
   var appState = {
     VIEW_MODE: "script",
     ACTIVE_NB_CELL_ID: null,
@@ -48,13 +46,14 @@
     LANG: "ts",
     LANG_BUFFERS: { ts: null, python: null },
     PY_DIAGS: [],
+    CONSOLE_LOGS: [],
     VIDEO_EXPORT_SPEED: 1,
     IS_EXPORTING_VIDEO: false,
     TRACE: { title: "TypeScript Playground \xB7 Debug", code: [], steps: [] },
     cur: 0,
     timer: null,
     watched: /* @__PURE__ */ new Set(),
-    layoutSpan: /* @__PURE__ */ Object.create(null),
+    layoutSpan: initialLayoutSpan,
     SELECTED_FRAME_IDX: null,
     SEEN_VARS_EVER: /* @__PURE__ */ new Set(),
     IS_STILL: false,
@@ -80,9 +79,18 @@
       callExpr: "undefined"
     }
   };
+  var consoleListeners = /* @__PURE__ */ new Set();
+  function subscribeConsoleLogs(listener) {
+    consoleListeners.add(listener);
+    return () => {
+      consoleListeners.delete(listener);
+    };
+  }
+  function notifyConsoleLog(action, entry) {
+    consoleListeners.forEach((fn) => fn(action, entry));
+  }
   function bindStateGlobals(target = globalThis) {
-    const keys = Object.keys(appState);
-    for (const key of keys) {
+    for (const key of Object.keys(appState)) {
       const desc = Object.getOwnPropertyDescriptor(target, key);
       if (desc && !desc.configurable) continue;
       Object.defineProperty(target, key, {
@@ -113,38 +121,16 @@
       });
     }
     Object.assign(target, {
-      $: $2,
-      editor: editor2,
-      logEl: logEl2,
-      gutterEl: gutterEl2,
-      highlightEl: highlightEl2,
-      varsEl: varsEl2,
-      pickEl: pickEl2,
-      callStackBarEl: callStackBarEl2,
-      callStackHintEl: callStackHintEl2,
-      slotsEl: slotsEl2,
-      consoleEl: consoleEl2,
-      cntEl: cntEl2,
-      ctlHint,
-      mainEl: mainEl2,
-      sidePanelEl: sidePanelEl2,
-      resizerEl: resizerEl2,
-      flyLayerEl: flyLayerEl2,
-      hoverTipEl: hoverTipEl2,
-      stepVizEl: stepVizEl2,
-      fileNameEl: fileNameEl2,
-      fileInputEl: fileInputEl2,
-      btnImportEl: btnImportEl2,
-      MAX_STEPS: MAX_STEPS2,
-      MAX_EXEC_MS: MAX_EXEC_MS2,
-      RUN_TIMEOUT_MS: RUN_TIMEOUT_MS2,
-      AUTO_PLAY_MS: AUTO_PLAY_MS2,
-      VIDEO_WIDTH: VIDEO_WIDTH2,
-      VIDEO_HEIGHT: VIDEO_HEIGHT2,
-      VIDEO_FPS: VIDEO_FPS2,
-      VIDEO_SPEED_OPTIONS: VIDEO_SPEED_OPTIONS2,
-      PAUSE_SIGNAL: PAUSE_SIGNAL2,
-      esc: esc2,
+      MAX_STEPS,
+      MAX_EXEC_MS,
+      RUN_TIMEOUT_MS,
+      AUTO_PLAY_MS,
+      VIDEO_WIDTH,
+      VIDEO_HEIGHT,
+      VIDEO_FPS,
+      VIDEO_SPEED_OPTIONS,
+      PAUSE_SIGNAL,
+      esc,
       appState
     });
   }
@@ -175,12 +161,200 @@
     setViewMode: () => {
     },
     importSampleIntoNotebook: () => {
+    },
+    appendConsoleLog: () => {
+    },
+    clearConsoleDom: () => {
+    },
+    getEditorSource: () => "",
+    setEditorSource: () => {
+    },
+    renderNotebookUI: () => {
+    },
+    setCntStatus: () => {
     }
   };
   function registerUiHooks(hooks) {
     Object.assign(uiHooks, hooks);
   }
   bindStateGlobals();
+
+  // src/ui/dom.ts
+  var dom_exports = {};
+  __export(dom_exports, {
+    $: () => $,
+    bindDomGlobals: () => bindDomGlobals,
+    btnImportEl: () => btnImportEl,
+    callStackBarEl: () => callStackBarEl,
+    callStackHintEl: () => callStackHintEl,
+    clearConsoleDom: () => clearConsoleDom,
+    closestElement: () => closestElement,
+    cntEl: () => cntEl,
+    consoleEl: () => consoleEl,
+    ctlHint: () => ctlHint,
+    dom: () => dom,
+    editor: () => editor,
+    eventTargetElement: () => eventTargetElement,
+    eventTargetNode: () => eventTargetNode,
+    eventTargetTextArea: () => eventTargetTextArea,
+    fileInputEl: () => fileInputEl,
+    fileNameEl: () => fileNameEl,
+    flyLayerEl: () => flyLayerEl,
+    getEditorSource: () => getEditorSource,
+    gutterEl: () => gutterEl,
+    highlightEl: () => highlightEl,
+    hoverTipEl: () => hoverTipEl,
+    isDomElement: () => isDomElement,
+    isDomNode: () => isDomNode,
+    isTextAreaElement: () => isTextAreaElement,
+    logEl: () => logEl,
+    mainEl: () => mainEl,
+    pickEl: () => pickEl,
+    queryTextArea: () => queryTextArea,
+    renderConsoleLogEntry: () => renderConsoleLogEntry,
+    resizerEl: () => resizerEl,
+    setCntStatus: () => setCntStatus,
+    setEditorSource: () => setEditorSource,
+    sidePanelEl: () => sidePanelEl,
+    slotsEl: () => slotsEl,
+    stepVizEl: () => stepVizEl,
+    varsEl: () => varsEl
+  });
+  var $ = (id) => document.getElementById(id);
+  function isDomElement(val) {
+    if (!val || typeof val !== "object") return false;
+    if (typeof HTMLElement !== "undefined" && val instanceof HTMLElement) return true;
+    return "classList" in val || "dataset" in val || "tagName" in val || "closest" in val || "getAttribute" in val;
+  }
+  function isDomNode(val) {
+    if (!val || typeof val !== "object") return false;
+    if (typeof Node !== "undefined" && val instanceof Node) return true;
+    return isDomElement(val) || "nodeType" in val;
+  }
+  function isTextAreaElement(val) {
+    if (!isDomElement(val)) return false;
+    if (typeof HTMLTextAreaElement !== "undefined" && val instanceof HTMLTextAreaElement) return true;
+    return "value" in val;
+  }
+  function eventTargetElement(e) {
+    const t = e ? e.target : null;
+    return isDomElement(t) ? t : null;
+  }
+  function eventTargetNode(e) {
+    const t = e ? e.target : null;
+    return isDomNode(t) ? t : null;
+  }
+  function eventTargetTextArea(e) {
+    const t = e ? e.target : null;
+    return isTextAreaElement(t) ? t : null;
+  }
+  function closestElement(source, selector) {
+    const el = isDomElement(source) ? source : source && typeof source === "object" && "target" in source && isDomElement(source.target) ? source.target : null;
+    if (!el || typeof el.closest !== "function") return null;
+    const matched = el.closest(selector);
+    return isDomElement(matched) ? matched : null;
+  }
+  function queryTextArea(root, selector) {
+    if (!root || typeof root.querySelector !== "function") return null;
+    const found = root.querySelector(selector);
+    return isTextAreaElement(found) ? found : null;
+  }
+  var editor = $("editor");
+  var logEl = $("log");
+  var gutterEl = $("gutter");
+  var highlightEl = $("highlight");
+  var varsEl = $("vars");
+  var pickEl = $("pick");
+  var callStackBarEl = $("callStackBar");
+  var callStackHintEl = $("callStackHint");
+  var slotsEl = $("slots");
+  var consoleEl = $("console");
+  var cntEl = $("cnt");
+  var ctlHint = $("ctlHint");
+  var mainEl = $("main");
+  var sidePanelEl = $("sidePanel");
+  var resizerEl = $("resizer");
+  var flyLayerEl = $("flyLayer");
+  var hoverTipEl = $("hoverTip");
+  var stepVizEl = $("stepViz");
+  var fileNameEl = $("fileName");
+  var fileInputEl = $("fileInput");
+  var btnImportEl = $("btnImport");
+  var dom = {
+    $,
+    editor,
+    logEl,
+    gutterEl,
+    highlightEl,
+    varsEl,
+    pickEl,
+    callStackBarEl,
+    callStackHintEl,
+    slotsEl,
+    consoleEl,
+    cntEl,
+    ctlHint,
+    mainEl,
+    sidePanelEl,
+    resizerEl,
+    flyLayerEl,
+    hoverTipEl,
+    stepVizEl,
+    fileNameEl,
+    fileInputEl,
+    btnImportEl
+  };
+  function renderConsoleLogEntry(entry) {
+    if (!logEl || typeof document === "undefined" || !document.createElement) return;
+    const d = document.createElement("div");
+    if (entry.cls) d.className = entry.cls;
+    if (entry.line) {
+      d.className = (entry.cls ? entry.cls + " " : "") + "diag";
+      if (d.setAttribute) {
+        d.setAttribute("data-line", String(entry.line));
+        d.setAttribute("title", "\u70B9\u51FB\u5B9A\u4F4D\u5230\u7B2C " + entry.line + " \u884C");
+      }
+    }
+    d.textContent = entry.msg;
+    logEl.appendChild(d);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  function clearConsoleDom() {
+    if (!logEl) return;
+    logEl.innerHTML = "";
+  }
+  function getEditorSource() {
+    return editor ? editor.value : "";
+  }
+  function setEditorSource(src) {
+    if (editor) {
+      editor.value = src;
+    }
+  }
+  if (logEl && logEl.addEventListener) {
+    logEl.addEventListener("click", (e) => {
+      const target = closestElement(e, ".diag");
+      if (!target || !target.getAttribute) return;
+      uiHooks.revealErrorLine(parseInt(target.getAttribute("data-line") || "0", 10), true);
+    });
+  }
+  function setCntStatus(text, cls = "") {
+    if (cntEl) {
+      cntEl.textContent = text;
+      cntEl.className = cls;
+    }
+  }
+  function bindDomGlobals(target = globalThis) {
+    Object.assign(target, dom);
+  }
+  registerUiHooks({
+    appendConsoleLog: renderConsoleLogEntry,
+    clearConsoleDom,
+    getEditorSource,
+    setEditorSource,
+    setCntStatus
+  });
+  bindDomGlobals();
 
   // src/samples/ts-samples.ts
   var ts_samples_exports = {};
@@ -714,48 +888,48 @@ runAsyncDemo()
   }
   function splitTopLevel(s) {
     const parts = [];
-    let depth = 0, cur2 = "";
+    let depth = 0, cur = "";
     for (let i = 0; i < s.length; i++) {
       const ch = s[i];
       if (ch === '"' || ch === "'" || ch === "`") {
         const end = skipString(s, i);
-        cur2 += s.slice(i, end);
+        cur += s.slice(i, end);
         i = end - 1;
         continue;
       }
       if (ch === "(" || ch === "[" || ch === "{") depth++;
       else if (ch === ")" || ch === "]" || ch === "}") depth--;
       if (ch === "," && depth === 0) {
-        parts.push(cur2);
-        cur2 = "";
+        parts.push(cur);
+        cur = "";
       } else {
-        cur2 += ch;
+        cur += ch;
       }
     }
-    if (cur2) parts.push(cur2);
+    if (cur) parts.push(cur);
     return parts;
   }
   function splitTopLevelSemicolons(s) {
     const parts = [];
-    let depth = 0, cur2 = "";
+    let depth = 0, cur = "";
     for (let i = 0; i < s.length; i++) {
       const ch = s[i];
       if (ch === '"' || ch === "'" || ch === "`") {
         const end = skipString(s, i);
-        cur2 += s.slice(i, end);
+        cur += s.slice(i, end);
         i = end - 1;
         continue;
       }
       if (ch === "(" || ch === "[" || ch === "{") depth++;
       else if (ch === ")" || ch === "]" || ch === "}") depth--;
       if (ch === ";" && depth === 0) {
-        parts.push(cur2);
-        cur2 = "";
+        parts.push(cur);
+        cur = "";
       } else {
-        cur2 += ch;
+        cur += ch;
       }
     }
-    parts.push(cur2);
+    parts.push(cur);
     return parts;
   }
   var splitStatements = splitTopLevelSemicolons;
@@ -2843,6 +3017,12 @@ runAsyncDemo()
   function isSetLike(v) {
     return Object.prototype.toString.call(v) === "[object Set]";
   }
+  function isRecord(v) {
+    return typeof v === "object" && v !== null;
+  }
+  function isFrame(v) {
+    return typeof v === "object" && v !== null && !Array.isArray(v);
+  }
   function defineHidden(obj, key, val) {
     if (!obj || typeof obj !== "object") return;
     try {
@@ -2863,22 +3043,20 @@ runAsyncDemo()
     if (Array.isArray(val)) return "[" + val.slice(0, 4).map(formatShortVal).join(", ") + (val.length > 4 ? ", \u2026" : "") + "]";
     if (isMapLike(val)) return "Map(" + val.size + ")";
     if (isSetLike(val)) return "Set(" + val.size + ")";
-    if (typeof val === "object") {
-      const rec = val;
-      const keys = Object.keys(rec);
-      if (keys.length > 0 && keys.length <= 4 && keys.every((k) => rec[k] === null || typeof rec[k] !== "object")) {
-        return "{ " + keys.map((k) => k + ": " + formatShortVal(rec[k])).join(", ") + " }";
+    if (isRecord(val)) {
+      const keys = Object.keys(val);
+      if (keys.length > 0 && keys.length <= 4 && keys.every((k) => val[k] === null || typeof val[k] !== "object")) {
+        return "{ " + keys.map((k) => k + ": " + formatShortVal(val[k])).join(", ") + " }";
       }
     }
     return "{\u2026}";
   }
   function cloneDeepBounded(val, depth = 0) {
-    if (val === null || typeof val !== "object") return val;
-    const obj = val;
-    if (obj.__isVirtualPromise) {
-      if (obj.state === "pending") return "Promise <pending>";
-      if (obj.state === "fulfilled") return "Promise <fulfilled: " + formatShortVal(obj.value) + ">";
-      return "Promise <rejected: " + formatShortVal(obj.reason) + ">";
+    if (!isRecord(val)) return val;
+    if (val.__isVirtualPromise) {
+      if (val.state === "pending") return "Promise <pending>";
+      if (val.state === "fulfilled") return "Promise <fulfilled: " + formatShortVal(val.value) + ">";
+      return "Promise <rejected: " + formatShortVal(val.reason) + ">";
     }
     if (depth >= 4) return String(val);
     if (Array.isArray(val)) return val.slice(0, 40).map((x) => cloneDeepBounded(x, depth + 1));
@@ -2899,12 +3077,12 @@ runAsyncDemo()
       return items;
     }
     const out = {};
-    const clsName = obj.__py_cls__ || (val.constructor && val.constructor !== Object && val.constructor.name ? val.constructor.name : "");
+    const clsName = typeof val.__py_cls__ === "string" && val.__py_cls__ ? val.__py_cls__ : val.constructor && val.constructor !== Object && val.constructor.name ? val.constructor.name : "";
     if (clsName) {
       defineHidden(out, "__py_cls__", clsName);
     }
-    Object.keys(obj).slice(0, 20).forEach((k) => {
-      out[k] = cloneDeepBounded(obj[k], depth + 1);
+    Object.keys(val).slice(0, 20).forEach((k) => {
+      out[k] = cloneDeepBounded(val[k], depth + 1);
     });
     return out;
   }
@@ -3091,8 +3269,8 @@ runAsyncDemo()
     const interfaces = /* @__PURE__ */ new Map();
     const varTypes = /* @__PURE__ */ new Map();
     if (!src || typeof src !== "string") {
-      CURRENT_TS_META = { interfaces, varTypes };
-      return CURRENT_TS_META;
+      appState.CURRENT_TS_META = { interfaces, varTypes };
+      return appState.CURRENT_TS_META;
     }
     const lines = src.replace(/\r\n?/g, "\n").split("\n");
     let activeIface = null;
@@ -3270,11 +3448,11 @@ runAsyncDemo()
         }
       }
     }
-    CURRENT_TS_META = { interfaces, varTypes };
-    return CURRENT_TS_META;
+    appState.CURRENT_TS_META = { interfaces, varTypes };
+    return appState.CURRENT_TS_META;
   }
   function matchInterfaceForObject(name, value) {
-    const { interfaces, varTypes } = CURRENT_TS_META;
+    const { interfaces, varTypes } = appState.CURRENT_TS_META;
     const declaredVarT = name ? varTypes.get(name) : void 0;
     if (declaredVarT) {
       const cleanT = declaredVarT.replace(/\[\]$/, "").trim();
@@ -3370,48 +3548,48 @@ runAsyncDemo()
   }
   function splitTopLevelUnion(typeStr) {
     const parts = [];
-    let depth = 0, cur2 = "";
+    let depth = 0, cur = "";
     for (let i = 0; i < typeStr.length; i++) {
       const ch = typeStr[i];
       if (ch === '"' || ch === "'" || ch === "`") {
         const end = skipString(typeStr, i);
-        cur2 += typeStr.slice(i, end);
+        cur += typeStr.slice(i, end);
         i = end - 1;
         continue;
       }
       if (ch === "<" || ch === "(" || ch === "[" || ch === "{") depth++;
       else if (ch === ">" && typeStr[i - 1] !== "=" || ch === ")" || ch === "]" || ch === "}") depth = Math.max(0, depth - 1);
       if (ch === "|" && depth === 0) {
-        if (cur2.trim()) parts.push(cur2.trim());
-        cur2 = "";
+        if (cur.trim()) parts.push(cur.trim());
+        cur = "";
       } else {
-        cur2 += ch;
+        cur += ch;
       }
     }
-    if (cur2.trim()) parts.push(cur2.trim());
+    if (cur.trim()) parts.push(cur.trim());
     return parts;
   }
   function splitTopLevelIntersection(typeStr) {
     const parts = [];
-    let depth = 0, cur2 = "";
+    let depth = 0, cur = "";
     for (let i = 0; i < typeStr.length; i++) {
       const ch = typeStr[i];
       if (ch === '"' || ch === "'" || ch === "`") {
         const end = skipString(typeStr, i);
-        cur2 += typeStr.slice(i, end);
+        cur += typeStr.slice(i, end);
         i = end - 1;
         continue;
       }
       if (ch === "<" || ch === "(" || ch === "[" || ch === "{") depth++;
       else if (ch === ">" && typeStr[i - 1] !== "=" || ch === ")" || ch === "]" || ch === "}") depth = Math.max(0, depth - 1);
       if (ch === "&" && depth === 0) {
-        if (cur2.trim()) parts.push(cur2.trim());
-        cur2 = "";
+        if (cur.trim()) parts.push(cur.trim());
+        cur = "";
       } else {
-        cur2 += ch;
+        cur += ch;
       }
     }
-    if (cur2.trim()) parts.push(cur2.trim());
+    if (cur.trim()) parts.push(cur.trim());
     return parts;
   }
   function stripNullableFromType(typeStr, target) {
@@ -3558,12 +3736,12 @@ runAsyncDemo()
   }
   function splitTopLevelDecl(s) {
     const parts = [];
-    let depth = 0, angleDepth = 0, cur2 = "";
+    let depth = 0, angleDepth = 0, cur = "";
     for (let i = 0; i < s.length; i++) {
       const ch = s[i];
       if (ch === '"' || ch === "'" || ch === "`") {
         const end = skipString(s, i);
-        cur2 += s.slice(i, end);
+        cur += s.slice(i, end);
         i = end - 1;
         continue;
       }
@@ -3572,13 +3750,13 @@ runAsyncDemo()
       else if (ch === "<" && s.indexOf(">", i + 1) > i) angleDepth++;
       else if (ch === ">" && angleDepth > 0 && s[i - 1] !== "=") angleDepth--;
       if (ch === "," && depth === 0 && angleDepth === 0) {
-        parts.push(cur2);
-        cur2 = "";
+        parts.push(cur);
+        cur = "";
       } else {
-        cur2 += ch;
+        cur += ch;
       }
     }
-    if (cur2) parts.push(cur2);
+    if (cur) parts.push(cur);
     return parts;
   }
   function parseTypeParams(typeParamStr) {
@@ -4372,14 +4550,14 @@ runAsyncDemo()
           return "any[]";
         }
         if (baseName === "Awaited" && rawArgs.length === 1) {
-          let cur2 = arg0;
+          let cur = arg0;
           let guard = 0;
           while (guard++ < 8) {
-            const pm = cur2.match(/^Promise<(.+)>$/);
-            if (pm && pm[1]) cur2 = evaluateType(pm[1], typeEnv, depth + 1, expanding);
+            const pm = cur.match(/^Promise<(.+)>$/);
+            if (pm && pm[1]) cur = evaluateType(pm[1], typeEnv, depth + 1, expanding);
             else break;
           }
-          return cur2;
+          return cur;
         }
         if ((baseName === "Uppercase" || baseName === "Lowercase" || baseName === "Capitalize" || baseName === "Uncapitalize") && rawArgs.length === 1) {
           if (arg0.startsWith('"') && arg0.endsWith('"')) {
@@ -4426,12 +4604,12 @@ runAsyncDemo()
       const propMap = /* @__PURE__ */ new Map();
       if (!inner) return propMap;
       const members = [];
-      let d = 0, ad = 0, cur2 = "";
+      let d = 0, ad = 0, cur = "";
       for (let i = 0; i < inner.length; i++) {
         const ch = inner[i];
         if (ch === '"' || ch === "'" || ch === "`") {
           const end = skipString(inner, i);
-          cur2 += inner.slice(i, end);
+          cur += inner.slice(i, end);
           i = end - 1;
           continue;
         }
@@ -4440,13 +4618,13 @@ runAsyncDemo()
         else if (ch === "<") ad++;
         else if (ch === ">" && inner[i - 1] !== "=") ad = Math.max(0, ad - 1);
         if ((ch === ";" || ch === ",") && d === 0 && ad === 0) {
-          if (cur2.trim()) members.push(cur2.trim());
-          cur2 = "";
+          if (cur.trim()) members.push(cur.trim());
+          cur = "";
         } else {
-          cur2 += ch;
+          cur += ch;
         }
       }
-      if (cur2.trim()) members.push(cur2.trim());
+      if (cur.trim()) members.push(cur.trim());
       members.forEach((mem) => {
         const cleaned = mem.replace(/^(?:readonly|public|private|protected|static)\s+/, "");
         const idxM = cleaned.match(/^\[\s*[A-Za-z_$][\w$]*\s*:\s*(?:string|number|symbol|any)\s*\]\s*:\s*([\s\S]+)$/);
@@ -4524,9 +4702,9 @@ runAsyncDemo()
     function getClassMethodSig(className, methodName) {
       const resolved = evaluateType(className, activeTypeParams);
       const genM = resolved.match(/^([A-Za-z_$][\w$]*)<([\s\S]+)>$/);
-      let cur2 = genM && genM[1] ? genM[1] : resolved;
+      let cur = genM && genM[1] ? genM[1] : resolved;
       const typeArgs = genM && genM[2] ? splitTopLevelDecl(genM[2]).map((a) => evaluateType(a.trim(), activeTypeParams)) : [];
-      const tParams = interfaceTypeParams.get(cur2);
+      const tParams = interfaceTypeParams.get(cur);
       const classEnv = new Map(activeTypeParams);
       if (tParams && tParams.length > 0 && typeArgs.length > 0) {
         tParams.forEach((tp, idx) => {
@@ -4534,9 +4712,9 @@ runAsyncDemo()
         });
       }
       const visited = /* @__PURE__ */ new Set();
-      while (cur2 && !visited.has(cur2)) {
-        visited.add(cur2);
-        const key = cur2 + "." + methodName;
+      while (cur && !visited.has(cur)) {
+        visited.add(cur);
+        const key = cur + "." + methodName;
         const rawSig = fns.get(key);
         if (rawSig) {
           if (classEnv.size === 0) return rawSig;
@@ -4551,7 +4729,7 @@ runAsyncDemo()
             rawReturnType: substituteTypeParamsInStr(rawSig.rawReturnType || rawSig.returnType, classEnv)
           };
         }
-        cur2 = classParents.get(cur2);
+        cur = classParents.get(cur);
       }
       return null;
     }
@@ -7175,7 +7353,7 @@ runAsyncDemo()
       }
     }
   }
-  function typecheckTS(src, strict = STRICT_TS) {
+  function typecheckTS(src, strict = appState.STRICT_TS) {
     extractTsInterfaceMetadata(src);
     if (!strict) return [];
     if (typeof src === "string" && _TYPECHECK_CACHE.src === src && _TYPECHECK_CACHE.strict === strict) {
@@ -7278,6 +7456,7 @@ runAsyncDemo()
     formatCallFrameLabel: () => formatCallFrameLabel,
     getOrCreateVfsApi: () => getOrCreateVfsApi,
     hasAsyncConstructs: () => hasAsyncConstructs,
+    isThenableLike: () => isThenableLike,
     resetTraceState: () => resetTraceState,
     rethrowIfControlSignal: () => rethrowIfControlSignal,
     safeJSONStringify: () => safeJSONStringify,
@@ -7286,9 +7465,12 @@ runAsyncDemo()
   });
 
   // src/runtime/event-loop-env.ts
+  function isThenableLike(val) {
+    if (!val || typeof val !== "object" && typeof val !== "function") return false;
+    return "then" in val && typeof val.then === "function";
+  }
   function rethrowIfControlSignal(err) {
-    const ctrl = err && typeof err === "object" ? err : null;
-    if (err === PAUSE_SIGNAL || ctrl && (ctrl.__debugPause || ctrl.__timeout)) {
+    if (err === PAUSE_SIGNAL || isRecord(err) && (err.__debugPause || err.__timeout)) {
       throw err;
     }
   }
@@ -7479,10 +7661,9 @@ runAsyncDemo()
       }
       _resolve(val) {
         if (this.state !== "pending") return;
-        const thenable = val && (typeof val === "object" || typeof val === "function") ? val : null;
-        if (thenable && (thenable.__isVirtualPromise || typeof thenable.then === "function") && typeof thenable.then === "function") {
+        if (isThenableLike(val)) {
           try {
-            thenable.then((v) => this._resolve(v), (r) => this._reject(r));
+            val.then((v) => this._resolve(v), (r) => this._reject(r));
           } catch (err) {
             rethrowIfControlSignal(err);
             this._reject(err);
@@ -7572,8 +7753,11 @@ runAsyncDemo()
       }
       static resolve(val) {
         loop.used = true;
-        if (val instanceof VirtualPromise || val && typeof val === "object" && "__isVirtualPromise" in val) {
+        if (val instanceof VirtualPromise) {
           return val;
+        }
+        if (isThenableLike(val)) {
+          return new VirtualPromise((res, rej) => val.then(res, rej), "Promise.resolve(thenable)");
         }
         return new VirtualPromise((res) => res(val), "Promise.resolve(" + formatShortVal(val) + ")");
       }
@@ -7796,30 +7980,21 @@ runAsyncDemo()
   }
 
   // src/runtime/event-loop.ts
-  function say(msg, cls, line) {
-    const d = document.createElement("div");
-    if (cls) d.className = cls;
-    if (line) {
-      d.className = (cls ? cls + " " : "") + "diag";
-      if (d.setAttribute) {
-        d.setAttribute("data-line", String(line));
-        d.setAttribute("title", "\u70B9\u51FB\u5B9A\u4F4D\u5230\u7B2C " + line + " \u884C");
-      }
-    }
-    d.textContent = msg;
-    logEl.appendChild(d);
-    logEl.scrollTop = logEl.scrollHeight;
+  function isAwaitYieldDescriptor(val) {
+    return isRecord(val) && Boolean(val.__isAwait);
   }
-  if (logEl && logEl.addEventListener) {
-    logEl.addEventListener("click", (e) => {
-      const el = e && e.target;
-      const target = el && el.closest ? el.closest(".diag") : null;
-      if (!target || !target.getAttribute) return;
-      uiHooks.revealErrorLine(parseInt(target.getAttribute("data-line") || "0", 10), true);
-    });
+  function say(msg, cls, line) {
+    const entry = { msg };
+    if (cls !== void 0) entry.cls = cls;
+    if (line !== void 0) entry.line = line;
+    appState.CONSOLE_LOGS.push(entry);
+    notifyConsoleLog("append", entry);
+    uiHooks.appendConsoleLog(entry);
   }
   function clearLog(msg) {
-    logEl.innerHTML = "";
+    appState.CONSOLE_LOGS.length = 0;
+    notifyConsoleLog("clear");
+    uiHooks.clearConsoleDom();
     if (msg) say(msg, "dim");
   }
   function anonStackLine(stack) {
@@ -7978,12 +8153,11 @@ runAsyncDemo()
           return;
         }
         const yielded = stepRes.value;
-        const awaitDesc = yielded && typeof yielded === "object" && "__isAwait" in yielded ? yielded : null;
-        const isAwaitDesc = Boolean(awaitDesc && awaitDesc.__isAwait);
-        const awaitedVal = isAwaitDesc && awaitDesc ? awaitDesc.value : yielded;
-        const fid = isAwaitDesc && awaitDesc && awaitDesc.fid ? awaitDesc.fid : 0;
-        const awaitLine = isAwaitDesc && awaitDesc && awaitDesc.line ? awaitDesc.line : getCurLine() || coro.line;
-        const awaitExpr = isAwaitDesc && awaitDesc && awaitDesc.expr ? awaitDesc.expr : "await";
+        const isAwaitDesc = isAwaitYieldDescriptor(yielded);
+        const awaitedVal = isAwaitDesc ? yielded.value : yielded;
+        const fid = isAwaitDesc && typeof yielded.fid === "number" ? yielded.fid : 0;
+        const awaitLine = isAwaitDesc && typeof yielded.line === "number" ? yielded.line : getCurLine() || coro.line;
+        const awaitExpr = isAwaitDesc && typeof yielded.expr === "string" && yielded.expr ? yielded.expr : "await";
         coro.status = "suspended";
         coro.line = awaitLine;
         coro.awaitExpr = awaitExpr;
@@ -8061,13 +8235,12 @@ runAsyncDemo()
       }
       loop.phase = "idle";
       loop.activeTaskLabel = "\u4E8B\u4EF6\u5FAA\u73AF\u5DF2\u6E05\u7A7A (Idle)";
-      const vp = entryVal && typeof entryVal === "object" && "__isVirtualPromise" in entryVal ? entryVal : null;
-      if (vp && vp.__isVirtualPromise) {
-        if (vp.state === "rejected") {
-          throw vp.reason instanceof Error ? vp.reason : new Error(String(vp.reason));
+      if (isRecord(entryVal) && entryVal.__isVirtualPromise) {
+        if (entryVal.state === "rejected") {
+          throw entryVal.reason instanceof Error ? entryVal.reason : new Error(String(entryVal.reason));
         }
-        if (vp.state === "fulfilled") {
-          return vp.value;
+        if (entryVal.state === "fulfilled") {
+          return entryVal.value;
         }
       }
       return entryVal;
@@ -8162,8 +8335,8 @@ runAsyncDemo()
   function resetTraceState() {
     uiHooks.stopAuto();
     uiHooks.clearFlyLayer();
-    TRACE = { title: "TypeScript Playground \xB7 Debug", code: [], steps: [] };
-    DEBUG_SESSION = {
+    appState.TRACE = { title: "TypeScript Playground \xB7 Debug", code: [], steps: [] };
+    appState.DEBUG_SESSION = {
       active: false,
       finished: false,
       crashed: false,
@@ -8174,11 +8347,11 @@ runAsyncDemo()
       originalLines: [],
       callExpr: "undefined"
     };
-    RUNTIME_ERROR_LINES.clear();
-    cur = 0;
-    watched = /* @__PURE__ */ new Set();
-    SEEN_VARS_EVER = /* @__PURE__ */ new Set();
-    layoutSpan = /* @__PURE__ */ Object.create(null);
+    appState.RUNTIME_ERROR_LINES.clear();
+    appState.cur = 0;
+    appState.watched = /* @__PURE__ */ new Set();
+    appState.SEEN_VARS_EVER = /* @__PURE__ */ new Set();
+    appState.layoutSpan = /* @__PURE__ */ Object.create(null);
     uiHooks.renderPicker();
     uiHooks.renderStatic(0);
     uiHooks.updateEditorChrome();
@@ -8200,6 +8373,10 @@ runAsyncDemo()
   });
 
   // src/viz/memory-normalizers.ts
+  var asChildFrame = (v) => isFrame(v) ? v : null;
+  function hasForEachMethod(val) {
+    return isRecord(val) && typeof val.forEach === "function";
+  }
   function normalizeTree(value) {
     if (value && Array.isArray(value.nodes)) {
       return {
@@ -8221,8 +8398,8 @@ runAsyncDemo()
       seen.add(node);
       if (nodes.length >= 31) {
         if (seen.size < 2e3) {
-          walk(node.left);
-          walk(node.right);
+          walk(asChildFrame(node.left));
+          walk(asChildFrame(node.right));
         }
         return null;
       }
@@ -8234,8 +8411,8 @@ runAsyncDemo()
         right: null
       };
       nodes.push(item);
-      item.left = walk(node.left);
-      item.right = walk(node.right);
+      item.left = walk(asChildFrame(node.left));
+      item.right = walk(asChildFrame(node.right));
       return idx;
     }
     const root = walk(value);
@@ -8244,7 +8421,7 @@ runAsyncDemo()
     return out;
   }
   function normalizeList(value) {
-    const pyMeta = value && typeof value === "object" && "__py_meta__" in value && value.__py_meta__ ? value.__py_meta__ : null;
+    const pyMeta = isFrame(value) && isFrame(value.__py_meta__) ? value.__py_meta__ : null;
     if (Array.isArray(value)) {
       const total = pyMeta && typeof pyMeta.total === "number" ? pyMeta.total : value.length;
       const out2 = { kind: "list", items: value.slice(0, 30).map((x) => cloneDeepBounded(x, 1)), total };
@@ -8294,8 +8471,8 @@ runAsyncDemo()
     return { kind: "graph", nodes: [], edges: [] };
   }
   function snapshot(kind, value, extra) {
-    const recVal = value && typeof value === "object" ? value : null;
-    const pyMeta = recVal && recVal.__py_meta__ ? recVal.__py_meta__ : null;
+    const recVal = isFrame(value) ? value : null;
+    const pyMeta = recVal && isFrame(recVal.__py_meta__) ? recVal.__py_meta__ : null;
     if (kind === "stack") {
       const arr = Array.isArray(value) ? value : [];
       const total = pyMeta && typeof pyMeta.total === "number" ? pyMeta.total : arr.length;
@@ -8324,13 +8501,13 @@ runAsyncDemo()
       return out;
     }
     if (kind === "list") {
-      return Object.assign(normalizeList(value), extra || {});
+      return Object.assign(normalizeList(Array.isArray(value) ? value : recVal), extra || {});
     }
     if (kind === "tree") {
-      return Object.assign(normalizeTree(value), extra || {});
+      return Object.assign(normalizeTree(recVal), extra || {});
     }
     if (kind === "graph") {
-      return Object.assign(normalizeGraph(value), extra || {});
+      return Object.assign(normalizeGraph(recVal), extra || {});
     }
     if (kind === "string") {
       const s = String(value);
@@ -8346,13 +8523,12 @@ runAsyncDemo()
       const entries = [];
       let total = 0;
       if (isMapLike(value)) {
-        const mapVal = value;
-        total = pyMeta && typeof pyMeta.total === "number" ? pyMeta.total : mapVal.size;
-        for (const [k, v] of mapVal) {
+        total = pyMeta && typeof pyMeta.total === "number" ? pyMeta.total : value.size;
+        for (const [k, v] of value) {
           if (entries.length >= 40) break;
           entries.push({ k: cloneDeepBounded(k, 1), v: cloneDeepBounded(v, 1) });
         }
-      } else if (recVal && typeof recVal.forEach === "function") {
+      } else if (hasForEachMethod(recVal)) {
         recVal.forEach((v, k) => {
           total++;
           if (entries.length < 40) entries.push({ k: cloneDeepBounded(k, 1), v: cloneDeepBounded(v, 1) });
@@ -8370,13 +8546,12 @@ runAsyncDemo()
       const items = [];
       let total = 0;
       if (isSetLike(value)) {
-        const setVal = value;
-        total = pyMeta && typeof pyMeta.total === "number" ? pyMeta.total : setVal.size;
-        for (const v of setVal) {
+        total = pyMeta && typeof pyMeta.total === "number" ? pyMeta.total : value.size;
+        for (const v of value) {
           if (items.length >= 40) break;
           items.push(cloneDeepBounded(v, 1));
         }
-      } else if (recVal && typeof recVal.forEach === "function") {
+      } else if (hasForEachMethod(recVal)) {
         recVal.forEach((v) => {
           total++;
           if (items.length < 40) items.push(cloneDeepBounded(v, 1));
@@ -8420,7 +8595,7 @@ runAsyncDemo()
       if (value.length > 0) return snapshot("string", value);
       return null;
     }
-    if (typeof value === "object") {
+    if (isFrame(value)) {
       const obj = value;
       if (obj.__isVirtualPromise) return null;
       if (Array.isArray(obj.nodes) && Array.isArray(obj.edges)) return snapshot("graph", obj);
@@ -8430,7 +8605,7 @@ runAsyncDemo()
         if (("val" in obj || "value" in obj) && "next" in obj) return snapshot("list", obj);
       }
       const ifaceDef = matchInterfaceForObject(n, obj);
-      const annotType = CURRENT_TS_META.varTypes.get(n);
+      const annotType = appState.CURRENT_TS_META.varTypes.get(n);
       const ifaceName = ifaceDef ? ifaceDef.name : annotType || obj.__py_cls__ || "object";
       const isClass = Boolean(ifaceDef && ifaceDef.isClass || obj.__py_cls__);
       const fieldMap = /* @__PURE__ */ new Map();
@@ -8469,7 +8644,7 @@ runAsyncDemo()
     return null;
   }
   function populateInterfaceSchemas(ds) {
-    const { interfaces, varTypes } = CURRENT_TS_META;
+    const { interfaces, varTypes } = appState.CURRENT_TS_META;
     if (!interfaces || !interfaces.size) return;
     interfaces.forEach((iface) => {
       if (iface.isClass && (!iface.fields || !iface.fields.length)) return;
@@ -8814,7 +8989,7 @@ runAsyncDemo()
           }
         }
       }
-      if (d.kind === "map" && d.hot !== void 0 && d.__raw && isMapLike(d.__raw)) {
+      if (d.kind === "map" && d.hot !== void 0 && isMapLike(d.__raw)) {
         const rawMap = d.__raw;
         const entries = d.entries || (d.entries = []);
         const exists = entries.some((e) => e.k === d.hot);
@@ -8822,7 +8997,7 @@ runAsyncDemo()
           entries.push({ k: cloneDeepBounded(d.hot, 1), v: cloneDeepBounded(rawMap.get(d.hot), 1) });
         }
       }
-      if (d.kind === "set" && d.hot !== void 0 && d.__raw && isSetLike(d.__raw)) {
+      if (d.kind === "set" && d.hot !== void 0 && isSetLike(d.__raw)) {
         const rawSet = d.__raw;
         const items = d.items || (d.items = []);
         const exists = items.some((x) => x === d.hot);
@@ -8860,7 +9035,8 @@ runAsyncDemo()
             d.rowIndices = rowIndices;
             d.colIndices = colIndices;
             d.viewCells = rowIndices.map((r) => {
-              const rowArr = rawGrid && Array.isArray(rawGrid[r]) ? rawGrid[r] : [];
+              const rowCandidate = rawGrid ? rawGrid[r] : void 0;
+              const rowArr = Array.isArray(rowCandidate) ? rowCandidate : [];
               return colIndices.map((c) => cloneDeepBounded(rowArr[c], 2));
             });
           }
@@ -8986,7 +9162,7 @@ runAsyncDemo()
     if (ckptCall && ckptCall[1] !== void 0) {
       const fnName = clean.startsWith("\u65AD\u70B9") ? "\u65AD\u70B9" : "checkpoint";
       const args = splitTopLevel(ckptCall[1]).map((s) => s.trim()).filter(Boolean);
-      const ckptVals = nextV && Array.isArray(nextV.__ckptVals) ? nextV.__ckptVals : null;
+      const ckptVals = nextV && Array.isArray(nextV.__ckptVals) ? nextV.__ckptVals.map(String) : null;
       const argVals = ckptVals && ckptVals.length === args.length ? ckptVals : args.map((a) => formatShortVal(safeEvalExpr(a, v)));
       const anim = { type: "checkpoint", fn: fnName, args, argVals };
       const detail = args.length ? args.map((a, idx) => argVals[idx] !== void 0 && argVals[idx] !== a ? `${a}=${argVals[idx]}` : a).join(", ") : "\u5DF2\u547D\u4E2D\u65AD\u70B9";
@@ -9094,10 +9270,10 @@ runAsyncDemo()
   var SPAN_UP = 0.45;
   var SPAN_DOWN = 0.28;
   function decideSpan(id, p) {
-    const curSpan = layoutSpan[id] || 1;
-    if (curSpan < 2 && p >= SPAN_UP) layoutSpan[id] = 2;
-    else if (curSpan > 1 && p <= SPAN_DOWN) layoutSpan[id] = 1;
-    return layoutSpan[id] || 1;
+    const curSpan = appState.layoutSpan[id] || 1;
+    if (curSpan < 2 && p >= SPAN_UP) appState.layoutSpan[id] = 2;
+    else if (curSpan > 1 && p <= SPAN_DOWN) appState.layoutSpan[id] = 1;
+    return appState.layoutSpan[id] || 1;
   }
   function allocateSlotSpans(vars, ds) {
     const meta = vars.map((s, idx) => {
@@ -9129,9 +9305,9 @@ runAsyncDemo()
     list: []
   };
   function discoverVars() {
-    const steps = TRACE && TRACE.steps || [];
-    if (_DISCOVER_CACHE.traceRef !== TRACE || steps.length < _DISCOVER_CACHE.scannedSteps) {
-      _DISCOVER_CACHE = { traceRef: TRACE, scannedSteps: 0, map: /* @__PURE__ */ new Map(), list: [] };
+    const steps = appState.TRACE && appState.TRACE.steps || [];
+    if (_DISCOVER_CACHE.traceRef !== appState.TRACE || steps.length < _DISCOVER_CACHE.scannedSteps) {
+      _DISCOVER_CACHE = { traceRef: appState.TRACE, scannedSteps: 0, map: /* @__PURE__ */ new Map(), list: [] };
     }
     if (_DISCOVER_CACHE.scannedSteps < steps.length) {
       let changed = false;
@@ -9170,7 +9346,7 @@ runAsyncDemo()
       };
     }
     const topIdx = stack.length - 1;
-    const idx = SELECTED_FRAME_IDX !== null && SELECTED_FRAME_IDX >= 0 && SELECTED_FRAME_IDX < stack.length ? SELECTED_FRAME_IDX : topIdx;
+    const idx = appState.SELECTED_FRAME_IDX !== null && appState.SELECTED_FRAME_IDX >= 0 && appState.SELECTED_FRAME_IDX < stack.length ? appState.SELECTED_FRAME_IDX : topIdx;
     const frame = stack[idx] || stack[topIdx];
     return {
       idx,
@@ -9183,42 +9359,24 @@ runAsyncDemo()
       ds: (frame.ds && Object.keys(frame.ds).length ? frame.ds : st.ds) || {}
     };
   }
-  var HOVER_GEOM = { charW: 0, lh: 24, padLeft: 16, padTop: 12 };
-  function hoverMetrics() {
-    let lh = 24, padLeft = 16, padTop = 12;
-    try {
-      const cs = typeof getComputedStyle === "function" ? getComputedStyle(editor) : null;
-      if (cs) {
-        lh = parseFloat(cs.lineHeight) || lh;
-        padLeft = parseFloat(cs.paddingLeft) || padLeft;
-        padTop = parseFloat(cs.paddingTop) || padTop;
-        if (!HOVER_GEOM.charW && document.createElement) {
-          const cv = document.createElement("canvas");
-          const ctx = cv && cv.getContext ? cv.getContext("2d") : null;
-          if (ctx) {
-            ctx.font = (cs.fontWeight || "400") + " " + (cs.fontSize || "15px") + " " + (cs.fontFamily || "monospace");
-            const w = ctx.measureText("MMMMMMMMMM").width / 10;
-            if (w > 0 && isFinite(w)) HOVER_GEOM.charW = w;
-          }
-        }
-      }
-    } catch (_) {
-    }
-    HOVER_GEOM.lh = lh;
-    HOVER_GEOM.padLeft = padLeft;
-    HOVER_GEOM.padTop = padTop;
-    return { lh, padLeft, padTop, charW: HOVER_GEOM.charW || 8.5 };
-  }
 
   // src/runtime/runner.ts
   function reportTypeErrors(diags) {
-    TYPE_ERROR_LINES = new Set(diags.map((d) => d.line));
+    appState.TYPE_ERROR_LINES = new Set(diags.map((d) => d.line));
     uiHooks.updateEditorChrome();
     say(`\u2717 TypeScript \u4E25\u683C\u7C7B\u578B\u68C0\u67E5\u672A\u901A\u8FC7 (\u5171 ${diags.length} \u5904\u9519\u8BEF)\uFF1A`, "err");
     diags.forEach((d) => {
       say(`  \u2022 ${d.code} [\u7B2C ${d.line} \u884C]: ${d.message}`, "err", d.line);
     });
     if (diags[0]?.line) uiHooks.revealErrorLine(diags[0].line);
+  }
+  function isSnapFn(val) {
+    return typeof val === "function";
+  }
+  function evalSnapOrObject(snap) {
+    if (isSnapFn(snap)) return snap() || {};
+    if (isRecord(snap)) return snap;
+    return {};
   }
   function evalCall(js, call, opts) {
     const o = opts || {};
@@ -9230,12 +9388,10 @@ runAsyncDemo()
     let ticks = 0;
     let lastLine = 0;
     let expired = false;
-    const timeoutError = () => {
-      const err = new Error("RUN_TIMEOUT");
-      err.__timeout = true;
-      err.__line = lastLine;
-      return err;
-    };
+    const timeoutError = () => Object.assign(new Error("RUN_TIMEOUT"), {
+      __timeout: true,
+      __line: lastLine
+    });
     const __t = function(line) {
       if (line) lastLine = line;
       if (!budgetMs) return;
@@ -9276,12 +9432,12 @@ runAsyncDemo()
         error: pushLogLine
       });
     } catch (e) {
-      const errObj = e && typeof e === "object" ? e : null;
+      const errObj = isRecord(e) ? e : null;
       r = {
         ok: false,
-        error: errObj && errObj.message ? errObj.message : String(e),
+        error: errObj && typeof errObj.message === "string" && errObj.message ? errObj.message : String(e),
         stack: errObj && errObj.stack ? String(errObj.stack) : "",
-        line: errObj && errObj.__line || lastLine || entryLine || 0,
+        line: (errObj && typeof errObj.__line === "number" ? errObj.__line : 0) || lastLine || entryLine || 0,
         timeout: Boolean(errObj && errObj.__timeout)
       };
     }
@@ -9289,24 +9445,24 @@ runAsyncDemo()
     if (r && !r.ok) r.line = r.line || lastLine || entryLine || 0;
     return { ...r, logs, elapsedMs: Date.now() - t0 };
   }
-  function runOnce(budgetMs) {
-    if (LANG === "python") return PY_ENGINE.runOnly(budgetMs);
+  function runOnce(budgetMs, sourceCode) {
+    if (appState.LANG === "python") return PY_ENGINE.runOnly(budgetMs);
     const budget = typeof budgetMs === "number" && budgetMs > 0 ? budgetMs : RUN_TIMEOUT_MS;
-    const src = editor.value;
+    const src = typeof sourceCode === "string" ? sourceCode : uiHooks.getEditorSource();
     const unsupported = detectUnsupportedSyntax2(src);
     if (unsupported.length && unsupported[0]) {
       unsupported.forEach((x) => say("\u2717 \u7B2C " + x.line + " \u884C\uFF1A\u6682\u4E0D\u652F\u6301 " + x.feature + " \u2014\u2014 " + x.hint, "err", x.line));
       uiHooks.revealErrorLine(unsupported[0].line);
       return;
     }
-    const diags = typecheckTS(src, STRICT_TS);
+    const diags = typecheckTS(src, appState.STRICT_TS);
     if (diags.length > 0) {
       reportTypeErrors(diags);
       return;
     }
-    if (TYPE_ERROR_LINES.size || RUNTIME_ERROR_LINES.size) {
-      TYPE_ERROR_LINES.clear();
-      RUNTIME_ERROR_LINES.clear();
+    if (appState.TYPE_ERROR_LINES.size || appState.RUNTIME_ERROR_LINES.size) {
+      appState.TYPE_ERROR_LINES.clear();
+      appState.RUNTIME_ERROR_LINES.clear();
       uiHooks.updateEditorChrome();
     }
     const enums = transpileEnums(src);
@@ -9319,7 +9475,7 @@ runAsyncDemo()
     const originalLines = src.replace(/\r/g, "").split("\n");
     const entry = resolveEntry(src, js);
     const call = stripTypes(entry.expr || "undefined");
-    ENTRY_CALL_LINE = entry.line || 0;
+    appState.ENTRY_CALL_LINE = entry.line || 0;
     const jsBody = entry.index >= 0 ? blankJsLine(js, entry.index) : js;
     let code = jsBody;
     let instrumented = false;
@@ -9340,7 +9496,7 @@ runAsyncDemo()
         const line = r.line || 0;
         const snippet = line ? (originalLines[line - 1] || "").trim().slice(0, 90) : "";
         if (line) {
-          RUNTIME_ERROR_LINES.add(line);
+          appState.RUNTIME_ERROR_LINES.add(line);
           uiHooks.updateEditorChrome();
           uiHooks.revealErrorLine(line);
         }
@@ -9354,7 +9510,7 @@ runAsyncDemo()
       if (!r.ok) {
         const line = r.line || sourceLineFromStack(r.stack, originalLines.length);
         if (line) {
-          RUNTIME_ERROR_LINES.add(line);
+          appState.RUNTIME_ERROR_LINES.add(line);
           uiHooks.updateEditorChrome();
           say("\u2717 \u7B2C " + line + " \u884C\u8FD0\u884C\u65F6\u62A5\u9519: " + r.error, "err", line);
           uiHooks.revealErrorLine(line);
@@ -9412,18 +9568,18 @@ runAsyncDemo()
     return snapFrame;
   }
   function computeAndAppendNextStep(opts = {}) {
-    if (!DEBUG_SESSION.active || DEBUG_SESSION.finished) return false;
-    const targetIdx = TRACE.steps.length;
+    if (!appState.DEBUG_SESSION.active || appState.DEBUG_SESSION.finished) return false;
+    const targetIdx = appState.TRACE.steps.length;
     if (targetIdx >= MAX_STEPS) {
-      DEBUG_SESSION.finished = true;
-      DEBUG_SESSION.crashed = true;
-      DEBUG_SESSION.error = "\u5DF2\u8FBE\u5355\u6B21\u8C03\u8BD5\u4E0A\u9650\uFF0C\u81EA\u52A8\u7194\u65AD\u4EE5\u9632\u6B7B\u5FAA\u73AF";
-      say("\u2717 " + DEBUG_SESSION.error, "err");
+      appState.DEBUG_SESSION.finished = true;
+      appState.DEBUG_SESSION.crashed = true;
+      appState.DEBUG_SESSION.error = "\u5DF2\u8FBE\u5355\u6B21\u8C03\u8BD5\u4E0A\u9650\uFF0C\u81EA\u52A8\u7194\u65AD\u4EE5\u9632\u6B7B\u5FAA\u73AF";
+      say("\u2717 " + appState.DEBUG_SESSION.error, "err");
       return false;
     }
-    const originalLines = DEBUG_SESSION.originalLines;
+    const originalLines = appState.DEBUG_SESSION.originalLines;
     const callIdx = originalLines.findIndex((l) => /\/\/\s*调用[:：]/.test(l));
-    const globalCallLine = callIdx >= 0 ? callIdx + 1 : ENTRY_CALL_LINE || 1;
+    const globalCallLine = callIdx >= 0 ? callIdx + 1 : appState.ENTRY_CALL_LINE || 1;
     let count = 0;
     let frameSeq = 0;
     let curLineTracker = globalCallLine;
@@ -9431,7 +9587,9 @@ runAsyncDemo()
     let unwindingPause = false;
     let pendingStep = null;
     let pendingStepSnapFn = null;
-    let pendingEventLoopPhase = null;
+    const phaseBox = {
+      current: null
+    };
     let nextVRaw = null;
     const stepLogs = [];
     const t0 = Date.now();
@@ -9468,7 +9626,7 @@ runAsyncDemo()
         }
       }
     );
-    if (DEBUG_SESSION.hasAsync) {
+    if (appState.DEBUG_SESSION.hasAsync) {
       evLoop.loop.used = true;
     }
     const __t = (line, note, snap, self) => {
@@ -9481,22 +9639,21 @@ runAsyncDemo()
       const topFrame = liveCallStack[liveCallStack.length - 1];
       if (topFrame) {
         topFrame.lastLine = stepLine;
-        if (typeof snap === "function") topFrame.snapFn = snap;
-        if (self && typeof self === "object") topFrame.self = self;
+        if (isSnapFn(snap)) topFrame.snapFn = snap;
+        if (isRecord(self)) topFrame.self = self;
       }
       if (idx < targetIdx) {
         return;
       }
       if (idx === targetIdx) {
-        const effectiveSnap = (typeof snap === "function" ? snap : null) || topFrame && topFrame.snapFn || evLoop.loop.globalSnapFn;
-        const vRaw = (typeof effectiveSnap === "function" ? effectiveSnap() : snap && typeof snap === "object" ? snap : {}) || {};
-        if (self && typeof self === "object") {
+        const effectiveSnap = (isSnapFn(snap) ? snap : null) || topFrame && topFrame.snapFn || evLoop.loop.globalSnapFn;
+        const vRaw = (typeof effectiveSnap === "function" ? effectiveSnap() : evalSnapOrObject(snap)) || {};
+        if (isRecord(self)) {
           try {
             const selfCopy = {};
-            const selfRec = self;
-            for (const k in selfRec) {
+            for (const k in self) {
               try {
-                selfCopy[k] = selfRec[k];
+                selfCopy[k] = self[k];
               } catch (e) {
               }
             }
@@ -9522,7 +9679,7 @@ runAsyncDemo()
           return buildFrameSnapshotFromClosure(fr, isTop ? stepLine : fr.line || 1, fNote);
         });
         pendingStepSnapFn = effectiveSnap;
-        pendingEventLoopPhase = {
+        phaseBox.current = {
           phase: evLoop.loop.phase,
           activeTaskLabel: evLoop.loop.activeTaskLabel,
           virtualTime: evLoop.loop.virtualTime
@@ -9550,7 +9707,7 @@ runAsyncDemo()
         activeRecording = false;
         unwindingPause = true;
         const sameScopeRaw = typeof pendingStepSnapFn === "function" ? pendingStepSnapFn() : null;
-        const fallbackRaw = typeof snap === "function" ? snap() : snap && typeof snap === "object" ? snap : {};
+        const fallbackRaw = evalSnapOrObject(snap);
         nextVRaw = sameScopeRaw || fallbackRaw || {};
         throw PAUSE_SIGNAL;
       }
@@ -9599,7 +9756,7 @@ runAsyncDemo()
       if (activeRecording) {
         activeRecording = false;
         const sameScopeRaw = typeof pendingStepSnapFn === "function" ? pendingStepSnapFn() : null;
-        const fallbackRaw = typeof snap === "function" ? snap() : snap && typeof snap === "object" ? snap : {};
+        const fallbackRaw = evalSnapOrObject(snap);
         nextVRaw = sameScopeRaw || fallbackRaw || {};
       }
     };
@@ -9625,8 +9782,8 @@ runAsyncDemo()
     let runtimeErr = null;
     let retVal = void 0;
     try {
-      if (DEBUG_SESSION.compiledFn) {
-        retVal = DEBUG_SESSION.compiledFn(__t, customConsole);
+      if (appState.DEBUG_SESSION.compiledFn) {
+        retVal = appState.DEBUG_SESSION.compiledFn(__t, customConsole);
       }
     } catch (e) {
       if (e === PAUSE_SIGNAL) {
@@ -9651,17 +9808,17 @@ runAsyncDemo()
           error: errMsg
         };
         populateInterfaceSchemas(errStep.ds);
-        TRACE.steps.push(errStep);
-        RUNTIME_ERROR_LINES.add(callLine);
-        DEBUG_SESSION.finished = true;
-        DEBUG_SESSION.crashed = true;
-        DEBUG_SESSION.error = errMsg;
-        DEBUG_SESSION.errorLine = callLine;
+        appState.TRACE.steps.push(errStep);
+        appState.RUNTIME_ERROR_LINES.add(callLine);
+        appState.DEBUG_SESSION.finished = true;
+        appState.DEBUG_SESSION.crashed = true;
+        appState.DEBUG_SESSION.error = errMsg;
+        appState.DEBUG_SESSION.errorLine = callLine;
         say("\u2717 \u8FD0\u884C\u65F6\u9519\u8BEF [\u7B2C " + callLine + " \u884C]: " + errMsg + "\uFF08\u5DF2\u505C\u6B62\u5728\u62A5\u9519\u5904\uFF09", "err");
         return true;
       }
-      if (targetIdx === 0 && CURRENT_TS_META.interfaces && CURRENT_TS_META.interfaces.size > 0) {
-        const firstIface = [...CURRENT_TS_META.interfaces.values()][0];
+      if (targetIdx === 0 && appState.CURRENT_TS_META.interfaces && appState.CURRENT_TS_META.interfaces.size > 0) {
+        const firstIface = [...appState.CURRENT_TS_META.interfaces.values()][0];
         if (firstIface) {
           const schemaDs = {};
           populateInterfaceSchemas(schemaDs);
@@ -9676,14 +9833,14 @@ runAsyncDemo()
             error: null,
             isFinalReturn: true
           };
-          TRACE.steps.push(schemaStep);
-          DEBUG_SESSION.finished = true;
-          DEBUG_SESSION.returnValue = retVal;
+          appState.TRACE.steps.push(schemaStep);
+          appState.DEBUG_SESSION.finished = true;
+          appState.DEBUG_SESSION.returnValue = retVal;
           return true;
         }
       }
-      DEBUG_SESSION.finished = true;
-      DEBUG_SESSION.returnValue = retVal;
+      appState.DEBUG_SESSION.finished = true;
+      appState.DEBUG_SESSION.returnValue = retVal;
       return false;
     }
     const stepObj = pendingStep;
@@ -9709,7 +9866,7 @@ runAsyncDemo()
     enrichFromNote(stepObj.ds, nextVRaw || stepObj.vRaw || {}, rawLine);
     if (evLoop.loop.used) {
       const elSnap = evLoop.toVizSnapshot();
-      const phaseInfo = pendingEventLoopPhase;
+      const phaseInfo = phaseBox.current;
       if (phaseInfo) {
         elSnap.phase = phaseInfo.phase;
         elSnap.activeTaskLabel = phaseInfo.activeTaskLabel;
@@ -9737,23 +9894,23 @@ runAsyncDemo()
       const errMsg = runtimeErr instanceof Error && runtimeErr.message ? runtimeErr.message : runtimeErr && typeof runtimeErr === "object" && "message" in runtimeErr && typeof runtimeErr.message === "string" ? runtimeErr.message : String(runtimeErr);
       stepObj.error = errMsg;
       stepObj.note = `${rawLine.trim()}  \u2192  \u2717 \u8FD0\u884C\u65F6\u9519\u8BEF: ${errMsg}`;
-      RUNTIME_ERROR_LINES.add(stepObj.line);
-      DEBUG_SESSION.finished = true;
-      DEBUG_SESSION.crashed = true;
-      DEBUG_SESSION.error = errMsg;
-      DEBUG_SESSION.errorLine = stepObj.line;
+      appState.RUNTIME_ERROR_LINES.add(stepObj.line);
+      appState.DEBUG_SESSION.finished = true;
+      appState.DEBUG_SESSION.crashed = true;
+      appState.DEBUG_SESSION.error = errMsg;
+      appState.DEBUG_SESSION.errorLine = stepObj.line;
     } else if (!paused) {
-      DEBUG_SESSION.finished = true;
-      DEBUG_SESSION.returnValue = retVal;
+      appState.DEBUG_SESSION.finished = true;
+      appState.DEBUG_SESSION.returnValue = retVal;
       stepObj.isFinalReturn = true;
       stepObj.returnValue = retVal;
     }
-    TRACE.steps.push(stepObj);
+    appState.TRACE.steps.push(stepObj);
     discoverVars().forEach((s) => {
-      if (!SEEN_VARS_EVER.has(s.id)) {
-        SEEN_VARS_EVER.add(s.id);
-        if (!URL_WATCH || !URL_WATCH.length || URL_WATCH.includes(s.id)) {
-          watched.add(s.id);
+      if (!appState.SEEN_VARS_EVER.has(s.id)) {
+        appState.SEEN_VARS_EVER.add(s.id);
+        if (!appState.URL_WATCH || !appState.URL_WATCH.length || appState.URL_WATCH.includes(s.id)) {
+          appState.watched.add(s.id);
         }
       }
     });
@@ -9767,10 +9924,11 @@ runAsyncDemo()
   function detectUnsupportedSyntax2(_src) {
     return [];
   }
-  function startDebug(initialStep = 0) {
-    if (LANG === "python") return PY_ENGINE.start(initialStep);
-    SELECTED_FRAME_IDX = null;
-    const src = editor.value.replace(/\r/g, "");
+  function startDebug(initialStep = 0, sourceCode) {
+    if (appState.LANG === "python") return PY_ENGINE.start(initialStep);
+    appState.SELECTED_FRAME_IDX = null;
+    const rawSrc = typeof sourceCode === "string" ? sourceCode : uiHooks.getEditorSource();
+    const src = rawSrc.replace(/\r/g, "");
     const unsupported = detectUnsupportedSyntax2(src);
     if (unsupported.length && unsupported[0]) {
       resetTraceState();
@@ -9779,15 +9937,15 @@ runAsyncDemo()
       return false;
     }
     extractTsInterfaceMetadata(src);
-    const diags = typecheckTS(src, STRICT_TS);
+    const diags = typecheckTS(src, appState.STRICT_TS);
     if (diags.length > 0) {
       resetTraceState();
       reportTypeErrors(diags);
       return false;
     }
-    if (TYPE_ERROR_LINES.size || RUNTIME_ERROR_LINES.size) {
-      TYPE_ERROR_LINES.clear();
-      RUNTIME_ERROR_LINES.clear();
+    if (appState.TYPE_ERROR_LINES.size || appState.RUNTIME_ERROR_LINES.size) {
+      appState.TYPE_ERROR_LINES.clear();
+      appState.RUNTIME_ERROR_LINES.clear();
     }
     const originalLines = src.split("\n");
     const enums = transpileEnums(src);
@@ -9800,7 +9958,7 @@ runAsyncDemo()
     const js0 = stripTypes(enums.code);
     const entry = resolveEntry(src, js0);
     const expr = stripTypes(entry.expr || "undefined");
-    ENTRY_CALL_LINE = entry.line || 0;
+    appState.ENTRY_CALL_LINE = entry.line || 0;
     const jsBody = entry.index >= 0 ? blankJsLine(js0, entry.index) : js0;
     let compiledFn;
     try {
@@ -9816,12 +9974,12 @@ runAsyncDemo()
     }
     uiHooks.stopAuto();
     uiHooks.clearFlyLayer();
-    TRACE = {
+    appState.TRACE = {
       title: "TypeScript Playground \xB7 Debug",
       code: originalLines,
       steps: []
     };
-    DEBUG_SESSION = {
+    appState.DEBUG_SESSION = {
       active: true,
       finished: false,
       crashed: false,
@@ -9833,20 +9991,20 @@ runAsyncDemo()
       callExpr: expr,
       hasAsync: hasAsyncConstructs(src)
     };
-    cur = 0;
-    watched = /* @__PURE__ */ new Set();
-    SEEN_VARS_EVER = /* @__PURE__ */ new Set();
-    layoutSpan = /* @__PURE__ */ Object.create(null);
+    appState.cur = 0;
+    appState.watched = /* @__PURE__ */ new Set();
+    appState.SEEN_VARS_EVER = /* @__PURE__ */ new Set();
+    appState.layoutSpan = /* @__PURE__ */ Object.create(null);
     const target = Math.max(0, initialStep || 0);
     for (let s = 0; s <= target; s++) {
       const ok = computeAndAppendNextStep({ silent: s < target });
-      if (!ok || DEBUG_SESSION.finished) break;
+      if (!ok || appState.DEBUG_SESSION.finished) break;
     }
-    cur = Math.max(0, TRACE.steps.length - 1);
+    appState.cur = Math.max(0, appState.TRACE.steps.length - 1);
     initWatchedVars();
     uiHooks.renderPicker();
-    uiHooks.renderStatic(cur, false);
-    if (!DEBUG_SESSION.crashed) {
+    uiHooks.renderStatic(appState.cur, false);
+    if (!appState.DEBUG_SESSION.crashed) {
       say("\u2713 \u7F16\u8BD1\u901A\u8FC7 \xB7 \u5DF2\u8FDB\u5165 Debug \u6A21\u5F0F\uFF08\u6BCF\u8D70\u4E00\u6B65\u5F53\u573A\u8BA1\u7B97\uFF0C\u53EF\u968F\u65F6\u6B65\u8FDB\u6216\u8FD0\u884C\u5230\u4E0B\u4E00\u4E2A\u68C0\u67E5\u70B9\uFF09", "ok");
     }
     return true;
@@ -9854,13 +10012,13 @@ runAsyncDemo()
   var generateTrace = startDebug;
   function initWatchedVars() {
     const all = discoverVars().map((s) => s.id);
-    all.forEach((id) => SEEN_VARS_EVER.add(id));
-    const urlWatch = URL_WATCH;
+    all.forEach((id) => appState.SEEN_VARS_EVER.add(id));
+    const urlWatch = appState.URL_WATCH;
     if (urlWatch && urlWatch.length) {
       const filtered = all.filter((id) => urlWatch.includes(id));
-      watched = new Set(filtered.length ? filtered : all);
+      appState.watched = new Set(filtered.length ? filtered : all);
     } else {
-      watched = new Set(all);
+      appState.watched = new Set(all);
     }
   }
   var runTrace = startDebug;
@@ -9872,11 +10030,38 @@ runAsyncDemo()
     buildAST: () => buildAST,
     buildStepVizRow: () => buildStepVizRow,
     clearFlyLayer: () => clearFlyLayer,
+    hoverMetrics: () => hoverMetrics,
     playStepAnimation: () => playStepAnimation,
     positionStepViz: () => positionStepViz,
     renderAST: () => renderAST,
     updateStepViz: () => updateStepViz
   });
+  var HOVER_GEOM = { charW: 0, lh: 24, padLeft: 16, padTop: 12 };
+  function hoverMetrics() {
+    let lh = 24, padLeft = 16, padTop = 12;
+    try {
+      const cs = typeof getComputedStyle === "function" ? getComputedStyle(editor) : null;
+      if (cs) {
+        lh = parseFloat(cs.lineHeight) || lh;
+        padLeft = parseFloat(cs.paddingLeft) || padLeft;
+        padTop = parseFloat(cs.paddingTop) || padTop;
+        if (!HOVER_GEOM.charW && document.createElement) {
+          const cv = document.createElement("canvas");
+          const ctx = cv && cv.getContext ? cv.getContext("2d") : null;
+          if (ctx) {
+            ctx.font = (cs.fontWeight || "400") + " " + (cs.fontSize || "15px") + " " + (cs.fontFamily || "monospace");
+            const w = ctx.measureText("MMMMMMMMMM").width / 10;
+            if (w > 0 && isFinite(w)) HOVER_GEOM.charW = w;
+          }
+        }
+      }
+    } catch (_) {
+    }
+    HOVER_GEOM.lh = lh;
+    HOVER_GEOM.padLeft = padLeft;
+    HOVER_GEOM.padTop = padTop;
+    return { lh, padLeft, padTop, charW: HOVER_GEOM.charW || 8.5 };
+  }
   function buildAST(src) {
     const lines = String(src || "").replace(/\r\n?/g, "\n").split("\n");
     const children = [];
@@ -9974,7 +10159,7 @@ runAsyncDemo()
   }
   function positionStepViz() {
     if (!stepVizEl || !stepVizEl.style) return;
-    if (STEP_VIZ_LINE < 1 || !TRACE.steps.length) {
+    if (STEP_VIZ_LINE < 1 || !appState.TRACE.steps.length) {
       stepVizEl.style.display = "none";
       return;
     }
@@ -10035,7 +10220,7 @@ runAsyncDemo()
   }
   function playStepAnimation(st) {
     clearFlyLayer();
-    if (IS_STILL || !st || !st.anim || !flyLayerEl) return;
+    if (appState.IS_STILL || !st || !st.anim || !flyLayerEl) return;
     const anim = st.anim;
     if (anim.type !== "assign" && !(anim.type === "call" && anim.to && anim.result != null)) return;
     const srcEl = highlightEl.querySelector(".ln.cur .tok-src") || highlightEl.querySelector(".ln.cur .tok-fn");
@@ -10129,7 +10314,7 @@ runAsyncDemo()
   ]);
   var DECLARED_NAMES_CACHE = { src: null, names: /* @__PURE__ */ new Set() };
   function collectDeclaredNames(src) {
-    if (LANG === "python") return PY_ENGINE.collectDeclared(src);
+    if (appState.LANG === "python") return PY_ENGINE.collectDeclared(src);
     const text = String(src == null ? "" : src);
     if (DECLARED_NAMES_CACHE.src === text) return DECLARED_NAMES_CACHE.names;
     const names = /* @__PURE__ */ new Set();
@@ -10166,7 +10351,7 @@ runAsyncDemo()
     return names;
   }
   function collectHighlightBuiltins(declared) {
-    const source = LANG === "python" ? typeof PY_ENGINE !== "undefined" && PY_ENGINE.builtins || [] : HIGHLIGHT_BUILTINS;
+    const source = appState.LANG === "python" ? typeof PY_ENGINE !== "undefined" && PY_ENGINE.builtins || [] : HIGHLIGHT_BUILTINS;
     const out = /* @__PURE__ */ new Set();
     Array.from(source).forEach((name) => {
       if (!declared.has(name)) out.add(name);
@@ -10174,7 +10359,7 @@ runAsyncDemo()
     return out;
   }
   function hl(t, declared) {
-    if (LANG === "python") return PY_ENGINE.hl(t, declared);
+    if (appState.LANG === "python") return PY_ENGINE.hl(t, declared);
     const re = new RegExp("(\\/\\/.*$)|(\"(?:[^\"\\\\]|\\\\.)*\"|'(?:[^'\\\\]|\\\\.)*'|`(?:[^`\\\\]|\\\\.)*`)|\\b(function|const|let|var|new|class|extends|typeof|instanceof|import|export|from|async|await|interface|type|as|satisfies)\\b|\\b(for|if|else|return|while|do|switch|case|break|continue|try|catch|finally|throw|yield)\\b|\\b(number|string|boolean|void|any|unknown|never|Math|Map|Set|Array|Object|JSON|Number|String|Boolean|Promise|Record|Error)\\b|\\b(true|false|null|undefined|\\d+(?:\\.\\d+)?)\\b|(\\b[A-Za-z_$][\\w$]*)(?=\\s*\\()|(?<=\\.)([A-Za-z_$][\\w$]*)\\b|([{,][ \\t]*)([A-Za-z_$][\\w$]*)(?=[ \\t]*:)|(^[ \\t]*)([A-Za-z_$][\\w$]*)(?=[ \\t]*:)|\\b([A-Za-z_$][\\w$]*)\\b|(===|!==|>=|<=|=>|&&|\\|\\||\\+\\+|--)", "g");
     let out = "", last = 0, m;
     while (m = re.exec(t)) {
@@ -10222,7 +10407,7 @@ runAsyncDemo()
     return -1;
   }
   function hlActiveLine(rawLine, anim, declared) {
-    if (LANG === "python") return PY_ENGINE.hlActiveLine(rawLine, anim, declared);
+    if (appState.LANG === "python") return PY_ENGINE.hlActiveLine(rawLine, anim, declared);
     if (!anim) return hl(rawLine, declared);
     const h = (s) => hl(s, declared);
     const declPrefix = rawLine.match(/^\s*(?:(?:export\s+)?(?:const|let|var)\b\s*)/);
@@ -10310,7 +10495,7 @@ runAsyncDemo()
     liveErrors.forEach((d) => {
       if (d && d.line >= 1 && !liveByLine.has(d.line)) liveByLine.set(d.line, d);
     });
-    const st = TRACE.steps.length ? TRACE.steps[cur] : null;
+    const st = appState.TRACE.steps.length ? appState.TRACE.steps[appState.cur] : null;
     const activeFrame = st ? getActiveFrame(st) : null;
     const curLine = activeFrame ? activeFrame.line : st ? st.line : -1;
     const showVizOnLine = Boolean(st && (!activeFrame || activeFrame.isTop) && (st.anim || st.error) && curLine >= 1 && curLine <= lines.length);
@@ -10318,13 +10503,13 @@ runAsyncDemo()
       const d = liveByLine.get(lineNum);
       if (!d) return "";
       const tip = (d.code ? d.code + ": " : "") + (d.message || "");
-      return '<span class="ln-err-badge" title="' + esc(tip) + '">\u2717 ' + esc(d.code || (LANG === "python" ? "PY" : "TS")) + "</span>";
+      return '<span class="ln-err-badge" title="' + esc(tip) + '">\u2717 ' + esc(d.code || (appState.LANG === "python" ? "PY" : "TS")) + "</span>";
     };
     if (window.PlaygroundCM) {
-      const errorLines = /* @__PURE__ */ new Set([...liveByLine.keys(), ...TYPE_ERROR_LINES, ...RUNTIME_ERROR_LINES]);
+      const errorLines = /* @__PURE__ */ new Set([...liveByLine.keys(), ...appState.TYPE_ERROR_LINES, ...appState.RUNTIME_ERROR_LINES]);
       if (st && st.error && curLine >= 1) errorLines.add(curLine);
       window.PlaygroundCM.syncFromApp({
-        language: LANG,
+        language: appState.LANG,
         text,
         lines,
         declared,
@@ -10339,7 +10524,7 @@ runAsyncDemo()
         const lineNum = k + 1;
         const isCur = lineNum === curLine;
         const isLiveErr = liveByLine.has(lineNum);
-        const isErr = isLiveErr || TYPE_ERROR_LINES.has(lineNum) || RUNTIME_ERROR_LINES.has(lineNum) || Boolean(isCur && st && st.error);
+        const isErr = isLiveErr || appState.TYPE_ERROR_LINES.has(lineNum) || appState.RUNTIME_ERROR_LINES.has(lineNum) || Boolean(isCur && st && st.error);
         const inner = isCur && (!activeFrame || activeFrame.isTop) ? hlActiveLine(t, st && st.anim, declared) : hl(t, declared);
         const content = (inner || "&nbsp;") + (isLiveErr ? errorBadge(lineNum) : "");
         return '<span class="ln' + (isCur ? " cur" : "") + (isErr ? " err" : "") + '">' + content + "</span>";
@@ -10347,7 +10532,7 @@ runAsyncDemo()
       gutterEl.innerHTML = lines.map((t, k) => {
         const lineNum = k + 1;
         const isCur = lineNum === curLine;
-        const isErr = liveByLine.has(lineNum) || TYPE_ERROR_LINES.has(lineNum) || RUNTIME_ERROR_LINES.has(lineNum) || Boolean(isCur && st && st.error);
+        const isErr = liveByLine.has(lineNum) || appState.TYPE_ERROR_LINES.has(lineNum) || appState.RUNTIME_ERROR_LINES.has(lineNum) || Boolean(isCur && st && st.error);
         const hasCkpt = /^\s*(?:checkpoint|断点)\s*\(/.test(t);
         return '<div class="gline' + (isCur ? " cur" : "") + (hasCkpt ? " ckpt" : "") + (isErr ? " err" : "") + '" data-line="' + lineNum + '">' + lineNum + "</div>";
       }).join("");
@@ -10357,12 +10542,12 @@ runAsyncDemo()
   }
   var LIVE_TYPE_CACHE = { src: null, diags: [] };
   function liveTypeDiags(src) {
-    if (LANG === "python") return PY_DIAGS;
+    if (appState.LANG === "python") return appState.PY_DIAGS;
     const text = String(src == null ? "" : src);
     if (LIVE_TYPE_CACHE.src === text) return LIVE_TYPE_CACHE.diags;
     let diags = [];
     try {
-      diags = typecheckTS(text, STRICT_TS) || [];
+      diags = typecheckTS(text, appState.STRICT_TS) || [];
     } catch (_) {
       diags = [];
     }
@@ -10431,9 +10616,9 @@ runAsyncDemo()
     return { word, start: s, end: e };
   }
   function hoverInfoFor(name) {
-    if (!name || !TRACE.steps.length) return null;
+    if (!name || !appState.TRACE.steps.length) return null;
     if (typeof RESERVED_WORDS !== "undefined" && RESERVED_WORDS.has(name) && name !== "this") return null;
-    const st = TRACE.steps[cur];
+    const st = appState.TRACE.steps[appState.cur];
     if (!st) return null;
     const frame = getActiveFrame(st);
     let v = frame && frame.v || st.v || {};
@@ -10456,7 +10641,7 @@ runAsyncDemo()
     const d = ds[lookupKey] || null;
     if (!hasVal && !d) return null;
     const val = hasVal ? v[lookupKey] : void 0;
-    const declaredType = (CURRENT_TS_META && CURRENT_TS_META.varTypes ? CURRENT_TS_META.varTypes.get(lookupKey) : null) || (d && d.interfaceName && d.interfaceName !== "object" ? d.interfaceName : null);
+    const declaredType = (appState.CURRENT_TS_META && appState.CURRENT_TS_META.varTypes ? appState.CURRENT_TS_META.varTypes.get(lookupKey) : null) || (d && d.interfaceName && d.interfaceName !== "object" ? d.interfaceName : null);
     const kindStr = d ? d.kind === "interface" && d.isClass ? d.interfaceName ? "class \xB7 " + d.interfaceName : "class" : d.kind : declaredType || inferRuntimeTsType(val);
     return {
       name,
@@ -10479,10 +10664,9 @@ runAsyncDemo()
     }
     if (isMapLike(val)) return "Map(" + val.size + ")";
     if (isSetLike(val)) return "Set(" + val.size + ")";
-    if (typeof val === "object") {
-      const record = val;
-      const keys = Object.keys(record);
-      const body = keys.slice(0, 8).map((k) => k + ": " + formatHoverVal(record[k])).join(", ");
+    if (isRecord(val)) {
+      const keys = Object.keys(val);
+      const body = keys.slice(0, 8).map((k) => k + ": " + formatHoverVal(val[k])).join(", ");
       return "{ " + body + (keys.length > 8 ? ", \u2026" : "") + " }";
     }
     return String(val);
@@ -10539,8 +10723,7 @@ runAsyncDemo()
     if (info.declaredType) note.push("\u58F0\u660E\u7C7B\u578B " + info.declaredType);
     if (info.frame) note.push("\u6808\u5E27 " + info.frame);
     if (note.length) parts.push('<div class="ht-note">' + esc(note.join(" \xB7 ")) + "</div>");
-    const vizMap2 = VIZ;
-    const vizFn = info.d && typeof info.d.kind === "string" ? vizMap2[info.d.kind] : null;
+    const vizFn = info.d && typeof info.d.kind === "string" ? VIZ[info.d.kind] : null;
     if (typeof vizFn === "function") {
       let viz = "";
       try {
@@ -10583,7 +10766,7 @@ runAsyncDemo()
     positionHoverTip(clientX, clientY);
   }
   function hoverTipForName(name, clientX, clientY) {
-    if (!TRACE.steps.length) {
+    if (!appState.TRACE.steps.length) {
       hideHoverTip();
       return false;
     }
@@ -10592,7 +10775,7 @@ runAsyncDemo()
       hideHoverTip();
       return false;
     }
-    const key = name + "@" + cur + "#" + TRACE.steps.length;
+    const key = name + "@" + appState.cur + "#" + appState.TRACE.steps.length;
     if (!(hoverTipEl && hoverTipEl.classList && hoverTipEl.classList.contains && hoverTipEl.classList.contains("on")) || hoverTipKey !== key) {
       hoverTipKey = key;
       showHoverTip(info, clientX, clientY);
@@ -10645,8 +10828,9 @@ runAsyncDemo()
     enrichFromNote: () => enrichFromNote,
     formatShortVal: () => formatShortVal,
     getActiveFrame: () => getActiveFrame,
-    hoverMetrics: () => hoverMetrics,
+    isFrame: () => isFrame,
     isMapLike: () => isMapLike,
+    isRecord: () => isRecord,
     isSetLike: () => isSetLike,
     normalizeGraph: () => normalizeGraph,
     normalizeList: () => normalizeList,
@@ -10683,12 +10867,12 @@ runAsyncDemo()
     vizUF: () => vizUF
   });
   function selectStackFrame(frameIdx) {
-    const st = TRACE.steps[cur];
+    const st = appState.TRACE.steps[appState.cur];
     if (!st || !Array.isArray(st.callStack) || !st.callStack.length) return;
     const topIdx = st.callStack.length - 1;
     const clamped = Math.max(0, Math.min(topIdx, Number(frameIdx) || 0));
-    SELECTED_FRAME_IDX = clamped === topIdx ? null : clamped;
-    renderStatic(cur, false);
+    appState.SELECTED_FRAME_IDX = clamped === topIdx ? null : clamped;
+    renderStatic(appState.cur, false);
   }
   function renderCallStack(st) {
     if (!callStackBarEl) return;
@@ -10782,11 +10966,11 @@ runAsyncDemo()
   }
   function vizMap(d) {
     if (!d || !d.entries || !d.entries.length) return null;
-    return '<div class="viz"><div class="viz-row vmap-row">' + truncMap(
-      d.entries,
-      (e) => '<div class="vpair' + (d.hot === e.k ? " hot" : "") + '"><span class="vcell vk">' + esc(e.k) + '</span><span class="varr">\u2192</span><span class="vcell vv">' + esc(e.v) + "</span></div>",
-      d
-    ) + "</div></div>";
+    return '<div class="viz"><div class="viz-row vmap-row">' + truncMap(d.entries, (e) => {
+      const k = isRecord(e) ? e.k : "";
+      const v = isRecord(e) ? e.v : void 0;
+      return '<div class="vpair' + (d.hot === k ? " hot" : "") + '"><span class="vcell vk">' + esc(k) + '</span><span class="varr">\u2192</span><span class="vcell vv">' + esc(v) + "</span></div>";
+    }, d) + "</div></div>";
   }
   function vizSet(d) {
     if (!d || !d.items || !d.items.length) return null;
@@ -10916,9 +11100,11 @@ runAsyncDemo()
       maxDepth = Math.max(maxDepth, depth);
       const x = (xMin + xMax) / 2;
       const y = 20 + depth * 36;
-      coords.set(idx, { x, y, val: node.val, left: node.left, right: node.right });
-      layout(node.left, depth + 1, xMin, x);
-      layout(node.right, depth + 1, x, xMax);
+      const leftIdx = typeof node.left === "number" ? node.left : null;
+      const rightIdx = typeof node.right === "number" ? node.right : null;
+      coords.set(idx, { x, y, val: node.val, left: leftIdx, right: rightIdx });
+      layout(leftIdx, depth + 1, xMin, x);
+      layout(rightIdx, depth + 1, x, xMax);
     }
     layout(root, 0, 14, 226);
     const h = Math.max(60, (maxDepth + 1) * 36 + 10);
@@ -11032,22 +11218,22 @@ runAsyncDemo()
       return;
     }
     pickEl.innerHTML = vars.map(
-      (s) => '<div class="chip-pick' + (watched.has(s.id) ? " on" : "") + '" data-id="' + esc(s.id) + '">' + esc(s.name) + "</div>"
+      (s) => '<div class="chip-pick' + (appState.watched.has(s.id) ? " on" : "") + '" data-id="' + esc(s.id) + '">' + esc(s.name) + "</div>"
     ).join("");
     renderSlots();
   }
   function renderSlots() {
-    const stepAtCur = TRACE.steps[cur];
+    const stepAtCur = appState.TRACE.steps[appState.cur];
     const st = stepAtCur || {};
     const activeFrame = stepAtCur ? getActiveFrame(stepAtCur) : null;
     const ds = Object.assign({}, activeFrame && activeFrame.ds || st.ds || {});
     if (st.ds && st.ds.eventLoop && !ds.eventLoop) ds.eventLoop = st.ds.eventLoop;
-    const vars = discoverVars().filter((s) => watched.has(s.id) && ds[s.id] !== void 0);
+    const vars = discoverVars().filter((s) => appState.watched.has(s.id) && ds[s.id] !== void 0);
     if (slotsEl && slotsEl.classList && slotsEl.classList.toggle) {
       slotsEl.classList.toggle("single-col", slotsEl.clientWidth > 0 && slotsEl.clientWidth < 420);
     }
     if (!vars.length) {
-      slotsEl.innerHTML = '<div class="slot" style="grid-column:1/-1"><div class="vempty">' + (TRACE.steps.length ? "\u70B9\u9009\u53D8\u91CF\u4EE5\u5173\u6CE8\uFF08\u6216\u672C\u6B65\u6682\u65E0\u7ED3\u6784\uFF09" : "\u751F\u6210\u8F68\u8FF9\u540E\u663E\u793A\u7ED3\u6784\u53EF\u89C6\u5316") + "</div></div>";
+      slotsEl.innerHTML = '<div class="slot" style="grid-column:1/-1"><div class="vempty">' + (appState.TRACE.steps.length ? "\u70B9\u9009\u53D8\u91CF\u4EE5\u5173\u6CE8\uFF08\u6216\u672C\u6B65\u6682\u65E0\u7ED3\u6784\uFF09" : "\u751F\u6210\u8F68\u8FF9\u540E\u663E\u793A\u7ED3\u6784\u53EF\u89C6\u5316") + "</div></div>";
       return;
     }
     const allocated = allocateSlotSpans(vars, ds);
@@ -11074,16 +11260,16 @@ runAsyncDemo()
     const nextBtn = $("next");
     const ckptBtn = $("nextCheckpoint");
     const autoBtn = $("auto");
-    const atEnd = Boolean(TRACE.steps.length > 0 && cur >= TRACE.steps.length - 1 && DEBUG_SESSION.finished);
-    if (prevBtn) prevBtn.disabled = !TRACE.steps.length || cur <= 0;
+    const atEnd = Boolean(appState.TRACE.steps.length > 0 && appState.cur >= appState.TRACE.steps.length - 1 && appState.DEBUG_SESSION.finished);
+    if (prevBtn) prevBtn.disabled = !appState.TRACE.steps.length || appState.cur <= 0;
     if (nextBtn) nextBtn.disabled = atEnd;
     if (ckptBtn) ckptBtn.disabled = atEnd;
     if (autoBtn) autoBtn.disabled = atEnd;
   }
   function renderStatic(i, withAnim = false) {
     hideHoverTip();
-    const st = TRACE.steps[i];
-    const prevSt = i > 0 ? TRACE.steps[i - 1] : null;
+    const st = appState.TRACE.steps[i];
+    const prevSt = i > 0 ? appState.TRACE.steps[i - 1] : null;
     if (!st) {
       renderCallStack(null);
       varsEl.innerHTML = "";
@@ -11108,7 +11294,7 @@ runAsyncDemo()
     if (primEntries) {
       varsEl.innerHTML = primEntries;
     } else if (activeFrame && activeFrame.fn === "global") {
-      varsEl.innerHTML = '<div class="pair"><span class="k">scope</span><span class="v">global</span></div>' + (DEBUG_SESSION.callExpr && DEBUG_SESSION.callExpr !== "undefined" ? '<div class="pair"><span class="k">entry</span><span class="v">' + esc(DEBUG_SESSION.callExpr) + "</span></div>" : "");
+      varsEl.innerHTML = '<div class="pair"><span class="k">scope</span><span class="v">global</span></div>' + (appState.DEBUG_SESSION.callExpr && appState.DEBUG_SESSION.callExpr !== "undefined" ? '<div class="pair"><span class="k">entry</span><span class="v">' + esc(appState.DEBUG_SESSION.callExpr) + "</span></div>" : "");
     } else {
       varsEl.innerHTML = '<div class="vempty">\uFF08\u672C\u5E27\u65E0\u539F\u59CB\u7C7B\u578B\u5C40\u90E8\u53D8\u91CF\uFF09</div>';
     }
@@ -11128,7 +11314,7 @@ runAsyncDemo()
     } else if (st.isCheckpoint) {
       cntEl.textContent = "\u25C9 \u547D\u4E2D\u68C0\u67E5\u70B9";
       cntEl.className = "ckpt";
-    } else if (DEBUG_SESSION.finished && i === TRACE.steps.length - 1) {
+    } else if (appState.DEBUG_SESSION.finished && i === appState.TRACE.steps.length - 1) {
       cntEl.textContent = "\u2713 \u6267\u884C\u5B8C\u6BD5";
       cntEl.className = "done";
     } else {
@@ -11137,13 +11323,13 @@ runAsyncDemo()
     }
     updateControlButtons();
     updateEditorChrome();
-    if (typeof VIEW_MODE !== "undefined" && VIEW_MODE === "notebook" && typeof globalThis.renderNotebookUI === "function") {
+    if (appState.VIEW_MODE === "notebook" && typeof globalThis.renderNotebookUI === "function") {
       globalThis.renderNotebookUI(false);
     } else {
       scrollCodeTo(activeFrame ? activeFrame.line : st.line);
     }
     renderSlots();
-    if (withAnim && (typeof VIEW_MODE === "undefined" || VIEW_MODE !== "notebook")) {
+    if (withAnim && appState.VIEW_MODE !== "notebook") {
       playStepAnimation(st);
     }
   }
@@ -11191,85 +11377,85 @@ runAsyncDemo()
   });
   function stepPrev() {
     stopAuto();
-    if (!TRACE.steps.length || cur <= 0) return;
-    SELECTED_FRAME_IDX = null;
+    if (!appState.TRACE.steps.length || appState.cur <= 0) return;
+    appState.SELECTED_FRAME_IDX = null;
     if (document.body && document.body.classList) document.body.classList.remove("editing-code");
     if (isEditorFocused()) blurEditor();
-    cur--;
+    appState.cur--;
     renderPicker();
-    renderStatic(cur, true);
+    renderStatic(appState.cur, true);
   }
   function stepNext(fromAuto = false) {
     if (!fromAuto) stopAuto();
-    SELECTED_FRAME_IDX = null;
+    appState.SELECTED_FRAME_IDX = null;
     if (document.body && document.body.classList) document.body.classList.remove("editing-code");
     if (isEditorFocused()) blurEditor();
-    if (!DEBUG_SESSION.active) {
+    if (!appState.DEBUG_SESSION.active) {
       startDebug(0);
       return;
     }
-    if (cur < TRACE.steps.length - 1) {
-      cur++;
+    if (appState.cur < appState.TRACE.steps.length - 1) {
+      appState.cur++;
       renderPicker();
-      renderStatic(cur, true);
+      renderStatic(appState.cur, true);
       return;
     }
-    if (DEBUG_SESSION.finished) return;
+    if (appState.DEBUG_SESSION.finished) return;
     const ok = computeAndAppendNextStep();
     if (ok) {
-      cur = TRACE.steps.length - 1;
+      appState.cur = appState.TRACE.steps.length - 1;
       renderPicker();
-      renderStatic(cur, true);
+      renderStatic(appState.cur, true);
     } else {
-      renderStatic(cur, false);
+      renderStatic(appState.cur, false);
     }
   }
   function runToNextCheckpoint() {
-    if (LANG === "python") return PY_ENGINE.runToNextCheckpoint();
+    if (appState.LANG === "python") return PY_ENGINE.runToNextCheckpoint();
     stopAuto();
-    SELECTED_FRAME_IDX = null;
+    appState.SELECTED_FRAME_IDX = null;
     if (document.body && document.body.classList) document.body.classList.remove("editing-code");
     if (isEditorFocused()) blurEditor();
-    if (!DEBUG_SESSION.active) {
+    if (!appState.DEBUG_SESSION.active) {
       if (!startDebug(0)) return;
-      const firstSt = TRACE.steps[0];
-      if (firstSt && (firstSt.isCheckpoint || firstSt.error || DEBUG_SESSION.finished)) {
+      const firstSt = appState.TRACE.steps[0];
+      if (firstSt && (firstSt.isCheckpoint || firstSt.error || appState.DEBUG_SESSION.finished)) {
         if (firstSt.isCheckpoint) {
           say("\u25C9 \u5DF2\u5230\u8FBE\u68C0\u67E5\u70B9 [\u7B2C " + firstSt.line + " \u884C] \xB7 " + (firstSt.note || ""), "ok");
         }
         return;
       }
     }
-    if (cur >= TRACE.steps.length - 1 && DEBUG_SESSION.finished) {
+    if (appState.cur >= appState.TRACE.steps.length - 1 && appState.DEBUG_SESSION.finished) {
       return;
     }
     let safety = 0;
     while (safety++ < MAX_STEPS) {
-      if (cur < TRACE.steps.length - 1) {
-        cur++;
-        const st = TRACE.steps[cur];
-        if (st && (st.isCheckpoint || st.error || cur === TRACE.steps.length - 1 && DEBUG_SESSION.finished)) {
+      if (appState.cur < appState.TRACE.steps.length - 1) {
+        appState.cur++;
+        const st = appState.TRACE.steps[appState.cur];
+        if (st && (st.isCheckpoint || st.error || appState.cur === appState.TRACE.steps.length - 1 && appState.DEBUG_SESSION.finished)) {
           break;
         }
       } else {
-        if (DEBUG_SESSION.finished) break;
+        if (appState.DEBUG_SESSION.finished) break;
         const added = computeAndAppendNextStep({ silent: true });
         if (!added) break;
-        cur = TRACE.steps.length - 1;
-        const st = TRACE.steps[cur];
-        if (st && (st.isCheckpoint || st.error || DEBUG_SESSION.finished)) {
+        appState.cur = appState.TRACE.steps.length - 1;
+        const st = appState.TRACE.steps[appState.cur];
+        if (st && (st.isCheckpoint || st.error || appState.DEBUG_SESSION.finished)) {
           break;
         }
       }
     }
     renderPicker();
-    renderStatic(cur, true);
-    const finalSt = TRACE.steps[cur];
+    renderStatic(appState.cur, true);
+    const finalSt = appState.TRACE.steps[appState.cur];
     if (finalSt && finalSt.error) {
     } else if (finalSt && finalSt.isCheckpoint) {
       say("\u25C9 \u5DF2\u8FD0\u884C\u5230\u68C0\u67E5\u70B9 [\u7B2C " + finalSt.line + " \u884C] \xB7 " + (finalSt.note || ""), "ok");
-    } else if (DEBUG_SESSION.finished) {
-      say("\u2713 \u5DF2\u8FD0\u884C\u81F3\u7A0B\u5E8F\u7ED3\u675F\uFF08\u540E\u7EED\u65E0\u66F4\u591A\u68C0\u67E5\u70B9\uFF09  \u2192  " + safeJSONStringify(DEBUG_SESSION.returnValue), "ok");
+    } else if (appState.DEBUG_SESSION.finished) {
+      say("\u2713 \u5DF2\u8FD0\u884C\u81F3\u7A0B\u5E8F\u7ED3\u675F\uFF08\u540E\u7EED\u65E0\u66F4\u591A\u68C0\u67E5\u70B9\uFF09  \u2192  " + safeJSONStringify(appState.DEBUG_SESSION.returnValue), "ok");
     }
   }
   function rebuildDebugAtPosition(newTargetLine, targetVisits, fallbackStepIdx) {
@@ -11280,14 +11466,14 @@ runAsyncDemo()
       return false;
     }
     extractTsInterfaceMetadata(src);
-    const diags = typecheckTS(src, STRICT_TS);
+    const diags = typecheckTS(src, appState.STRICT_TS);
     if (diags.length > 0) {
       reportTypeErrors(diags);
       return false;
     }
-    if (TYPE_ERROR_LINES.size || RUNTIME_ERROR_LINES.size) {
-      TYPE_ERROR_LINES.clear();
-      RUNTIME_ERROR_LINES.clear();
+    if (appState.TYPE_ERROR_LINES.size || appState.RUNTIME_ERROR_LINES.size) {
+      appState.TYPE_ERROR_LINES.clear();
+      appState.RUNTIME_ERROR_LINES.clear();
     }
     const originalLines = src.split("\n");
     const enums = transpileEnums(src);
@@ -11298,7 +11484,7 @@ runAsyncDemo()
     const js0 = stripTypes(enums.code);
     const entry = resolveEntry(src, js0);
     const expr = stripTypes(entry.expr || "undefined");
-    ENTRY_CALL_LINE = entry.line || 0;
+    appState.ENTRY_CALL_LINE = entry.line || 0;
     const jsBody = entry.index >= 0 ? blankJsLine(js0, entry.index) : js0;
     let compiledFn;
     try {
@@ -11313,13 +11499,13 @@ runAsyncDemo()
     }
     stopAuto();
     clearFlyLayer();
-    const prevWatched = new Set(watched);
-    TRACE = {
+    const prevWatched = new Set(appState.watched);
+    appState.TRACE = {
       title: "TypeScript Playground \xB7 Debug",
       code: originalLines,
       steps: []
     };
-    DEBUG_SESSION = {
+    appState.DEBUG_SESSION = {
       active: true,
       finished: false,
       crashed: false,
@@ -11330,39 +11516,39 @@ runAsyncDemo()
       originalLines,
       callExpr: expr
     };
-    cur = 0;
+    appState.cur = 0;
     let visitsSeen = 0;
     let safety = 0;
     while (safety++ < MAX_STEPS) {
       const ok = computeAndAppendNextStep({ silent: true });
       if (!ok) break;
-      const latest = TRACE.steps[TRACE.steps.length - 1];
+      const latest = appState.TRACE.steps[appState.TRACE.steps.length - 1];
       if (newTargetLine >= 1 && targetVisits >= 1) {
         if (latest && latest.line === newTargetLine) {
           visitsSeen++;
           if (visitsSeen >= targetVisits) break;
         }
-      } else if (TRACE.steps.length - 1 >= fallbackStepIdx) {
+      } else if (appState.TRACE.steps.length - 1 >= fallbackStepIdx) {
         break;
       }
-      if (DEBUG_SESSION.finished) break;
+      if (appState.DEBUG_SESSION.finished) break;
     }
-    cur = Math.max(0, TRACE.steps.length - 1);
+    appState.cur = Math.max(0, appState.TRACE.steps.length - 1);
     if (prevWatched.size > 0) {
-      watched = prevWatched;
-      discoverVars().forEach((s) => watched.add(s.id));
+      appState.watched = prevWatched;
+      discoverVars().forEach((s) => appState.watched.add(s.id));
     } else {
       initWatchedVars();
     }
     renderPicker();
-    renderStatic(cur, false);
+    renderStatic(appState.cur, false);
     return true;
   }
   function addCheckpointFunction(preferredLine) {
-    if (LANG === "python") {
+    if (appState.LANG === "python") {
       const text2 = editor.value.replace(/\r\n?/g, "\n");
       const lines2 = text2.split("\n");
-      let line = preferredLine || TRACE.steps[cur]?.line || (window.__CM_CURSOR_LINE || lastEditorCursorLine) || lines2.length;
+      let line = preferredLine || appState.TRACE.steps[appState.cur]?.line || (window.__CM_CURSOR_LINE || appState.lastEditorCursorLine) || lines2.length;
       line = Math.max(1, Math.min(lines2.length, line));
       const current = lines2[line - 1] || "";
       const indent2 = (current.match(/^\s*/) || [""])[0];
@@ -11373,7 +11559,7 @@ runAsyncDemo()
         lines2.splice(line - 1, 0, indent2 + "checkpoint()");
       }
       editor.value = lines2.join("\n");
-      lastEditorCursorLine = line;
+      appState.lastEditorCursorLine = line;
       resetTraceState();
       PY_ENGINE.start(0);
       say("\u2713 \u5DF2\u63D2\u5165 checkpoint()\uFF0C\u6B63\u5728\u91CD\u65B0\u5F55\u5236 Python \u6267\u884C\u6B65\u9AA4", "ok");
@@ -11381,11 +11567,11 @@ runAsyncDemo()
     }
     const text = editor.value.replace(/\r\n?/g, "\n");
     const lines = text.split("\n");
-    const curStep = TRACE.steps[cur];
-    const wasActive = Boolean(DEBUG_SESSION.active && TRACE.steps.length > 0 && curStep);
+    const curStep = appState.TRACE.steps[appState.cur];
+    const wasActive = Boolean(appState.DEBUG_SESSION.active && appState.TRACE.steps.length > 0 && curStep);
     const origCurLine = curStep ? curStep.line : -1;
-    const origLineVisits = wasActive ? TRACE.steps.slice(0, cur + 1).filter((s) => s.line === origCurLine).length : 0;
-    const prevCurIdx = cur;
+    const origLineVisits = wasActive ? appState.TRACE.steps.slice(0, appState.cur + 1).filter((s) => s.line === origCurLine).length : 0;
+    const prevCurIdx = appState.cur;
     let fnOpenIdx = -1;
     let fnCloseIdx = lines.length - 1;
     let depth = 0;
@@ -11415,7 +11601,7 @@ runAsyncDemo()
       }
     }
     let targetIdx;
-    const cursorLine = window.__CM_CURSOR_LINE || lastEditorCursorLine;
+    const cursorLine = window.__CM_CURSOR_LINE || appState.lastEditorCursorLine;
     if (typeof preferredLine === "number" && preferredLine >= 1 && preferredLine <= lines.length) {
       targetIdx = preferredLine - 1;
     } else if (cursorLine >= 1 && cursorLine <= lines.length) {
@@ -11456,7 +11642,7 @@ runAsyncDemo()
     const insertedLineNum = insertIdx + 1;
     lines.splice(insertIdx, 0, indent + "checkpoint();");
     editor.value = lines.join("\n");
-    lastEditorCursorLine = insertedLineNum;
+    appState.lastEditorCursorLine = insertedLineNum;
     if (staleTimer) clearTimeout(staleTimer);
     if (wasActive) {
       const newTargetLine = origCurLine >= insertedLineNum ? origCurLine + 1 : origCurLine;
@@ -11468,13 +11654,13 @@ runAsyncDemo()
     say("\u2713 \u5DF2\u5728\u7B2C " + insertedLineNum + " \u884C\u6DFB\u52A0\u68C0\u67E5\u70B9\u51FD\u6570 checkpoint()\uFF08\u4FDD\u6301\u5F53\u524D\u8C03\u8BD5\u4F4D\u7F6E\uFF0C\u70B9\u51FB\u5DE6\u4E0B\u300C\u23ED \u8FD0\u884C\u5230\u4E0B\u4E00\u4E2A\u68C0\u67E5\u70B9\u300D\u5373\u53EF\u8FD0\u884C\u81F3\u68C0\u67E5\u70B9\uFF09", "ok");
   }
   function go(i) {
-    if (i > cur) stepNext();
-    else if (i < cur) stepPrev();
+    if (i > appState.cur) stepNext();
+    else if (i < appState.cur) stepPrev();
   }
   function stopAuto() {
-    if (timer) {
-      clearInterval(timer);
-      timer = null;
+    if (appState.timer) {
+      clearInterval(appState.timer);
+      appState.timer = null;
       $("auto").textContent = "\u25B6 \u81EA\u52A8";
     }
   }
@@ -11488,38 +11674,37 @@ runAsyncDemo()
   }
   if (gutterEl) {
     gutterEl.addEventListener("click", (e) => {
-      const target = e.target;
-      const g = target && target.closest ? target.closest(".gline") : null;
+      const g = closestElement(e, ".gline");
       if (!g || !g.dataset.line) return;
       addCheckpointFunction(parseInt(g.dataset.line, 10));
     });
   }
   $("auto").onclick = async () => {
-    if (timer) {
+    if (appState.timer) {
       stopAuto();
       return;
     }
-    if (!DEBUG_SESSION.active || cur >= TRACE.steps.length - 1 && DEBUG_SESSION.finished) {
+    if (!appState.DEBUG_SESSION.active || appState.cur >= appState.TRACE.steps.length - 1 && appState.DEBUG_SESSION.finished) {
       const ok = await Promise.resolve(startDebug(0));
       if (!ok) return;
     }
-    if (cur >= TRACE.steps.length - 1 && DEBUG_SESSION.finished) return;
+    if (appState.cur >= appState.TRACE.steps.length - 1 && appState.DEBUG_SESSION.finished) return;
     $("auto").textContent = "\u23F8 \u6682\u505C";
-    timer = setInterval(() => {
-      if (cur >= TRACE.steps.length - 1 && DEBUG_SESSION.finished) {
+    appState.timer = setInterval(() => {
+      if (appState.cur >= appState.TRACE.steps.length - 1 && appState.DEBUG_SESSION.finished) {
         stopAuto();
         return;
       }
       stepNext(true);
-      const st = TRACE.steps[cur];
-      if (!st || st.error || cur >= TRACE.steps.length - 1 && DEBUG_SESSION.finished) {
+      const st = appState.TRACE.steps[appState.cur];
+      if (!st || st.error || appState.cur >= appState.TRACE.steps.length - 1 && appState.DEBUG_SESSION.finished) {
         stopAuto();
       }
     }, AUTO_PLAY_MS);
   };
   $("btnRun").onclick = () => {
     stopAuto();
-    if (typeof VIEW_MODE !== "undefined" && VIEW_MODE === "notebook" && typeof globalThis.runNotebookCell === "function") {
+    if (appState.VIEW_MODE === "notebook" && typeof globalThis.runNotebookCell === "function") {
       globalThis.runNotebookCell(void 0, true);
       return;
     }
@@ -11528,7 +11713,7 @@ runAsyncDemo()
   $("btnTrace").onclick = () => {
     stopAuto();
     if (document.body && document.body.classList) document.body.classList.remove("editing-code");
-    if (typeof VIEW_MODE !== "undefined" && VIEW_MODE === "notebook" && typeof globalThis.debugNotebookCell === "function") {
+    if (appState.VIEW_MODE === "notebook" && typeof globalThis.debugNotebookCell === "function") {
       globalThis.debugNotebookCell(void 0);
       return;
     }
@@ -11543,8 +11728,8 @@ runAsyncDemo()
   var videoExportStatus = $("videoExportStatus");
   function setVideoExportSpeed(mult) {
     const num = Number(mult);
-    if (!VIDEO_SPEED_OPTIONS.includes(num)) return VIDEO_EXPORT_SPEED;
-    VIDEO_EXPORT_SPEED = num;
+    if (!VIDEO_SPEED_OPTIONS.includes(num)) return appState.VIDEO_EXPORT_SPEED;
+    appState.VIDEO_EXPORT_SPEED = num;
     if (videoSpeedGroup && videoSpeedGroup.querySelectorAll) {
       const btns = videoSpeedGroup.querySelectorAll(".speed-opt");
       btns.forEach((b) => {
@@ -11554,7 +11739,7 @@ runAsyncDemo()
     if (videoSpeedBadge) {
       videoSpeedBadge.textContent = num + "x \xB7 60fps";
     }
-    return VIDEO_EXPORT_SPEED;
+    return appState.VIDEO_EXPORT_SPEED;
   }
   if (btnExportMenu && exportMenuWrap) {
     btnExportMenu.onclick = (e) => {
@@ -11563,14 +11748,13 @@ runAsyncDemo()
     };
     addEventListener("click", (e) => {
       if (!exportMenuWrap.classList || !exportMenuWrap.classList.contains("open")) return;
-      if (exportMenuWrap.contains && exportMenuWrap.contains(e.target)) return;
+      if (exportMenuWrap.contains && exportMenuWrap.contains(eventTargetNode(e))) return;
       exportMenuWrap.classList.remove("open");
     });
   }
   if (videoSpeedGroup) {
     videoSpeedGroup.addEventListener("click", (e) => {
-      const target = e.target;
-      const btn = target && target.closest ? target.closest(".speed-opt") : null;
+      const btn = closestElement(e, ".speed-opt");
       if (!btn || !btn.dataset.speed) return;
       e.stopPropagation();
       setVideoExportSpeed(parseFloat(btn.dataset.speed));
@@ -11578,22 +11762,22 @@ runAsyncDemo()
   }
   function sanitizeFileName(name) {
     const cleaned = String(name == null ? "" : name).replace(/[\\/:*?"<>|\u0000-\u001f]/g, "").replace(/\s+/g, " ").trim().replace(/[.\s]+$/, "");
-    return cleaned || (LANG === "python" ? "playground.py" : "playground.ts");
+    return cleaned || (appState.LANG === "python" ? "playground.py" : "playground.ts");
   }
   function exportFileName() {
-    const fallback = LANG === "python" ? "playground.py" : "playground.ts";
-    const name = FILE_NAME || fallback;
-    const ext = LANG === "python" ? ".py" : ".ts";
+    const fallback = appState.LANG === "python" ? "playground.py" : "playground.ts";
+    const name = appState.FILE_NAME || fallback;
+    const ext = appState.LANG === "python" ? ".py" : ".ts";
     return /\.[A-Za-z0-9]{1,12}$/.test(name) ? name : name + ext;
   }
   function setFileName(name) {
-    FILE_NAME = sanitizeFileName(name);
-    if (fileNameEl && fileNameEl.value !== FILE_NAME) fileNameEl.value = FILE_NAME;
+    appState.FILE_NAME = sanitizeFileName(name);
+    if (fileNameEl && fileNameEl.value !== appState.FILE_NAME) fileNameEl.value = appState.FILE_NAME;
     const tag = $("fileExportTag");
     if (tag) tag.textContent = exportFileName();
     if (typeof globalThis.syncActiveScriptTabFromFileName === "function") {
       try {
-        globalThis.syncActiveScriptTabFromFileName(FILE_NAME);
+        globalThis.syncActiveScriptTabFromFileName(appState.FILE_NAME);
       } catch (_) {
       }
     }
@@ -11603,21 +11787,21 @@ runAsyncDemo()
     if (name && /\.ipynb$/i.test(name) && typeof globalThis.importNotebookFromJson === "function") {
       if (globalThis.importNotebookFromJson(src, name)) return;
     }
-    if (typeof VIEW_MODE !== "undefined" && VIEW_MODE === "notebook" && typeof globalThis.setViewMode === "function") {
+    if (appState.VIEW_MODE === "notebook" && typeof globalThis.setViewMode === "function") {
       globalThis.setViewMode("script");
     }
     editor.value = src;
-    setFileName(name || (LANG === "python" ? "imported.py" : "imported.ts"));
+    setFileName(name || (appState.LANG === "python" ? "imported.py" : "imported.ts"));
     if (typeof globalThis.syncActiveScriptTabSource === "function") {
       try {
         globalThis.syncActiveScriptTabSource(src);
       } catch (_) {
       }
     }
-    lastEditorCursorLine = -1;
+    appState.lastEditorCursorLine = -1;
     resetTraceState();
     updateEditorChrome();
-    clearLog("\u2713 \u5DF2\u5BFC\u5165 " + FILE_NAME + " \xB7 " + src.split("\n").length + " \u884C \xB7 \u70B9\u300C\u{1F41E} Debug \u8C03\u8BD5\u300D\u6216\u300C\u25B6 \u8FD0\u884C\u300D\u5F00\u59CB");
+    clearLog("\u2713 \u5DF2\u5BFC\u5165 " + appState.FILE_NAME + " \xB7 " + src.split("\n").length + " \u884C \xB7 \u70B9\u300C\u{1F41E} Debug \u8C03\u8BD5\u300D\u6216\u300C\u25B6 \u8FD0\u884C\u300D\u5F00\u59CB");
   }
   if (btnImportEl && fileInputEl) {
     if (!$("importMenuWrap")) {
@@ -11641,12 +11825,12 @@ runAsyncDemo()
         commitName();
         fileNameEl.blur();
       } else if (e.key === "Escape") {
-        fileNameEl.value = FILE_NAME;
+        fileNameEl.value = appState.FILE_NAME;
         fileNameEl.blur();
       }
     });
   }
-  setFileName(FILE_NAME);
+  setFileName(appState.FILE_NAME);
   if ($("btnExportTs")) {
     $("btnExportTs").onclick = () => {
       try {
@@ -11677,18 +11861,16 @@ runAsyncDemo()
   }
   $("sampleSel").onchange = () => uiHooks.loadSample($("sampleSel").value);
   pickEl.addEventListener("click", (e) => {
-    const target = e.target;
-    const el = target && target.closest ? target.closest(".chip-pick") : null;
+    const el = closestElement(e, ".chip-pick");
     if (!el || !el.dataset.id) return;
     const id = el.dataset.id;
-    if (watched.has(id)) watched.delete(id);
-    else watched.add(id);
+    if (appState.watched.has(id)) appState.watched.delete(id);
+    else appState.watched.add(id);
     renderPicker();
   });
   if (callStackBarEl) {
     callStackBarEl.addEventListener("click", (e) => {
-      const target = e.target;
-      const btn = target && target.closest ? target.closest(".cs-crumb") : null;
+      const btn = closestElement(e, ".cs-crumb");
       if (!btn || btn.dataset.frameIdx === void 0) return;
       selectStackFrame(parseInt(btn.dataset.frameIdx, 10));
     });
@@ -11761,7 +11943,7 @@ runAsyncDemo()
   function recordEditorCursorLine() {
     try {
       const pos = editor.selectionStart || 0;
-      lastEditorCursorLine = editor.value.slice(0, pos).split("\n").length;
+      appState.lastEditorCursorLine = editor.value.slice(0, pos).split("\n").length;
     } catch {
     }
   }
@@ -11769,7 +11951,7 @@ runAsyncDemo()
   editor.addEventListener("keyup", recordEditorCursorLine);
   editor.addEventListener("focus", () => {
     recordEditorCursorLine();
-    if (TRACE.steps.length && document.body && document.body.classList) {
+    if (appState.TRACE.steps.length && document.body && document.body.classList) {
       document.body.classList.add("editing-code");
       clearFlyLayer();
     }
@@ -11783,7 +11965,7 @@ runAsyncDemo()
     if (e.key === "Tab") {
       e.preventDefault();
       const s = editor.selectionStart, t = editor.selectionEnd;
-      const indent = LANG === "python" ? "    " : "  ";
+      const indent = appState.LANG === "python" ? "    " : "  ";
       editor.value = editor.value.slice(0, s) + indent + editor.value.slice(t);
       editor.selectionStart = editor.selectionEnd = s + indent.length;
       onSourceChanged();
@@ -11803,12 +11985,12 @@ runAsyncDemo()
   var staleTimer = null;
   function onSourceChanged() {
     recordEditorCursorLine();
-    TYPE_ERROR_LINES.clear();
-    RUNTIME_ERROR_LINES.clear();
-    if (LANG === "python") PY_DIAGS.length = 0;
+    appState.TYPE_ERROR_LINES.clear();
+    appState.RUNTIME_ERROR_LINES.clear();
+    if (appState.LANG === "python") appState.PY_DIAGS.length = 0;
     hideHoverTip();
     updateEditorChrome();
-    if (TRACE.steps.length || DEBUG_SESSION.active) {
+    if (appState.TRACE.steps.length || appState.DEBUG_SESSION.active) {
       if (staleTimer) clearTimeout(staleTimer);
       staleTimer = setTimeout(() => {
         resetTraceState();
@@ -11824,7 +12006,7 @@ runAsyncDemo()
   });
   if (editor && editor.addEventListener) {
     editor.addEventListener("mousemove", (e) => {
-      if (!TRACE.steps.length || e && e.buttons) {
+      if (!appState.TRACE.steps.length || e && e.buttons) {
         hideHoverTip();
         return;
       }
@@ -11841,8 +12023,7 @@ runAsyncDemo()
   }
   if (sidePanelEl && sidePanelEl.addEventListener) {
     sidePanelEl.addEventListener("mousemove", (e) => {
-      const target = e && e.target;
-      const card = target && target.closest ? target.closest("[data-var]") : null;
+      const card = closestElement(e, "[data-var]");
       if (!card || !card.getAttribute) {
         hideHoverTip();
         return;
@@ -11854,7 +12035,7 @@ runAsyncDemo()
   addEventListener("resize", () => positionStepViz());
   addEventListener("keydown", (e) => {
     if (isEditorFocused()) return;
-    const target = e.target;
+    const target = eventTargetElement(e);
     if (e.key === "ArrowRight" || e.key === " ") {
       if (target && target.closest && target.closest("button,select,input,textarea")) return;
       e.preventDefault();
@@ -12074,9 +12255,11 @@ runAsyncDemo()
         if (!node) return;
         const nx = (xMin + xMax) / 2;
         const ny = by + 16 + depth * 32;
-        coords.set(idx, { x: nx, y: ny, val: node.val, left: node.left, right: node.right });
-        layout2(node.left, depth + 1, xMin, nx);
-        layout2(node.right, depth + 1, nx, xMax);
+        const leftIdx = typeof node.left === "number" ? node.left : null;
+        const rightIdx = typeof node.right === "number" ? node.right : null;
+        coords.set(idx, { x: nx, y: ny, val: node.val, left: leftIdx, right: rightIdx });
+        layout2(leftIdx, depth + 1, xMin, nx);
+        layout2(rightIdx, depth + 1, nx, xMax);
       };
       var layout = layout2;
       const nodes = d.nodes;
@@ -12228,9 +12411,9 @@ runAsyncDemo()
   }
   function renderVideoFrameToCanvas(ctx, stepIdx, subProgress, speedMult) {
     const W = VIDEO_WIDTH, H = VIDEO_HEIGHT;
-    const st = TRACE.steps[stepIdx] || TRACE.steps[0];
-    const prevSt = stepIdx > 0 ? TRACE.steps[stepIdx - 1] : null;
-    const codeLines = TRACE.code && TRACE.code.length ? TRACE.code : editor.value.replace(/\r/g, "").split("\n");
+    const st = appState.TRACE.steps[stepIdx] || appState.TRACE.steps[0];
+    const prevSt = stepIdx > 0 ? appState.TRACE.steps[stepIdx - 1] : null;
+    const codeLines = appState.TRACE.code && appState.TRACE.code.length ? appState.TRACE.code : editor.value.replace(/\r/g, "").split("\n");
     ctx.fillStyle = "#07090d";
     ctx.fillRect(0, 0, W, H);
     ctx.fillStyle = "#0a0e14";
@@ -12368,7 +12551,7 @@ runAsyncDemo()
     ctx.fillStyle = "#98a2b3";
     ctx.fillText("WATCH \xB7 \u6570\u636E\u7ED3\u6784\u53EF\u89C6\u5316", sideX + 20, watchHeaderY);
     const ds = st && st.ds || {};
-    const vars = discoverVars().filter((s) => watched.has(s.id) && ds[s.id] !== void 0);
+    const vars = discoverVars().filter((s) => appState.watched.has(s.id) && ds[s.id] !== void 0);
     const allocated = allocateSlotSpans(vars, ds);
     const gridLeft = sideX + 20;
     const gridW = sideW - 40;
@@ -12436,7 +12619,7 @@ runAsyncDemo()
     } else if (st && st.isCheckpoint) {
       statusLabel = "\u25C9 \u547D\u4E2D\u68C0\u67E5\u70B9";
       statusColor = "#38bdf8";
-    } else if (DEBUG_SESSION.finished && stepIdx === TRACE.steps.length - 1) {
+    } else if (appState.DEBUG_SESSION.finished && stepIdx === appState.TRACE.steps.length - 1) {
       statusLabel = "\u2713 \u6267\u884C\u5B8C\u6BD5";
       statusColor = "#ffb454";
     }
@@ -12453,7 +12636,7 @@ runAsyncDemo()
     ctx.fillText(`TypeScript Playground \xB7 1920\xD71080 60fps \u89C6\u9891\u5BFC\u51FA (${speedMult}x \u500D\u901F)`, 184, mainBottom + 33);
   }
   function loadSample(key) {
-    if (LANG === "python") {
+    if (appState.LANG === "python") {
       PY_ENGINE.loadSample(key);
       return;
     }
@@ -12466,7 +12649,7 @@ runAsyncDemo()
       editor.value = src;
       setFileName(targetKey + ".ts");
     }
-    lastEditorCursorLine = -1;
+    appState.lastEditorCursorLine = -1;
     clearLog("\u5DF2\u52A0\u8F7D\u6837\u4F8B \xB7 \u81EA\u52A8\u5F00\u542F Debug \u8C03\u8BD5\u6A21\u5F0F\uFF08\u53EF\u6309 \u2190 / \u2192 \u9010\u6B65\u5F53\u573A\u8BA1\u7B97\uFF0C\u6216\u70B9\u51FB\u5DE6\u4E0B\u300C\u8FD0\u884C\u5230\u4E0B\u4E00\u4E2A\u68C0\u67E5\u70B9\u300D\uFF09");
     resetTraceState();
     const defaultStep = SAMPLE_DEFAULT_STEP[targetKey] || 0;
@@ -12508,10 +12691,10 @@ runAsyncDemo()
         }
         if (qs.has("watch")) {
           const w = qs.get("watch");
-          URL_WATCH = w ? w.split(",").map((s) => s.trim()).filter(Boolean) : [];
+          appState.URL_WATCH = w ? w.split(",").map((s) => s.trim()).filter(Boolean) : [];
         }
         if (qs.get("still") === "1") {
-          IS_STILL = true;
+          appState.IS_STILL = true;
           if (document.body && document.body.classList) document.body.classList.add("still");
         }
         if (qs.has("step")) {
@@ -12549,9 +12732,8 @@ runAsyncDemo()
     fixWebmDuration: () => fixWebmDuration,
     muxWebmChunks: () => muxWebmChunks
   });
-  var btnExportVideo2 = $("btnExportVideo");
-  var btnExportVideoLabel2 = $("btnExportVideoLabel");
-  var videoExportStatus2 = $("videoExportStatus");
+
+  // src/utils/webm-muxer.ts
   function ebmlUintBytes(num) {
     let v = Math.max(0, Math.floor(Number(num) || 0));
     if (v === 0) return new Uint8Array([0]);
@@ -12610,13 +12792,16 @@ runAsyncDemo()
     }
     return out;
   }
+  function isUint8ArrayList(arr) {
+    return arr[0] instanceof Uint8Array;
+  }
   function ebmlElement(idBytes, payload) {
     const idArr = idBytes instanceof Uint8Array ? idBytes : new Uint8Array(idBytes);
-    const body = Array.isArray(payload) ? payload[0] instanceof Uint8Array ? concatUint8Arrays(payload) : new Uint8Array(payload) : payload instanceof Uint8Array ? payload : new Uint8Array(payload);
+    const body = Array.isArray(payload) ? isUint8ArrayList(payload) ? concatUint8Arrays(payload) : new Uint8Array(payload) : payload instanceof Uint8Array ? payload : new Uint8Array(payload);
     const sizeArr = ebmlVintSize(body.length);
     return concatUint8Arrays([idArr, sizeArr, body]);
   }
-  function muxWebmChunks(frames, durationMs, width = VIDEO_WIDTH, height = VIDEO_HEIGHT, fps = VIDEO_FPS, codecId = "V_VP8") {
+  function muxWebmChunks(frames, durationMs, width = 1920, height = 1080, fps = 60, codecId = "V_VP8") {
     const ebmlHeader = ebmlElement([26, 69, 223, 163], [
       ebmlElement([66, 134], ebmlUintBytes(1)),
       ebmlElement([66, 247], ebmlUintBytes(1)),
@@ -12696,7 +12881,11 @@ runAsyncDemo()
       segmentBody.length >>> 8 & 255,
       segmentBody.length & 255
     ]);
-    const segmentElem = concatUint8Arrays([new Uint8Array([24, 83, 128, 103]), segmentSize8, segmentBody]);
+    const segmentElem = concatUint8Arrays([
+      new Uint8Array([24, 83, 128, 103]),
+      segmentSize8,
+      segmentBody
+    ]);
     return new Blob([ebmlHeader, segmentElem], { type: "video/webm" });
   }
   async function fixWebmDuration(blob, durationMs) {
@@ -12814,6 +13003,11 @@ runAsyncDemo()
       return blob;
     }
   }
+
+  // src/ui/video-webm.ts
+  var btnExportVideo2 = $("btnExportVideo");
+  var btnExportVideoLabel2 = $("btnExportVideoLabel");
+  var videoExportStatus2 = $("videoExportStatus");
   async function encodeVideoFastWebCodecs(canvas, ctx, totalSteps, stepDurationMs, mult) {
     if (typeof VideoEncoder !== "function" || typeof VideoFrame !== "function") return null;
     const codecCandidates = [
@@ -12911,24 +13105,24 @@ runAsyncDemo()
       durationMs: totalDurationMs
     };
   }
-  async function exportVideo(speedMult = VIDEO_EXPORT_SPEED) {
-    if (IS_EXPORTING_VIDEO) return false;
+  async function exportVideo(speedMult = appState.VIDEO_EXPORT_SPEED) {
+    if (appState.IS_EXPORTING_VIDEO) return false;
     const mult = setVideoExportSpeed(speedMult);
     stopAuto();
-    const savedCur = cur;
+    const savedCur = appState.cur;
     if (!startDebug(0)) {
       say("\u2717 \u4EE3\u7801\u7F16\u8BD1\u672A\u901A\u8FC7\uFF0C\u65E0\u6CD5\u5BFC\u51FA\u89C6\u9891", "err");
       return false;
     }
-    while (!DEBUG_SESSION.finished && TRACE.steps.length < MAX_STEPS) {
+    while (!appState.DEBUG_SESSION.finished && appState.TRACE.steps.length < MAX_STEPS) {
       if (!computeAndAppendNextStep({ silent: true })) break;
     }
     initWatchedVars();
-    if (!TRACE.steps.length) {
+    if (!appState.TRACE.steps.length) {
       say("\u2717 \u5F53\u524D\u4EE3\u7801\u672A\u4EA7\u751F\u53EF\u5F55\u5236\u7684\u8C03\u8BD5\u6B65\u9AA4", "err");
       return false;
     }
-    IS_EXPORTING_VIDEO = true;
+    appState.IS_EXPORTING_VIDEO = true;
     if (btnExportVideo2) btnExportVideo2.disabled = true;
     if (btnExportVideoLabel2) btnExportVideoLabel2.textContent = "\u23FA \u6B63\u5728\u6781\u901F\u5BFC\u51FA...";
     if (videoExportStatus2) {
@@ -12942,13 +13136,13 @@ runAsyncDemo()
       canvas.height = VIDEO_HEIGHT;
       const ctx = canvas.getContext("2d");
       const stepDurationMs = Math.max(120, Math.round(AUTO_PLAY_MS / mult));
-      const totalSteps = TRACE.steps.length;
+      const totalSteps = appState.TRACE.steps.length;
       const targetTotalDurationMs = totalSteps * stepDurationMs;
       const fastRes = ctx ? await encodeVideoFastWebCodecs(canvas, ctx, totalSteps, stepDurationMs, mult) : null;
       if (fastRes && fastRes.blob) {
-        cur = Math.min(savedCur, Math.max(0, TRACE.steps.length - 1));
+        appState.cur = Math.min(savedCur, Math.max(0, appState.TRACE.steps.length - 1));
         renderPicker();
-        renderStatic(cur, false);
+        renderStatic(appState.cur, false);
         const url2 = URL.createObjectURL(fastRes.blob);
         const a2 = document.createElement("a");
         a2.href = url2;
@@ -13022,9 +13216,9 @@ runAsyncDemo()
       recorder.stop();
       await stoppedPromise;
       stream.getTracks().forEach((t) => t.stop());
-      cur = Math.min(savedCur, Math.max(0, TRACE.steps.length - 1));
+      appState.cur = Math.min(savedCur, Math.max(0, appState.TRACE.steps.length - 1));
       renderPicker();
-      renderStatic(cur, false);
+      renderStatic(appState.cur, false);
       let blob = new Blob(chunks, { type: mimeType || "video/webm" });
       blob = await fixWebmDuration(blob, actualDurationMs || targetTotalDurationMs);
       const url = URL.createObjectURL(blob);
@@ -13047,7 +13241,7 @@ runAsyncDemo()
       say("\u2717 \u89C6\u9891\u5BFC\u51FA\u5931\u8D25: " + msg, "err");
       return false;
     } finally {
-      IS_EXPORTING_VIDEO = false;
+      appState.IS_EXPORTING_VIDEO = false;
       if (btnExportVideo2) btnExportVideo2.disabled = false;
       if (btnExportVideoLabel2) btnExportVideoLabel2.textContent = "\u{1F3AC} \u5BFC\u51FA\u89C6\u9891";
     }
@@ -13055,7 +13249,7 @@ runAsyncDemo()
   if (btnExportVideo2) {
     btnExportVideo2.onclick = (e) => {
       e.stopPropagation();
-      exportVideo(VIDEO_EXPORT_SPEED);
+      exportVideo(appState.VIDEO_EXPORT_SPEED);
     };
   }
 
@@ -13066,19 +13260,34 @@ runAsyncDemo()
     VFS_NODES: () => VFS_NODES,
     VFS_STORAGE_KEY: () => VFS_STORAGE_KEY,
     bindGlobalVfsApi: () => bindGlobalVfsApi,
+    createVfsCoreApi: () => createVfsCoreApi,
     ensureParentFoldersExist: () => ensureParentFoldersExist,
     ensureVfsInitialized: () => ensureVfsInitialized,
     initVfsSidebarEvents: () => initVfsSidebarEvents,
+    notifyVfsStoreChanged: () => notifyVfsStoreChanged,
     openVfsFile: () => openVfsFile,
     persistVfsToClientStorage: () => persistVfsToClientStorage,
     renderVfsTreeUI: () => renderVfsTreeUI,
-    resolveWorkspacePath: () => resolveWorkspacePath
+    resolveWorkspacePath: () => resolveWorkspacePath,
+    serializeFsData: () => serializeFsData,
+    subscribeVfsStore: () => subscribeVfsStore
   });
+
+  // src/runtime/vfs-store.ts
   var VFS_STORAGE_KEY = "ts-visual-vfs-workspace-v2";
   var vfsBootInitialized = false;
-  var pendingVfsDeletePath = null;
   var VFS_EXPANDED_FOLDERS = /* @__PURE__ */ new Set();
   var VFS_NODES = /* @__PURE__ */ new Map();
+  var vfsListeners = /* @__PURE__ */ new Set();
+  function subscribeVfsStore(listener) {
+    vfsListeners.add(listener);
+    return () => {
+      vfsListeners.delete(listener);
+    };
+  }
+  function notifyVfsStoreChanged() {
+    vfsListeners.forEach((fn) => fn());
+  }
   function resolveWorkspacePath(rawPath, allowEmptyRoot = false) {
     const raw = String(rawPath ?? "").trim().replace(/\\/g, "/");
     if (!raw || raw === "." || raw === "./" || raw === "workspace" || raw === "/workspace" || raw === "workspace/" || raw === "/workspace/") {
@@ -13124,6 +13333,10 @@ runAsyncDemo()
     }
     return finalPath;
   }
+  function isPersistedVfsNode(item) {
+    if (!isRecord(item)) return false;
+    return typeof item.path === "string" && typeof item.name === "string" && (item.type === "file" || item.type === "folder");
+  }
   function ensureVfsInitialized() {
     if (vfsBootInitialized) return;
     vfsBootInitialized = true;
@@ -13136,15 +13349,14 @@ runAsyncDemo()
           const parsed = JSON.parse(raw);
           if (Array.isArray(parsed)) {
             for (const item of parsed) {
-              if (item && typeof item === "object" && typeof item.path === "string" && typeof item.name === "string" && (item.type === "file" || item.type === "folder")) {
-                const node = item;
-                VFS_NODES.set(node.path, {
-                  path: node.path,
-                  name: node.name,
-                  type: node.type,
-                  parentPath: typeof node.parentPath === "string" ? node.parentPath : "",
-                  content: typeof node.content === "string" ? node.content : void 0,
-                  readonly: Boolean(node.readonly)
+              if (isPersistedVfsNode(item)) {
+                VFS_NODES.set(item.path, {
+                  path: item.path,
+                  name: item.name,
+                  type: item.type,
+                  parentPath: typeof item.parentPath === "string" ? item.parentPath : "",
+                  content: typeof item.content === "string" ? item.content : void 0,
+                  readonly: Boolean(item.readonly)
                 });
               }
             }
@@ -13183,85 +13395,6 @@ runAsyncDemo()
         VFS_EXPANDED_FOLDERS.add(acc);
       }
     }
-  }
-  function renderVfsTreeUI() {
-    const treeEl = $("vfsTreeList");
-    if (!treeEl) return;
-    ensureVfsInitialized();
-    const activePath = uiHooks.getActiveWorkspacePath();
-    const childrenOf = (parentPath) => {
-      const list = [];
-      VFS_NODES.forEach((node) => {
-        if (node.parentPath === parentPath) list.push(node);
-      });
-      return list.sort((a, b) => {
-        if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
-        return a.name.localeCompare(b.name);
-      });
-    };
-    const buildConfirmHtml = (node) => {
-      if (pendingVfsDeletePath !== node.path) return "";
-      return `<div class="vfs-del-confirm" data-vfs-confirm-box="${esc(node.path)}"><span class="vfs-del-confirm-text">\u786E\u8BA4\u5220\u9664 ${esc(node.name)}\uFF1F</span><span class="vfs-del-confirm-actions"><button type="button" class="vfs-confirm-btn danger" data-vfs-confirm-del="${esc(node.path)}">\u786E\u8BA4</button><button type="button" class="vfs-confirm-btn" data-vfs-cancel-del="${esc(node.path)}">\u53D6\u6D88</button></span></div>`;
-    };
-    const renderNode = (node, depth) => {
-      const padLeft = 8 + depth * 14;
-      const canDel = !node.readonly;
-      const delBtnHtml = canDel ? `<span class="vfs-row-actions"><button type="button" class="vfs-del-btn" data-vfs-del="${esc(node.path)}" title="\u5220\u9664">\u274C</button></span>` : "";
-      if (node.type === "folder") {
-        const isOpen = VFS_EXPANDED_FOLDERS.has(node.path);
-        const kids = childrenOf(node.path);
-        return `<div class="vfs-folder-row" data-vfs-folder="${esc(node.path)}" style="padding-left:${padLeft}px" title="\u5355\u51FB\u5C55\u5F00/\u6298\u53E0\u76EE\u5F55 \xB7 \u53CC\u51FB\u91CD\u547D\u540D\u76EE\u5F55"><span class="vfs-caret">${isOpen ? "\u25BE" : "\u25B8"}</span><span class="vfs-icon">\u{1F4C1}</span><span class="vfs-name">${esc(node.name)}/</span>` + delBtnHtml + `</div>` + buildConfirmHtml(node) + (isOpen ? `<div class="vfs-folder-children">${kids.map((k) => renderNode(k, depth + 1)).join("")}</div>` : "");
-      }
-      const isAct = Boolean(activePath && node.path === activePath);
-      const ext = (node.name.split(".").pop() || "").toLowerCase();
-      const icon = ext === "ipynb" ? "\u{1F4D3}" : ext === "py" ? "\u{1F40D}" : ext === "ts" ? "\u{1F4D8}" : ext === "json" ? "\u{1F5C2}" : "\u{1F4C4}";
-      return `<div class="vfs-file-row${isAct ? " active" : ""}" data-vfs-file="${esc(node.path)}" style="padding-left:${padLeft}px" title="${esc(node.path)}\uFF08\u5355\u51FB\u6253\u5F00 \xB7 \u53CC\u51FB\u91CD\u547D\u540D\uFF09"><span class="vfs-icon">${icon}</span><span class="vfs-name">${esc(node.name)}</span>` + delBtnHtml + `</div>` + buildConfirmHtml(node);
-    };
-    const roots = childrenOf("");
-    if (roots.length === 0) {
-      treeEl.innerHTML = `<div class="vfs-empty-hint" style="padding:14px 10px;color:#64748b;font-size:11.5px;text-align:center;">\u7A7A\u76EE\u5F55</div>`;
-    } else {
-      treeEl.innerHTML = roots.map((r) => renderNode(r, 0)).join("");
-    }
-    const footEl = $("vfsFootStatus");
-    if (footEl) {
-      let fileCount = 0;
-      let totalBytes = 0;
-      VFS_NODES.forEach((n) => {
-        if (n.type === "file") {
-          fileCount++;
-          totalBytes += (n.content || "").length;
-        }
-      });
-      const kb = (totalBytes / 1024).toFixed(1);
-      footEl.textContent = `${fileCount} \u4E2A\u6587\u4EF6 (${kb} KB)`;
-    }
-  }
-  function openVfsFile(rawPath) {
-    ensureVfsInitialized();
-    let path = rawPath;
-    try {
-      path = resolveWorkspacePath(rawPath, false);
-    } catch (err) {
-      say(`\u2717 ${err instanceof Error ? err.message : String(err)}`, "err");
-      return;
-    }
-    const node = VFS_NODES.get(path);
-    if (!node || node.type !== "file") return;
-    if (node.name.endsWith(".ipynb")) {
-      uiHooks.openVfsNotebookFile(node.name, node.content);
-      return;
-    }
-    const isPyFile = node.name.endsWith(".py");
-    if (isPyFile && LANG !== "python" && typeof PY_ENGINE !== "undefined" && PY_ENGINE.setLang) {
-      PY_ENGINE.setLang("python");
-    } else if (node.name.endsWith(".ts") && LANG === "python" && typeof PY_ENGINE !== "undefined" && PY_ENGINE.setLang) {
-      PY_ENGINE.setLang("ts");
-    }
-    uiHooks.setViewMode("script");
-    uiHooks.openVfsScriptFile(node.path, node.name, node.content || "");
-    renderVfsTreeUI();
-    say(`\u{1F4C2} \u5DF2\u6253\u5F00 ${node.path}`, "ok");
   }
   function serializeFsData(data) {
     if (typeof data === "string") return data;
@@ -13311,7 +13444,7 @@ runAsyncDemo()
           content: serializeFsData(content)
         });
         persistVfsToClientStorage();
-        renderVfsTreeUI();
+        notifyVfsStoreChanged();
         return true;
       },
       appendFile(path, content) {
@@ -13369,7 +13502,7 @@ runAsyncDemo()
           }
         });
         persistVfsToClientStorage();
-        renderVfsTreeUI();
+        notifyVfsStoreChanged();
         return true;
       },
       unlink(path) {
@@ -13381,7 +13514,7 @@ runAsyncDemo()
         if (!rel) return true;
         ensureParentFoldersExist(rel + "/_");
         persistVfsToClientStorage();
-        renderVfsTreeUI();
+        notifyVfsStoreChanged();
         return true;
       },
       stat(path) {
@@ -13410,7 +13543,7 @@ runAsyncDemo()
         ensureVfsInitialized();
         VFS_NODES.clear();
         persistVfsToClientStorage();
-        renderVfsTreeUI();
+        notifyVfsStoreChanged();
       }
     };
     return api;
@@ -13531,6 +13664,91 @@ runAsyncDemo()
     globalThis.vfs = api;
     globalThis.__FS_SHIM__ = fsShim;
   }
+
+  // src/ui/vfs.ts
+  var pendingVfsDeletePath = null;
+  function renderVfsTreeUI() {
+    const treeEl = $("vfsTreeList");
+    if (!treeEl) return;
+    ensureVfsInitialized();
+    const activePath = uiHooks.getActiveWorkspacePath();
+    const childrenOf = (parentPath) => {
+      const list = [];
+      VFS_NODES.forEach((node) => {
+        if (node.parentPath === parentPath) list.push(node);
+      });
+      return list.sort((a, b) => {
+        if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      });
+    };
+    const buildConfirmHtml = (node) => {
+      if (pendingVfsDeletePath !== node.path) return "";
+      return `<div class="vfs-del-confirm" data-vfs-confirm-box="${esc(node.path)}"><span class="vfs-del-confirm-text">\u786E\u8BA4\u5220\u9664 ${esc(node.name)}\uFF1F</span><span class="vfs-del-confirm-actions"><button type="button" class="vfs-confirm-btn danger" data-vfs-confirm-del="${esc(node.path)}">\u786E\u8BA4</button><button type="button" class="vfs-confirm-btn" data-vfs-cancel-del="${esc(node.path)}">\u53D6\u6D88</button></span></div>`;
+    };
+    const renderNode = (node, depth) => {
+      const padLeft = 8 + depth * 14;
+      const canDel = !node.readonly;
+      const delBtnHtml = canDel ? `<span class="vfs-row-actions"><button type="button" class="vfs-del-btn" data-vfs-del="${esc(node.path)}" title="\u5220\u9664">\u274C</button></span>` : "";
+      if (node.type === "folder") {
+        const isOpen = VFS_EXPANDED_FOLDERS.has(node.path);
+        const kids = childrenOf(node.path);
+        return `<div class="vfs-folder-row" data-vfs-folder="${esc(node.path)}" style="padding-left:${padLeft}px" title="\u5355\u51FB\u5C55\u5F00/\u6298\u53E0\u76EE\u5F55 \xB7 \u53CC\u51FB\u91CD\u547D\u540D\u76EE\u5F55"><span class="vfs-caret">${isOpen ? "\u25BE" : "\u25B8"}</span><span class="vfs-icon">\u{1F4C1}</span><span class="vfs-name">${esc(node.name)}/</span>` + delBtnHtml + `</div>` + buildConfirmHtml(node) + (isOpen ? `<div class="vfs-folder-children">${kids.map((k) => renderNode(k, depth + 1)).join("")}</div>` : "");
+      }
+      const isAct = Boolean(activePath && node.path === activePath);
+      const ext = (node.name.split(".").pop() || "").toLowerCase();
+      const icon = ext === "ipynb" ? "\u{1F4D3}" : ext === "py" ? "\u{1F40D}" : ext === "ts" ? "\u{1F4D8}" : ext === "json" ? "\u{1F5C2}" : "\u{1F4C4}";
+      return `<div class="vfs-file-row${isAct ? " active" : ""}" data-vfs-file="${esc(node.path)}" style="padding-left:${padLeft}px" title="${esc(node.path)}\uFF08\u5355\u51FB\u6253\u5F00 \xB7 \u53CC\u51FB\u91CD\u547D\u540D\uFF09"><span class="vfs-icon">${icon}</span><span class="vfs-name">${esc(node.name)}</span>` + delBtnHtml + `</div>` + buildConfirmHtml(node);
+    };
+    const roots = childrenOf("");
+    if (roots.length === 0) {
+      treeEl.innerHTML = `<div class="vfs-empty-hint" style="padding:14px 10px;color:#64748b;font-size:11.5px;text-align:center;">\u7A7A\u76EE\u5F55</div>`;
+    } else {
+      treeEl.innerHTML = roots.map((r) => renderNode(r, 0)).join("");
+    }
+    const footEl = $("vfsFootStatus");
+    if (footEl) {
+      let fileCount = 0;
+      let totalBytes = 0;
+      VFS_NODES.forEach((n) => {
+        if (n.type === "file") {
+          fileCount++;
+          totalBytes += (n.content || "").length;
+        }
+      });
+      const kb = (totalBytes / 1024).toFixed(1);
+      footEl.textContent = `${fileCount} \u4E2A\u6587\u4EF6 (${kb} KB)`;
+    }
+  }
+  subscribeVfsStore(() => {
+    renderVfsTreeUI();
+  });
+  function openVfsFile(rawPath) {
+    ensureVfsInitialized();
+    let path = rawPath;
+    try {
+      path = resolveWorkspacePath(rawPath, false);
+    } catch (err) {
+      say(`\u2717 ${err instanceof Error ? err.message : String(err)}`, "err");
+      return;
+    }
+    const node = VFS_NODES.get(path);
+    if (!node || node.type !== "file") return;
+    if (node.name.endsWith(".ipynb")) {
+      uiHooks.openVfsNotebookFile(node.name, node.content);
+      return;
+    }
+    const isPyFile = node.name.endsWith(".py");
+    if (isPyFile && appState.LANG !== "python" && typeof PY_ENGINE !== "undefined" && PY_ENGINE.setLang) {
+      PY_ENGINE.setLang("python");
+    } else if (node.name.endsWith(".ts") && appState.LANG === "python" && typeof PY_ENGINE !== "undefined" && PY_ENGINE.setLang) {
+      PY_ENGINE.setLang("ts");
+    }
+    uiHooks.setViewMode("script");
+    uiHooks.openVfsScriptFile(node.path, node.name, node.content || "");
+    renderVfsTreeUI();
+    say(`\u{1F4C2} \u5DF2\u6253\u5F00 ${node.path}`, "ok");
+  }
   function initVfsSidebarEvents() {
     const fileInput = $("fileInput");
     const vfsSidebar = $("vfsSidebar");
@@ -13554,12 +13772,12 @@ runAsyncDemo()
     if (btnNewFile) {
       btnNewFile.onclick = () => {
         ensureVfsInitialized();
-        const ext = LANG === "python" ? ".py" : ".ts";
+        const ext = appState.LANG === "python" ? ".py" : ".ts";
         let idx = 1;
         while (VFS_NODES.has(`file_${idx}${ext}`)) idx++;
         const name = `file_${idx}${ext}`;
         const path = name;
-        const content = LANG === "python" ? `# ${name}
+        const content = appState.LANG === "python" ? `# ${name}
 ` : `// ${name}
 `;
         VFS_NODES.set(path, {
@@ -13600,9 +13818,9 @@ runAsyncDemo()
     const vfsTreeList = $("vfsTreeList");
     if (!vfsTreeList || !vfsTreeList.addEventListener) return;
     vfsTreeList.addEventListener("click", (e) => {
-      const target = e.target;
+      const target = eventTargetElement(e);
       if (!target) return;
-      const confirmDelBtn = target.closest ? target.closest("[data-vfs-confirm-del]") : null;
+      const confirmDelBtn = closestElement(target, "[data-vfs-confirm-del]");
       if (confirmDelBtn) {
         e.stopPropagation();
         const delPath = confirmDelBtn.getAttribute("data-vfs-confirm-del");
@@ -13623,14 +13841,14 @@ runAsyncDemo()
         }
         return;
       }
-      const cancelDelBtn = target.closest ? target.closest("[data-vfs-cancel-del]") : null;
+      const cancelDelBtn = closestElement(target, "[data-vfs-cancel-del]");
       if (cancelDelBtn) {
         e.stopPropagation();
         pendingVfsDeletePath = null;
         renderVfsTreeUI();
         return;
       }
-      const delBtn = target.closest ? target.closest("[data-vfs-del]") : null;
+      const delBtn = closestElement(target, "[data-vfs-del]");
       if (delBtn) {
         e.stopPropagation();
         const delPath = delBtn.getAttribute("data-vfs-del");
@@ -13640,7 +13858,7 @@ runAsyncDemo()
         }
         return;
       }
-      const folderRow = target.closest ? target.closest("[data-vfs-folder]") : null;
+      const folderRow = closestElement(target, "[data-vfs-folder]");
       if (folderRow) {
         const folderPath = folderRow.getAttribute("data-vfs-folder");
         if (folderPath) {
@@ -13650,7 +13868,7 @@ runAsyncDemo()
         }
         return;
       }
-      const fileRow = target.closest ? target.closest("[data-vfs-file]") : null;
+      const fileRow = closestElement(target, "[data-vfs-file]");
       if (fileRow) {
         const filePath = fileRow.getAttribute("data-vfs-file");
         if (filePath) {
@@ -13662,8 +13880,7 @@ runAsyncDemo()
       }
     });
     vfsTreeList.addEventListener("dblclick", (e) => {
-      const target = e.target;
-      const row = target && target.closest ? target.closest("[data-vfs-file], [data-vfs-folder]") : null;
+      const row = closestElement(e, "[data-vfs-file], [data-vfs-folder]");
       if (!row) return;
       const oldPath = row.getAttribute("data-vfs-file") || row.getAttribute("data-vfs-folder");
       if (!oldPath) return;
@@ -13717,6 +13934,8 @@ runAsyncDemo()
     ensureScriptTabsForLang: () => ensureScriptTabsForLang,
     getActiveScriptTab: () => getActiveScriptTab,
     getPySamplesDict: () => getPySamplesDict,
+    handleVfsFileDeletedInTabs: () => handleVfsFileDeletedInTabs,
+    handleVfsFileRenamedInTabs: () => handleVfsFileRenamedInTabs,
     initScriptTabsAndImportEvents: () => initScriptTabsAndImportEvents,
     isScriptTabSyncing: () => isScriptTabSyncing,
     nextScriptTabId: () => nextScriptTabId,
@@ -13728,8 +13947,12 @@ runAsyncDemo()
     renderScriptTabsUI: () => renderScriptTabsUI,
     setScriptTabSyncing: () => setScriptTabSyncing,
     syncActiveScriptTabFromFileName: () => syncActiveScriptTabFromFileName,
-    syncActiveScriptTabSource: () => syncActiveScriptTabSource
+    syncActiveScriptTabSource: () => syncActiveScriptTabSource,
+    upsertSampleScriptTab: () => upsertSampleScriptTab,
+    upsertVfsScriptTab: () => upsertVfsScriptTab
   });
+
+  // src/runtime/script-tabs-store.ts
   var scriptTabSeq = 1;
   var syncingScriptTab = false;
   function nextScriptTabId() {
@@ -13773,8 +13996,11 @@ runAsyncDemo()
     ensureVfsInitialized();
     const store = SCRIPT_TABS[lang];
     if (store.tabs.length === 0) {
-      const defaultTitle = lang === "python" ? LANG === "python" && FILE_NAME ? FILE_NAME : "quickstart.py" : LANG !== "python" && FILE_NAME ? FILE_NAME : "showcase.ts";
-      const defaultSrc = lang === "python" ? LANG === "python" && editor && editor.value ? editor.value : getPySamplesDict().quickstart || "" : LANG !== "python" && editor && editor.value ? editor.value : SAMPLES.showcase || "";
+      const curLang = appState.LANG;
+      const curFileName = appState.FILE_NAME;
+      const editorSrc = uiHooks.getEditorSource();
+      const defaultTitle = lang === "python" ? curLang === "python" && curFileName ? curFileName : "quickstart.py" : curLang !== "python" && curFileName ? curFileName : "showcase.ts";
+      const defaultSrc = lang === "python" ? curLang === "python" && editorSrc ? editorSrc : getPySamplesDict().quickstart || "" : curLang !== "python" && editorSrc ? editorSrc : SAMPLES.showcase || "";
       const tabId = nextScriptTabId();
       store.tabs.push({
         id: tabId,
@@ -13793,7 +14019,7 @@ runAsyncDemo()
     return store;
   }
   function getActiveScriptTab(lang) {
-    const targetLang = lang || (LANG === "python" ? "python" : "ts");
+    const targetLang = lang || (appState.LANG === "python" ? "python" : "ts");
     const store = ensureScriptTabsForLang(targetLang);
     const found = store.tabs.find((t) => t.id === store.activeTabId) ?? store.tabs[0];
     if (found) return found;
@@ -13806,11 +14032,21 @@ runAsyncDemo()
       isSample: true
     };
   }
-  function openSampleScriptTab(title, source, lang) {
-    const targetLang = lang || (LANG === "python" ? "python" : "ts");
-    if (editor && editor.value) {
-      syncActiveScriptTabSource(editor.value);
+  function syncActiveScriptTabSource(src) {
+    const lang = appState.LANG === "python" ? "python" : "ts";
+    const activeTab = getActiveScriptTab(lang);
+    if (!activeTab) return;
+    activeTab.source = src;
+    if (!activeTab.isSample && activeTab.vfsPath) {
+      const node = VFS_NODES.get(activeTab.vfsPath);
+      if (node && node.type === "file") {
+        node.content = src;
+        persistVfsToClientStorage();
+      }
     }
+  }
+  function upsertSampleScriptTab(title, source, lang) {
+    const targetLang = lang || (appState.LANG === "python" ? "python" : "ts");
     const store = ensureScriptTabsForLang(targetLang);
     let tab = store.tabs.find((t) => (t.isSample || !t.vfsPath) && t.title === title);
     if (!tab) {
@@ -13829,16 +14065,70 @@ runAsyncDemo()
       tab.isSample = true;
     }
     store.activeTabId = tab.id;
-    syncingScriptTab = true;
+    return tab;
+  }
+  function upsertVfsScriptTab(path, name, content, lang) {
+    const targetLang = lang || (appState.LANG === "python" ? "python" : "ts");
+    const store = ensureScriptTabsForLang(targetLang);
+    let tab = store.tabs.find((t) => !t.isSample && t.vfsPath === path);
+    if (!tab) {
+      tab = {
+        id: nextScriptTabId(),
+        title: name,
+        lang: targetLang,
+        source: content,
+        vfsPath: path,
+        isSample: false
+      };
+      store.tabs.push(tab);
+    } else {
+      tab.source = content;
+      tab.vfsPath = path;
+      tab.isSample = false;
+    }
+    store.activeTabId = tab.id;
+    return tab;
+  }
+  function handleVfsFileDeletedInTabs(delPath) {
+    const prefix = delPath + "/";
+    ["ts", "python"].forEach((l) => {
+      const st = SCRIPT_TABS[l];
+      st.tabs.forEach((t) => {
+        if (t.vfsPath === delPath || t.vfsPath.startsWith(prefix)) {
+          t.vfsPath = "";
+        }
+      });
+    });
+  }
+  function handleVfsFileRenamedInTabs(oldPath, nextPath, nextName) {
+    const lang = appState.LANG === "python" ? "python" : "ts";
+    const store = ensureScriptTabsForLang(lang);
+    const matchingTab = store.tabs.find((t) => t.vfsPath === oldPath);
+    if (!matchingTab) return { updated: false, isActive: false };
+    matchingTab.title = nextName;
+    matchingTab.vfsPath = nextPath;
+    return {
+      updated: true,
+      isActive: store.activeTabId === matchingTab.id
+    };
+  }
+
+  // src/ui/script-tabs.ts
+  function openSampleScriptTab(title, source, lang) {
+    if (editor && editor.value) {
+      syncActiveScriptTabSource(editor.value);
+    }
+    upsertSampleScriptTab(title, source, lang);
+    setScriptTabSyncing(true);
     if (editor) editor.value = source;
     setFileName(title);
-    syncingScriptTab = false;
+    setScriptTabSyncing(false);
     renderScriptTabsUI();
     renderVfsTreeUI();
   }
   function syncActiveScriptTabFromFileName(newFileName) {
-    if (syncingScriptTab) return;
-    const lang = LANG === "python" ? "python" : "ts";
+    if (isScriptTabSyncing()) return;
+    const lang = appState.LANG === "python" ? "python" : "ts";
     const store = ensureScriptTabsForLang(lang);
     const activeTab = store.tabs.find((t) => t.id === store.activeTabId);
     if (!activeTab) return;
@@ -13860,23 +14150,10 @@ runAsyncDemo()
     renderScriptTabsUI();
     renderVfsTreeUI();
   }
-  function syncActiveScriptTabSource(src) {
-    const lang = LANG === "python" ? "python" : "ts";
-    const activeTab = getActiveScriptTab(lang);
-    if (!activeTab) return;
-    activeTab.source = src;
-    if (!activeTab.isSample && activeTab.vfsPath) {
-      const node = VFS_NODES.get(activeTab.vfsPath);
-      if (node && node.type === "file") {
-        node.content = src;
-        persistVfsToClientStorage();
-      }
-    }
-  }
   function renderScriptTabsUI() {
     const tabsEl = $("scriptTabsList");
     if (!tabsEl) return;
-    const lang = LANG === "python" ? "python" : "ts";
+    const lang = appState.LANG === "python" ? "python" : "ts";
     const store = ensureScriptTabsForLang(lang);
     const activeTab = getActiveScriptTab(lang);
     tabsEl.innerHTML = store.tabs.map((t) => {
@@ -13888,13 +14165,13 @@ runAsyncDemo()
   function renderImportSampleMenu() {
     const listEl = $("importSampleList");
     if (!listEl) return;
-    const isPy = LANG === "python";
+    const isPy = appState.LANG === "python";
     const items = isPy ? PY_SAMPLE_METADATA : TS_SAMPLE_METADATA;
     const folderPrefix = isPy ? "examples/python/" : "examples/ts/";
     const nbItemHtml = `<button type="button" class="import-sample-item" data-import-sample-notebook="Intro.ipynb"><span class="import-sample-name">\u{1F4D3} Intro.ipynb \xB7 \u4EA4\u4E92\u5F0F\u7B14\u8BB0\u672C\u793A\u4F8B</span><span class="import-sample-path">examples/notebooks/</span></button>`;
-    listEl.innerHTML = (VIEW_MODE === "notebook" ? nbItemHtml : "") + items.map(
+    listEl.innerHTML = (appState.VIEW_MODE === "notebook" ? nbItemHtml : "") + items.map(
       (item) => `<button type="button" class="import-sample-item" data-import-sample-key="${esc(item.key)}" title="${esc(item.desc)}"><span class="import-sample-name">${esc(item.label)}</span><span class="import-sample-path">${esc(folderPrefix + item.key + (isPy ? ".py" : ".ts"))}</span></button>`
-    ).join("") + (VIEW_MODE !== "notebook" ? nbItemHtml : "");
+    ).join("") + (appState.VIEW_MODE !== "notebook" ? nbItemHtml : "");
   }
   function initScriptTabsAndImportEvents() {
     const importMenuWrap = $("importMenuWrap");
@@ -13912,7 +14189,7 @@ runAsyncDemo()
       };
       addEventListener("click", (e) => {
         if (!importMenuWrap.classList || !importMenuWrap.classList.contains("open")) return;
-        if (importMenuWrap.contains && importMenuWrap.contains(e.target)) return;
+        if (importMenuWrap.contains && importMenuWrap.contains(eventTargetNode(e))) return;
         importMenuWrap.classList.remove("open");
       });
     }
@@ -13925,8 +14202,7 @@ runAsyncDemo()
     }
     if (importSampleList && importSampleList.addEventListener) {
       importSampleList.addEventListener("click", (e) => {
-        const target = e.target;
-        const btn = target && target.closest ? target.closest(".import-sample-item") : null;
+        const btn = closestElement(e, ".import-sample-item");
         if (!btn) return;
         if (importMenuWrap && importMenuWrap.classList) importMenuWrap.classList.remove("open");
         const nbFile = btn.getAttribute("data-import-sample-notebook");
@@ -13937,8 +14213,8 @@ runAsyncDemo()
         }
         const sampleKey = btn.getAttribute("data-import-sample-key");
         if (sampleKey) {
-          if (VIEW_MODE === "notebook") {
-            const code = LANG === "python" ? getPySamplesDict()[sampleKey] || "" : SAMPLES[sampleKey] || "";
+          if (appState.VIEW_MODE === "notebook") {
+            const code = appState.LANG === "python" ? getPySamplesDict()[sampleKey] || "" : SAMPLES[sampleKey] || "";
             if (code) {
               uiHooks.importSampleIntoNotebook(code, sampleKey);
             }
@@ -13951,11 +14227,11 @@ runAsyncDemo()
     const scriptTabsEl = $("scriptTabsList");
     if (scriptTabsEl && scriptTabsEl.addEventListener) {
       scriptTabsEl.addEventListener("click", (e) => {
-        const target = e.target;
+        const target = eventTargetElement(e);
         if (!target) return;
-        const lang = LANG === "python" ? "python" : "ts";
+        const lang = appState.LANG === "python" ? "python" : "ts";
         const store = ensureScriptTabsForLang(lang);
-        const closeBtn = target.closest ? target.closest("[data-close-script-tab]") : null;
+        const closeBtn = closestElement(target, "[data-close-script-tab]");
         if (closeBtn) {
           e.stopPropagation();
           const closeId = closeBtn.getAttribute("data-close-script-tab");
@@ -13967,10 +14243,10 @@ runAsyncDemo()
               const fallbackTab = store.tabs[Math.max(0, idx - 1)];
               if (fallbackTab) store.activeTabId = fallbackTab.id;
               const nextTab = getActiveScriptTab(lang);
-              syncingScriptTab = true;
+              setScriptTabSyncing(true);
               editor.value = nextTab.source;
               setFileName(nextTab.title);
-              syncingScriptTab = false;
+              setScriptTabSyncing(false);
               resetTraceState();
               updateEditorChrome();
             }
@@ -13979,7 +14255,7 @@ runAsyncDemo()
           }
           return;
         }
-        const newBtn = target.closest ? target.closest("#scriptBtnNewTab") : null;
+        const newBtn = closestElement(target, "#scriptBtnNewTab");
         if (newBtn) {
           syncActiveScriptTabSource(editor ? editor.value : "");
           const ext = lang === "python" ? ".py" : ".ts";
@@ -13994,10 +14270,10 @@ runAsyncDemo()
           };
           store.tabs.push(newTab);
           store.activeTabId = newTab.id;
-          syncingScriptTab = true;
+          setScriptTabSyncing(true);
           editor.value = newTab.source;
           setFileName(newTab.title);
-          syncingScriptTab = false;
+          setScriptTabSyncing(false);
           resetTraceState();
           updateEditorChrome();
           renderScriptTabsUI();
@@ -14005,17 +14281,17 @@ runAsyncDemo()
           if (editor && typeof editor.focus === "function") editor.focus();
           return;
         }
-        const tabEl = target.closest ? target.closest("[data-script-tab-id]") : null;
+        const tabEl = closestElement(target, "[data-script-tab-id]");
         if (tabEl) {
           const tabId = tabEl.getAttribute("data-script-tab-id");
           if (tabId && store.activeTabId !== tabId) {
             syncActiveScriptTabSource(editor ? editor.value : "");
             store.activeTabId = tabId;
             const nextTab = getActiveScriptTab(lang);
-            syncingScriptTab = true;
+            setScriptTabSyncing(true);
             editor.value = nextTab.source;
             setFileName(nextTab.title);
-            syncingScriptTab = false;
+            setScriptTabSyncing(false);
             resetTraceState();
             updateEditorChrome();
             renderScriptTabsUI();
@@ -14024,11 +14300,10 @@ runAsyncDemo()
         }
       });
       scriptTabsEl.addEventListener("dblclick", (e) => {
-        const target = e.target;
-        const tabEl = target && target.closest ? target.closest("[data-script-tab-id]") : null;
+        const tabEl = closestElement(e, "[data-script-tab-id]");
         if (!tabEl) return;
         const tabId = tabEl.getAttribute("data-script-tab-id");
-        const lang = LANG === "python" ? "python" : "ts";
+        const lang = appState.LANG === "python" ? "python" : "ts";
         const store = ensureScriptTabsForLang(lang);
         const targetTab = store.tabs.find((t) => t.id === tabId);
         if (!targetTab) return;
@@ -14064,9 +14339,9 @@ runAsyncDemo()
               persistVfsToClientStorage();
             }
             if (store.activeTabId === targetTab.id) {
-              syncingScriptTab = true;
+              setScriptTabSyncing(true);
               setFileName(nextName);
-              syncingScriptTab = false;
+              setScriptTabSyncing(false);
             }
             say(`\u2713 \u6587\u4EF6\u5DF2\u91CD\u547D\u540D\u4E3A ${nextName}`, "ok");
           }
@@ -14092,28 +14367,11 @@ runAsyncDemo()
     }
   }
   function openVfsScriptFile(path, name, content) {
-    const lang = LANG === "python" ? "python" : "ts";
+    const lang = appState.LANG === "python" ? "python" : "ts";
     if (editor && editor.value) {
       syncActiveScriptTabSource(editor.value);
     }
-    const store = ensureScriptTabsForLang(lang);
-    let tab = store.tabs.find((t) => !t.isSample && t.vfsPath === path);
-    if (!tab) {
-      tab = {
-        id: nextScriptTabId(),
-        title: name,
-        lang,
-        source: content,
-        vfsPath: path,
-        isSample: false
-      };
-      store.tabs.push(tab);
-    } else {
-      tab.source = content;
-      tab.vfsPath = path;
-      tab.isSample = false;
-    }
-    store.activeTabId = tab.id;
+    const tab = upsertVfsScriptTab(path, name, content, lang);
     setScriptTabSyncing(true);
     editor.value = tab.source;
     setFileName(tab.title);
@@ -14123,25 +14381,13 @@ runAsyncDemo()
     renderScriptTabsUI();
   }
   function onVfsFileDeleted(delPath) {
-    const prefix = delPath + "/";
-    ["ts", "python"].forEach((l) => {
-      const st = SCRIPT_TABS[l];
-      st.tabs.forEach((t) => {
-        if (t.vfsPath === delPath || t.vfsPath.startsWith(prefix)) {
-          t.vfsPath = "";
-        }
-      });
-    });
+    handleVfsFileDeletedInTabs(delPath);
     renderScriptTabsUI();
   }
   function onVfsFileRenamed(oldPath, nextPath, nextName) {
-    const lang = LANG === "python" ? "python" : "ts";
-    const store = ensureScriptTabsForLang(lang);
-    const matchingTab = store.tabs.find((t) => t.vfsPath === oldPath);
-    if (matchingTab) {
-      matchingTab.title = nextName;
-      matchingTab.vfsPath = nextPath;
-      if (store.activeTabId === matchingTab.id) {
+    const res = handleVfsFileRenamedInTabs(oldPath, nextPath, nextName);
+    if (res.updated) {
+      if (res.isActive) {
         setScriptTabSyncing(true);
         setFileName(nextName);
         setScriptTabSyncing(false);
@@ -14159,33 +14405,54 @@ runAsyncDemo()
   // src/ui/notebook.ts
   var notebook_exports = {};
   __export(notebook_exports, {
+    buildTsPreambleFromHistory: () => buildTsPreambleFromHistory,
+    buildTsTypecheckContext: () => buildTsTypecheckContext,
     copyNotebookCell: () => copyNotebookCell,
+    createDefaultNotebooks: () => createDefaultNotebooks,
     cutNotebookCell: () => cutNotebookCell,
     debugNotebookCell: () => debugNotebookCell,
+    debugPythonNotebookCell: () => debugPythonNotebookCell,
+    debugTsNotebookCell: () => debugTsNotebookCell,
+    deleteCellInModel: () => deleteCellInModel,
     deleteNotebookCell: () => deleteNotebookCell,
+    duplicateCellInModel: () => duplicateCellInModel,
     duplicateNotebookCell: () => duplicateNotebookCell,
     ensureLangNotebooks: () => ensureLangNotebooks,
+    estimateMarkdownEditorHeight: () => estimateMarkdownEditorHeight,
     exportActiveNotebookIpynb: () => exportActiveNotebookIpynb,
     getActiveCell: () => getActiveCell,
     getActiveNotebook: () => getActiveNotebook,
+    getClipboardCell: () => getClipboardCell,
     importNotebookFromJson: () => importNotebookFromJson,
     importSampleIntoNotebook: () => importSampleIntoNotebook,
     initNotebookUI: () => initNotebookUI,
+    insertCellInModel: () => insertCellInModel,
     insertNotebookCell: () => insertNotebookCell,
+    moveCellInModel: () => moveCellInModel,
+    moveFocusToNextCell: () => moveFocusToNextCell,
     moveNotebookCell: () => moveNotebookCell,
     nextCellId: () => nextCellId,
     nextDocId: () => nextDocId,
+    normalizeCellTsForNotebook: () => normalizeCellTsForNotebook,
+    notebooksByLang: () => notebooksByLang,
     openVfsNotebookFile: () => openVfsNotebookFile,
+    parseIpynbJsonToDocument: () => parseIpynbJsonToDocument,
     pasteNotebookCell: () => pasteNotebookCell,
     renderMarkdownHtml: () => renderMarkdownHtml,
     renderNotebookUI: () => renderNotebookUI,
     restartNotebookKernel: () => restartNotebookKernel,
     runAllNotebookCells: () => runAllNotebookCells,
     runNotebookCell: () => runNotebookCell,
+    runPythonNotebookCell: () => runPythonNotebookCell,
+    runTsNotebookCell: () => runTsNotebookCell,
+    serializeNotebookToIpynbJson: () => serializeNotebookToIpynbJson,
+    setClipboardCell: () => setClipboardCell,
     setViewMode: () => setViewMode,
     syncNotebookGlobalsToSidePanel: () => syncNotebookGlobalsToSidePanel,
     typecheckNotebookCellTS: () => typecheckNotebookCellTS
   });
+
+  // src/notebook/notebook-model.ts
   var nbClipboardCell = null;
   var nbCellSeq = 100;
   var nbDocSeq = 10;
@@ -14194,6 +14461,12 @@ runAsyncDemo()
   }
   function nextDocId() {
     return "nb_" + ++nbDocSeq;
+  }
+  function getClipboardCell() {
+    return nbClipboardCell;
+  }
+  function setClipboardCell(cell) {
+    nbClipboardCell = cell;
   }
   function createDefaultNotebooks(lang) {
     const isPy = lang === "python";
@@ -14354,7 +14627,7 @@ runAsyncDemo()
     return notebooksByLang[key];
   }
   function getActiveNotebook() {
-    const lang = LANG === "python" ? "python" : "ts";
+    const lang = appState.LANG === "python" ? "python" : "ts";
     const store = ensureLangNotebooks(lang);
     let doc = store.docs.find((d) => d.id === store.activeDocId) ?? store.docs[0];
     if (!doc) {
@@ -14443,6 +14716,202 @@ runAsyncDemo()
     }
     return out.join("");
   }
+  function moveFocusToNextCell(doc, currentCellId, createIfLast = false) {
+    const idx = doc.cells.findIndex((c) => c.id === currentCellId);
+    if (idx < 0) return;
+    const nextCell = doc.cells[idx + 1];
+    if (nextCell) {
+      doc.activeCellId = nextCell.id;
+      appState.ACTIVE_NB_CELL_ID = doc.activeCellId;
+    } else if (createIfLast) {
+      const newCell = {
+        id: nextCellId(),
+        type: "code",
+        source: "",
+        executionCount: null,
+        status: "idle",
+        output: null
+      };
+      doc.cells.push(newCell);
+      doc.activeCellId = newCell.id;
+      appState.ACTIVE_NB_CELL_ID = newCell.id;
+    }
+  }
+  function insertCellInModel(doc, pos = "below", refCellId, type = "code") {
+    const targetId = refCellId || doc.activeCellId;
+    const idx = doc.cells.findIndex((c) => c.id === targetId);
+    const newCell = {
+      id: nextCellId(),
+      type,
+      source: "",
+      executionCount: null,
+      status: "idle",
+      output: null,
+      markdownRendered: false
+    };
+    if (idx < 0) {
+      doc.cells.push(newCell);
+    } else {
+      const insertIdx = pos === "above" ? idx : idx + 1;
+      doc.cells.splice(insertIdx, 0, newCell);
+    }
+    doc.activeCellId = newCell.id;
+    appState.ACTIVE_NB_CELL_ID = newCell.id;
+    return newCell;
+  }
+  function duplicateCellInModel(doc, cellId) {
+    const targetId = cellId || doc.activeCellId;
+    const idx = doc.cells.findIndex((c) => c.id === targetId);
+    if (idx < 0) return null;
+    const orig = doc.cells[idx];
+    if (!orig) return null;
+    const copy = {
+      id: nextCellId(),
+      type: orig.type,
+      source: orig.source,
+      executionCount: null,
+      status: "idle",
+      output: null,
+      markdownRendered: orig.markdownRendered
+    };
+    doc.cells.splice(idx + 1, 0, copy);
+    doc.activeCellId = copy.id;
+    appState.ACTIVE_NB_CELL_ID = copy.id;
+    return copy;
+  }
+  function moveCellInModel(doc, dir, cellId) {
+    const targetId = cellId || doc.activeCellId;
+    const idx = doc.cells.findIndex((c) => c.id === targetId);
+    const nextIdx = idx + dir;
+    if (idx < 0 || nextIdx < 0 || nextIdx >= doc.cells.length) return false;
+    const [item] = doc.cells.splice(idx, 1);
+    if (!item) return false;
+    doc.cells.splice(nextIdx, 0, item);
+    doc.activeCellId = item.id;
+    appState.ACTIVE_NB_CELL_ID = item.id;
+    return true;
+  }
+  function deleteCellInModel(doc, cellId) {
+    const targetId = cellId || doc.activeCellId;
+    if (doc.cells.length <= 1) {
+      const first = doc.cells[0];
+      if (first) {
+        first.source = "";
+        first.executionCount = null;
+        first.status = "idle";
+        first.output = null;
+      }
+      return { deleted: true, clearedDebugging: false };
+    }
+    const idx = doc.cells.findIndex((c) => c.id === targetId);
+    if (idx < 0) return { deleted: false, clearedDebugging: false };
+    let clearedDebugging = false;
+    if (doc.debuggingCellId === targetId) {
+      doc.debuggingCellId = null;
+      clearedDebugging = true;
+    }
+    doc.cells.splice(idx, 1);
+    const nextActive = doc.cells[Math.min(idx, doc.cells.length - 1)];
+    if (nextActive) {
+      doc.activeCellId = nextActive.id;
+      appState.ACTIVE_NB_CELL_ID = nextActive.id;
+    }
+    return { deleted: true, clearedDebugging };
+  }
+  function serializeNotebookToIpynbJson(doc) {
+    const ipynb = {
+      nbformat: 4,
+      nbformat_minor: 5,
+      metadata: {
+        kernelspec: {
+          display_name: doc.lang === "python" ? "Python 3 (Pyodide)" : "TypeScript (Playground Visual)",
+          language: doc.lang === "python" ? "python" : "typescript",
+          name: doc.lang
+        }
+      },
+      cells: doc.cells.map((c) => ({
+        id: c.id,
+        cell_type: c.type === "markdown" ? "markdown" : "code",
+        metadata: {},
+        source: c.source.split("\n").map((line, i, arr) => i < arr.length - 1 ? line + "\n" : line),
+        ...c.type === "code" ? {
+          execution_count: c.executionCount,
+          outputs: c.output ? [
+            ...c.output.logs.length ? [{ output_type: "stream", name: "stdout", text: c.output.logs.map((l) => l + "\n") }] : [],
+            ...c.output.returnValue != null ? [
+              {
+                output_type: "execute_result",
+                execution_count: c.executionCount,
+                data: { "text/plain": [c.output.returnValue] },
+                metadata: {}
+              }
+            ] : []
+          ] : []
+        } : {}
+      }))
+    };
+    return JSON.stringify(ipynb, null, 2);
+  }
+  function parseIpynbJsonToDocument(jsonText, fileName, lang) {
+    try {
+      const data = JSON.parse(jsonText);
+      if (!data || !Array.isArray(data.cells)) return null;
+      const cells = data.cells.map(
+        (rawCell) => {
+          const type = rawCell.cell_type === "markdown" ? "markdown" : "code";
+          const src = Array.isArray(rawCell.source) ? rawCell.source.join("") : String(rawCell.source || "");
+          return {
+            id: nextCellId(),
+            type,
+            source: src.replace(/\r\n?/g, "\n"),
+            executionCount: typeof rawCell.execution_count === "number" ? rawCell.execution_count : null,
+            status: "idle",
+            output: null,
+            markdownRendered: type === "markdown"
+          };
+        }
+      );
+      if (!cells.length) {
+        cells.push({
+          id: nextCellId(),
+          type: "code",
+          source: "",
+          executionCount: null,
+          status: "idle",
+          output: null
+        });
+      }
+      return {
+        id: nextDocId(),
+        title: fileName.endsWith(".ipynb") ? fileName : fileName + ".ipynb",
+        lang,
+        execCounter: 0,
+        activeCellId: cells[0]?.id || "",
+        debuggingCellId: null,
+        cells,
+        executedHistory: [],
+        lastGlobalVars: {},
+        lastGlobalDs: {}
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+  function estimateMarkdownEditorHeight(src) {
+    const lines = String(src || "").replace(/\r\n?/g, "\n").split("\n");
+    let visualLines = 0;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i] ?? "";
+      let cols = 0;
+      for (let k = 0; k < line.length; k++) {
+        cols += line.charCodeAt(k) > 255 ? 2 : 1;
+      }
+      visualLines += Math.max(1, Math.ceil(cols / 62));
+    }
+    return Math.max(92, visualLines * 26 + 28);
+  }
+
+  // src/notebook/notebook-kernel.ts
   function normalizeCellTsForNotebook(src) {
     const lines = String(src || "").replace(/\r\n?/g, "\n").split("\n");
     const transformed = lines.map((line) => {
@@ -14486,11 +14955,11 @@ runAsyncDemo()
     return { preambleTs, preambleLines, combinedTs };
   }
   function typecheckNotebookCellTS(doc, cell) {
-    if (LANG === "python" || cell.type !== "code") return [];
+    if (appState.LANG === "python" || cell.type !== "code") return [];
     const rawCell = String(cell.source || "").replace(/\r\n?/g, "\n");
     if (!rawCell.trim()) return [];
     const { preambleLines, combinedTs } = buildTsTypecheckContext(doc, cell);
-    const allDiags = typecheckTS(combinedTs, STRICT_TS) || [];
+    const allDiags = typecheckTS(combinedTs, appState.STRICT_TS) || [];
     return allDiags.filter((d) => Boolean(d && typeof d.line === "number" && d.line > preambleLines)).map((d) => ({
       line: d.line - preambleLines,
       code: String(d.code || "TS"),
@@ -14499,9 +14968,9 @@ runAsyncDemo()
   }
   function syncNotebookGlobalsToSidePanel(doc = getActiveNotebook()) {
     if (!doc) return;
-    if (doc.debuggingCellId && DEBUG_SESSION.active && TRACE.steps.length > 0) {
-      renderPicker();
-      renderStatic(cur, false);
+    if (doc.debuggingCellId && appState.DEBUG_SESSION.active && appState.TRACE.steps.length > 0) {
+      uiHooks.renderPicker();
+      uiHooks.renderStatic(appState.cur, false);
       return;
     }
     const v = doc.lastGlobalVars || {};
@@ -14525,12 +14994,12 @@ runAsyncDemo()
       isCheckpoint: false,
       error: null
     };
-    TRACE = {
+    appState.TRACE = {
       title: `${doc.title} \xB7 Kernel Context`,
       code: [""],
       steps: [step]
     };
-    DEBUG_SESSION = {
+    appState.DEBUG_SESSION = {
       active: false,
       finished: true,
       crashed: false,
@@ -14541,15 +15010,15 @@ runAsyncDemo()
       originalLines: [""],
       callExpr: "undefined"
     };
-    cur = 0;
-    SELECTED_FRAME_IDX = null;
+    appState.cur = 0;
+    appState.SELECTED_FRAME_IDX = null;
     initWatchedVars();
-    renderPicker();
-    renderStatic(0, false);
-    if (cntEl) {
-      cntEl.textContent = doc.execCounter > 0 ? `Notebook [${doc.execCounter}] \xB7 \u5168\u5C40\u4E0A\u4E0B\u6587` : "Notebook \u5C31\u7EEA";
-      cntEl.className = "";
-    }
+    uiHooks.renderPicker();
+    uiHooks.renderStatic(0, false);
+    uiHooks.setCntStatus(
+      doc.execCounter > 0 ? `Notebook [${doc.execCounter}] \xB7 \u5168\u5C40\u4E0A\u4E0B\u6587` : "Notebook \u5C31\u7EEA",
+      ""
+    );
   }
   async function runPythonNotebookCell(doc, cell, rawSrc, advanceToNext) {
     try {
@@ -14564,7 +15033,7 @@ runAsyncDemo()
         cell.status = "error";
         cell.output = { logs: [], returnValue: null, error: msg, errorLine: err.line || 1 };
         say(`\u2717 [${doc.title}] ${msg}`, "err");
-        renderNotebookUI();
+        uiHooks.renderNotebookUI();
         return false;
       }
       doc.execCounter += 1;
@@ -14613,12 +15082,12 @@ runAsyncDemo()
       if (advanceToNext && !payload.error) {
         moveFocusToNextCell(doc, cell.id, true);
       }
-      renderNotebookUI();
+      uiHooks.renderNotebookUI();
       return !payload.error;
     } catch (err) {
       cell.status = "error";
       cell.output = { logs: [], returnValue: null, error: err instanceof Error && err.message || String(err) };
-      renderNotebookUI();
+      uiHooks.renderNotebookUI();
       return false;
     }
   }
@@ -14639,7 +15108,7 @@ runAsyncDemo()
       cellDiags.forEach((d) => {
         say(`  \u2022 ${d.code} [\u7B2C ${d.line} \u884C]: ${d.message}`, "err", d.line);
       });
-      renderNotebookUI();
+      uiHooks.renderNotebookUI();
       return false;
     }
     extractTsInterfaceMetadata(combinedTs);
@@ -14655,7 +15124,7 @@ runAsyncDemo()
         errorLine: enums.error.line
       };
       say(`\u2717 [Notebook] \u7B2C ${enums.error.line} \u884C: ${enums.error.message}`, "err");
-      renderNotebookUI();
+      uiHooks.renderNotebookUI();
       return false;
     }
     const jsCell = stripTypes(enums.code);
@@ -14707,7 +15176,7 @@ runAsyncDemo()
       const fn = new Function("console", fnBody);
       const res = fn(customConsole);
       const elapsedMs = Date.now() - t0;
-      const vRaw = res.vars || {};
+      const vRaw = isRecord(res) && isRecord(res.vars) ? res.vars : {};
       const v = {};
       const ds = {};
       Object.keys(vRaw).forEach((k) => {
@@ -14737,7 +15206,7 @@ runAsyncDemo()
       if (advanceToNext) {
         moveFocusToNextCell(doc, cell.id, true);
       }
-      renderNotebookUI();
+      uiHooks.renderNotebookUI();
       return true;
     } catch (err) {
       const msg = err instanceof Error && err.message ? err.message : String(err);
@@ -14748,7 +15217,7 @@ runAsyncDemo()
         error: msg
       };
       say(`\u2717 [Cell ${cell.executionCount}] \u8FD0\u884C\u65F6\u62A5\u9519: ${msg}`, "err");
-      renderNotebookUI();
+      uiHooks.renderNotebookUI();
       return false;
     }
   }
@@ -14757,17 +15226,17 @@ runAsyncDemo()
     const cell = cellId ? doc.cells.find((c) => c.id === cellId) : getActiveCell(doc);
     if (!cell) return false;
     doc.activeCellId = cell.id;
-    ACTIVE_NB_CELL_ID = cell.id;
+    appState.ACTIVE_NB_CELL_ID = cell.id;
     if (doc.debuggingCellId) {
       doc.debuggingCellId = null;
-      stopAuto();
-      clearFlyLayer();
+      uiHooks.stopAuto();
+      uiHooks.clearFlyLayer();
     }
     if (cell.type === "markdown") {
       cell.markdownRendered = true;
       cell.status = "idle";
       if (advanceToNext) moveFocusToNextCell(doc, cell.id, true);
-      renderNotebookUI();
+      uiHooks.renderNotebookUI();
       return true;
     }
     const rawSrc = cell.source.replace(/\r\n?/g, "\n");
@@ -14776,12 +15245,12 @@ runAsyncDemo()
       cell.status = "idle";
       cell.output = null;
       if (advanceToNext) moveFocusToNextCell(doc, cell.id, true);
-      renderNotebookUI();
+      uiHooks.renderNotebookUI();
       return true;
     }
     cell.status = "running";
-    renderNotebookUI();
-    if (LANG === "python") {
+    uiHooks.renderNotebookUI();
+    if (appState.LANG === "python") {
       return runPythonNotebookCell(doc, cell, rawSrc, advanceToNext);
     }
     return runTsNotebookCell(doc, cell, rawSrc, advanceToNext);
@@ -14789,7 +15258,7 @@ runAsyncDemo()
   async function debugPythonNotebookCell(doc, cell, rawSrc) {
     cell.status = "debugging";
     doc.debuggingCellId = cell.id;
-    renderNotebookUI();
+    uiHooks.renderNotebookUI();
     try {
       say(`\u2026 \u6B63\u5728\u5F55\u5236\u5355\u5143\u683C [${cell.executionCount || " "}] \u7684 Python \u5355\u6B65\u8F68\u8FF9\u2026`, "dim");
       const payload = await PY_ENGINE.run(rawSrc, {
@@ -14808,7 +15277,7 @@ runAsyncDemo()
           error: `SyntaxError (\u7B2C ${err.line || 1} \u884C): ${err.msg || "\u8BED\u6CD5\u9519\u8BEF"}`,
           errorLine: err.line || 1
         };
-        renderNotebookUI();
+        uiHooks.renderNotebookUI();
         return false;
       }
       doc.execCounter += 1;
@@ -14819,8 +15288,8 @@ runAsyncDemo()
       payload.__callExpr = payload.entryExpr || "";
       const steps = PY_ENGINE.buildSteps(payload, sourceLines);
       resetTraceState();
-      TRACE = { title: `${doc.title} \xB7 Cell [${cell.executionCount}]`, code: sourceLines, steps };
-      DEBUG_SESSION = {
+      appState.TRACE = { title: `${doc.title} \xB7 Cell [${cell.executionCount}]`, code: sourceLines, steps };
+      appState.DEBUG_SESSION = {
         active: true,
         finished: true,
         crashed: Boolean(payload.error),
@@ -14848,21 +15317,21 @@ runAsyncDemo()
         error: payload.error || null,
         errorLine: payload.errorLine || null
       };
-      cur = 0;
-      SELECTED_FRAME_IDX = null;
-      watched = /* @__PURE__ */ new Set();
-      SEEN_VARS_EVER = /* @__PURE__ */ new Set();
-      layoutSpan = /* @__PURE__ */ Object.create(null);
+      appState.cur = 0;
+      appState.SELECTED_FRAME_IDX = null;
+      appState.watched = /* @__PURE__ */ new Set();
+      appState.SEEN_VARS_EVER = /* @__PURE__ */ new Set();
+      appState.layoutSpan = /* @__PURE__ */ Object.create(null);
       initWatchedVars();
-      renderPicker();
-      renderStatic(cur, false);
-      renderNotebookUI();
+      uiHooks.renderPicker();
+      uiHooks.renderStatic(appState.cur, false);
+      uiHooks.renderNotebookUI();
       say(`\u2713 [Cell ${cell.executionCount}] \u5DF2\u8FDB\u5165\u5355\u6B65\u8C03\u8BD5\u6A21\u5F0F\uFF08\u5171 ${steps.length} \u6B65\uFF0C\u53EF\u4F7F\u7528\u5E95\u90E8\u63A7\u5236\u680F\u9010\u6B65\u89C2\u5BDF\uFF09`, "ok");
       return true;
     } catch (_err) {
       cell.status = "error";
       doc.debuggingCellId = null;
-      renderNotebookUI();
+      uiHooks.renderNotebookUI();
       return false;
     }
   }
@@ -14883,7 +15352,7 @@ runAsyncDemo()
       cellDiags.forEach((d) => {
         say(`  \u2022 ${d.code} [\u7B2C ${d.line} \u884C]: ${d.message}`, "err", d.line);
       });
-      renderNotebookUI();
+      uiHooks.renderNotebookUI();
       return false;
     }
     extractTsInterfaceMetadata(combinedTs);
@@ -14899,7 +15368,7 @@ runAsyncDemo()
         error: `\u7B2C ${enums.error.line} \u884C: ${enums.error.message}`,
         errorLine: enums.error.line
       };
-      renderNotebookUI();
+      uiHooks.renderNotebookUI();
       return false;
     }
     const js0 = stripTypes(enums.code);
@@ -14909,7 +15378,7 @@ runAsyncDemo()
     const isAssignmentExpr = /^[A-Za-z_$][\w$]*\s*=[^=]/.test(rawEntryExpr);
     const shouldEvalTailExpr = Boolean(entry.index >= 0 && rawEntryExpr && !isConsoleLogCall && !isAssignmentExpr);
     const expr = shouldEvalTailExpr ? stripTypes(rawEntryExpr) : "undefined";
-    ENTRY_CALL_LINE = entry.line || 1;
+    appState.ENTRY_CALL_LINE = entry.line || 1;
     const jsBody = shouldEvalTailExpr ? blankJsLine(js0, entry.index) : js0;
     let compiledFn;
     try {
@@ -14926,19 +15395,19 @@ runAsyncDemo()
         returnValue: null,
         error: "\u7F16\u8BD1\u5931\u8D25: " + (e instanceof Error && e.message ? e.message : String(e))
       };
-      renderNotebookUI();
+      uiHooks.renderNotebookUI();
       return false;
     }
     doc.execCounter += 1;
     cell.executionCount = doc.execCounter;
     cell.status = "debugging";
     doc.debuggingCellId = cell.id;
-    TRACE = {
+    appState.TRACE = {
       title: `${doc.title} \xB7 Cell [${cell.executionCount}]`,
       code: originalLines,
       steps: []
     };
-    DEBUG_SESSION = {
+    appState.DEBUG_SESSION = {
       active: true,
       finished: false,
       crashed: false,
@@ -14950,16 +15419,16 @@ runAsyncDemo()
       callExpr: expr,
       hasAsync: hasAsyncConstructs(rawSrc)
     };
-    cur = 0;
-    watched = /* @__PURE__ */ new Set();
-    SEEN_VARS_EVER = /* @__PURE__ */ new Set();
-    layoutSpan = /* @__PURE__ */ Object.create(null);
+    appState.cur = 0;
+    appState.watched = /* @__PURE__ */ new Set();
+    appState.SEEN_VARS_EVER = /* @__PURE__ */ new Set();
+    appState.layoutSpan = /* @__PURE__ */ Object.create(null);
     computeAndAppendNextStep({ silent: true });
-    cur = Math.max(0, TRACE.steps.length - 1);
+    appState.cur = Math.max(0, appState.TRACE.steps.length - 1);
     initWatchedVars();
-    renderPicker();
-    renderStatic(cur, false);
-    renderNotebookUI();
+    uiHooks.renderPicker();
+    uiHooks.renderStatic(appState.cur, false);
+    uiHooks.renderNotebookUI();
     say(`\u2713 [Cell ${cell.executionCount}] \u5DF2\u5F00\u542F\u5355\u6B65\u8C03\u8BD5 \xB7 \u53EF\u4F7F\u7528\u5E95\u90E8\u300C\u4E0B\u4E00\u6B65 \u203A\u300D\u6216\u300C\u23ED \u8FD0\u884C\u5230\u4E0B\u4E00\u4E2A\u68C0\u67E5\u70B9\u300D\u9010\u6B65\u63A8\u5BFC`, "ok");
     return true;
   }
@@ -14968,23 +15437,23 @@ runAsyncDemo()
     const cell = cellId ? doc.cells.find((c) => c.id === cellId) : getActiveCell(doc);
     if (!cell || cell.type !== "code") return false;
     doc.activeCellId = cell.id;
-    ACTIVE_NB_CELL_ID = cell.id;
+    appState.ACTIVE_NB_CELL_ID = cell.id;
     const rawSrc = cell.source.replace(/\r\n?/g, "\n");
     if (!rawSrc.trim()) {
       say("\u26A0 \u5F53\u524D\u5355\u5143\u683C\u4E3A\u7A7A\uFF0C\u8BF7\u5148\u8F93\u5165\u4EE3\u7801\u540E\u518D\u542F\u52A8\u5355\u6B65\u8C03\u8BD5", "dim");
       return false;
     }
-    stopAuto();
-    clearFlyLayer();
-    if (LANG === "python") {
+    uiHooks.stopAuto();
+    uiHooks.clearFlyLayer();
+    if (appState.LANG === "python") {
       return debugPythonNotebookCell(doc, cell, rawSrc);
     }
     return debugTsNotebookCell(doc, cell, rawSrc);
   }
   async function restartNotebookKernel(silent = false) {
     const doc = getActiveNotebook();
-    stopAuto();
-    clearFlyLayer();
+    uiHooks.stopAuto();
+    uiHooks.clearFlyLayer();
     doc.execCounter = 0;
     doc.debuggingCellId = null;
     doc.executedHistory = [];
@@ -14995,7 +15464,7 @@ runAsyncDemo()
       c.status = "idle";
       c.output = null;
     });
-    if (LANG === "python" && typeof PY_ENGINE !== "undefined") {
+    if (appState.LANG === "python" && typeof PY_ENGINE !== "undefined") {
       try {
         await PY_ENGINE.run("", { resetKernel: true, trace: false });
       } catch (_) {
@@ -15003,7 +15472,7 @@ runAsyncDemo()
     }
     resetTraceState();
     syncNotebookGlobalsToSidePanel(doc);
-    renderNotebookUI();
+    uiHooks.renderNotebookUI();
     if (!silent) {
       say(`\u21BB \u5DF2\u91CD\u542F [${doc.title}] \u5185\u6838\u5E76\u6E05\u7A7A\u6240\u6709\u8DE8\u5355\u5143\u683C\u53D8\u91CF\u4E0E\u8BA1\u6570`, "ok");
     }
@@ -15024,111 +15493,31 @@ runAsyncDemo()
         break;
       }
     }
-    renderNotebookUI();
+    uiHooks.renderNotebookUI();
   }
-  function moveFocusToNextCell(doc, currentCellId, createIfLast = false) {
-    const idx = doc.cells.findIndex((c) => c.id === currentCellId);
-    if (idx < 0) return;
-    const nextCell = doc.cells[idx + 1];
-    if (nextCell) {
-      doc.activeCellId = nextCell.id;
-      ACTIVE_NB_CELL_ID = doc.activeCellId;
-    } else if (createIfLast) {
-      const newCell = {
-        id: nextCellId(),
-        type: "code",
-        source: "",
-        executionCount: null,
-        status: "idle",
-        output: null
-      };
-      doc.cells.push(newCell);
-      doc.activeCellId = newCell.id;
-      ACTIVE_NB_CELL_ID = newCell.id;
-    }
-  }
+
+  // src/ui/notebook.ts
   function insertNotebookCell(pos = "below", refCellId, type = "code") {
     const doc = getActiveNotebook();
-    const targetId = refCellId || doc.activeCellId;
-    const idx = doc.cells.findIndex((c) => c.id === targetId);
-    const newCell = {
-      id: nextCellId(),
-      type,
-      source: "",
-      executionCount: null,
-      status: "idle",
-      output: null,
-      markdownRendered: false
-    };
-    if (idx < 0) {
-      doc.cells.push(newCell);
-    } else {
-      const insertIdx = pos === "above" ? idx : idx + 1;
-      doc.cells.splice(insertIdx, 0, newCell);
-    }
-    doc.activeCellId = newCell.id;
-    ACTIVE_NB_CELL_ID = newCell.id;
+    insertCellInModel(doc, pos, refCellId, type);
     renderNotebookUI(true);
   }
   function duplicateNotebookCell(cellId) {
     const doc = getActiveNotebook();
-    const targetId = cellId || doc.activeCellId;
-    const idx = doc.cells.findIndex((c) => c.id === targetId);
-    if (idx < 0) return;
-    const orig = doc.cells[idx];
-    if (!orig) return;
-    const copy = {
-      id: nextCellId(),
-      type: orig.type,
-      source: orig.source,
-      executionCount: null,
-      status: "idle",
-      output: null,
-      markdownRendered: orig.markdownRendered
-    };
-    doc.cells.splice(idx + 1, 0, copy);
-    doc.activeCellId = copy.id;
-    ACTIVE_NB_CELL_ID = copy.id;
+    if (!duplicateCellInModel(doc, cellId)) return;
     renderNotebookUI(true);
   }
   function moveNotebookCell(dir, cellId) {
     const doc = getActiveNotebook();
-    const targetId = cellId || doc.activeCellId;
-    const idx = doc.cells.findIndex((c) => c.id === targetId);
-    const nextIdx = idx + dir;
-    if (idx < 0 || nextIdx < 0 || nextIdx >= doc.cells.length) return;
-    const [item] = doc.cells.splice(idx, 1);
-    if (!item) return;
-    doc.cells.splice(nextIdx, 0, item);
-    doc.activeCellId = item.id;
-    ACTIVE_NB_CELL_ID = item.id;
+    if (!moveCellInModel(doc, dir, cellId)) return;
     renderNotebookUI();
   }
   function deleteNotebookCell(cellId) {
     const doc = getActiveNotebook();
-    const targetId = cellId || doc.activeCellId;
-    if (doc.cells.length <= 1) {
-      const first = doc.cells[0];
-      if (first) {
-        first.source = "";
-        first.executionCount = null;
-        first.status = "idle";
-        first.output = null;
-      }
-      renderNotebookUI();
-      return;
-    }
-    const idx = doc.cells.findIndex((c) => c.id === targetId);
-    if (idx < 0) return;
-    if (doc.debuggingCellId === targetId) {
-      doc.debuggingCellId = null;
+    const res = deleteCellInModel(doc, cellId);
+    if (!res.deleted) return;
+    if (res.clearedDebugging) {
       resetTraceState();
-    }
-    doc.cells.splice(idx, 1);
-    const nextActive = doc.cells[Math.min(idx, doc.cells.length - 1)];
-    if (nextActive) {
-      doc.activeCellId = nextActive.id;
-      ACTIVE_NB_CELL_ID = nextActive.id;
     }
     renderNotebookUI();
   }
@@ -15136,7 +15525,7 @@ runAsyncDemo()
     const doc = getActiveNotebook();
     const cell = getActiveCell(doc);
     if (!cell) return;
-    nbClipboardCell = { ...cell, output: null, executionCount: null, status: "idle" };
+    setClipboardCell({ ...cell, output: null, executionCount: null, status: "idle" });
     deleteNotebookCell(cell.id);
     say("\u2702 \u5DF2\u526A\u5207\u5F53\u524D\u5355\u5143\u683C", "dim");
   }
@@ -15144,18 +15533,19 @@ runAsyncDemo()
     const doc = getActiveNotebook();
     const cell = getActiveCell(doc);
     if (!cell) return;
-    nbClipboardCell = { ...cell, output: null, executionCount: null, status: "idle" };
+    setClipboardCell({ ...cell, output: null, executionCount: null, status: "idle" });
     say("\u{1F4CB} \u5DF2\u590D\u5236\u5F53\u524D\u5355\u5143\u683C", "dim");
   }
   function pasteNotebookCell() {
-    if (!nbClipboardCell) {
+    const clip = getClipboardCell();
+    if (!clip) {
       say("\u26A0 \u526A\u8D34\u677F\u4E2D\u6682\u65E0\u5DF2\u590D\u5236\u7684\u5355\u5143\u683C", "dim");
       return;
     }
     const doc = getActiveNotebook();
     const idx = doc.cells.findIndex((c) => c.id === doc.activeCellId);
     const pasted = {
-      ...nbClipboardCell,
+      ...clip,
       id: nextCellId(),
       executionCount: null,
       status: "idle",
@@ -15164,44 +15554,14 @@ runAsyncDemo()
     if (idx < 0) doc.cells.push(pasted);
     else doc.cells.splice(idx + 1, 0, pasted);
     doc.activeCellId = pasted.id;
-    ACTIVE_NB_CELL_ID = pasted.id;
+    appState.ACTIVE_NB_CELL_ID = pasted.id;
     renderNotebookUI(true);
     say("\u{1F4C4} \u5DF2\u5728\u4E0B\u65B9\u7C98\u8D34\u5355\u5143\u683C", "ok");
   }
   function exportActiveNotebookIpynb() {
     const doc = getActiveNotebook();
-    const ipynb = {
-      nbformat: 4,
-      nbformat_minor: 5,
-      metadata: {
-        kernelspec: {
-          display_name: doc.lang === "python" ? "Python 3 (Pyodide)" : "TypeScript (Playground Visual)",
-          language: doc.lang === "python" ? "python" : "typescript",
-          name: doc.lang
-        }
-      },
-      cells: doc.cells.map((c) => ({
-        id: c.id,
-        cell_type: c.type === "markdown" ? "markdown" : "code",
-        metadata: {},
-        source: c.source.split("\n").map((line, i, arr) => i < arr.length - 1 ? line + "\n" : line),
-        ...c.type === "code" ? {
-          execution_count: c.executionCount,
-          outputs: c.output ? [
-            ...c.output.logs.length ? [{ output_type: "stream", name: "stdout", text: c.output.logs.map((l) => l + "\n") }] : [],
-            ...c.output.returnValue != null ? [
-              {
-                output_type: "execute_result",
-                execution_count: c.executionCount,
-                data: { "text/plain": [c.output.returnValue] },
-                metadata: {}
-              }
-            ] : []
-          ] : []
-        } : {}
-      }))
-    };
-    const blob = new Blob([JSON.stringify(ipynb, null, 2)], { type: "application/json;charset=utf-8" });
+    const jsonStr = serializeNotebookToIpynbJson(doc);
+    const blob = new Blob([jsonStr], { type: "application/json;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -15213,74 +15573,20 @@ runAsyncDemo()
     say(`\u{1F4BE} \u5DF2\u5BFC\u51FA\u7B14\u8BB0\u672C\u6587\u4EF6 ${a.download}`, "ok");
   }
   function importNotebookFromJson(jsonText, fileName) {
-    try {
-      const data = JSON.parse(jsonText);
-      if (!data || !Array.isArray(data.cells)) return false;
-      const lang = LANG === "python" ? "python" : "ts";
-      const store = ensureLangNotebooks(lang);
-      const cells = data.cells.map(
-        (rawCell) => {
-          const type = rawCell.cell_type === "markdown" ? "markdown" : "code";
-          const src = Array.isArray(rawCell.source) ? rawCell.source.join("") : String(rawCell.source || "");
-          return {
-            id: nextCellId(),
-            type,
-            source: src.replace(/\r\n?/g, "\n"),
-            executionCount: typeof rawCell.execution_count === "number" ? rawCell.execution_count : null,
-            status: "idle",
-            output: null,
-            markdownRendered: type === "markdown"
-          };
-        }
-      );
-      if (!cells.length) {
-        cells.push({
-          id: nextCellId(),
-          type: "code",
-          source: "",
-          executionCount: null,
-          status: "idle",
-          output: null
-        });
-      }
-      const newDoc = {
-        id: nextDocId(),
-        title: fileName.endsWith(".ipynb") ? fileName : fileName + ".ipynb",
-        lang,
-        execCounter: 0,
-        activeCellId: cells[0]?.id || "",
-        debuggingCellId: null,
-        cells,
-        executedHistory: [],
-        lastGlobalVars: {},
-        lastGlobalDs: {}
-      };
-      store.docs.push(newDoc);
-      store.activeDocId = newDoc.id;
-      setViewMode("notebook");
-      renderNotebookUI();
-      say(`\u2713 \u5DF2\u5BFC\u5165 Jupyter \u7B14\u8BB0\u672C ${newDoc.title}\uFF08\u5171 ${cells.length} \u4E2A\u5355\u5143\u683C\uFF09`, "ok");
-      return true;
-    } catch (_) {
-      return false;
-    }
-  }
-  function estimateMarkdownEditorHeight(src) {
-    const lines = String(src || "").replace(/\r\n?/g, "\n").split("\n");
-    let visualLines = 0;
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i] ?? "";
-      let cols = 0;
-      for (let k = 0; k < line.length; k++) {
-        cols += line.charCodeAt(k) > 255 ? 2 : 1;
-      }
-      visualLines += Math.max(1, Math.ceil(cols / 62));
-    }
-    return Math.max(92, visualLines * 26 + 28);
+    const lang = appState.LANG === "python" ? "python" : "ts";
+    const newDoc = parseIpynbJsonToDocument(jsonText, fileName, lang);
+    if (!newDoc) return false;
+    const store = ensureLangNotebooks(lang);
+    store.docs.push(newDoc);
+    store.activeDocId = newDoc.id;
+    setViewMode("notebook");
+    renderNotebookUI();
+    say(`\u2713 \u5DF2\u5BFC\u5165 Jupyter \u7B14\u8BB0\u672C ${newDoc.title}\uFF08\u5171 ${newDoc.cells.length} \u4E2A\u5355\u5143\u683C\uFF09`, "ok");
+    return true;
   }
   function setViewMode(mode) {
     const next = mode === "notebook" ? "notebook" : "script";
-    VIEW_MODE = next;
+    appState.VIEW_MODE = next;
     if (document.body && document.body.classList) {
       if (next === "notebook") document.body.classList.add("notebook-mode");
       else document.body.classList.remove("notebook-mode");
@@ -15314,7 +15620,7 @@ runAsyncDemo()
     if (b2 && b2.classList) b2.classList.remove("active");
     if (next === "notebook") {
       const doc = getActiveNotebook();
-      ACTIVE_NB_CELL_ID = doc.activeCellId;
+      appState.ACTIVE_NB_CELL_ID = doc.activeCellId;
       syncNotebookGlobalsToSidePanel(doc);
       renderNotebookUI();
     } else {
@@ -15327,13 +15633,13 @@ runAsyncDemo()
   function renderCellCodeHighlight(cell, isDebuggingThisCell) {
     const doc = getActiveNotebook();
     const lines = cell.source.replace(/\r\n?/g, "\n").split("\n");
-    const { combinedTs } = LANG === "python" ? { combinedTs: cell.source } : buildTsTypecheckContext(doc, cell);
+    const { combinedTs } = appState.LANG === "python" ? { combinedTs: cell.source } : buildTsTypecheckContext(doc, cell);
     const declared = collectDeclaredNames(combinedTs);
-    if (LANG === "python" && doc.lastGlobalVars) {
+    if (appState.LANG === "python" && doc.lastGlobalVars) {
       Object.keys(doc.lastGlobalVars).forEach((k) => declared.add(k));
     }
     const liveByLine = /* @__PURE__ */ new Map();
-    if (LANG !== "python" && cell.type === "code") {
+    if (appState.LANG !== "python" && cell.type === "code") {
       const cellDiags = typecheckNotebookCellTS(doc, cell);
       cellDiags.forEach((d) => {
         if (d && d.line >= 1 && !liveByLine.has(d.line)) {
@@ -15341,7 +15647,7 @@ runAsyncDemo()
         }
       });
     }
-    const st = isDebuggingThisCell && TRACE.steps.length ? TRACE.steps[cur] : null;
+    const st = isDebuggingThisCell && appState.TRACE.steps.length ? appState.TRACE.steps[appState.cur] : null;
     const curLine = st ? st.line : -1;
     const hlHtml = lines.map((t, idx) => {
       const ln = idx + 1;
@@ -15367,8 +15673,8 @@ runAsyncDemo()
   }
   function renderNotebookUI(focusActiveEditor = false) {
     const wrap = $("notebookWrap");
-    if (!wrap || VIEW_MODE !== "notebook") return;
-    const lang = LANG === "python" ? "python" : "ts";
+    if (!wrap || appState.VIEW_MODE !== "notebook") return;
+    const lang = appState.LANG === "python" ? "python" : "ts";
     const store = ensureLangNotebooks(lang);
     const doc = getActiveNotebook();
     const activeCell = getActiveCell(doc);
@@ -15385,7 +15691,7 @@ runAsyncDemo()
     }
     const kernelBadge = $("nbKernelStatus");
     if (kernelBadge) {
-      const isDbg = Boolean(doc.debuggingCellId && DEBUG_SESSION.active);
+      const isDbg = Boolean(doc.debuggingCellId && appState.DEBUG_SESSION.active);
       const stateTxt = isDbg ? "\u8C03\u8BD5\u4E2D" : "\u5C31\u7EEA";
       kernelBadge.innerHTML = `<span class="nb-kernel-dot${isDbg ? " debug" : ""}"></span><span>${stateTxt}</span>`;
     }
@@ -15393,7 +15699,7 @@ runAsyncDemo()
     if (!cellsContainer) return;
     cellsContainer.innerHTML = doc.cells.map((cell, idx) => {
       const isFocused = cell.id === doc.activeCellId;
-      const isDebugging = doc.debuggingCellId === cell.id && DEBUG_SESSION.active;
+      const isDebugging = doc.debuggingCellId === cell.id && appState.DEBUG_SESSION.active;
       const promptTxt = cell.status === "running" ? "[*]:" : cell.executionCount != null ? `[${cell.executionCount}]:` : "[ ]:";
       const lineCount = Math.max(1, cell.source.split("\n").length);
       const editorHeight = Math.max(38, lineCount * 24 + 14);
@@ -15420,8 +15726,8 @@ runAsyncDemo()
         }
       });
     }
-    if (focusActiveEditor && doc.activeCellId && cellsContainer.querySelector) {
-      const ta = cellsContainer.querySelector(`textarea[data-cell-id="${doc.activeCellId}"]`);
+    if (focusActiveEditor && doc.activeCellId) {
+      const ta = queryTextArea(cellsContainer, `textarea[data-cell-id="${doc.activeCellId}"]`);
       if (ta && typeof ta.focus === "function") {
         ta.focus();
       }
@@ -15438,7 +15744,7 @@ runAsyncDemo()
       lines.splice(lineNum - 1, 1);
     } else {
       const indent = (targetLine.match(/^\s*/) || [""])[0];
-      const stmt = LANG === "python" ? "checkpoint()" : "checkpoint();";
+      const stmt = appState.LANG === "python" ? "checkpoint()" : "checkpoint();";
       lines.splice(lineNum - 1, 0, indent + stmt);
     }
     cell.source = lines.join("\n");
@@ -15451,10 +15757,10 @@ runAsyncDemo()
     const tabsEl = $("nbTabsList");
     if (!tabsEl || !tabsEl.addEventListener) return;
     tabsEl.addEventListener("click", (e) => {
-      const target = e.target;
+      const target = eventTargetElement(e);
       if (!target) return;
-      const closeBtn = target.closest ? target.closest("[data-close-doc]") : null;
-      const lang = LANG === "python" ? "python" : "ts";
+      const closeBtn = closestElement(target, "[data-close-doc]");
+      const lang = appState.LANG === "python" ? "python" : "ts";
       const store = ensureLangNotebooks(lang);
       if (closeBtn) {
         e.stopPropagation();
@@ -15473,7 +15779,7 @@ runAsyncDemo()
         }
         return;
       }
-      const newBtn = target.closest ? target.closest("#nbBtnNewTab") : null;
+      const newBtn = closestElement(target, "#nbBtnNewTab");
       if (newBtn) {
         const cId = nextCellId();
         const newDoc = {
@@ -15504,7 +15810,7 @@ runAsyncDemo()
         renderVfsTreeUI();
         return;
       }
-      const tab = target.closest ? target.closest(".nb-tab") : null;
+      const tab = closestElement(target, ".nb-tab");
       if (tab && tab.dataset.docId) {
         if (store.activeDocId !== tab.dataset.docId) {
           store.activeDocId = tab.dataset.docId;
@@ -15515,10 +15821,9 @@ runAsyncDemo()
       }
     });
     tabsEl.addEventListener("dblclick", (e) => {
-      const target = e.target;
-      const tab = target && target.closest ? target.closest(".nb-tab") : null;
+      const tab = closestElement(e, ".nb-tab");
       if (!tab || !tab.dataset.docId) return;
-      const lang = LANG === "python" ? "python" : "ts";
+      const lang = appState.LANG === "python" ? "python" : "ts";
       const store = ensureLangNotebooks(lang);
       const targetDoc = store.docs.find((d) => d.id === tab.dataset.docId) || getActiveNotebook();
       const titleSpan = tab.querySelector ? tab.querySelector(".nb-tab-title") : null;
@@ -15575,7 +15880,7 @@ runAsyncDemo()
     const cellsList = $("nbCellsList");
     if (!cellsList || !cellsList.addEventListener) return;
     cellsList.addEventListener("click", (e) => {
-      const target = e.target;
+      const target = eventTargetElement(e);
       if (!target) return;
       if (target.closest && target.closest("#nbBottomAddCode")) {
         const doc = getActiveNotebook();
@@ -15589,22 +15894,22 @@ runAsyncDemo()
         insertNotebookCell("below", last ? last.id : void 0, "markdown");
         return;
       }
-      const gline = target.closest ? target.closest(".nb-gline") : null;
+      const gline = closestElement(target, ".nb-gline");
       if (gline && gline.dataset.line) {
-        const cellEl = gline.closest(".nb-cell");
+        const cellEl = closestElement(gline, ".nb-cell");
         if (cellEl && cellEl.dataset.cellId) {
           toggleNotebookCellCheckpoint(cellEl.dataset.cellId, parseInt(gline.dataset.line, 10));
           return;
         }
       }
-      const actEl = target.closest ? target.closest("[data-cell-act]") : null;
+      const actEl = closestElement(target, "[data-cell-act]");
       if (actEl) {
         const act = actEl.getAttribute("data-cell-act");
         const cid = actEl.getAttribute("data-cell-id");
         if (!cid) return;
         const doc = getActiveNotebook();
         doc.activeCellId = cid;
-        ACTIVE_NB_CELL_ID = cid;
+        appState.ACTIVE_NB_CELL_ID = cid;
         if (act === "run") {
           runNotebookCell(cid, true);
           return;
@@ -15646,12 +15951,12 @@ runAsyncDemo()
           return;
         }
       }
-      const cellBox = target.closest ? target.closest(".nb-cell") : null;
+      const cellBox = closestElement(target, ".nb-cell");
       if (cellBox && cellBox.dataset.cellId) {
         const doc = getActiveNotebook();
         if (doc.activeCellId !== cellBox.dataset.cellId) {
           doc.activeCellId = cellBox.dataset.cellId;
-          ACTIVE_NB_CELL_ID = doc.activeCellId;
+          appState.ACTIVE_NB_CELL_ID = doc.activeCellId;
           if (cellsList.querySelectorAll) {
             cellsList.querySelectorAll(".nb-cell").forEach((el) => {
               el.classList.toggle("active", el.dataset.cellId === doc.activeCellId);
@@ -15663,8 +15968,7 @@ runAsyncDemo()
       }
     });
     cellsList.addEventListener("dblclick", (e) => {
-      const target = e.target;
-      const mdPrev = target && target.closest ? target.closest('[data-cell-act="edit-md"]') : null;
+      const mdPrev = closestElement(e, '[data-cell-act="edit-md"]');
       if (mdPrev) {
         const cid = mdPrev.getAttribute("data-cell-id");
         const doc = getActiveNotebook();
@@ -15677,7 +15981,7 @@ runAsyncDemo()
       }
     });
     cellsList.addEventListener("input", (e) => {
-      const ta = e.target;
+      const ta = eventTargetTextArea(e);
       if (!ta || !ta.classList || !ta.classList.contains("nb-cell-textarea")) return;
       const cid = ta.getAttribute("data-cell-id");
       const doc = getActiveNotebook();
@@ -15694,10 +15998,10 @@ runAsyncDemo()
       const lineCount = Math.max(1, cell.source.split("\n").length);
       const h = Math.max(38, lineCount * 24 + 14);
       ta.style.height = h + "px";
-      const codeBox = ta.closest ? ta.closest(".nb-cell-code-box") : null;
+      const codeBox = closestElement(ta, ".nb-cell-code-box");
       if (codeBox) codeBox.style.height = h + "px";
       if (cell.type === "code") {
-        const isDebugging = doc.debuggingCellId === cell.id && DEBUG_SESSION.active;
+        const isDebugging = doc.debuggingCellId === cell.id && appState.DEBUG_SESSION.active;
         const { hlHtml, gutterHtml } = renderCellCodeHighlight(cell, isDebugging);
         const hlPre = codeBox && codeBox.querySelector ? codeBox.querySelector(".nb-cell-hl") : null;
         if (hlPre) hlPre.innerHTML = hlHtml;
@@ -15707,14 +16011,14 @@ runAsyncDemo()
       }
     });
     cellsList.addEventListener("keydown", (e) => {
-      const ta = e.target;
+      const ta = eventTargetTextArea(e);
       if (!ta || !ta.classList || !ta.classList.contains("nb-cell-textarea")) return;
       const cid = ta.getAttribute("data-cell-id") || void 0;
       if (e.key === "Tab") {
         e.preventDefault();
         const s = ta.selectionStart || 0;
         const t = ta.selectionEnd || 0;
-        const indent = LANG === "python" ? "    " : "  ";
+        const indent = appState.LANG === "python" ? "    " : "  ";
         ta.value = ta.value.slice(0, s) + indent + ta.value.slice(t);
         ta.selectionStart = ta.selectionEnd = s + indent.length;
         ta.dispatchEvent(new Event("input", { bubbles: true }));
@@ -15743,8 +16047,7 @@ runAsyncDemo()
     const modeSwitch = $("modeSwitch");
     if (modeSwitch && modeSwitch.addEventListener) {
       modeSwitch.addEventListener("click", (e) => {
-        const target = e.target;
-        const btn = target && target.closest ? target.closest(".mode-tab") : null;
+        const btn = closestElement(e, ".mode-tab");
         if (!btn || !btn.dataset.mode) return;
         setViewMode(btn.dataset.mode === "notebook" ? "notebook" : "script");
       });
@@ -15783,7 +16086,7 @@ runAsyncDemo()
         renderImportSampleMenu();
         renderScriptTabsUI();
         renderVfsTreeUI();
-        if (VIEW_MODE === "notebook") {
+        if (appState.VIEW_MODE === "notebook") {
           const doc = getActiveNotebook();
           syncNotebookGlobalsToSidePanel(doc);
           renderNotebookUI();
@@ -15792,7 +16095,7 @@ runAsyncDemo()
     }
   }
   function openVfsNotebookFile(name, content) {
-    const lang = LANG === "python" ? "python" : "ts";
+    const lang = appState.LANG === "python" ? "python" : "ts";
     const store = ensureLangNotebooks(lang);
     const existing = store.docs.find((d) => d.title === name);
     if (existing) {
@@ -15825,12 +16128,16 @@ runAsyncDemo()
     setViewMode,
     openVfsNotebookFile,
     importSampleIntoNotebook,
-    getActiveWorkspacePath: () => VIEW_MODE === "notebook" ? getActiveNotebook().title : getActiveScriptTab().vfsPath
+    renderNotebookUI,
+    getActiveWorkspacePath: () => appState.VIEW_MODE === "notebook" ? getActiveNotebook().title : getActiveScriptTab().vfsPath
   });
 
   // src/main.ts
   bindStateGlobals();
+  bindDomGlobals();
   var allExports = {
+    ...state_exports,
+    ...dom_exports,
     ...ts_samples_exports,
     ...py_samples_exports,
     ...comments_exports,

@@ -2,13 +2,14 @@
    Canvas 1080p Frame Renderer, Sample Loader & Boot Logic (src/ui/share.ts)
    ================================================================ */
 import { SAMPLES, SAMPLE_DEFAULT_STEP } from "../samples/ts-samples";
-import { registerUiHooks } from "../state";
+import { appState, registerUiHooks, VIDEO_HEIGHT, VIDEO_WIDTH } from "../state";
 import { Frame } from "../types";
 import { clearLog, resetTraceState } from "../runtime/event-loop";
 import { startDebug, generateTrace } from "../runtime/runner";
 import { discoverVars, allocateSlotSpans } from "../viz/memory-graph";
 import { updateEditorChrome } from "../viz/highlight";
 import { setFileName } from "./controls";
+import { $, editor } from "./dom";
 
 export function roundRectPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
   const rad = Math.max(0, Math.min(r, w / 2, h / 2));
@@ -179,7 +180,7 @@ export function drawVizCardOnCanvas(
   }
 
   if (kind === 'tree' && d.nodes && d.nodes.length) {
-    const nodes = d.nodes as Array<{ val: unknown; left?: number | null; right?: number | null }>;
+    const nodes = d.nodes;
     const root = d.root ?? 0;
     const coords = new Map<number, { x: number; y: number; val: unknown; left?: number | null; right?: number | null }>();
     function layout(idx: number | null | undefined, depth: number, xMin: number, xMax: number) {
@@ -188,9 +189,11 @@ export function drawVizCardOnCanvas(
       if (!node) return;
       const nx = (xMin + xMax) / 2;
       const ny = by + 16 + depth * 32;
-      coords.set(idx, { x: nx, y: ny, val: node.val, left: node.left, right: node.right });
-      layout(node.left, depth + 1, xMin, nx);
-      layout(node.right, depth + 1, nx, xMax);
+      const leftIdx = typeof node.left === 'number' ? node.left : null;
+      const rightIdx = typeof node.right === 'number' ? node.right : null;
+      coords.set(idx, { x: nx, y: ny, val: node.val, left: leftIdx, right: rightIdx });
+      layout(leftIdx, depth + 1, xMin, nx);
+      layout(rightIdx, depth + 1, nx, xMax);
     }
     layout(root, 0, bx + 16, bx + bw - 16);
     ctx.strokeStyle = '#334155';
@@ -327,8 +330,8 @@ export function drawVizCardOnCanvas(
   }
 
   if (kind === 'string' && d.items) {
-    const chars = d.items.slice(0, 24) as string[];
-    chars.forEach((ch: string, idx: number) => {
+    const chars = d.items.slice(0, 24);
+    chars.forEach((ch: unknown, idx: number) => {
       const cx = bx + idx * 24;
       if (cx + 22 > bx + bw) return;
       const isHotCh = d.hot === idx;
@@ -346,9 +349,9 @@ export function drawVizCardOnCanvas(
 
 export function renderVideoFrameToCanvas(ctx: CanvasRenderingContext2D, stepIdx: number, subProgress: number, speedMult: number) {
   const W = VIDEO_WIDTH, H = VIDEO_HEIGHT;
-  const st = TRACE.steps[stepIdx] || TRACE.steps[0];
-  const prevSt = stepIdx > 0 ? TRACE.steps[stepIdx - 1] : null;
-  const codeLines = (TRACE.code && TRACE.code.length) ? TRACE.code : editor.value.replace(/\r/g, '').split('\n');
+  const st = appState.TRACE.steps[stepIdx] || appState.TRACE.steps[0];
+  const prevSt = stepIdx > 0 ? appState.TRACE.steps[stepIdx - 1] : null;
+  const codeLines = (appState.TRACE.code && appState.TRACE.code.length) ? appState.TRACE.code : editor.value.replace(/\r/g, '').split('\n');
 
   ctx.fillStyle = '#07090d';
   ctx.fillRect(0, 0, W, H);
@@ -510,7 +513,7 @@ export function renderVideoFrameToCanvas(ctx: CanvasRenderingContext2D, stepIdx:
   ctx.fillText('WATCH · 数据结构可视化', sideX + 20, watchHeaderY);
 
   const ds = (st && st.ds) || {};
-  const vars = discoverVars().filter((s: { id: string; name?: string }) => watched.has(s.id) && ds[s.id] !== undefined);
+  const vars = discoverVars().filter((s: { id: string; name?: string }) => appState.watched.has(s.id) && ds[s.id] !== undefined);
   const allocated = allocateSlotSpans(vars, ds);
   const gridLeft = sideX + 20;
   const gridW = sideW - 40;
@@ -587,7 +590,7 @@ export function renderVideoFrameToCanvas(ctx: CanvasRenderingContext2D, stepIdx:
   let statusColor = '#4ade80';
   if (st && st.error) { statusLabel = '✗ 运行时报错'; statusColor = '#f87171'; }
   else if (st && st.isCheckpoint) { statusLabel = '◉ 命中检查点'; statusColor = '#38bdf8'; }
-  else if (DEBUG_SESSION.finished && stepIdx === TRACE.steps.length - 1) { statusLabel = '✓ 执行完毕'; statusColor = '#ffb454'; }
+  else if (appState.DEBUG_SESSION.finished && stepIdx === appState.TRACE.steps.length - 1) { statusLabel = '✓ 执行完毕'; statusColor = '#ffb454'; }
 
   roundRectPath(ctx, 24, mainBottom + 12, 136, 32, 16);
   ctx.fillStyle = '#111722';
@@ -604,7 +607,7 @@ export function renderVideoFrameToCanvas(ctx: CanvasRenderingContext2D, stepIdx:
 }
 
 export function loadSample(key: string) {
-  if (LANG === 'python') { PY_ENGINE.loadSample(key); return; }
+  if (appState.LANG === 'python') { PY_ENGINE.loadSample(key); return; }
   const targetKey = SAMPLES[key] ? key : 'showcase';
   if ($('sampleSel')) $<HTMLSelectElement>('sampleSel').value = targetKey;
   const src = SAMPLES[targetKey] || '';
@@ -614,7 +617,7 @@ export function loadSample(key: string) {
     editor.value = src;
     setFileName(targetKey + '.ts');
   }
-  lastEditorCursorLine = -1;
+  appState.lastEditorCursorLine = -1;
   clearLog('已加载样例 · 自动开启 Debug 调试模式（可按 ← / → 逐步当场计算，或点击左下「运行到下一个检查点」）');
   resetTraceState();
   const defaultStep = SAMPLE_DEFAULT_STEP[targetKey] || 0;
@@ -654,10 +657,10 @@ export function boot() {
       }
       if (qs.has('watch')) {
         const w = qs.get('watch');
-        URL_WATCH = w ? w.split(',').map(s => s.trim()).filter(Boolean) : [];
+        appState.URL_WATCH = w ? w.split(',').map(s => s.trim()).filter(Boolean) : [];
       }
       if (qs.get('still') === '1') {
-        IS_STILL = true;
+        appState.IS_STILL = true;
         if (document.body && document.body.classList) document.body.classList.add('still');
       }
       if (qs.has('step')) {

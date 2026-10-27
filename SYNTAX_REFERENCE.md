@@ -1,120 +1,88 @@
-# TypeScript Playground VISUAL · 支持的语法范围与可视化规范参考手册
+# 语法与数据结构可视化参考手册 (`SYNTAX_REFERENCE.md`)
 
-本文档详细说明 **TypeScript Playground VISUAL**（模块化代码位于 `src/**/*.ts`）内置的四大核心引擎所支持的 TypeScript / JavaScript 语法范围与可视化规则：
-1. **静态类型检查器与官方 TS Worker 桥接 (`src/compiler/type-checker.ts` + `editor/ts-worker.bundle.js`)**
-2. **词法感知类型剥离与语法降级器 (`src/compiler/transpile.ts`)**
-3. **语句级自动插桩、异步协程改写与虚拟事件循环 (`src/compiler/instrumenter.ts` + `src/runtime/event-loop.ts`)**
-4. **数据结构分类器与可视化映射规范 (`src/viz/memory-graph.ts`)**
+本文档详细列出 **Algorithm Visualizer** 的 **TypeScript 引擎** 与 **Python 引擎** 各自支持的语言特性、静态类型检查范围，以及 **7 类数据结构自动可视化识别规则**（由纯数据归一化模块 `src/viz/memory-normalizers.ts` 与渲染引擎 `src/viz/memory-graph.ts` 驱动）。
 
 ---
 
-## 一、 静态类型检查器 (`typecheckTS` + TS Worker) 支持范围
+## 1. TypeScript 引擎支持矩阵
 
-系统默认开启严格静态类型检查（`STRICT_TS = true`）。在编辑代码、点击「▶ 运行」或「🐞 Debug 调试」时，同步检查器 `typecheckTS` 会立即执行双遍类型推导与校验，并在浏览器环境中协同官方 TypeScript Web Worker（`editor/ts-worker.bundle.js`）提供完整诊断。
+TypeScript 引擎由 **轻量级 TS 转译器 (`src/compiler/transpile.ts` + `transpile-helpers.ts`)**、**教育级静态类型检查器 (`src/compiler/type-checker.ts` + `tc-infer.ts` + `tc-eval.ts`)**、**Acorn AST 插桩器 (`src/compiler/instrumenter.ts`)** 与 **确定性虚拟事件循环 (`src/runtime/event-loop.ts` + `event-loop-env.ts`)** 四部分组成。
 
-### 1. 支持的类型系统特性
-| 语法结构 | 支持写法示例 | 说明 |
-|---|---|---|
-| **原始类型与字面量类型** | `number`, `string`, `boolean`, `void`, `null`, `undefined`, `any`, `unknown`, `never`, `"ok"`, `200` | 支持字面量推导、模板字面量类型 `` `prefix-${string}` `` 匹配 |
-| **数组与元组类型** | `number[]`, `ReadonlyArray<string>`, `[number, number][]`, `(number \| string)[]` | 严格区分同构联合数组 `string[] \| number[]` 与混合元素数组 `(number \| string)[]` |
-| **联合类型与交叉类型** | `number \| string`, `A & B` | 支持联合类型可赋值性校验、交叉类型字段合并与三元/`if` 分支类型收窄 |
-| **接口与类型别名** | `interface User<T> { ... }`、`type Nullable<T> = ...` | 支持单行/多行定义、泛型参数、`extends` 继承、`readonly` 与 `?` 可选属性 |
-| **泛型函数与 `keyof` / `T[K]`** | `function getProp<T, K extends keyof T>(obj: T, key: K): T[K]` | 支持从实参推断泛型参数、校验 `extends keyof T` 约束并求值索引访问类型 `T[K]` |
-| **条件类型与 `infer`** | `type Unwrap<T> = T extends Promise<infer U> ? Unwrap<U> : T` | 支持分布式条件类型、递归条件类型与数组/函数返回值/Promise/元组/模板字符串 `infer` 提取 |
-| **映射类型 (Mapped Types)** | `type MyPartial<T> = { [K in keyof T]?: T[K] \| null }` | 支持单行与跨多行映射类型展开、修饰符 `?` / `-?` / `readonly` |
-| **内置工具类型 (Utility Types)** | `Partial<T>`, `Required<T>`, `Readonly<T>`, `Pick<T, K>`, `Omit<T, K>`, `Record<K, V>`, `ReturnType<F>`, `Parameters<F>`, `Awaited<T>` | 开箱即用支持常用 TypeScript 标准工具类型求值 |
-| **泛型类与面向对象** | `class Box<T> { constructor(private v: T) {} get(): T { return this.v; } }` | 支持泛型类实例化类型替换、构造器参数属性、`abstract class`、方法内 `this` 属性检查 |
-| **Promise 与异步函数** | `async function f(): Promise<number>`、`new Promise<string>((resolve) => ...)`、`new Promise(function(resolve) { ... })` | 自动推断 `resolve` 参数类型（箭头函数与 `function` 表达式均支持）及 `await` 解包类型 |
-| **命名空间、重载与声明** | `namespace MathUtil { export function add... }`、函数重载签名、`declare const VERSION: string` | 完整识别命名空间导出成员、多签名重载匹配与环境声明 |
+### 1.1 支持并可视化追踪的语法特性
 
-### 2. 支持的核心静态诊断错误码
-| 错误码 | 触发场景说明 | 典型拦截示例 |
-|---|---|---|
-| **`TS2304`** | 引用或赋值了当前作用域与全局环境中均未声明的标识符 | `strs = ["a"]`（缺少 `let`/`const` 声明） |
-| **`TS7006`** | 函数顶层参数缺少显式类型注解且无默认值（隐式 `any`） | `function add(a, b: number)`（回调与 Promise executor 参数可自动上下文推断） |
-| **`TS2322`** | 变量初始化、重赋值、数组元素、对象属性或函数返回值类型不兼容 | `const arr: string[] \| number[] = [1, "a"];` |
-| **`TS2741`** | 对象字面量缺少目标接口/映射类型的必填属性 | `const u: User = { name: "Alice" };` |
-| **`TS2353`** | 对象字面量包含目标类型（含 `Pick`/`Omit`）不存在的未知属性 | `const p: Pick<Task, "id"> = { id: 1, title: "x" };` |
-| **`TS2339`** | 访问接口、类实例或 `this` 上不存在的属性 | `this.unknownProp` 或 `user.email` |
-| **`TS2345`** | 函数/方法/构造器调用实参类型不匹配，或违反泛型 `extends` 约束 | `getProp(u, "missingKey")` |
-| **`TS2554`** | 函数调用传入的实参个数不符合必填/重载参数要求 | `add(1)` |
-| **`TS2355`** | 声明了非 `void`/`any` 返回类型的函数缺少返回值 | `function test(n: number): number { let x = n; }` |
-| **`TS2588`** | 对 `const` 常量执行重新赋值或自增自减 | `const k = 10; k = 20;` |
-| **`TS2362` / `TS2365`** | 算术运算符操作数类型非法 | `"abc" - 1` |
-| **`TS2367`** | 比较运算符左右两侧类型无交集 | `count === "10"` |
-| **`TS2538`** | 数组或字符串下标索引使用了非数字类型 | `nums["0"]` |
+| 类别 | 支持语法与特性 | 可视化表现 |
+| :--- | :--- | :--- |
+| **变量与常量** | `let`, `const`, `var`，解构赋值 `const [a, b] = ...`, `const {x, y} = ...` | 实时在左侧栈帧面板显示变量名、静态类型注解、当前值及新建/修改脉冲高亮 |
+| **类型系统** | 基本类型 (`number`, `string`, `boolean`, `null`, `undefined`, `any`, `unknown`, `void`)、数组 `T[]` / `Array<T>`、元组 `[T1, T2]`、联合类型 `A \| B`、交叉类型 `A & B`、`interface`、`type` 别名、`enum`、泛型 `<T extends ...>`、类型断言 `x as T`、非空断言 `x!` | 编译期在「类型诊断」面板报告不兼容错误；转译期擦除类型注解并生成可执行 JS（`enum` 展开为双向映射运行时对象） |
+| **控制流与循环** | `if / else`, `switch / case`, `for`, `for...of`, `for...in`, `while`, `do...while`, `break`, `continue` | 每个循环迭代与条件分支均插入步进点（`__step__`），内置死循环熔断保护（默认上限 5000 步） |
+| **函数与递归** | 函数声明 `function fn()`、箭头函数 `() => {}`、默认参数、剩余参数 `...args`、递归调用 | 每次调用自动压入新栈帧（Call Stack），返回时弹出栈帧并记录返回值气泡与递归调用树（Call Tree） |
+| **面向对象 (OOP)** | `class`, `constructor`, 参数属性 `constructor(public val: number)`, `extends` 继承, `super()`, 访问修饰符 (`public` / `private` / `protected` / `readonly`), 方法与字段默认值 | 实例分配在右侧堆内存区（Heap），栈变量通过 SVG 贝塞尔指针连线指向对应堆实例卡片 |
+| **异步与事件循环** | `async / await`, `new Promise`, `Promise.resolve().then()`, `setTimeout`, `queueMicrotask` | 确定性虚拟事件循环沙箱按微任务（Microtask）优先于宏任务（Macrotask）顺序逐步推进，无需真实等待定时器延迟 |
+| **内置集合** | `Array`, `Map`, `Set`, `Object` | 自动展开内部条目并渲染为专属数据结构视图 |
+
+### 1.2 静态类型检查器诊断能力 (`src/compiler/type-checker.ts`)
+
+静态类型检查器专门针对算法教学场景设计，捕获以下常见类型错误并精确标记源码行列号：
+1. **变量声明与赋值类型不匹配**：如 `let count: number = "hello";` 或将 `string` 赋给 `number[]`。
+2. **函数调用实参数量与类型检查**：检查必选参数缺失、过多参数以及实参类型与形参类型不兼容。
+3. **函数返回值类型检查**：检查 `return` 表达式是否符合函数声明的返回类型，或非 `void` 函数遗漏返回值。
+4. **接口 (`interface`) 与对象字面量结构检查**：检查缺失必选字段或字段类型不匹配。
+5. **类与属性访问控制检查**：检查访问不存在的属性、向 `readonly` 属性二次赋值、在类外部访问 `private` / `protected` 成员。
+6. **数组方法元素类型校验**：如向 `number[]` 调用 `.push("str")` 时触发类型告警。
 
 ---
 
-## 二、 类型剥离与语法降级器 (`src/compiler/transpile.ts`)
+## 2. Python 引擎支持矩阵
 
-静态检查通过后，编译器会将 TypeScript 源码无损转换为**严格等行号**的 JavaScript 代码：
+Python 引擎运行在独立的 **Pyodide Web Worker** (`python/py_worker.js` + `python/py_bridge.py`) 中，基于标准 CPython 3.11 (WASM) 的 `sys.settrace` 机制。
 
-1. **声明级擦除（保持 1:1 行号映射）**
-   - 单行与多行 `interface`、`type`（含跨多行条件类型与映射类型）、`declare` 声明、无函数体的重载签名、`import` / `export type` 均替换为空行或等量换行符。
-2. **TypeScript 运行时语法降级**
-   - **枚举 (`transpileEnums`)**：数字枚举、字符串枚举与 `const enum` 编译为等行号 IIFE，支持正向与反向映射（`E[E["A"] = 0] = "A"`）。
-   - **命名空间 (`transpileNamespaces`)**：`namespace N { export const x = 1; export function f() {} }` 编译为等行号闭包并自动挂载导出成员到对象 `N`。
-   - **构造器参数属性 (`extractConstructorParamProps`)**：`constructor(private x: number, public y = 1)` 自动在构造器入口（或 `super(...)` 调用后）注入 `this.x = x; this.y = y;`。
-   - **抽象方法与装饰器**：`abstract foo(): void;` 降级为 `foo() {}`；类/方法装饰器 `@dec` 安全剥离并保持换行数不变。
-3. **O(n) 表达式消歧义保护**
-   - 完整保留嵌套三元表达式 `a ? b : c`、可选链 `?.`、空值合并 `??`、非空断言 `!` 剥离（不误伤 `!==` 与前缀 `!`），且对多行未闭合 `<` 比较运算具备行级短路保护。
+| 类别 | 支持特性 | 说明 |
+| :--- | :--- | :--- |
+| **Python 标准语法** | 完整 Python 3.11 语法（列表推导式、生成器、装饰器、`class`、`dataclass`、切片、字典推导等） | 由真实 CPython 解释器执行，100% 兼容标准语法 |
+| **常用内置模块** | `collections` (`deque`, `defaultdict`, `Counter`), `heapq`, `bisect`, `math`, `itertools`, `functools`, `typing` | 开箱即用，无需额外安装 |
+| **步进与内存快照** | 函数调用（`call`）、行执行（`line`）、函数返回（`return`）、异常捕获（`exception`） | `py_bridge.py` 在每一步自动遍历活动栈帧与可达堆对象，序列化为与 TS 引擎完全一致的视觉模型 |
 
 ---
 
-## 三、 自动插桩与确定性虚拟事件循环 (`src/compiler/instrumenter.ts` & `src/runtime/event-loop.ts`)
+## 3. 七类数据结构自动识别规则 (`src/viz/memory-normalizers.ts`)
 
-### 1. 自动追踪与 `async / await` 协程改写
-- 自动收集 `const/let/var`、解构绑定、`for` 循环变量、函数/箭头函数/类方法参数，并在每行可执行语句与循环条件中注入 `__t(line, note, snapFn, this)`。
-- 将 `async function` 自动转换为生成器协程 `__t.__async(function* () { ... })`，将 `await expr` 转换为 `yield __t.__await(expr, fid, line, label)`，从而支持在 `await` 处挂起当前栈帧、执行其他微任务/宏任务后再恢复该栈帧继续单步调试。
+可视化引擎会根据堆内存对象的**结构特征（Duck Typing）**或**变量命名约定**，在纯数据归一化层 `src/viz/memory-normalizers.ts` 中自动将其转换为专属图形视图，并由 `src/viz/memory-graph.ts` 渲染为交互式 SVG/DOM 卡片：
 
-### 2. 确定性虚拟事件循环 (`createVirtualEventLoop`)
-- 沙箱内置 `VirtualPromise`（支持 `new Promise`、`Promise.resolve`、`Promise.reject`、`Promise.all`、`Promise.race`、`.then`、`.catch`、`.finally`）、`queueMicrotask`、`setTimeout`、`clearTimeout` 与 `sleep(ms, val)`。
-- 事件循环严格遵循：**同步代码 (`sync`) → 清空全部微任务队列 (`microtask`, FIFO) → 推进虚拟时钟至最早到期定时器并执行一个宏任务 (`macrotask`) → 再次清空微任务队列**，保证单步回放与正向步进 100% 确定可重现。
+### 3.1 二维矩阵网格 (`2D Matrix`)
+- **触发条件**：元素全部为等长（或近似等长）一维数组的二维数组（如 `dp: number[][]`、`grid: string[][]`、`board`）。
+- **视觉表现**：渲染为行列对齐的二维表格网格，支持单元格坐标提示与读写脉冲高亮。
 
----
+### 3.2 二叉树与多叉树 (`Tree`)
+- **触发条件**：包含 `val` / `value` / `key` 字段，且具有 `left` & `right` 属性（二叉树）或 `children` 数组属性（多叉树）的对象节点。
+- **视觉表现**：自动计算子树宽度并绘制自顶向下的 **SVG 层次树节点与父子连线**，同时标记指向当前节点的栈帧指针バッジ（如 `root`, `curr`, `node`）。
 
-## 四、 数据结构自动识别与可视化规范 (`src/viz/memory-graph.ts`)
+### 3.3 链表 (`LinkedList`)
+- **触发条件**：包含 `val` / `value` / `data` 字段且包含 `next`（单链表）或 `next` + `prev`（双向链表）属性，且不包含 `left`/`right` 的链式节点。
+- **视觉表现**：渲染为水平串联的节点链（`[val] ➔ [val] ➔ null`），若存在环路（Cycle）会自动检测并标记 `↩ cycle to #id`。
 
-右侧 `WATCH` 面板根据变量的运行时结构、命名约定与 TypeScript 声明元数据，自动映射为对应的可视化组件：
+### 3.4 图结构 (`Graph`)
+- **触发条件**：
+  1. 变量名包含 `adj`、`graph`、`edges`、`network` 的邻接表对象/Map/二维数组；或
+  2. 包含 `neighbors` / `edges` 数组属性的对象节点。
+- **视觉表现**：自动采用圆周分布布局绘制 **SVG 顶点与有向箭头边**。
 
-| 序号 | 可视化类型 (`kind`) | 自动识别条件 | 特殊高亮与大数量级视窗特性 |
-|---|---|---|---|
-| 1 | **`array`（一维数组）** | 普通一维数组 `T[]` | 支持读写索引高亮（`hot`/`mark`）、`[l..r]` 滑动窗口条带、指针标签（`l,r,mid,i,j`）；超过 20 项时自动启用 1D 焦点切片（`build1DFocalSlice`） |
-| 2 | **`string`（字符串）** | 非空字符串变量 | 字符格序列，支持下标高亮、`[l..r]` 窗口与长字符串焦点切片 |
-| 3 | **`stack`（栈）** | 变量名匹配 `/stack\|stk/i` 的数组 | 垂直栈布局，顶部标注 `top`，超长栈自动保留真实栈顶并显示底部省略计数 `…+N` |
-| 4 | **`queue`（队列）** | 变量名匹配 `/queue\|deque/i` 的数组 | 水平队列布局，标注队首 `front` 与队尾 `back` |
-| 5 | **`heap`（二叉堆）** | 变量名匹配 `/heap\|pq/i` 的数组 | 标注堆顶 `top`，附带父子节点下标公式 `parent = (i - 1) >> 1 · left = 2i + 1` |
-| 6 | **`uf`（并查集）** | 变量名匹配 `/^(parent\|uf\|fa\|dsu)\b/i` 的数组 | 自动识别根节点 `root`（`parent[i] === i`）与父节点指针 `p:x` |
-| 7 | **`map`（哈希映射）** | `Map` 实例 | 渲染 `key → value` 键值对胶囊，高亮当前读写键（超长 Map 自动包含当前访问的热点键） |
-| 8 | **`set`（集合）** | `Set` 实例 | 渲染集合元素胶囊，高亮当前读写元素 |
-| 9 | **`grid`（二维矩阵）** | 二维数组 `T[][]`（如 DP 表 `dp`） | 琥珀色高亮当前写入格 `[r, c]`，蓝色高亮本行引用的依赖格；超过 `10×10` 时自动启用带行列坐标头的二维滑动视窗（`selectGridAxisIndices`） |
-| 10 | **`list`（单链表）** | 含 `{ val, next }` 属性的链式对象 | 渲染 `val → val → null` 指针链，自动识别并标注指向节点的局部变量（如 `slow`、`fast`），超长链表自动启用焦点切片 |
-| 11 | **`tree`（二叉树）** | 含 `{ val, left, right }` 属性的树形对象 | 递归计算坐标并绘制 SVG 二叉树，自动高亮局部变量引用的树节点 |
-| 12 | **`graph`（图结构）** | 含 `{ nodes, edges }` 的对象 | 环形拓扑布局并绘制 SVG 节点与边连线 |
-| 13 | **`interface` / `class`（对象与类实例）** | 普通对象、`interface` 实例、或 `class` 实例（含方法内的 `this`） | 展示 `interface` / `class` 标题徽章、属性名、声明类型与实时属性值，高亮当前行访问的字段 |
-| 14 | **`eventloop`（异步事件循环）** | 使用了 `async/await`、`Promise`、`setTimeout`、`queueMicrotask` 或 `sleep` | 四栏实时展示：虚拟时钟与当前阶段、Async 协程挂起/运行状态、Microtask 队列（FIFO）、Macrotask 定时器队列与 Promise 状态表 |
+### 3.5 栈与队列 (`Stack` / `Queue`)
+- **触发条件**：
+  - 类名或变量名包含 `stack`、`lifo` ➔ 渲染为带 `TOP` 标记的**栈视图**。
+  - 类名或变量名包含 `queue`、`deque`、`fifo`、`bfs` ➔ 渲染为带 `FRONT` / `BACK` 双端标记的**队列视图**。
 
----
+### 3.6 哈希表与集合 (`HashMap` / `Set`)
+- **触发条件**：JavaScript `Map` / `Set` 实例、Python `dict` / `set`、或普通键值字典对象。
+- **视觉表现**：渲染为清晰的 `Key ➔ Value` 哈希桶卡片，若 Value 为堆对象引用则自动绘制跨卡片 SVG 指针连线。
 
-## 五、 Notebook 跨单元格编译、类型检查与单步调试规范 (`src/ui/notebook.ts`)
-
-在 `📓 Notebook` 交互式笔记本模式下，代码分散在多个按序执行的单元格（Cells）中。引擎通过以下机制实现跨单元格上下文共享与行号精确定位：
-
-1. **跨单元格静态类型检查 (`typecheckNotebookCellTS`)**
-   - 当检查某个单元格 `cell` 时，编译器会先收集当前笔记本 `executedHistory`（所有已执行过的历史单元格）以及排在该单元格上方的代码单元格源码，合成为前导上下文 `preamble`（共 `preambleLines` 行）。
-   - 对 `preamble + "\n" + cell.source` 执行完整的双遍 `typecheckTS`，随后仅过滤出 `d.line > preambleLines` 的诊断，并将诊断行号减去 `preambleLines`，从而将报错行号 1:1 映射回当前单元格内部的真实行号，且完全识别前序单元格声明的变量、函数、接口与类。
-2. **跨单元格累积求值 (`runNotebookCell`)**
-   - 当运行某个单元格时，引擎将此前已执行的单元格历史与当前单元格按序拼接编译，但仅收集当前单元格行号区间内的 `console.log` 输出、最后一行表达式返回值以及执行完毕后的最新全局快照（`lastGlobalVars` 与 `lastGlobalDs`），并立即刷新右侧 `LOCALS` 与 `WATCH` 面板。
-3. **单元格级按需单步调试 (`debugNotebookCell`)**
-   - 点击任意代码单元格右上角的 `🐞` 按钮时，引擎以前序已执行单元格建立的运行时状态为基础，仅对当前目标单元格生成的轨迹步骤开放单步回放，将当前单元格的 `line` 偏移量还原为单元格内行号，并在该单元格内部渲染 `#stepViz` 行间求值胶囊。
+### 3.7 一维数组与双指针跟随 (`1D Array + Index Pointers`)
+- **触发条件**：所有普通一维数组（如 `nums`, `arr`, `dp`）。
+- **视觉表现**：横向排列带下标编号的数组格子；当同一栈帧中存在名为 `i`, `j`, `k`, `left`, `right`, `low`, `high`, `mid`, `slow`, `fast`, `start`, `end`, `l`, `r` 的整型变量且其值落在数组下标范围内时，**自动在对应数组格子下方悬挂彩色指针标签**（例如 `▲ left=0`, `▲ right=7`）。
 
 ---
 
-## 六、 工程自身源码的严格化 TypeScript 规范 (`Strict TS Gate`)
+## 4. Notebook 模式跨单元格作用域规则 (`src/notebook/notebook-kernel.ts`)
 
-不仅演练场内部支持严格 TypeScript 检查，本项目自身的核心源码（`src/**/*.ts` 共 17 个模块）也遵循最高级别的工业级严格 TypeScript 标准，并由 `test-pipeline.mjs` 自动守护：
-
-- **`tsconfig.json` 严格编译配置**：启用 `strict: true`、`noUncheckedIndexedAccess: true`、`noUnusedLocals: true`、`noUnusedParameters: true`、`noImplicitOverride: true`、`noFallthroughCasesInSwitch: true`。
-- **零 `any`、零非空断言 `!`、零 `@ts-ignore`**：所有 `src/**/*.ts` 模块均经过词法级静态门禁扫描，确保不存在任何显式或隐式 `any`、后缀非空断言 `!` 或编译器错误压制指令。
-
+在 **Notebook (`.ipynb`)** 模式下：
+- **TypeScript 单元格**：求值内核 `src/notebook/notebook-kernel.ts` 会自动提取单元格顶层的 `let` / `const` / `var` / `function` / `class` 声明并提升至共享上下文对象 `__nb_ctx__`，因此后续单元格可以直接调用前面单元格定义的函数、类或变量。
+- **Python 单元格**：在同一个持久化的 Pyodide 全局命名空间中顺序执行，天然支持跨单元格变量共享。

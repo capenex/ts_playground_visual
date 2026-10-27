@@ -2343,6 +2343,10 @@ check('circular structure in return value runs and finishes debug without JSON c
   const anyViolations = [];
   const bangViolations = [];
   const tsIgnoreViolations = [];
+  const doubleCastViolations = [];
+  const inlineStructAsViolations = [];
+  const bagAsViolations = [];
+  const allAsViolations = [];
 
   for (const fileUrl of tsFiles) {
     const relPath = fileUrl.pathname.slice(ROOT.pathname.length);
@@ -2351,13 +2355,31 @@ check('circular structure in return value runs and finishes debug without JSON c
       tsIgnoreViolations.push(relPath);
     }
     const stripped = stripTsCommentsStringsAndRegexes(raw);
+    const cleanedForAs = stripped
+      .replace(/\b(?:import|export)\s+(?:type\s+)?\{[^}]*\}/g, (m) => m.replace(/[^\n]/g, ' '))
+      .replace(/\bimport\s+\*\s+as\s+\w+/g, (m) => m.replace(/[^\n]/g, ' '));
     const lines = stripped.split('\n');
+    const asLines = cleanedForAs.split('\n');
     lines.forEach((line, idx) => {
       if (/\bany\b/.test(line)) {
         anyViolations.push(`${relPath}:${idx + 1}: ${line.trim()}`);
       }
       if (/[\w$\])]!(?!=)/.test(line)) {
         bangViolations.push(`${relPath}:${idx + 1}: ${line.trim()}`);
+      }
+      if (/\bas\s+unknown\s+as\b/.test(line)) {
+        doubleCastViolations.push(`${relPath}:${idx + 1}: ${line.trim()}`);
+      }
+      const asLine = asLines[idx] || '';
+      if (/\bas\s*(?:\{|Array<\s*\{|\([^)]*\)\s*=>)/.test(asLine)) {
+        inlineStructAsViolations.push(`${relPath}:${idx + 1}: ${line.trim()}`);
+      }
+      if (/\bas\s+(?:StepAnim|Frame|Record<)\b/.test(asLine)) {
+        bagAsViolations.push(`${relPath}:${idx + 1}: ${line.trim()}`);
+      }
+      const asMatches = [...asLine.matchAll(/\bas\s+(?!const\b)/g)];
+      if (asMatches.length > 0) {
+        allAsViolations.push(`${relPath}:${idx + 1}: ${line.trim()}`);
       }
     });
   }
@@ -2376,6 +2398,102 @@ check('circular structure in return value runs and finishes debug without JSON c
     'Strict TS Gate: zero @ts-ignore / @ts-expect-error / @ts-nocheck directives in src/**/*.ts',
     tsIgnoreViolations.length === 0,
     tsIgnoreViolations.join(', '),
+  );
+  check(
+    'Strict TS Gate: zero `as unknown as` double type assertions across all src/**/*.ts modules',
+    doubleCastViolations.length === 0,
+    doubleCastViolations.join(' | '),
+  );
+  check(
+    'Strict TS Gate: zero inline anonymous structural `as` casts (`as { ... }`, `as Array<{ ... }>`, `as (...) => ...`) across src/**/*.ts',
+    inlineStructAsViolations.length === 0,
+    inlineStructAsViolations.join(' | '),
+  );
+  check(
+    'Strict TS Gate: zero index-signature bag `as` casts (`as StepAnim`, `as Frame`, `as Record<...>`) across src/**/*.ts',
+    bagAsViolations.length === 0,
+    bagAsViolations.join(' | '),
+  );
+  check(
+    'Strict TS Gate: zero `as` type assertions (excluding `as const`) across all 34 modules in src/**/*.ts',
+    allAsViolations.length === 0,
+    allAsViolations.slice(0, 10).join(' | '),
+  );
+
+  // Tarjan SCC check for 0 circular dependencies across src/**/*.ts
+  const importGraph = new Map();
+  const knownRelPaths = new Set(tsFiles.map((u) => u.pathname.slice(ROOT.pathname.length)));
+  for (const fileUrl of tsFiles) {
+    const relPath = fileUrl.pathname.slice(ROOT.pathname.length);
+    const raw = fs.readFileSync(fileUrl, 'utf8');
+    const deps = new Set();
+    const impRe = /(?:import|export)\s+(?:type\s+)?(?:[^'"]*?\s+from\s+)?['"](\.[^'"]+)['"]/g;
+    let m;
+    while ((m = impRe.exec(raw))) {
+      const spec = m[1];
+      const resolvedUrl = new URL(spec, fileUrl);
+      let cand = resolvedUrl.pathname.slice(ROOT.pathname.length);
+      if (knownRelPaths.has(cand)) deps.add(cand);
+      else if (knownRelPaths.has(cand + '.ts')) deps.add(cand + '.ts');
+      else if (knownRelPaths.has(cand + '.d.ts')) deps.add(cand + '.d.ts');
+    }
+    importGraph.set(relPath, [...deps]);
+  }
+  let sccIdx = 0;
+  const indices = new Map();
+  const lowlink = new Map();
+  const sccStack = [];
+  const onStack = new Set();
+  const cycleComponents = [];
+  function strongConnect(v) {
+    indices.set(v, sccIdx);
+    lowlink.set(v, sccIdx);
+    sccIdx++;
+    sccStack.push(v);
+    onStack.add(v);
+    for (const w of importGraph.get(v) || []) {
+      if (!indices.has(w)) {
+        strongConnect(w);
+        lowlink.set(v, Math.min(lowlink.get(v), lowlink.get(w)));
+      } else if (onStack.has(w)) {
+        lowlink.set(v, Math.min(lowlink.get(v), indices.get(w)));
+      }
+    }
+    if (lowlink.get(v) === indices.get(v)) {
+      const comp = [];
+      let w;
+      do {
+        w = sccStack.pop();
+        onStack.delete(w);
+        comp.push(w);
+      } while (w !== v);
+      if (comp.length > 1) cycleComponents.push(comp);
+    }
+  }
+  for (const v of importGraph.keys()) {
+    if (!indices.has(v)) strongConnect(v);
+  }
+  check(
+    'Architecture Gate: zero circular dependencies (0 2-cycles & 0 multi-node SCCs) across src/**/*.ts',
+    cycleComponents.length === 0,
+    JSON.stringify(cycleComponents),
+  );
+
+  // Data & UI Separation Gate: pure modules must have 0 DOM API accesses
+  const pureTargetPrefixes = ['src/state.ts', 'src/runtime/', 'src/notebook/', 'src/utils/', 'src/viz/memory-normalizers.ts'];
+  const domLeakViolations = [];
+  for (const fileUrl of tsFiles) {
+    const relPath = fileUrl.pathname.slice(ROOT.pathname.length);
+    if (!pureTargetPrefixes.some((p) => relPath === p || relPath.startsWith(p))) continue;
+    const stripped = stripTsCommentsStringsAndRegexes(fs.readFileSync(fileUrl, 'utf8'));
+    if (/\b(?:document|HTMLElement|HTMLInputElement|HTMLTextAreaElement|HTMLButtonElement|getComputedStyle|innerHTML|createElement|getElementById|querySelector)\b/.test(stripped)) {
+      domLeakViolations.push(relPath);
+    }
+  }
+  check(
+    'Architecture Gate: zero DOM references in state, runtime, notebook model/kernel, utils, and memory-normalizers',
+    domLeakViolations.length === 0,
+    domLeakViolations.join(', '),
   );
 
   const tsconfigJson = JSON.parse(fs.readFileSync(new URL('./tsconfig.json', ROOT), 'utf8'));

@@ -1,154 +1,59 @@
 /* ================================================================
-   Single-File Mode Multi-Tab Bar & Sample Import Menu (src/ui/script-tabs.ts)
+   Single-File Mode Multi-Tab Bar View & Sample Import Menu (src/ui/script-tabs.ts)
    ================================================================ */
 import { say, resetTraceState } from "../runtime/event-loop";
-import { registerUiHooks, uiHooks } from "../state";
+import {
+  ensureScriptTabsForLang,
+  getActiveScriptTab,
+  getPySamplesDict,
+  handleVfsFileDeletedInTabs,
+  handleVfsFileRenamedInTabs,
+  isScriptTabSyncing,
+  nextScriptTabId,
+  PY_SAMPLE_METADATA,
+  ScriptTabDoc,
+  setScriptTabSyncing,
+  syncActiveScriptTabSource,
+  TS_SAMPLE_METADATA,
+  upsertSampleScriptTab,
+  upsertVfsScriptTab,
+} from "../runtime/script-tabs-store";
+import {
+  persistVfsToClientStorage,
+  VFS_NODES,
+} from "../runtime/vfs-store";
+import { SAMPLES } from "../samples/ts-samples";
+import { appState, esc, registerUiHooks, uiHooks } from "../state";
 import { updateEditorChrome } from "../viz/highlight";
 import { setFileName } from "./controls";
-import { SAMPLES } from "../samples/ts-samples";
-import { loadSample } from "./share";
 import {
-  ensureVfsInitialized,
-  persistVfsToClientStorage,
-  renderVfsTreeUI,
-  VFS_NODES,
-} from "./vfs";
+  $,
+  closestElement,
+  editor,
+  eventTargetElement,
+  eventTargetNode,
+} from "./dom";
+import { loadSample } from "./share";
+import { renderVfsTreeUI } from "./vfs";
 
-export interface ScriptTabDoc {
-  id: string;
-  title: string;
-  lang: "ts" | "python";
-  source: string;
-  vfsPath: string;
-  isSample?: boolean;
-}
-
-let scriptTabSeq = 1;
-let syncingScriptTab = false;
-
-export function nextScriptTabId(): string {
-  return "stab_" + (++scriptTabSeq);
-}
-
-export function isScriptTabSyncing(): boolean {
-  return syncingScriptTab;
-}
-
-export function setScriptTabSyncing(val: boolean): void {
-  syncingScriptTab = val;
-}
-
-export const SCRIPT_TABS: Record<"ts" | "python", { activeTabId: string; tabs: ScriptTabDoc[] }> = {
-  ts: { activeTabId: "", tabs: [] },
-  python: { activeTabId: "", tabs: [] },
-};
-
-export const TS_SAMPLE_METADATA: Array<{ key: string; label: string; desc: string }> = [
-  { key: "showcase", label: "showcase.ts · 综合演示", desc: "滑动窗口 + 单调栈 + Map + 树与图" },
-  { key: "mergesort", label: "mergesort.ts · 归并排序", desc: "分治递归与左右子数组归并" },
-  { key: "debug_crash", label: "debug_crash.ts · 越界排错", desc: "二分查找 <= 越界 Bug 现场定位" },
-  { key: "lcs", label: "lcs.ts · 最长公共子序列", desc: "二维 DP 网格规划" },
-  { key: "analyze", label: "analyze.ts · 频率统计", desc: "数组与 Map 哈希统计" },
-  { key: "window", label: "window.ts · 滑动窗口", desc: "双指针定长滑动窗口" },
-  { key: "structures", label: "structures.ts · 数据结构全家桶", desc: "栈 / 队列 / 堆 / 并查集 / 树 / 图" },
-  { key: "counter", label: "counter.ts · 闭包计数器", desc: "高阶函数与词法作用域闭包" },
-  { key: "classes", label: "classes.ts · 类与继承", desc: "class / extends / super 实例方法" },
-  { key: "async_loop", label: "async_loop.ts · 事件循环", desc: "async / await 与微任务队列" },
-];
-
-export const PY_SAMPLE_METADATA: Array<{ key: string; label: string; desc: string }> = [
-  { key: "quickstart", label: "quickstart.py · 冒泡排序", desc: "Python 列表原地交换与双层循环" },
-  { key: "binary_search", label: "binary_search.py · 二分查找", desc: "双指针折半搜索与 checkpoint()" },
-  { key: "bfs", label: "bfs.py · BFS 广度优先搜索", desc: "deque 队列与集合访问标记" },
-  { key: "lcs", label: "lcs.py · DP 最长公共子序列", desc: "二维列表推导式与动态规划" },
-  { key: "structures", label: "structures.py · 结构集合", desc: "TreeNode / ListNode / 字典 / 集合" },
-  { key: "classes", label: "classes.py · 类与实例", desc: "Counter 类构造与实例属性追踪" },
-];
-
-export function getPySamplesDict(): Record<string, string> {
-  const eng = typeof PY_ENGINE !== "undefined" ? PY_ENGINE : null;
-  return eng && eng.samples ? eng.samples : {};
-}
-
-export function ensureScriptTabsForLang(lang: "ts" | "python"): { activeTabId: string; tabs: ScriptTabDoc[] } {
-  ensureVfsInitialized();
-  const store = SCRIPT_TABS[lang];
-  if (store.tabs.length === 0) {
-    const defaultTitle =
-      lang === "python"
-        ? (LANG === "python" && FILE_NAME ? FILE_NAME : "quickstart.py")
-        : (LANG !== "python" && FILE_NAME ? FILE_NAME : "showcase.ts");
-    const defaultSrc =
-      lang === "python"
-        ? (LANG === "python" && editor && editor.value ? editor.value : (getPySamplesDict().quickstart || ""))
-        : (LANG !== "python" && editor && editor.value ? editor.value : (SAMPLES.showcase || ""));
-    const tabId = nextScriptTabId();
-    store.tabs.push({
-      id: tabId,
-      title: defaultTitle,
-      lang,
-      source: defaultSrc,
-      vfsPath: "",
-      isSample: true,
-    });
-    store.activeTabId = tabId;
-  }
-  const firstTab = store.tabs[0];
-  if (firstTab && !store.tabs.some((t) => t.id === store.activeTabId)) {
-    store.activeTabId = firstTab.id;
-  }
-  return store;
-}
-
-export function getActiveScriptTab(lang?: "ts" | "python"): ScriptTabDoc {
-  const targetLang = lang || (LANG === "python" ? "python" : "ts");
-  const store = ensureScriptTabsForLang(targetLang);
-  const found = store.tabs.find((t) => t.id === store.activeTabId) ?? store.tabs[0];
-  if (found) return found;
-  return {
-    id: "stab_0",
-    title: targetLang === "python" ? "quickstart.py" : "showcase.ts",
-    lang: targetLang,
-    source: "",
-    vfsPath: "",
-    isSample: true,
-  };
-}
+export * from "../runtime/script-tabs-store";
 
 export function openSampleScriptTab(title: string, source: string, lang?: "ts" | "python") {
-  const targetLang = lang || (LANG === "python" ? "python" : "ts");
   if (editor && editor.value) {
     syncActiveScriptTabSource(editor.value);
   }
-  const store = ensureScriptTabsForLang(targetLang);
-  let tab = store.tabs.find((t) => (t.isSample || !t.vfsPath) && t.title === title);
-  if (!tab) {
-    tab = {
-      id: nextScriptTabId(),
-      title,
-      lang: targetLang,
-      source,
-      vfsPath: "",
-      isSample: true,
-    };
-    store.tabs.push(tab);
-  } else {
-    tab.source = source;
-    tab.vfsPath = "";
-    tab.isSample = true;
-  }
-  store.activeTabId = tab.id;
-  syncingScriptTab = true;
+  upsertSampleScriptTab(title, source, lang);
+  setScriptTabSyncing(true);
   if (editor) editor.value = source;
   setFileName(title);
-  syncingScriptTab = false;
+  setScriptTabSyncing(false);
   renderScriptTabsUI();
   renderVfsTreeUI();
 }
 
 export function syncActiveScriptTabFromFileName(newFileName: string) {
-  if (syncingScriptTab) return;
-  const lang = LANG === "python" ? "python" : "ts";
+  if (isScriptTabSyncing()) return;
+  const lang = appState.LANG === "python" ? "python" : "ts";
   const store = ensureScriptTabsForLang(lang);
   const activeTab = store.tabs.find((t) => t.id === store.activeTabId);
   if (!activeTab) return;
@@ -173,24 +78,10 @@ export function syncActiveScriptTabFromFileName(newFileName: string) {
   renderVfsTreeUI();
 }
 
-export function syncActiveScriptTabSource(src: string) {
-  const lang = LANG === "python" ? "python" : "ts";
-  const activeTab = getActiveScriptTab(lang);
-  if (!activeTab) return;
-  activeTab.source = src;
-  if (!activeTab.isSample && activeTab.vfsPath) {
-    const node = VFS_NODES.get(activeTab.vfsPath);
-    if (node && node.type === "file") {
-      node.content = src;
-      persistVfsToClientStorage();
-    }
-  }
-}
-
 export function renderScriptTabsUI() {
   const tabsEl = $("scriptTabsList");
   if (!tabsEl) return;
-  const lang = LANG === "python" ? "python" : "ts";
+  const lang = appState.LANG === "python" ? "python" : "ts";
   const store = ensureScriptTabsForLang(lang);
   const activeTab = getActiveScriptTab(lang);
 
@@ -216,7 +107,7 @@ export function renderScriptTabsUI() {
 export function renderImportSampleMenu() {
   const listEl = $("importSampleList");
   if (!listEl) return;
-  const isPy = LANG === "python";
+  const isPy = appState.LANG === "python";
   const items = isPy ? PY_SAMPLE_METADATA : TS_SAMPLE_METADATA;
   const folderPrefix = isPy ? "examples/python/" : "examples/ts/";
 
@@ -227,7 +118,7 @@ export function renderImportSampleMenu() {
     `</button>`;
 
   listEl.innerHTML =
-    (VIEW_MODE === "notebook" ? nbItemHtml : "") +
+    (appState.VIEW_MODE === "notebook" ? nbItemHtml : "") +
     items
       .map(
         (item) =>
@@ -237,7 +128,7 @@ export function renderImportSampleMenu() {
           `</button>`
       )
       .join("") +
-    (VIEW_MODE !== "notebook" ? nbItemHtml : "");
+    (appState.VIEW_MODE !== "notebook" ? nbItemHtml : "");
 }
 
 export function initScriptTabsAndImportEvents() {
@@ -257,7 +148,7 @@ export function initScriptTabsAndImportEvents() {
     };
     addEventListener("click", (e: MouseEvent) => {
       if (!importMenuWrap.classList || !importMenuWrap.classList.contains("open")) return;
-      if (importMenuWrap.contains && importMenuWrap.contains(e.target as Node | null)) return;
+      if (importMenuWrap.contains && importMenuWrap.contains(eventTargetNode(e))) return;
       importMenuWrap.classList.remove("open");
     });
   }
@@ -272,8 +163,7 @@ export function initScriptTabsAndImportEvents() {
 
   if (importSampleList && importSampleList.addEventListener) {
     importSampleList.addEventListener("click", (e: MouseEvent) => {
-      const target = e.target as HTMLElement | null;
-      const btn = target && target.closest ? (target.closest(".import-sample-item") as HTMLElement | null) : null;
+      const btn = closestElement(e, ".import-sample-item");
       if (!btn) return;
       if (importMenuWrap && importMenuWrap.classList) importMenuWrap.classList.remove("open");
       const nbFile = btn.getAttribute("data-import-sample-notebook");
@@ -284,8 +174,8 @@ export function initScriptTabsAndImportEvents() {
       }
       const sampleKey = btn.getAttribute("data-import-sample-key");
       if (sampleKey) {
-        if (VIEW_MODE === "notebook") {
-          const code = LANG === "python" ? (getPySamplesDict()[sampleKey] || "") : (SAMPLES[sampleKey] || "");
+        if (appState.VIEW_MODE === "notebook") {
+          const code = appState.LANG === "python" ? (getPySamplesDict()[sampleKey] || "") : (SAMPLES[sampleKey] || "");
           if (code) {
             uiHooks.importSampleIntoNotebook(code, sampleKey);
           }
@@ -299,12 +189,12 @@ export function initScriptTabsAndImportEvents() {
   const scriptTabsEl = $("scriptTabsList");
   if (scriptTabsEl && scriptTabsEl.addEventListener) {
     scriptTabsEl.addEventListener("click", (e: MouseEvent) => {
-      const target = e.target as HTMLElement | null;
+      const target = eventTargetElement(e);
       if (!target) return;
-      const lang = LANG === "python" ? "python" : "ts";
+      const lang = appState.LANG === "python" ? "python" : "ts";
       const store = ensureScriptTabsForLang(lang);
 
-      const closeBtn = target.closest ? (target.closest("[data-close-script-tab]") as HTMLElement | null) : null;
+      const closeBtn = closestElement(target, "[data-close-script-tab]");
       if (closeBtn) {
         e.stopPropagation();
         const closeId = closeBtn.getAttribute("data-close-script-tab");
@@ -316,10 +206,10 @@ export function initScriptTabsAndImportEvents() {
             const fallbackTab = store.tabs[Math.max(0, idx - 1)];
             if (fallbackTab) store.activeTabId = fallbackTab.id;
             const nextTab = getActiveScriptTab(lang);
-            syncingScriptTab = true;
+            setScriptTabSyncing(true);
             editor.value = nextTab.source;
             setFileName(nextTab.title);
-            syncingScriptTab = false;
+            setScriptTabSyncing(false);
             resetTraceState();
             updateEditorChrome();
           }
@@ -329,7 +219,7 @@ export function initScriptTabsAndImportEvents() {
         return;
       }
 
-      const newBtn = target.closest ? (target.closest("#scriptBtnNewTab") as HTMLElement | null) : null;
+      const newBtn = closestElement(target, "#scriptBtnNewTab");
       if (newBtn) {
         syncActiveScriptTabSource(editor ? editor.value : "");
         const ext = lang === "python" ? ".py" : ".ts";
@@ -344,10 +234,10 @@ export function initScriptTabsAndImportEvents() {
         };
         store.tabs.push(newTab);
         store.activeTabId = newTab.id;
-        syncingScriptTab = true;
+        setScriptTabSyncing(true);
         editor.value = newTab.source;
         setFileName(newTab.title);
-        syncingScriptTab = false;
+        setScriptTabSyncing(false);
         resetTraceState();
         updateEditorChrome();
         renderScriptTabsUI();
@@ -356,17 +246,17 @@ export function initScriptTabsAndImportEvents() {
         return;
       }
 
-      const tabEl = target.closest ? (target.closest("[data-script-tab-id]") as HTMLElement | null) : null;
+      const tabEl = closestElement(target, "[data-script-tab-id]");
       if (tabEl) {
         const tabId = tabEl.getAttribute("data-script-tab-id");
         if (tabId && store.activeTabId !== tabId) {
           syncActiveScriptTabSource(editor ? editor.value : "");
           store.activeTabId = tabId;
           const nextTab = getActiveScriptTab(lang);
-          syncingScriptTab = true;
+          setScriptTabSyncing(true);
           editor.value = nextTab.source;
           setFileName(nextTab.title);
-          syncingScriptTab = false;
+          setScriptTabSyncing(false);
           resetTraceState();
           updateEditorChrome();
           renderScriptTabsUI();
@@ -376,11 +266,10 @@ export function initScriptTabsAndImportEvents() {
     });
 
     scriptTabsEl.addEventListener("dblclick", (e: MouseEvent) => {
-      const target = e.target as HTMLElement | null;
-      const tabEl = target && target.closest ? (target.closest("[data-script-tab-id]") as HTMLElement | null) : null;
+      const tabEl = closestElement(e, "[data-script-tab-id]");
       if (!tabEl) return;
       const tabId = tabEl.getAttribute("data-script-tab-id");
-      const lang = LANG === "python" ? "python" : "ts";
+      const lang = appState.LANG === "python" ? "python" : "ts";
       const store = ensureScriptTabsForLang(lang);
       const targetTab = store.tabs.find((t) => t.id === tabId);
       if (!targetTab) return;
@@ -418,9 +307,9 @@ export function initScriptTabsAndImportEvents() {
             persistVfsToClientStorage();
           }
           if (store.activeTabId === targetTab.id) {
-            syncingScriptTab = true;
+            setScriptTabSyncing(true);
             setFileName(nextName);
-            syncingScriptTab = false;
+            setScriptTabSyncing(false);
           }
           say(`✓ 文件已重命名为 ${nextName}`, "ok");
         }
@@ -448,28 +337,11 @@ export function initScriptTabsAndImportEvents() {
 }
 
 export function openVfsScriptFile(path: string, name: string, content: string): void {
-  const lang = LANG === "python" ? "python" : "ts";
+  const lang = appState.LANG === "python" ? "python" : "ts";
   if (editor && editor.value) {
     syncActiveScriptTabSource(editor.value);
   }
-  const store = ensureScriptTabsForLang(lang);
-  let tab = store.tabs.find((t) => !t.isSample && t.vfsPath === path);
-  if (!tab) {
-    tab = {
-      id: nextScriptTabId(),
-      title: name,
-      lang,
-      source: content,
-      vfsPath: path,
-      isSample: false,
-    };
-    store.tabs.push(tab);
-  } else {
-    tab.source = content;
-    tab.vfsPath = path;
-    tab.isSample = false;
-  }
-  store.activeTabId = tab.id;
+  const tab = upsertVfsScriptTab(path, name, content, lang);
   setScriptTabSyncing(true);
   editor.value = tab.source;
   setFileName(tab.title);
@@ -480,26 +352,14 @@ export function openVfsScriptFile(path: string, name: string, content: string): 
 }
 
 export function onVfsFileDeleted(delPath: string): void {
-  const prefix = delPath + "/";
-  (["ts", "python"] as const).forEach((l) => {
-    const st = SCRIPT_TABS[l];
-    st.tabs.forEach((t) => {
-      if (t.vfsPath === delPath || t.vfsPath.startsWith(prefix)) {
-        t.vfsPath = "";
-      }
-    });
-  });
+  handleVfsFileDeletedInTabs(delPath);
   renderScriptTabsUI();
 }
 
 export function onVfsFileRenamed(oldPath: string, nextPath: string, nextName: string): void {
-  const lang = LANG === "python" ? "python" : "ts";
-  const store = ensureScriptTabsForLang(lang);
-  const matchingTab = store.tabs.find((t) => t.vfsPath === oldPath);
-  if (matchingTab) {
-    matchingTab.title = nextName;
-    matchingTab.vfsPath = nextPath;
-    if (store.activeTabId === matchingTab.id) {
+  const res = handleVfsFileRenamedInTabs(oldPath, nextPath, nextName);
+  if (res.updated) {
+    if (res.isActive) {
       setScriptTabSyncing(true);
       setFileName(nextName);
       setScriptTabSyncing(false);
@@ -514,4 +374,3 @@ registerUiHooks({
   onVfsFileDeleted,
   onVfsFileRenamed,
 });
-

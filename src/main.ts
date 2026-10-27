@@ -2,6 +2,7 @@
    Application Entry Point & Global Compatibility Bridge (src/main.ts)
    ================================================================ */
 import * as stateMod from './state';
+import * as domMod from './ui/dom';
 import * as tsSamplesMod from './samples/ts-samples';
 import * as pySamplesMod from './samples/py-samples';
 import * as commentsMod from './compiler/comments';
@@ -21,8 +22,11 @@ import * as scriptTabsMod from './ui/script-tabs';
 import * as notebookMod from './ui/notebook';
 
 stateMod.bindStateGlobals();
+domMod.bindDomGlobals();
 
 const allExports = {
+  ...stateMod,
+  ...domMod,
   ...tsSamplesMod,
   ...pySamplesMod,
   ...commentsMod,

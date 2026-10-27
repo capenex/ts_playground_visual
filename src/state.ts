@@ -1,40 +1,15 @@
 /* ================================================================
-   Centralized runtime & UI state management (src/state.ts)
+   Centralized pure runtime & domain state management (src/state.ts)
    ================================================================ */
 import type {
+  ConsoleLogEntry,
   DebugSession,
   Diag,
   InterfaceSchemaMeta,
   LangBuffer,
-  StepVizElement,
   TraceData,
   TsMeta,
 } from './types';
-
-export const $ = <T extends HTMLElement = HTMLElement>(id: string): T =>
-  (typeof document !== 'undefined' ? document.getElementById(id) : null) as T;
-
-export const editor = $<HTMLTextAreaElement>('editor');
-export const logEl = $('log');
-export const gutterEl = $('gutter');
-export const highlightEl = $('highlight');
-export const varsEl = $('vars');
-export const pickEl = $('pick');
-export const callStackBarEl = $('callStackBar');
-export const callStackHintEl = $('callStackHint');
-export const slotsEl = $('slots');
-export const consoleEl = $('console');
-export const cntEl = $('cnt');
-export const ctlHint = $('ctlHint');
-export const mainEl = $('main');
-export const sidePanelEl = $('sidePanel');
-export const resizerEl = $('resizer');
-export const flyLayerEl = $('flyLayer');
-export const hoverTipEl = $('hoverTip');
-export const stepVizEl = $<StepVizElement>('stepViz');
-export const fileNameEl = $<HTMLInputElement>('fileName');
-export const fileInputEl = $<HTMLInputElement>('fileInput');
-export const btnImportEl = $<HTMLButtonElement>('btnImport');
 
 export const MAX_STEPS = 5000;
 export const MAX_EXEC_MS = 3500;
@@ -54,24 +29,55 @@ export function esc(t: unknown): string {
     .replace(/"/g, '&quot;');
 }
 
-export const appState = {
-  VIEW_MODE: 'script' as 'script' | 'notebook',
-  ACTIVE_NB_CELL_ID: null as string | null,
+export interface AppState {
+  VIEW_MODE: 'script' | 'notebook';
+  ACTIVE_NB_CELL_ID: string | null;
+  FILE_NAME: string;
+  LANG: 'ts' | 'python';
+  LANG_BUFFERS: Record<string, LangBuffer | null>;
+  PY_DIAGS: Diag[];
+  CONSOLE_LOGS: ConsoleLogEntry[];
+  VIDEO_EXPORT_SPEED: number;
+  IS_EXPORTING_VIDEO: boolean;
+  TRACE: TraceData;
+  cur: number;
+  timer: ReturnType<typeof setInterval> | null;
+  watched: Set<string>;
+  layoutSpan: Record<string, number>;
+  SELECTED_FRAME_IDX: number | null;
+  SEEN_VARS_EVER: Set<string>;
+  IS_STILL: boolean;
+  URL_WATCH: string[] | null;
+  STRICT_TS: boolean;
+  TYPE_ERROR_LINES: Set<number>;
+  RUNTIME_ERROR_LINES: Set<number>;
+  lastEditorCursorLine: number;
+  ENTRY_CALL_LINE: number;
+  CURRENT_TS_META: TsMeta;
+  DEBUG_SESSION: DebugSession;
+}
+
+const initialLayoutSpan: Record<string, number> = {};
+
+export const appState: AppState = {
+  VIEW_MODE: 'script',
+  ACTIVE_NB_CELL_ID: null,
   FILE_NAME: 'playground.ts',
-  LANG: 'ts' as 'ts' | 'python',
-  LANG_BUFFERS: { ts: null, python: null } as Record<string, LangBuffer | null>,
-  PY_DIAGS: [] as Diag[],
+  LANG: 'ts',
+  LANG_BUFFERS: { ts: null, python: null },
+  PY_DIAGS: [],
+  CONSOLE_LOGS: [],
   VIDEO_EXPORT_SPEED: 1,
   IS_EXPORTING_VIDEO: false,
-  TRACE: { title: 'TypeScript Playground · Debug', code: [], steps: [] } as TraceData,
+  TRACE: { title: 'TypeScript Playground · Debug', code: [], steps: [] },
   cur: 0,
-  timer: null as ReturnType<typeof setInterval> | null,
+  timer: null,
   watched: new Set<string>(),
-  layoutSpan: Object.create(null) as Record<string, number>,
-  SELECTED_FRAME_IDX: null as number | null,
+  layoutSpan: initialLayoutSpan,
+  SELECTED_FRAME_IDX: null,
   SEEN_VARS_EVER: new Set<string>(),
   IS_STILL: false,
-  URL_WATCH: null as string[] | null,
+  URL_WATCH: null,
   STRICT_TS: true,
   TYPE_ERROR_LINES: new Set<number>(),
   RUNTIME_ERROR_LINES: new Set<number>(),
@@ -80,7 +86,7 @@ export const appState = {
   CURRENT_TS_META: {
     interfaces: new Map<string, InterfaceSchemaMeta>(),
     varTypes: new Map<string, string>(),
-  } as TsMeta,
+  },
   DEBUG_SESSION: {
     active: false,
     finished: false,
@@ -91,12 +97,29 @@ export const appState = {
     compiledFn: null,
     originalLines: [],
     callExpr: 'undefined',
-  } as DebugSession,
+  },
 };
 
+export type ConsoleLogListener = (
+  action: 'append' | 'clear',
+  entry?: ConsoleLogEntry
+) => void;
+
+const consoleListeners = new Set<ConsoleLogListener>();
+
+export function subscribeConsoleLogs(listener: ConsoleLogListener): () => void {
+  consoleListeners.add(listener);
+  return () => {
+    consoleListeners.delete(listener);
+  };
+}
+
+export function notifyConsoleLog(action: 'append' | 'clear', entry?: ConsoleLogEntry): void {
+  consoleListeners.forEach((fn) => fn(action, entry));
+}
+
 export function bindStateGlobals(target: object = globalThis): void {
-  const keys = Object.keys(appState) as Array<keyof typeof appState>;
-  for (const key of keys) {
+  for (const key of Object.keys(appState)) {
     const desc = Object.getOwnPropertyDescriptor(target, key);
     if (desc && !desc.configurable) continue;
     Object.defineProperty(target, key, {
@@ -128,28 +151,6 @@ export function bindStateGlobals(target: object = globalThis): void {
     });
   }
   Object.assign(target, {
-    $,
-    editor,
-    logEl,
-    gutterEl,
-    highlightEl,
-    varsEl,
-    pickEl,
-    callStackBarEl,
-    callStackHintEl,
-    slotsEl,
-    consoleEl,
-    cntEl,
-    ctlHint,
-    mainEl,
-    sidePanelEl,
-    resizerEl,
-    flyLayerEl,
-    hoverTipEl,
-    stepVizEl,
-    fileNameEl,
-    fileInputEl,
-    btnImportEl,
     MAX_STEPS,
     MAX_EXEC_MS,
     RUN_TIMEOUT_MS,
@@ -179,6 +180,12 @@ export interface RuntimeUiHooks {
   onVfsFileRenamed: (oldPath: string, nextPath: string, nextName: string) => void;
   setViewMode: (mode: 'script' | 'notebook') => void;
   importSampleIntoNotebook: (code: string, sampleKey: string) => void;
+  appendConsoleLog: (entry: ConsoleLogEntry) => void;
+  clearConsoleDom: () => void;
+  getEditorSource: () => string;
+  setEditorSource: (src: string) => void;
+  renderNotebookUI: (focusActiveEditor?: boolean) => void;
+  setCntStatus: (text: string, cls?: string) => void;
 }
 
 export const uiHooks: RuntimeUiHooks = {
@@ -196,6 +203,12 @@ export const uiHooks: RuntimeUiHooks = {
   onVfsFileRenamed: () => {},
   setViewMode: () => {},
   importSampleIntoNotebook: () => {},
+  appendConsoleLog: () => {},
+  clearConsoleDom: () => {},
+  getEditorSource: () => '',
+  setEditorSource: () => {},
+  renderNotebookUI: () => {},
+  setCntStatus: () => {},
 };
 
 export function registerUiHooks(hooks: Partial<RuntimeUiHooks>): void {
@@ -203,4 +216,5 @@ export function registerUiHooks(hooks: Partial<RuntimeUiHooks>): void {
 }
 
 bindStateGlobals();
+
 

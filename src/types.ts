@@ -12,6 +12,12 @@ export interface Diag {
   severity?: 'error' | 'warning';
 }
 
+export interface ConsoleLogEntry {
+  msg: string;
+  cls?: string;
+  line?: number;
+}
+
 export interface InterfaceFieldMeta {
   name?: string;
   k?: string;

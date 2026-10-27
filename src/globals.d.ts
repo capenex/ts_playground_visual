@@ -2,16 +2,11 @@
    Ambient declarations for global bridge & WebCodecs APIs (src/globals.d.ts)
    ================================================================ */
 import type {
-  DebugSession,
   Diag,
   InterfaceSchemaMeta,
-  LangBuffer,
   PyEngineBridge,
   StepAnim,
   StepSnapshot,
-  StepVizElement,
-  TraceData,
-  TsMeta,
 } from './types';
 
 export interface WebCodecsEncodedChunk {
@@ -135,64 +130,6 @@ export interface VfsClientApi {
 }
 
 declare global {
-  var $: <T extends HTMLElement = HTMLElement>(id: string) => T;
-  var editor: HTMLTextAreaElement;
-  var logEl: HTMLElement;
-  var gutterEl: HTMLElement;
-  var highlightEl: HTMLElement;
-  var varsEl: HTMLElement;
-  var pickEl: HTMLElement;
-  var callStackBarEl: HTMLElement;
-  var callStackHintEl: HTMLElement;
-  var slotsEl: HTMLElement;
-  var consoleEl: HTMLElement;
-  var cntEl: HTMLElement;
-  var ctlHint: HTMLElement;
-  var mainEl: HTMLElement;
-  var sidePanelEl: HTMLElement;
-  var resizerEl: HTMLElement;
-  var flyLayerEl: HTMLElement;
-  var hoverTipEl: HTMLElement;
-  var stepVizEl: StepVizElement;
-  var fileNameEl: HTMLInputElement;
-  var fileInputEl: HTMLInputElement;
-  var btnImportEl: HTMLButtonElement;
-
-  var MAX_STEPS: number;
-  var MAX_EXEC_MS: number;
-  var RUN_TIMEOUT_MS: number;
-  var AUTO_PLAY_MS: number;
-  var VIDEO_WIDTH: number;
-  var VIDEO_HEIGHT: number;
-  var VIDEO_FPS: number;
-  var VIDEO_SPEED_OPTIONS: number[];
-  var PAUSE_SIGNAL: { __debugPause: boolean };
-  var esc: (t: unknown) => string;
-
-  var VIEW_MODE: 'script' | 'notebook';
-  var ACTIVE_NB_CELL_ID: string | null;
-  var FILE_NAME: string;
-  var LANG: 'ts' | 'python';
-  var LANG_BUFFERS: Record<string, LangBuffer | null>;
-  var PY_DIAGS: Diag[];
-  var VIDEO_EXPORT_SPEED: number;
-  var IS_EXPORTING_VIDEO: boolean;
-  var TRACE: TraceData;
-  var cur: number;
-  var timer: ReturnType<typeof setInterval> | null;
-  var watched: Set<string>;
-  var layoutSpan: Record<string, number>;
-  var SELECTED_FRAME_IDX: number | null;
-  var SEEN_VARS_EVER: Set<string>;
-  var IS_STILL: boolean;
-  var URL_WATCH: string[] | null;
-  var STRICT_TS: boolean;
-  var TYPE_ERROR_LINES: Set<number>;
-  var RUNTIME_ERROR_LINES: Set<number>;
-  var lastEditorCursorLine: number;
-  var ENTRY_CALL_LINE: number;
-  var CURRENT_TS_META: TsMeta;
-  var DEBUG_SESSION: DebugSession;
   var PY_ENGINE: PyEngineBridge;
   var VideoEncoder: WebCodecsVideoEncoderConstructor | undefined;
   var VideoFrame: WebCodecsVideoFrameConstructor | undefined;
@@ -235,6 +172,15 @@ declare global {
     };
     StepAnim?: StepAnim;
   }
+
+  interface Document {
+    getElementById<T extends HTMLElement = HTMLElement>(elementId: string): T;
+  }
+
+  interface HTMLCanvasElement {
+    captureStream?(frameRate?: number): MediaStream;
+  }
 }
 
 export {};
+

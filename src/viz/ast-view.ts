@@ -2,9 +2,36 @@
    AST View & Inter-line Step Capsule / Flying Value Animation (src/viz/ast-view.ts)
    ================================================================ */
 import { splitStatements, stripInlineCommentSafe } from "../compiler/comments";
-import { registerUiHooks } from "../state";
+import { appState, esc, registerUiHooks } from "../state";
 import { StepAnim, StepSnapshot } from "../types";
-import { hoverMetrics } from "./memory-normalizers";
+import { editor, flyLayerEl, highlightEl, stepVizEl } from "../ui/dom";
+
+const HOVER_GEOM = { charW: 0, lh: 24, padLeft: 16, padTop: 12 };
+
+export function hoverMetrics() {
+  let lh = 24, padLeft = 16, padTop = 12;
+  try {
+    const cs = typeof getComputedStyle === 'function' ? getComputedStyle(editor) : null;
+    if (cs) {
+      lh = parseFloat(cs.lineHeight) || lh;
+      padLeft = parseFloat(cs.paddingLeft) || padLeft;
+      padTop = parseFloat(cs.paddingTop) || padTop;
+      if (!HOVER_GEOM.charW && document.createElement) {
+        const cv = document.createElement('canvas');
+        const ctx = cv && cv.getContext ? cv.getContext('2d') : null;
+        if (ctx) {
+          ctx.font = (cs.fontWeight || '400') + ' ' + (cs.fontSize || '15px') + ' ' + (cs.fontFamily || 'monospace');
+          const w = ctx.measureText('MMMMMMMMMM').width / 10;
+          if (w > 0 && isFinite(w)) HOVER_GEOM.charW = w;
+        }
+      }
+    }
+  } catch (_) { /* fall back to defaults */ }
+  HOVER_GEOM.lh = lh;
+  HOVER_GEOM.padLeft = padLeft;
+  HOVER_GEOM.padTop = padTop;
+  return { lh, padLeft, padTop, charW: HOVER_GEOM.charW || 8.5 };
+}
 
 export interface AstNode {
   kind: string;
@@ -171,7 +198,7 @@ export function updateStepViz(st: StepSnapshot | null | undefined, line: number,
 /* Keep the capsule glued to its line while the editor scrolls or the pane resizes. */
 export function positionStepViz() {
   if (!stepVizEl || !stepVizEl.style) return;
-  if (STEP_VIZ_LINE < 1 || !TRACE.steps.length) {
+  if (STEP_VIZ_LINE < 1 || !appState.TRACE.steps.length) {
     stepVizEl.style.display = 'none';
     return;
   }
@@ -234,7 +261,7 @@ export function clearFlyLayer() {
 
 export function playStepAnimation(st: StepSnapshot | null | undefined) {
   clearFlyLayer();
-  if (IS_STILL || !st || !st.anim || !flyLayerEl) return;
+  if (appState.IS_STILL || !st || !st.anim || !flyLayerEl) return;
   const anim = st.anim;
   if (anim.type !== 'assign' && !(anim.type === 'call' && anim.to && anim.result != null)) return;
 

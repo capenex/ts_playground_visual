@@ -4,18 +4,31 @@
 import { RESERVED_WORDS, skipString, splitTopLevel, splitTopLevelSemicolons } from "../compiler/comments";
 import { stripTypes } from "../compiler/transpile";
 import { inferRuntimeTsType, matchInterfaceForObject } from "../compiler/tc-types";
+import { appState } from "../state";
 import { Frame, InterfaceFieldMeta, StepAnim, StepSnapshot } from "../types";
 import {
   isMapLike,
   isSetLike,
+  isRecord,
+  isFrame,
   defineHidden,
   formatShortVal,
   cloneDeepBounded,
 } from "../utils/format";
 
-export { isMapLike, isSetLike, defineHidden, formatShortVal, cloneDeepBounded };
+export { isMapLike, isSetLike, isRecord, isFrame, defineHidden, formatShortVal, cloneDeepBounded };
 
-export function normalizeTree(value: Frame | null | undefined) {
+const asChildFrame = (v: unknown): Frame | null => (isFrame(v) ? v : null);
+
+interface ForEachCollection {
+  forEach(cb: (v: unknown, k: unknown) => void): void;
+}
+
+function hasForEachMethod(val: unknown): val is ForEachCollection {
+  return isRecord(val) && typeof val.forEach === 'function';
+}
+
+export function normalizeTree(value: Frame | null | undefined): StepAnim {
   if (value && Array.isArray(value.nodes)) {
     return {
       kind: 'tree',
@@ -36,8 +49,8 @@ export function normalizeTree(value: Frame | null | undefined) {
     seen.add(node);
     if (nodes.length >= 31) {
       if (seen.size < 2000) {
-        walk(node.left as Frame | null | undefined);
-        walk(node.right as Frame | null | undefined);
+        walk(asChildFrame(node.left));
+        walk(asChildFrame(node.right));
       }
       return null;
     }
@@ -49,20 +62,20 @@ export function normalizeTree(value: Frame | null | undefined) {
       right: null,
     };
     nodes.push(item);
-    item.left = walk(node.left as Frame | null | undefined);
-    item.right = walk(node.right as Frame | null | undefined);
+    item.left = walk(asChildFrame(node.left));
+    item.right = walk(asChildFrame(node.right));
     return idx;
   }
   const root = walk(value);
-  const out = { kind: 'tree', nodes, root: root ?? 0, total: seen.size };
+  const out: StepAnim = { kind: 'tree', nodes, root: root ?? 0, total: seen.size };
   defineHidden(out, '__nodeMap', nodeMap);
   return out;
 }
 
 export function normalizeList(value: Frame | unknown[] | null | undefined) {
   const pyMeta: Frame | null =
-    value && typeof value === 'object' && '__py_meta__' in value && value.__py_meta__
-      ? (value.__py_meta__ as Frame)
+    isFrame(value) && isFrame(value.__py_meta__)
+      ? value.__py_meta__
       : null;
   if (Array.isArray(value)) {
     const total = (pyMeta && typeof pyMeta.total === 'number') ? pyMeta.total : value.length;
@@ -94,7 +107,7 @@ export function normalizeList(value: Frame | unknown[] | null | undefined) {
   return out;
 }
 
-export function normalizeGraph(value: Frame | null | undefined) {
+export function normalizeGraph(value: Frame | null | undefined): StepAnim {
   if (value && Array.isArray(value.nodes) && Array.isArray(value.edges)) {
     const rawNodes = value.nodes.slice(0, 16);
     const count = rawNodes.length || 1;
@@ -115,8 +128,8 @@ export function normalizeGraph(value: Frame | null | undefined) {
 }
 
 export function snapshot(kind: string, value: unknown, extra?: Record<string, unknown>): StepAnim {
-  const recVal = value && typeof value === 'object' ? (value as Frame) : null;
-  const pyMeta = recVal && recVal.__py_meta__ ? (recVal.__py_meta__ as Frame) : null;
+  const recVal = isFrame(value) ? value : null;
+  const pyMeta = recVal && isFrame(recVal.__py_meta__) ? recVal.__py_meta__ : null;
   if (kind === 'stack') {
     const arr = Array.isArray(value) ? value : [];
     const total = (pyMeta && typeof pyMeta.total === 'number') ? pyMeta.total : arr.length;
@@ -145,13 +158,13 @@ export function snapshot(kind: string, value: unknown, extra?: Record<string, un
     return out;
   }
   if (kind === 'list') {
-    return Object.assign(normalizeList(value as Frame | unknown[] | null | undefined), extra || {});
+    return Object.assign(normalizeList(Array.isArray(value) ? value : recVal), extra || {});
   }
   if (kind === 'tree') {
-    return Object.assign(normalizeTree(value as Frame | null | undefined), extra || {}) as StepAnim;
+    return Object.assign(normalizeTree(recVal), extra || {});
   }
   if (kind === 'graph') {
-    return Object.assign(normalizeGraph(value as Frame | null | undefined), extra || {}) as StepAnim;
+    return Object.assign(normalizeGraph(recVal), extra || {});
   }
   if (kind === 'string') {
     const s = String(value);
@@ -167,14 +180,13 @@ export function snapshot(kind: string, value: unknown, extra?: Record<string, un
     const entries: Array<{ k: unknown; v: unknown }> = [];
     let total = 0;
     if (isMapLike(value)) {
-      const mapVal = value as Map<unknown, unknown>;
-      total = (pyMeta && typeof pyMeta.total === 'number') ? pyMeta.total : mapVal.size;
-      for (const [k, v] of mapVal) {
+      total = (pyMeta && typeof pyMeta.total === 'number') ? pyMeta.total : value.size;
+      for (const [k, v] of value) {
         if (entries.length >= 40) break;
         entries.push({ k: cloneDeepBounded(k, 1), v: cloneDeepBounded(v, 1) });
       }
-    } else if (recVal && typeof recVal.forEach === 'function') {
-      (recVal.forEach as (cb: (v: unknown, k: unknown) => void) => void)((v: unknown, k: unknown) => {
+    } else if (hasForEachMethod(recVal)) {
+      recVal.forEach((v: unknown, k: unknown) => {
         total++;
         if (entries.length < 40) entries.push({ k: cloneDeepBounded(k, 1), v: cloneDeepBounded(v, 1) });
       });
@@ -191,14 +203,13 @@ export function snapshot(kind: string, value: unknown, extra?: Record<string, un
     const items: unknown[] = [];
     let total = 0;
     if (isSetLike(value)) {
-      const setVal = value as Set<unknown>;
-      total = (pyMeta && typeof pyMeta.total === 'number') ? pyMeta.total : setVal.size;
-      for (const v of setVal) {
+      total = (pyMeta && typeof pyMeta.total === 'number') ? pyMeta.total : value.size;
+      for (const v of value) {
         if (items.length >= 40) break;
         items.push(cloneDeepBounded(v, 1));
       }
-    } else if (recVal && typeof recVal.forEach === 'function') {
-      (recVal.forEach as (cb: (v: unknown) => void) => void)((v: unknown) => {
+    } else if (hasForEachMethod(recVal)) {
+      recVal.forEach((v: unknown) => {
         total++;
         if (items.length < 40) items.push(cloneDeepBounded(v, 1));
       });
@@ -244,8 +255,8 @@ export function classifyValue(name: string, value: unknown) {
     if (value.length > 0) return snapshot('string', value);
     return null;
   }
-  if (typeof value === 'object') {
-    const obj = value as Frame;
+  if (isFrame(value)) {
+    const obj = value;
     if (obj.__isVirtualPromise) return null;
     if (Array.isArray(obj.nodes) && Array.isArray(obj.edges)) return snapshot('graph', obj);
     if (Array.isArray(obj.nodes) && 'root' in obj) return snapshot('tree', obj);
@@ -255,7 +266,7 @@ export function classifyValue(name: string, value: unknown) {
     }
 
     const ifaceDef = matchInterfaceForObject(n, obj);
-    const annotType = CURRENT_TS_META.varTypes.get(n);
+    const annotType = appState.CURRENT_TS_META.varTypes.get(n);
     const ifaceName = ifaceDef ? ifaceDef.name : (annotType || obj.__py_cls__ || 'object');
     const isClass = Boolean((ifaceDef && ifaceDef.isClass) || obj.__py_cls__);
     const fieldMap = new Map<string, { k: string; v: unknown; declaredType: string | undefined; optional: boolean }>();
@@ -295,7 +306,7 @@ export function classifyValue(name: string, value: unknown) {
 }
 
 export function populateInterfaceSchemas(ds: Record<string, StepAnim>) {
-  const { interfaces, varTypes } = CURRENT_TS_META;
+  const { interfaces, varTypes } = appState.CURRENT_TS_META;
   if (!interfaces || !interfaces.size) return;
   interfaces.forEach(iface => {
     if (iface.isClass && (!iface.fields || !iface.fields.length)) return;
@@ -649,16 +660,16 @@ export function enrichFromNote(ds: Record<string, StepAnim> | null | undefined, 
       }
     }
 
-    if (d.kind === 'map' && d.hot !== undefined && d.__raw && isMapLike(d.__raw)) {
-      const rawMap = d.__raw as Map<unknown, unknown>;
+    if (d.kind === 'map' && d.hot !== undefined && isMapLike(d.__raw)) {
+      const rawMap = d.__raw;
       const entries = d.entries || (d.entries = []);
       const exists = entries.some((e: { k: unknown }) => e.k === d.hot);
       if (!exists && rawMap.has(d.hot)) {
         entries.push({ k: cloneDeepBounded(d.hot, 1), v: cloneDeepBounded(rawMap.get(d.hot), 1) });
       }
     }
-    if (d.kind === 'set' && d.hot !== undefined && d.__raw && isSetLike(d.__raw)) {
-      const rawSet = d.__raw as Set<unknown>;
+    if (d.kind === 'set' && d.hot !== undefined && isSetLike(d.__raw)) {
+      const rawSet = d.__raw;
       const items = d.items || (d.items = []);
       const exists = items.some((x: unknown) => x === d.hot);
       if (!exists && rawSet.has(d.hot)) {
@@ -696,7 +707,8 @@ export function enrichFromNote(ds: Record<string, StepAnim> | null | undefined, 
           d.rowIndices = rowIndices;
           d.colIndices = colIndices;
           d.viewCells = rowIndices.map(r => {
-            const rowArr = rawGrid && Array.isArray(rawGrid[r]) ? (rawGrid[r] as unknown[]) : [];
+            const rowCandidate = rawGrid ? rawGrid[r] : undefined;
+            const rowArr: unknown[] = Array.isArray(rowCandidate) ? rowCandidate : [];
             return colIndices.map(c => cloneDeepBounded(rowArr[c], 2));
           });
         }
@@ -822,7 +834,7 @@ export function deriveAnimAndNote(
   if (ckptCall && ckptCall[1] !== undefined) {
     const fnName = clean.startsWith('断点') ? '断点' : 'checkpoint';
     const args = splitTopLevel(ckptCall[1]).map(s => s.trim()).filter(Boolean);
-    const ckptVals = nextV && Array.isArray(nextV.__ckptVals) ? (nextV.__ckptVals as string[]) : null;
+    const ckptVals = nextV && Array.isArray(nextV.__ckptVals) ? nextV.__ckptVals.map(String) : null;
     const argVals = ckptVals && ckptVals.length === args.length
       ? ckptVals
       : args.map(a => formatShortVal(safeEvalExpr(a, v)));
@@ -929,10 +941,10 @@ export function pressure(d: Frame | null | undefined) {
 
 const SPAN_UP = 0.45, SPAN_DOWN = 0.28;
 export function decideSpan(id: string, p: number): number {
-  const curSpan = layoutSpan[id] || 1;
-  if (curSpan < 2 && p >= SPAN_UP) layoutSpan[id] = 2;
-  else if (curSpan > 1 && p <= SPAN_DOWN) layoutSpan[id] = 1;
-  return layoutSpan[id] || 1;
+  const curSpan = appState.layoutSpan[id] || 1;
+  if (curSpan < 2 && p >= SPAN_UP) appState.layoutSpan[id] = 2;
+  else if (curSpan > 1 && p <= SPAN_DOWN) appState.layoutSpan[id] = 1;
+  return appState.layoutSpan[id] || 1;
 }
 
 export interface DiscoveredVar {
@@ -975,9 +987,9 @@ let _DISCOVER_CACHE: { traceRef: unknown; scannedSteps: number; map: Map<string,
 };
 
 export function discoverVars(): DiscoveredVar[] {
-  const steps = (TRACE && TRACE.steps) || [];
-  if (_DISCOVER_CACHE.traceRef !== TRACE || steps.length < _DISCOVER_CACHE.scannedSteps) {
-    _DISCOVER_CACHE = { traceRef: TRACE, scannedSteps: 0, map: new Map(), list: [] };
+  const steps = (appState.TRACE && appState.TRACE.steps) || [];
+  if (_DISCOVER_CACHE.traceRef !== appState.TRACE || steps.length < _DISCOVER_CACHE.scannedSteps) {
+    _DISCOVER_CACHE = { traceRef: appState.TRACE, scannedSteps: 0, map: new Map(), list: [] };
   }
   if (_DISCOVER_CACHE.scannedSteps < steps.length) {
     let changed = false;
@@ -1018,8 +1030,8 @@ export function getActiveFrame(st: StepSnapshot | Frame | null | undefined) {
     };
   }
   const topIdx = stack.length - 1;
-  const idx = (SELECTED_FRAME_IDX !== null && SELECTED_FRAME_IDX >= 0 && SELECTED_FRAME_IDX < stack.length)
-    ? SELECTED_FRAME_IDX
+  const idx = (appState.SELECTED_FRAME_IDX !== null && appState.SELECTED_FRAME_IDX >= 0 && appState.SELECTED_FRAME_IDX < stack.length)
+    ? appState.SELECTED_FRAME_IDX
     : topIdx;
   const frame = stack[idx] || stack[topIdx];
   return {
@@ -1033,32 +1045,3 @@ export function getActiveFrame(st: StepSnapshot | Frame | null | undefined) {
     ds: (frame.ds && Object.keys(frame.ds).length ? frame.ds : st.ds) || {},
   };
 }
-
-const HOVER_GEOM = { charW: 0, lh: 24, padLeft: 16, padTop: 12 };
-
-export function hoverMetrics() {
-  let lh = 24, padLeft = 16, padTop = 12;
-  try {
-    const cs = typeof getComputedStyle === 'function' ? getComputedStyle(editor) : null;
-    if (cs) {
-      lh = parseFloat(cs.lineHeight) || lh;
-      padLeft = parseFloat(cs.paddingLeft) || padLeft;
-      padTop = parseFloat(cs.paddingTop) || padTop;
-      if (!HOVER_GEOM.charW && document.createElement) {
-        const cv = document.createElement('canvas');
-        const ctx = cv && cv.getContext ? cv.getContext('2d') : null;
-        if (ctx) {
-          ctx.font = (cs.fontWeight || '400') + ' ' + (cs.fontSize || '15px') + ' ' + (cs.fontFamily || 'monospace');
-          const w = ctx.measureText('MMMMMMMMMM').width / 10;
-          if (w > 0 && isFinite(w)) HOVER_GEOM.charW = w;
-        }
-      }
-    }
-  } catch (_) { /* fall back to defaults */ }
-  HOVER_GEOM.lh = lh;
-  HOVER_GEOM.padLeft = padLeft;
-  HOVER_GEOM.padTop = padTop;
-  return { lh, padLeft, padTop, charW: HOVER_GEOM.charW || 8.5 };
-}
-
-

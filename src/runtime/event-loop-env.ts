@@ -1,7 +1,8 @@
 /* ================================================================
    Virtual Promise, Virtual FS Module Shims & Async Coroutine Driver (src/runtime/event-loop-env.ts)
    ================================================================ */
-import { formatShortVal } from "../utils/format";
+import { PAUSE_SIGNAL } from "../state";
+import { formatShortVal, isRecord } from "../utils/format";
 import type { VfsClientApi } from "../globals";
 
 export interface VirtualMicrotaskEntry {
@@ -59,11 +60,18 @@ export interface VirtualLoopState {
 }
 
 
+export interface ThenableLike {
+  __isVirtualPromise?: boolean;
+  then: (onFulfilled: (v: unknown) => void, onRejected: (r: unknown) => void) => void;
+}
+
+export function isThenableLike(val: unknown): val is ThenableLike {
+  if (!val || (typeof val !== 'object' && typeof val !== 'function')) return false;
+  return 'then' in val && typeof val.then === 'function';
+}
+
 export function rethrowIfControlSignal(err: unknown) {
-  const ctrl = (err && typeof err === 'object')
-    ? (err as { __debugPause?: boolean; __timeout?: boolean })
-    : null;
-  if (err === PAUSE_SIGNAL || (ctrl && (ctrl.__debugPause || ctrl.__timeout))) {
+  if (err === PAUSE_SIGNAL || (isRecord(err) && (err.__debugPause || err.__timeout))) {
     throw err;
   }
 }
@@ -284,12 +292,9 @@ export function createVirtualPromiseAndFsEnv(opts: {
 
     _resolve(val?: unknown) {
       if (this.state !== 'pending') return;
-      const thenable = (val && (typeof val === 'object' || typeof val === 'function'))
-        ? (val as { __isVirtualPromise?: boolean; then?: (onF: (v: unknown) => void, onR: (r: unknown) => void) => void })
-        : null;
-      if (thenable && (thenable.__isVirtualPromise || typeof thenable.then === 'function') && typeof thenable.then === 'function') {
+      if (isThenableLike(val)) {
         try {
-          thenable.then((v: unknown) => this._resolve(v), (r: unknown) => this._reject(r));
+          val.then((v: unknown) => this._resolve(v), (r: unknown) => this._reject(r));
         } catch (err) {
           rethrowIfControlSignal(err);
           this._reject(err);
@@ -391,8 +396,11 @@ export function createVirtualPromiseAndFsEnv(opts: {
 
     static resolve(val?: unknown): VirtualPromise {
       loop.used = true;
-      if (val instanceof VirtualPromise || (val && typeof val === 'object' && '__isVirtualPromise' in val)) {
-        return val as VirtualPromise;
+      if (val instanceof VirtualPromise) {
+        return val;
+      }
+      if (isThenableLike(val)) {
+        return new VirtualPromise((res, rej) => val.then(res, rej), 'Promise.resolve(thenable)');
       }
       return new VirtualPromise((res: (v?: unknown) => void) => res(val), 'Promise.resolve(' + formatShortVal(val) + ')');
     }

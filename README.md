@@ -1,158 +1,139 @@
-# TypeScript Playground VISUAL · 项目架构与技术文档
+# Algorithm Visualizer (Visual TypeScript & Python Engine)
 
-**TypeScript Playground VISUAL** 是一个**零前端框架依赖**的 **TypeScript / Python 可视化演练场、按需逐行 Debug 调试器与交互式 `.ipynb` 算法笔记本（Notebook）**。核心引擎采用**工业级严格模式 TypeScript** 编写（位于 `src/**/*.ts` 共 17 个模块，开启 `strict: true` 与 `noUncheckedIndexedAccess: true`，全库 **0 `any`、0 `!` 非空断言、0 `@ts-ignore`**），按职责划分为状态与类型定义、内置样例、编译器层、运行时与虚拟事件循环层、可视化渲染层、UI 控制与交互式笔记本层；通过 `esbuild` 打包为浏览器直接运行的 `js/app.bundle.js`；CodeMirror 6 编辑器与官方 TypeScript Web Worker 分别打包为 `editor/cm.bundle.js` 与 `editor/ts-worker.bundle.js`；样式位于 `css/app.css`，自动保存与分享链接位于 `app-session.js`，Python 模式位于 `python/`。
+一个纯前端、零后端依赖的**双引擎（TypeScript & Python）算法与内存拓扑可视化沙箱**，同时内建完整的 **Jupyter Notebook (`.ipynb`) 交互式文档模式**、**虚拟文件系统（VFS）** 与 **多文件脚本标签页（Script Tabs）**。
 
-> **双层类型检查架构**：内置 `typecheckTS`（`src/compiler/type-checker.ts`）提供零延迟的同步静态类型检查（支持基础类型、接口、类、泛型函数与 `keyof` 约束、条件类型、`infer`、映射类型与内置工具类型，以及 Notebook 跨单元格上下文类型推导 `typecheckNotebookCellTS`），并在浏览器后台联动官方 TypeScript 编译器 Web Worker（`editor/ts-worker.bundle.js`）合并完整诊断。
-
----
-
-## 📚 文档导航
-
-本项目提供六份配套中文文档，面向不同阅读场景：
-
-1. **[`README.md`（本文档 · 项目架构与部署维护指南）](./README.md)**：介绍项目模块化严格 TypeScript 架构、核心编译与调试管线设计、交互式 Notebook 引擎、内置样例、严格化质量门禁（Strict TS Gate）与构建/测试流程。
-2. **[`CHANGELOG.md`（版本演进与工程架构记录）](./CHANGELOG.md)**：记录从初代原型到 v0.6.0 工业级工程化基线的历代架构演进、技术决策与对应源码索引，并提供后续「AI 辅助工程研发阶段」的标准 Changelog 提交模板。
-3. **[`USER_GUIDE.md`（面向用户的操作说明手册）](./USER_GUIDE.md)**：图文式讲解界面布局、Script 源码模式与 Notebook 交互式笔记本模式、如何编写可调试代码、如何使用 `checkpoint()` 检查点、异步 Event Loop 调试、`.ipynb` 导入导出以及 1080p 60fps 视频导出。
-4. **[`SYNTAX_REFERENCE.md`（支持的 TypeScript 语法与可视化范围参考手册）](./SYNTAX_REFERENCE.md)**：详列静态类型检查器（`typecheckTS` + TS Worker + Notebook 跨单元格推导）支持的规则与错误码、类型剥离与语法降级器（`stripTypes`）、自动插桩器（`instrument`）、虚拟事件循环以及 14 类数据结构可视化识别规则。
-5. **[`REFACTOR_PLAN.md`（TypeScript 模块化重构与严格化编程验收规范）](./REFACTOR_PLAN.md)**：记录 `src/**/*.ts` 模块架构映射、全局桥接契约，以及每次代码更新必须执行的**严格化 TypeScript 编程红线与四步验收清单**。
-6. **[`DEPLOY.md`（纯静态发布包部署说明）](./DEPLOY.md)**：说明 `dist/` 静态产物的目录结构、本地预览方式及 GitHub Pages / Vercel / Cloudflare Pages / Nginx 零后端部署方法。
+通过 AST 级编译插桩（TypeScript 引擎）与 `sys.settrace` 字节码追踪（Python Pyodide Web Worker 引擎），将代码执行过程中的**词法/语法树（AST）**、**函数调用栈帧（Call Stack）**、**堆内存对象图与指针拓扑（Heap Graph & SVG Links）**、**异步事件循环（Macrotasks / Microtasks）** 以及 **7 类核心数据结构（矩阵、二叉树、有向/无向图、链表、栈/队列、哈希表、一维 DP 数组）** 转化为可逐帧前进、倒退、打断点、跨语言对比的交互式动画。
 
 ---
 
-## 一、 模块化目录结构 (`src/` · 17 个严格化 TS 模块)
+## ✨ 核心特性
+
+- **双语言执行引擎**
+  - **TypeScript 引擎**：内置教育级静态类型检查器（`src/compiler/type-checker.ts` + `tc-infer.ts` + `tc-eval.ts`）、TS ➔ JS 轻量转译器（`src/compiler/transpile.ts`）、AST 步进插桩器（`src/compiler/instrumenter.ts`）与确定性虚拟事件循环沙箱（`src/runtime/event-loop.ts`，支持 `async/await`、`Promise`、`setTimeout`）。
+  - **Python 引擎**：基于 Web Worker + Pyodide (`WASM`) + `sys.settrace` 的毫秒级行步进追踪，支持 `SharedArrayBuffer` 零延迟中断或 Worker 重生降级。
+- **Jupyter Notebook (`.ipynb`) 双模工作台**
+  - 一键在 **Script 单文件/多标签调试模式** 与 **Notebook 多单元格交互模式** 之间无缝切换。
+  - 纯数据与视图解耦架构（`src/notebook/notebook-model.ts` + `src/notebook/notebook-kernel.ts` + `src/ui/notebook.ts`）：支持 **Code Cell**（跨单元格共享变量与函数作用域）与 **Markdown Cell**（标题、列表、表格、代码块、行内公式渲染）。
+  - 任意 Code Cell 点击 **「🔍 送入可视化器」** 即可将该单元格代码连同前置单元格上下文一并送入步进沙箱逐帧剖析。
+  - 完整兼容标准 **Jupyter `.ipynb` (v4)** 文件导入与导出。
+- **VFS 虚拟文件系统与多标签页工作区**
+  - 内置纯内存领域模型（`src/runtime/vfs-store.ts` 与 `src/runtime/script-tabs-store.ts`）与侧边栏 UI（`src/ui/vfs.ts`、`src/ui/script-tabs.ts`），支持新建、重命名、删除、快照导入导出及多脚本标签快速切换。
+- **深度内存与数据结构可视化**
+  - **栈与堆拓扑图**：自动分离基本类型（Primitive）与引用类型（Heap Reference），使用贝塞尔曲线动态绘制栈变量到堆对象、堆对象之间的引用关系，支持循环引用检测与脉冲动画。
+  - **7 类结构智能识别**：自动将符合特征的数组/对象渲染为 **2D 矩阵网格**、**SVG 层次树（Binary/N-ary Tree）**、**圆形布局图（Graph 邻接表）**、**单/双向链表**、**栈/队列**、**哈希表桶视图** 或 **1D 数组索引视图**。
+  - **生命周期脉冲动画**：精确高亮每一步的新建变量（`var-new`）、数值变更（`var-changed`）、数组元素读写（`arr-read` / `arr-write`）与新建堆节点（`heap-new`）。
+- **工程化导出与分享**
+  - **🔗 URL 状态分享**：将代码、语言、断点全部编码进 URL Hash，零服务器一键分享。
+  - **📦 独立 HTML 播放器导出**：生成单文件离线可交互播放器（内嵌全部录制帧数据与 SVG 拓扑渲染器）。
+  - **🎬 WebM 视频录制**：基于纯二进制封装器（`src/utils/webm-muxer.ts`）与 WebCodecs `VideoEncoder` 在浏览器端直接合成高清动画视频。
+
+---
+
+## 📁 目录结构（34 模块七层单向架构）
+
+项目采用严格的**数据与 UI 视图分离（Data / UI Separation）**与**单向有向无环图（DAG）**架构。在 `src/` 下的 **34 个 TypeScript 模块**中，**24 个核心模块完全零 DOM 依赖**，详情请参阅 [`ARCHITECTURE.md`](./ARCHITECTURE.md)。
 
 ```text
-├── src/
-│   ├── types.ts                  # 全局核心领域类型与严格接口定义 (Diag, Frame, StepSnapshot, NotebookDocument 等)
-│   ├── globals.d.ts              # 跨模块全局桥接变量、CodeMirror 桥接与 WebCodecs API 严格类型声明
-│   ├── state.ts                  # 集中式运行时与 UI 状态管理 (DOM 节点引用与响应式全局属性状态机)
+├── index.html                  # 主应用工作台入口 (Script + Notebook 双模式)
+├── share.html                  # 轻量级独立分享/嵌入播放器页面
+├── server.mjs                  # AI Studio / 本地开发服务器 (0.0.0.0:3000 + COOP/COEP 头)
+├── tsconfig.json               # TypeScript 严格模式配置 (strict + noUncheckedIndexedAccess)
+├── src/                        # 模块化 TypeScript 源码 (34 个模块，编译为 js/app.bundle.js)
+│   ├── types.ts                # [L1 0-DOM] 全量核心数据结构与类型契约定义
+│   ├── state.ts                # [L2 0-DOM] 全局状态树 appState 与 uiHooks 依赖倒置注册表
+│   ├── globals.d.ts            # [L2 0-DOM] 第三方运行时最小声明 (0 隐式 DOM 全局变量)
+│   ├── main.ts                 # [L7 DOM]   应用启动入口、快捷键绑定与 window.App 门面导出
+│   ├── utils/
+│   │   ├── format.ts           # [L1 0-DOM] 值格式化、HTML 转义与耗时格式化纯函数
+│   │   └── webm-muxer.ts       # [L1 0-DOM] 纯二进制 EBML / Matroska / WebM 视频封装器
 │   ├── samples/
-│   │   ├── ts-samples.ts         # TypeScript 10 个内置示例与默认步进配置 (SAMPLES, SAMPLE_DEFAULT_STEP)
-│   │   └── py-samples.ts         # Python / 多语言示例桥接与类型重导出
+│   │   ├── ts-samples.ts       # [L1 0-DOM] 内置 10 个 TypeScript 算法与异步示例
+│   │   └── py-samples.ts       # [L1 0-DOM] 内置 6 个 Python 算法示例
 │   ├── compiler/
-│   │   ├── comments.ts           # 词法扫描、注释剥离、字符串掩码与顶层切分工具
-│   │   ├── transpile.ts          # TS 类型擦除与语法降级编译器 (stripTypes, transpileEnums, transpileNamespaces)
-│   │   ├── instrumenter.ts       # 语句级自动插桩器与 async/await 协程改写 (instrument, collectNames)
-│   │   └── type-checker.ts       # 同步静态类型检查器、接口/类元数据提取与 TS Worker 桥接 (typecheckTS)
+│   │   ├── comments.ts         # [L3 0-DOM] 源码注释清洗与位置映射
+│   │   ├── transpile-helpers.ts# [L3 0-DOM] TS 泛型擦除、修饰符剥离与参数属性展开辅助函数
+│   │   ├── transpile.ts        # [L3 0-DOM] TypeScript ➔ JavaScript 轻量转译流水线
+│   │   ├── instrumenter.ts     # [L3 0-DOM] Acorn AST 解析、步进插桩与复杂度分析
+│   │   ├── tc-types.ts         # [L3 0-DOM] 静态类型检查器符号表与作用域结构定义
+│   │   ├── tc-eval.ts          # [L3 0-DOM] 类型兼容性判定與泛型替换求值
+│   │   ├── tc-infer.ts         # [L3 0-DOM] AST 表达式静态类型推导引擎
+│   │   └── type-checker.ts     # [L3 0-DOM] 教育级 TypeScript 静态类型检查器主入口
 │   ├── runtime/
-│   │   ├── event-loop.ts         # 确定性虚拟事件循环调度器 (createVirtualEventLoop, VirtualPromise, setTimeout)
-│   │   └── runner.ts             # 沙箱执行器与按需步进轨迹生成 (startDebug, computeAndAppendNextStep, runOnce)
+│   │   ├── event-loop-env.ts   # [L4 0-DOM] 虚拟事件循环沙箱宿主环境构造器
+│   │   ├── event-loop.ts       # [L4 0-DOM] 虚拟宏任务/微任务队列调度器
+│   │   ├── runner.ts           # [L4 0-DOM] TS/Python 沙箱执行器与状态编排
+│   │   ├── vfs-store.ts        # [L4 0-DOM] VFS 虚拟文件系统纯内存领域模型
+│   │   └── script-tabs-store.ts# [L4 0-DOM] 多文件脚本标签页纯状态模型
+│   ├── notebook/
+│   │   ├── notebook-model.ts   # [L5 0-DOM] Jupyter .ipynb 序列化、Cell CRUD 与 Markdown 纯渲染
+│   │   └── notebook-kernel.ts  # [L5 0-DOM] Notebook 跨单元格共享作用域求值内核
 │   ├── viz/
-│   │   ├── ast-view.ts           # AST 视图构建、行间求值胶囊 (#stepViz) 与飞入动画
-│   │   ├── highlight.ts          # 声明感知语法高亮、编辑器错误波浪线同步与悬停查看器 (#hoverTip)
-│   │   └── memory-graph.ts       # 快照分类器、调用栈面包屑与 14 类数据结构可视化渲染器 (classifyValue, VIZ)
-│   ├── ui/
-│   │   ├── controls.ts           # 步进器、播放控制、动态检查点注入、文件导入/改名/导出与分栏拖拽
-│   │   ├── notebook.ts           # Jupyter 风格交互式笔记本引擎 (多标签 .ipynb、跨单元格上下文、单元格级单步 Debug)
-│   │   └── share.ts              # 1920×1080 60fps WebCodecs/WebM 视频导出器、样例加载与启动引导 (boot)
-│   └── main.ts                   # 统一入口：挂载全局兼容桥接接口并启动应用
-├── editor/
-│   ├── cm-entry.js               # CodeMirror 6 编辑器源码入口（支持主编辑器与 Notebook 单元格编辑器实例）
-│   ├── cm.bundle.js              # CodeMirror 6 打包产物
-│   ├── ts-worker-entry.js        # 官方 TypeScript 编译器 Web Worker 源码入口
-│   └── ts-worker.bundle.js       # TypeScript Web Worker 打包产物
-├── js/
-│   └── app.bundle.js             # src/main.ts 的 IIFE 打包产物
-├── python/                       # Python (Pyodide Worker) 模式引擎与本地静态服务器
-├── scripts/
-│   ├── build-editor.mjs          # 使用 esbuild 打包 js/app.bundle.js、editor/cm.bundle.js 与 ts-worker.bundle.js
-│   └── build.mjs                 # 生成 dist/ 生产环境纯静态发布目录
-├── test-pipeline.mjs             # 自动化端到端测试套件（含 Strict TS Gate 零 any / 零 ! / tsc 静态门禁）
-└── tsconfig.json                 # 工业级严格模式 TypeScript 配置 (strict + noUncheckedIndexedAccess)
+│   │   ├── memory-normalizers.ts # [L6 0-DOM] 7 类算法数据结构纯归一化算法
+│   │   ├── ast-view.ts         # [L6 DOM]   交互式 AST 树与作用域面板渲染
+│   │   ├── highlight.ts        # [L6 DOM]   代码步进高亮、内联变量气泡提示与编辑器同步
+│   │   └── memory-graph.ts     # [L6 DOM]   栈帧、堆内存卡片与 SVG 拓扑连线渲染引擎
+│   └── ui/
+│       ├── dom.ts              # [L7 DOM]   强类型 DOM 节点惰性查询注册表 (getEl / mustEl)
+│       ├── controls.ts         # [L7 DOM]   播放控制、断点、主题、布局与面板切换
+│       ├── vfs.ts              # [L7 DOM]   VFS 文件树侧边栏渲染与 localStorage 桥接
+│       ├── script-tabs.ts      # [L7 DOM]   多文件脚本标签栏 DOM 渲染与交互
+│       ├── notebook.ts         # [L7 DOM]   Notebook 视图层与 Cell 独立 CodeMirror 生命周期
+│       ├── video-webm.ts       # [L7 DOM]   Canvas 帧绘制、WebCodecs 编码与 WebM 下载 UI
+│       └── share.ts            # [L7 DOM]   URL 分享与独立 HTML 播放器导出
+├── editor/                     # CodeMirror 6 编辑器与 TS 语言服务 Worker 打包源码及产物
+├── python/                     # Python 引擎 (py_engine.js, py_worker.js, py_bridge.py)
+├── examples/                   # 独立示例库 (examples/ts/*.ts, examples/python/*.py, examples/notebooks/*.ipynb)
+├── scripts/                    # 构建脚本 (build-editor.mjs, build.mjs)
+├── test-pipeline.mjs           # 9 大架构/类型安全静态门禁 + 编译器/运行时/纯模块自动化测试
+└── smoke-e2e.mjs               # Playwright Headless Chromium 端到端全链路冒烟测试
 ```
 
 ---
 
-## 二、 核心特性一览
+## 🚀 快速启动与开发指南
 
-| 模块 / 区域 | 核心能力说明 |
-|---|---|
-| **左上品牌栏 (`TypeScript Playground VISUAL`)** | 蓝青渐变 `TS` 徽标 + 主副标题层级排版 + 垂直居中的琥珀流光 `VISUAL` 标识。 |
-| **顶部工具栏 (`#top`) 与双视图切换 (`📄 Script` / `📓 Notebook`)** | 顶部支持 **`📄 Script`（单文件源码模式）** 与 **`📓 Notebook`（交互式 `.ipynb` 笔记本模式）** 一键切换；支持 `TS / PY` 双语言内核；内置 **10 个 TypeScript** + **6 个 Python** 精选样例、**`📂 导入`**（自动识别 `.ts/.tsx/.js/.jsx/.txt/.py` 源码或 `.ipynb` 笔记本文件）、`▶ 运行`、`🐞 Debug 调试` 以及右上角 **「⬇ 导出 / 下载 ▾」** 下拉菜单。 |
-| **交互式算法笔记本 (`📓 Notebook` · `src/ui/notebook.ts`)** | 完整还原 Jupyter Notebook 交互体验并深度融合可视化调试：<br>• **多标签页 `.ipynb` 管理**：内置 `Intro.ipynb` 与 `Untitled.ipynb`，支持新建、双击重命名、切换与关闭标签页；<br>• **跨单元格状态共享**：按执行顺序（`[1]`, `[2]`...）累积全局上下文，后续单元格可直接引用前面单元格定义的变量、函数、类与数据结构，右侧 `LOCALS` 与 `WATCH` 实时渲染当前笔记本的累积内存与数据结构图；<br>• **单元格级单步可视化 Debug (`🐞`)**：点击任意代码单元格右上角的 `🐞` 按钮，即可在继承前序已执行单元格变量的上下文中，对该单元格逐行单步调试，单元格内直接浮出 `#stepViz` 求值胶囊并同步右侧 `LOCALS` / `WATCH`；<br>• **CodeMirror 6 单元格编辑与跨单元格类型检查**：每个代码单元格均由独立 CodeMirror 6 实例驱动，自动结合已执行单元格的声明前缀执行静态类型检查与波浪线提示；<br>• **标准 `.ipynb` 导入与导出**：兼容 Jupyter Notebook v4 JSON 格式导入导出。 |
-| **右上角「⬇ 导出 / 下载」菜单** | 集成 **「📄 导出 TypeScript / Python / `.ipynb` 文件」**（Script 模式下导出 `.ts` / `.py`，Notebook 模式下支持导出 `.ipynb` 笔记本或合并导出源码）、**「🔗 复制分享链接」**（gzip + base64url 放进 URL hash，打开 `share.html` 的 sandboxed iframe，只加载不自动运行）与 **「🎬 导出视频 (`1920×1080 · 60fps`)」**（WebM，含 `0.75x` / `1x` / `1.5x` / `2x` / `3x` 五档倍速）。 |
-| **左侧：SOURCE 统一源码编辑与调试画布（CodeMirror 6）** | 编辑代码与单步 Debug 共用同一区域；CodeMirror 6 提供查找 / 替换、多光标（`Ctrl/Cmd+D`、`Alt+点击`）、光标所在词的同名整词匹配（蓝色下划线标示，跳过字符串 / 注释）、括号匹配 / 自动闭合、自动缩进、代码折叠、撤销 / 重做与单层清晰错误波浪线。**只有真正声明过的名字**显示为浅蓝色（`#9cdcfe`）；内置变量 / 函数使用暖金色（`#dcdcaa`）；未声明的名字保持白色。步进时在**当前执行行的正上方浮出一枚可视化求值胶囊**（`#stepViz`）。 |
-| **面向对象 / 全语法 TS 支持 (`class` · `enum` · `namespace` · 泛型)** | 完整支持 `class`（含构造器参数属性 `constructor(private x: number)`、`abstract class`、类装饰器 `@sealed`、`extends`、`implements`、`static`、getter/setter）、`enum` / `const enum`、`namespace`、函数重载签名、`declare` 声明，以及泛型函数/类、条件类型 `T extends U ? X : Y`、`infer`、映射类型 `{ [K in keyof T]: ... }` 和内置工具类型（`Partial`、`Pick`、`Omit`、`Record`、`ReturnType`、`Parameters`、`Awaited`）。 |
-| **异步 Event Loop 可视化 (`async/await` · `Promise` · `setTimeout`)** | 内置确定性虚拟事件循环（`createVirtualEventLoop`），支持 `async / await` 协程挂起与恢复、`new Promise`（箭头函数与 `function(resolve)` 写法）、`Promise.resolve/reject/all/race`、`queueMicrotask`、`setTimeout` 与 `sleep`；在 `WATCH` 面板自动渲染 `eventLoop` 卡片，实时展示虚拟时钟、Async 协程状态、Microtask 微任务队列、Macrotask 定时器队列与 Promise 状态表。 |
-| **大规模数据结构焦点视窗 (`1D Focal Slice` & `2D Sliding Grid`)** | 当一维数组/链表超过 20 项（如 10,000 项）或二维矩阵超过 `10×10`（如 `100×100`）时，自动围绕当前读写下标、双指针（`l`/`mid`/`r`/`slow`/`fast`）构建焦点切片与二维滑动视窗，保留真实下标、指针标签与省略计数（`…+N`）。 |
-| **悬停查看器 (`#hoverTip`) 与报错定位** | Debug 模式下把鼠标停在任意变量/数据结构（源码里或 `LOCALS`/`WATCH` 卡片上）即可弹出浮层：名字、声明类型/结构种类、**当前帧的实时值**与缩略可视化。静态类型检查报错与运行时异常均实时标红对应代码行，点击控制台诊断即可跳转。 |
-| **行号与检查点交互 (`checkpoint`)** | 点击任意行号即可在代码中自动插入/移除 `checkpoint();`，并**保持当前所在的调试步骤进度不重置回第一步**。 |
-| **右侧：调用栈面包屑 · LOCALS · WATCH · 控制台** | 在 `LOCALS` 区域顶部实时展示当前函数调用链条（如 `global ▸ mergeSort(0, 7) ▸ mergeSort(0, 3) ▸ mergeSort(0, 1)`），**点击任意栈帧面包屑即可切换查看对应栈帧的局部变量（`LOCALS`）、数据结构窗口状态（`WATCH`）与调用行位置**。 |
-| **底部 Debug 控制栏 (`#ctl`)** | 提供 `‹ 上一步`、状态徽章（`● 调试运行中` / `◉ 命中检查点` / `✗ 运行时报错` / `✓ 执行完毕`）、`下一步 ›`、**`⏭ 运行到下一个检查点`**、**`＋ 添加检查点函数`** 以及 **`▶ 自动`** 连续播放。 |
+### 1. 安装依赖与启动开发服务器
 
----
-
-## 三、 内置精选样例 (`SAMPLES` & 默认 `Intro.ipynb`)
-
-### 1. Script 模式 10 个内置 TypeScript 样例
-打开 `index.html` 时默认加载并自动启动 **`showcase · 综合美学演示 (含检查点)`**：
-
-1. **`showcase · 综合美学演示 (含检查点)`**：融合二叉搜索树（`Tree` SVG）、有向图（`Graph` SVG）、哈希频次表（`Map`）、单调栈（`Stack`）与定长滑动窗口（`Array [l..r]`），并在窗口达标处内置 `checkpoint("窗口达标", r, sum, best)`。
-2. **`mergesort · 归并排序 (递归调用栈演示)`**：演示分治递归排序过程，直观呈现 `LOCALS` 顶部的多层递归调用栈链条 `global ▸ mergeSort(0, 7) ▸ mergeSort(0, 3) ▸ mergeSort(0, 1)` 及点击栈帧切换历史层局部变量与数组 `[l..r]` 区间。
-3. **`debug_crash · 检查点与报错即停演示`**：演示包含运行时异常（`throw new Error(...)`）但静态类型合法的程序如何通过编译进入 Debug 模式，支持在多个 `checkpoint()` 之间跳转，并精准运行到抛出异常的那一行停止。
-4. **`lcs · DP (Grid)`**：最长公共子序列二维动态规划矩阵，实时高亮当前写入单元格（`hot`）与状态转移依赖单元格（`deps`）。
-5. **`analyze · Map/Set/Stack`**：展示 `Map` 键值统计、`Set` 去重集合与单调栈 `Stack` 的同步演化。
-6. **`window · 滑动窗口 [l..r]`**：双指针滑动窗口，自动识别局部变量 `l`、`r` 并在数组上渲染 `[l..r]` 窗口区间条带。
-7. **`structures · Tree/Graph/UF/Heap/List`**：集中展示最小堆（`Heap`）、队列（`Queue`）、并查集（`UF`）、单链表（`List`）、二叉树（`Tree`）与有向图（`Graph`）。
-8. **`counter · 简单赋值`**：轻量循环累加与条件分支，适合观察行间赋值、比较与飞入动画。
-9. **`classes · 类 / 字段 / 方法`**：演示 `class`、字段初始值、构造器与方法调用；进入方法后调用栈显示 `global ▸ runCounter(1, 3) ▸ add(2)`，`WATCH` 里的 `this` 卡片实时展示实例字段（`total` / `history`）的变化。
-10. **`async_loop · 异步 Event Loop (async/await/Promise/Timer)`**：演示泛型 `sleep<T>`（基于标准 `new Promise` + `setTimeout`）、`async / await`、`Promise.resolve().then(...)` 与 `queueMicrotask` 的完整事件循环调度顺序，实时呈现微任务先于宏任务定时器执行、协程挂起与恢复的全过程。
-
-### 2. Notebook 模式默认交互式笔记本 (`Intro.ipynb`)
-切换到 `📓 Notebook` 模式时，默认预置 `Intro.ipynb`（同时提供 TypeScript 与 Python 两个内核版本）：
-- **Cell 1 (Markdown)**：介绍跨单元格变量共享与单元格级单步可视化调试说明；
-- **Cell 2 & Cell 3 (Code)**：预执行 `let a: number = 1;` 与 `console.log(a);`（带 `[3]`、`[4]` 执行计数与内联输出）；
-- **Cell 4 (Code)**：跨单元格读取上方定义的 `a` 构建有序数组 `nums` 并在右侧 `WATCH` 面板渲染数组结构；
-- **Cell 5 (Code)**：基于上方单元格生成的 `nums` 执行带 `checkpoint(l, mid, r)` 的二分查找，支持直接点击 `🐞` 在单元格内单步调试。
-
----
-
-## 四、 核心技术管线与严格化工程质量门禁
-
-### 1. 静态类型检查器与 TS Worker 桥接 (`src/compiler/type-checker.ts`)
-- **第一遍（Pass 1）**：收集 `interface`、`type`（含泛型类型别名、条件类型 `extends ? :`、`infer` 模式匹配、多行映射类型 `{ [K in keyof T]: ... }`）、`class`（含泛型类 `class Box<T>`、构造器参数属性、`extends`）、`enum`、`namespace` 与函数重载签名。
-- **第二遍（Pass 2）**：逐行推导表达式类型并校验：
-  - 支持泛型函数调用推断、`<T, K extends keyof T>` 约束检查与索引访问类型 `T[K]` 求值；
-  - 支持分布式条件类型、递归 `infer` 解包与内置工具类型（`Partial`、`Required`、`Readonly`、`Pick`、`Omit`、`Record`、`ReturnType`、`Parameters`、`Awaited`）；
-  - 支持 `new Promise<T>((resolve, reject) => ...)` 与 `new Promise(function(resolve) { ... })` 构造器回调参数类型推断；
-  - 支持三元表达式与单行 `if (x !== undefined) return x;` 类型收窄；
-  - 区分同构联合数组 `string[] | number[]` 与异构联合元素数组 `(number | string)[]`。
-- **官方 TypeScript Web Worker 协同**：在浏览器环境中后台启动 `editor/ts-worker.bundle.js`，将官方 `typescript` 编译器的语义诊断无感合并至编辑器提示中。
-
-### 2. O(n) 词法感知类型剥离与语法降级器 (`src/compiler/transpile.ts`)
-- 严格保留原始源码行号 1:1 映射，确保调试高亮与报错行号零偏差。
-- 支持将 `enum` / `const enum` 展开为同行 IIFE，将 `namespace` 展开为同行对象闭包，将构造器参数属性 `constructor(private x: number)` 自动注入 `this.x = x;`，将 `abstract` 方法体降级为空方法存根，并擦除装饰器、函数重载无体签名与 `declare` 声明。
-
-### 3. 语句级自动插桩与异步协程改写 (`src/compiler/instrumenter.ts`)
-- 在独立可执行语句前插入 `__t(line, note, snapFn, this)` 快照钩子，并在 `while` / `for` / `else if` 条件内部注入逗号表达式钩子。
-- 将 `async function` 自动改写为由 `__t.__async(function* () { ... })` 驱动的生成器协程，将 `await expr` 改写为 `yield __t.__await(expr, fid, line, label)`，使按需重放引擎与 `PAUSE_SIGNAL` 能够跨 `await` 边界精确挂起与恢复调用栈帧。
-
-### 4. 确定性虚拟事件循环 (`src/runtime/event-loop.ts` & `src/runtime/runner.ts`)
-- 提供沙箱内确定性调度的 `VirtualPromise`、`setTimeout`、`clearTimeout`、`queueMicrotask` 与 `sleep`。
-- 同步主线程代码执行完毕后，`drainEventLoop` 严格按照 **「清空所有排队微任务 (FIFO) → 推进虚拟时钟至最近到期宏任务定时器 → 执行一个宏任务 → 再次清空微任务」** 的标准事件循环模型驱动执行，并在每一步快照中生成 `ds.eventLoop` 可视化数据。
-
-### 5. 工业级严格 TypeScript 质量门禁 (`Strict TS Gate`)
-- **`tsconfig.json` 全量开启严格选项**：`strict: true`、`noUncheckedIndexedAccess: true`、`noUnusedLocals: true`、`noUnusedParameters: true`、`noImplicitOverride: true`、`noFallthroughCasesInSwitch: true`。
-- **自动化静态门禁（内置于 `test-pipeline.mjs`）**：每次运行 `npm test` 或 `npm run build` 时，测试流水线会自动扫描 `src/**/*.ts` 全部模块（剥离注释、字符串与正则字面量后），强制断言：
-  1. `any` 关键字出现次数为 **`0`**；
-  2. 后缀非空断言 `!` 出现次数为 **`0`**；
-  3. `@ts-ignore` / `@ts-expect-error` / `@ts-nocheck` 出现次数为 **`0`**；
-  4. `tsc --noEmit` 退出码为 **`0`**。
-
----
-
-## 五、 构建、测试与部署
-
-### 1. 常用命令
 ```bash
-npm ci                                        # 安装依赖 (codemirror, typescript, esbuild)
-node node_modules/typescript/bin/tsc --noEmit # 运行 src/**/*.ts 严格模式类型检查 (0 errors)
-npm run build:editor                          # 打包 js/app.bundle.js, editor/cm.bundle.js 与 editor/ts-worker.bundle.js
-npm test                                      # 运行端到端自动化测试套件 + Strict TS Gate 静态门禁 (node test-pipeline.mjs)
-npm run build                                 # 打包全部 bundle + 运行测试 + 生成 dist/ 纯静态发布目录
-npm start                                     # 启动本地开发服务 (默认监听 3000 端口)
+npm install
+npm run dev
 ```
 
-### 2. 部署说明
-- `npm run build` 会生成完整的 `dist/` 静态目录（含 `index.html`、`share.html`、`js/app.bundle.js`、`editor/cm.bundle.js`、`editor/ts-worker.bundle.js`、`css/app.css`、`app-session.js`、`python/`、`examples/` 及五份文档）；直接将 `dist/` 上传至 GitHub Pages、Vercel、Cloudflare Pages、Netlify 或 Nginx 即可零后端运行。
+启动后访问 `http://localhost:3000`。`server.mjs` 默认启用 `Cross-Origin-Opener-Policy: same-origin` 与 `Cross-Origin-Embedder-Policy: require-corp` 响应头，从而激活 `SharedArrayBuffer` 零延迟 Python 中断能力。
 
+### 2. 编译与打包脚本
+
+当修改了 `src/**/*.ts` 或 `editor/*.js` 后，运行以下命令重新生成前端 Bundle：
+
+```bash
+# 1. 运行 TypeScript 严格模式全量类型检查 (0 errors)
+./node_modules/.bin/tsc --noEmit
+
+# 2. 使用 esbuild 重新打包 js/app.bundle.js 与 editor/*.bundle.js
+node scripts/build-editor.mjs
+
+# 3. 构建可部署的静态产物目录 dist/
+npm run build
+```
+
+### 3. 自动化测试与架构门禁验证
+
+项目提供两套自动化测试脚本，包含 **9 大静态架构与类型安全门禁**（强制 `0 any`、`0 !`、`0 @ts-ignore`、`0 as` 类型断言、`0 循环依赖`、`纯数据层 0 DOM 引用`）：
+
+```bash
+# 1. 静态门禁 + 编译插桩 + 纯模块测试（无需浏览器，毫秒级完成）
+node test-pipeline.mjs
+
+# 2. 端到端浏览器全链路冒烟测试（Playwright + Headless Chromium）
+node smoke-e2e.mjs
+```
+
+---
+
+## 📚 核心文档导航
+
+- 📖 **[项目架构与每次更新验收规范 (`ARCHITECTURE.md`)](./ARCHITECTURE.md)**：34 模块 7 层 DAG 架构详解、`uiHooks` 依赖倒置机制、Zero-`as` 规范与每次代码更新必检清单。
+- 🧭 **[用户使用指南 (`USER_GUIDE.md`)](./USER_GUIDE.md)**：界面布局、单步调试技巧、Notebook 交互式笔记用法、VFS 与导出分享操作说明。
+- 📐 **[语法与可视化参考手册 (`SYNTAX_REFERENCE.md`)](./SYNTAX_REFERENCE.md)**：TypeScript 与 Python 引擎各自支持的语言特性矩阵、静态类型检查范围以及 7 类数据结构的自动识别规则。
+- 🚢 **[构建与部署指南 (`DEPLOY.md`)](./DEPLOY.md)**：静态打包 (`dist/`)、COOP/COEP 跨源隔离头配置以及 GitHub Pages / Cloudflare Pages / Vercel 部署说明。
+- 📝 **[版本更新日志 (`CHANGELOG.md`)](./CHANGELOG.md)**：各版本核心特性、架构演进与质量门禁记录。

@@ -10,7 +10,7 @@ import {
   RESERVED_WORDS,
 } from "./comments";
 import { extractBindingNames } from "./instrumenter";
-import { uiHooks } from "../state";
+import { appState, uiHooks } from "../state";
 import { Diag } from "../types";
 import {
   createTypeCheckContext,
@@ -1394,7 +1394,7 @@ export function checkPass2Statements(
   }
 }
 
-export function typecheckTS(src: string, strict = STRICT_TS) {
+export function typecheckTS(src: string, strict = appState.STRICT_TS) {
   extractTsInterfaceMetadata(src);
   if (!strict) return [];
   if (typeof src === 'string' && _TYPECHECK_CACHE.src === src && _TYPECHECK_CACHE.strict === strict) {

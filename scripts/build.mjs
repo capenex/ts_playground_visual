@@ -16,7 +16,7 @@ const FILES = [
   'CHANGELOG.md',
   'USER_GUIDE.md',
   'SYNTAX_REFERENCE.md',
-  'REFACTOR_PLAN.md',
+  'ARCHITECTURE.md',
   'DEPLOY.md',
 ];
 const DIRS = ['python', 'js', 'css', 'examples'];

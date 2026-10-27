@@ -12,6 +12,7 @@ import {
   RESERVED_WORDS,
 } from "./comments";
 import { isMapLike, isSetLike } from "../utils/format";
+import { appState } from "../state";
 import { Frame, InterfaceSchemaMeta, StepAnim } from "../types";
 
 export interface TypeParamInfo {
@@ -167,8 +168,8 @@ export function extractTsInterfaceMetadata(src: string | null | undefined) {
   const interfaces = new Map<string, InterfaceSchemaMeta>();
   const varTypes = new Map<string, string>();
   if (!src || typeof src !== 'string') {
-    CURRENT_TS_META = { interfaces, varTypes };
-    return CURRENT_TS_META;
+    appState.CURRENT_TS_META = { interfaces, varTypes };
+    return appState.CURRENT_TS_META;
   }
 
   const lines = src.replace(/\r\n?/g, '\n').split('\n');
@@ -349,12 +350,12 @@ export function extractTsInterfaceMetadata(src: string | null | undefined) {
     }
   }
 
-  CURRENT_TS_META = { interfaces, varTypes };
-  return CURRENT_TS_META;
+  appState.CURRENT_TS_META = { interfaces, varTypes };
+  return appState.CURRENT_TS_META;
 }
 
 export function matchInterfaceForObject(name: string | null | undefined, value: StepAnim | Frame | null | undefined): InterfaceSchemaMeta | null {
-  const { interfaces, varTypes } = CURRENT_TS_META;
+  const { interfaces, varTypes } = appState.CURRENT_TS_META;
   const declaredVarT = name ? varTypes.get(name) : undefined;
   if (declaredVarT) {
     const cleanT = declaredVarT.replace(/\[\]$/, '').trim();
