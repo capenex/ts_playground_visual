@@ -4,7 +4,6 @@
 import type {
   ConsoleLogEntry,
   DebugSession,
-  Diag,
   InterfaceSchemaMeta,
   LangBuffer,
   TraceData,
@@ -33,9 +32,8 @@ export interface AppState {
   VIEW_MODE: 'script' | 'notebook';
   ACTIVE_NB_CELL_ID: string | null;
   FILE_NAME: string;
-  LANG: 'ts' | 'python';
+  LANG: 'ts';
   LANG_BUFFERS: Record<string, LangBuffer | null>;
-  PY_DIAGS: Diag[];
   CONSOLE_LOGS: ConsoleLogEntry[];
   VIDEO_EXPORT_SPEED: number;
   IS_EXPORTING_VIDEO: boolean;
@@ -53,6 +51,8 @@ export interface AppState {
   RUNTIME_ERROR_LINES: Set<number>;
   lastEditorCursorLine: number;
   ENTRY_CALL_LINE: number;
+  ENTRY_FILE_PATH: string;
+  ACTIVE_DEBUG_FILE: string;
   CURRENT_TS_META: TsMeta;
   DEBUG_SESSION: DebugSession;
 }
@@ -64,8 +64,7 @@ export const appState: AppState = {
   ACTIVE_NB_CELL_ID: null,
   FILE_NAME: 'playground.ts',
   LANG: 'ts',
-  LANG_BUFFERS: { ts: null, python: null },
-  PY_DIAGS: [],
+  LANG_BUFFERS: { ts: null },
   CONSOLE_LOGS: [],
   VIDEO_EXPORT_SPEED: 1,
   IS_EXPORTING_VIDEO: false,
@@ -83,6 +82,8 @@ export const appState: AppState = {
   RUNTIME_ERROR_LINES: new Set<number>(),
   lastEditorCursorLine: -1,
   ENTRY_CALL_LINE: 0,
+  ENTRY_FILE_PATH: '',
+  ACTIVE_DEBUG_FILE: '',
   CURRENT_TS_META: {
     interfaces: new Map<string, InterfaceSchemaMeta>(),
     varTypes: new Map<string, string>(),
@@ -174,6 +175,8 @@ export interface RuntimeUiHooks {
   revealErrorLine: (line: number | string, focus?: boolean) => void;
   loadSample: (key: string) => void;
   getActiveWorkspacePath: () => string;
+  collectWorkspaceFileMap: () => Map<string, string>;
+  switchToScriptFile: (vfsPath: string) => void;
   openVfsNotebookFile: (name: string, content: string | undefined) => void;
   openVfsScriptFile: (path: string, name: string, content: string) => void;
   onVfsFileDeleted: (delPath: string) => void;
@@ -199,6 +202,8 @@ export const uiHooks: RuntimeUiHooks = {
   revealErrorLine: () => {},
   loadSample: () => {},
   getActiveWorkspacePath: () => '',
+  collectWorkspaceFileMap: () => new Map<string, string>(),
+  switchToScriptFile: () => {},
   openVfsNotebookFile: () => {},
   openVfsScriptFile: () => {},
   onVfsFileDeleted: () => {},

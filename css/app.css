@@ -547,6 +547,11 @@
   }
   .vars .k{color:var(--dim)}
   .vars .v{color:var(--ink);font-weight:700}
+  .vars .v.fn-type{font-weight:600;color:#e2e8f0;background:rgba(255,255,255,.03);border:1px solid #242e3e;padding:1px 7px;border-radius:5px}
+  .vars .v.fn-type .ft-param{color:#ffb454}
+  .vars .v.fn-type .ft-type{color:#4ec9b0}
+  .vars .v.fn-type .ft-arrow{color:#ff7b72;font-weight:700}
+  .vars .v.fn-type .ft-punct{color:#94a3b8}
 
   .chips{display:flex;flex-wrap:wrap;gap:6px}
   .chip-pick{

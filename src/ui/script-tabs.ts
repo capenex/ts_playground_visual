@@ -1,16 +1,16 @@
 /* ================================================================
    Single-File Mode Multi-Tab Bar View & Sample Import Menu (src/ui/script-tabs.ts)
    ================================================================ */
+import { normalizeWorkspaceModulePath } from "../compiler/type-checker";
 import { say, resetTraceState } from "../runtime/event-loop";
+import { startDebug } from "../runtime/runner";
 import {
   ensureScriptTabsForLang,
   getActiveScriptTab,
-  getPySamplesDict,
   handleVfsFileDeletedInTabs,
   handleVfsFileRenamedInTabs,
   isScriptTabSyncing,
   nextScriptTabId,
-  PY_SAMPLE_METADATA,
   ScriptTabDoc,
   setScriptTabSyncing,
   syncActiveScriptTabSource,
@@ -19,6 +19,7 @@ import {
   upsertVfsScriptTab,
 } from "../runtime/script-tabs-store";
 import {
+  ensureVfsInitialized,
   persistVfsToClientStorage,
   VFS_NODES,
 } from "../runtime/vfs-store";
@@ -38,7 +39,7 @@ import { renderVfsTreeUI } from "./vfs";
 
 export * from "../runtime/script-tabs-store";
 
-export function openSampleScriptTab(title: string, source: string, lang?: "ts" | "python") {
+export function openSampleScriptTab(title: string, source: string, lang?: "ts") {
   if (editor && editor.value) {
     syncActiveScriptTabSource(editor.value);
   }
@@ -53,8 +54,7 @@ export function openSampleScriptTab(title: string, source: string, lang?: "ts" |
 
 export function syncActiveScriptTabFromFileName(newFileName: string) {
   if (isScriptTabSyncing()) return;
-  const lang = appState.LANG === "python" ? "python" : "ts";
-  const store = ensureScriptTabsForLang(lang);
+  const store = ensureScriptTabsForLang("ts");
   const activeTab = store.tabs.find((t) => t.id === store.activeTabId);
   if (!activeTab) return;
 
@@ -81,19 +81,25 @@ export function syncActiveScriptTabFromFileName(newFileName: string) {
 export function renderScriptTabsUI() {
   const tabsEl = $("scriptTabsList");
   if (!tabsEl) return;
-  const lang = appState.LANG === "python" ? "python" : "ts";
-  const store = ensureScriptTabsForLang(lang);
-  const activeTab = getActiveScriptTab(lang);
+  const store = ensureScriptTabsForLang("ts");
+  const activeTab = getActiveScriptTab("ts");
+  const isMultiDebug = Boolean(
+    appState.DEBUG_SESSION.active &&
+      appState.TRACE.moduleSources &&
+      Object.keys(appState.TRACE.moduleSources).length > 1
+  );
 
   tabsEl.innerHTML =
     store.tabs
       .map((t) => {
         const isAct = t.id === activeTab.id;
-        const iconCls = lang === "python" ? "py-icon" : "ts-icon";
+        const normPath = normalizeWorkspaceModulePath(t.vfsPath || t.title);
+        const isDebugEntry = isMultiDebug && appState.DEBUG_SESSION.entryFile === normPath;
+        const badge = isDebugEntry ? ` <span class="dim" title="当前多文件调试入口模块">▶</span>` : "";
         return (
           `<div class="nb-tab${isAct ? " active" : ""}" data-script-tab-id="${esc(t.id)}" title="单击切换标签页 · 双击文件名重命名">` +
-          `<span class="nb-tab-icon ${iconCls}" aria-hidden="true"></span>` +
-          `<span class="nb-tab-title">${esc(t.title)}</span>` +
+          `<span class="nb-tab-icon ts-icon" aria-hidden="true"></span>` +
+          `<span class="nb-tab-title">${esc(t.title)}${badge}</span>` +
           (store.tabs.length > 1
             ? `<button type="button" class="nb-tab-close" data-close-script-tab="${esc(t.id)}" title="关闭标签页">×</button>`
             : "") +
@@ -107,9 +113,6 @@ export function renderScriptTabsUI() {
 export function renderImportSampleMenu() {
   const listEl = $("importSampleList");
   if (!listEl) return;
-  const isPy = appState.LANG === "python";
-  const items = isPy ? PY_SAMPLE_METADATA : TS_SAMPLE_METADATA;
-  const folderPrefix = isPy ? "examples/python/" : "examples/ts/";
 
   const nbItemHtml =
     `<button type="button" class="import-sample-item" data-import-sample-notebook="Intro.ipynb">` +
@@ -117,18 +120,100 @@ export function renderImportSampleMenu() {
     `<span class="import-sample-path">examples/notebooks/</span>` +
     `</button>`;
 
+  const multiFileItemHtml =
+    `<button type="button" class="import-sample-item" data-import-sample-multifile="bst-project" title="加载包含 bst.ts 与 main.ts 的多模块 TypeScript 工程示例，支持跨文件步进与类型检查">` +
+    `<span class="import-sample-name">📦 多文件模块化工程 · 二叉搜索树 (bst.ts + main.ts)</span>` +
+    `<span class="import-sample-path">workspace/bst.ts + main.ts</span>` +
+    `</button>`;
+
   listEl.innerHTML =
-    (appState.VIEW_MODE === "notebook" ? nbItemHtml : "") +
-    items
+    (appState.VIEW_MODE === "notebook" ? nbItemHtml : multiFileItemHtml) +
+    TS_SAMPLE_METADATA
       .map(
         (item) =>
           `<button type="button" class="import-sample-item" data-import-sample-key="${esc(item.key)}" title="${esc(item.desc)}">` +
           `<span class="import-sample-name">${esc(item.label)}</span>` +
-          `<span class="import-sample-path">${esc(folderPrefix + item.key + (isPy ? ".py" : ".ts"))}</span>` +
+          `<span class="import-sample-path">${esc("examples/ts/" + item.key + ".ts")}</span>` +
           `</button>`
       )
       .join("") +
     (appState.VIEW_MODE !== "notebook" ? nbItemHtml : "");
+}
+
+export function loadMultiFileSampleProject(): void {
+  ensureVfsInitialized();
+  const bstSource = [
+    "// 二叉搜索树节点模块 (bst.ts)",
+    "export interface BstNode {",
+    "  val: number;",
+    "  left: BstNode | null;",
+    "  right: BstNode | null;",
+    "}",
+    "",
+    "export function createNode(val: number): BstNode {",
+    "  return { val, left: null, right: null };",
+    "}",
+    "",
+    "export function insertBst(root: BstNode | null, val: number): BstNode {",
+    "  if (root === null) {",
+    "    return createNode(val);",
+    "  }",
+    "  if (val < root.val) {",
+    "    root.left = insertBst(root.left, val);",
+    "  } else if (val > root.val) {",
+    "    root.right = insertBst(root.right, val);",
+    "  }",
+    "  return root;",
+    "}",
+  ].join("\n");
+
+  const mainSource = [
+    "// 多文件入口模块 (main.ts) —— 导入 ./bst 并跨模块步进调试",
+    "import { BstNode, insertBst } from './bst';",
+    "",
+    "function buildSearchTree(nums: number[]): number {",
+    "  let tree: BstNode | null = null;",
+    "  for (let i = 0; i < nums.length; i++) {",
+    "    const x = nums[i];",
+    "    tree = insertBst(tree, x);",
+    '    checkpoint(x < 8, "插入左子树节点");',
+    "  }",
+    "  if (tree !== null) {",
+    "    return tree.val;",
+    "  }",
+    "  return -1;",
+    "}",
+    "",
+    "// 调用：buildSearchTree([8, 4, 12, 2, 6])",
+  ].join("\n");
+
+  VFS_NODES.set("bst.ts", {
+    path: "bst.ts",
+    name: "bst.ts",
+    type: "file",
+    parentPath: "",
+    content: bstSource,
+  });
+  VFS_NODES.set("main.ts", {
+    path: "main.ts",
+    name: "main.ts",
+    type: "file",
+    parentPath: "",
+    content: mainSource,
+  });
+  persistVfsToClientStorage();
+
+  upsertVfsScriptTab("bst.ts", "bst.ts", bstSource, "ts");
+  const mainTab = upsertVfsScriptTab("main.ts", "main.ts", mainSource, "ts");
+  setScriptTabSyncing(true);
+  if (editor) editor.value = mainTab.source;
+  setFileName("main.ts");
+  setScriptTabSyncing(false);
+  renderScriptTabsUI();
+  renderVfsTreeUI();
+  uiHooks.setViewMode("script");
+  resetTraceState();
+  startDebug(0);
 }
 
 export function initScriptTabsAndImportEvents() {
@@ -175,6 +260,11 @@ export function initScriptTabsAndImportEvents() {
       const btn = closestElement(e, ".import-sample-item");
       if (!btn) return;
       if (importMenuWrap && importMenuWrap.classList) importMenuWrap.classList.remove("open");
+      const multiFile = btn.getAttribute("data-import-sample-multifile");
+      if (multiFile) {
+        loadMultiFileSampleProject();
+        return;
+      }
       const nbFile = btn.getAttribute("data-import-sample-notebook");
       if (nbFile) {
         uiHooks.setViewMode("notebook");
@@ -184,7 +274,7 @@ export function initScriptTabsAndImportEvents() {
       const sampleKey = btn.getAttribute("data-import-sample-key");
       if (sampleKey) {
         if (appState.VIEW_MODE === "notebook") {
-          const code = appState.LANG === "python" ? (getPySamplesDict()[sampleKey] || "") : (SAMPLES[sampleKey] || "");
+          const code = SAMPLES[sampleKey] || "";
           if (code) {
             uiHooks.importSampleIntoNotebook(code, sampleKey);
           }
@@ -200,8 +290,7 @@ export function initScriptTabsAndImportEvents() {
     scriptTabsEl.addEventListener("click", (e: MouseEvent) => {
       const target = eventTargetElement(e);
       if (!target) return;
-      const lang = appState.LANG === "python" ? "python" : "ts";
-      const store = ensureScriptTabsForLang(lang);
+      const store = ensureScriptTabsForLang("ts");
 
       const closeBtn = closestElement(target, "[data-close-script-tab]");
       if (closeBtn) {
@@ -214,7 +303,7 @@ export function initScriptTabsAndImportEvents() {
           if (store.activeTabId === closeId) {
             const fallbackTab = store.tabs[Math.max(0, idx - 1)];
             if (fallbackTab) store.activeTabId = fallbackTab.id;
-            const nextTab = getActiveScriptTab(lang);
+            const nextTab = getActiveScriptTab("ts");
             setScriptTabSyncing(true);
             editor.value = nextTab.source;
             setFileName(nextTab.title);
@@ -231,13 +320,12 @@ export function initScriptTabsAndImportEvents() {
       const newBtn = closestElement(target, "#scriptBtnNewTab");
       if (newBtn) {
         syncActiveScriptTabSource(editor ? editor.value : "");
-        const ext = lang === "python" ? ".py" : ".ts";
-        const newTitle = `untitled-${store.tabs.length + 1}${ext}`;
+        const newTitle = `untitled-${store.tabs.length + 1}.ts`;
         const newTab: ScriptTabDoc = {
           id: nextScriptTabId(),
           title: newTitle,
-          lang,
-          source: lang === "python" ? "# 新建 Python 脚本\n" : "// 新建 TypeScript 脚本\n",
+          lang: "ts",
+          source: "// 新建 TypeScript 脚本\n",
           vfsPath: "",
           isSample: false,
         };
@@ -261,12 +349,23 @@ export function initScriptTabsAndImportEvents() {
         if (tabId && store.activeTabId !== tabId) {
           syncActiveScriptTabSource(editor ? editor.value : "");
           store.activeTabId = tabId;
-          const nextTab = getActiveScriptTab(lang);
+          const nextTab = getActiveScriptTab("ts");
+          const normNext = normalizeWorkspaceModulePath(nextTab.vfsPath || nextTab.title);
+          const inActiveMultiSession = Boolean(
+            appState.DEBUG_SESSION.active &&
+              appState.TRACE.moduleSources &&
+              Object.keys(appState.TRACE.moduleSources).length > 1 &&
+              appState.TRACE.moduleSources[normNext]
+          );
           setScriptTabSyncing(true);
           editor.value = nextTab.source;
-          setFileName(nextTab.title);
+          setFileName(nextTab.vfsPath || nextTab.title);
           setScriptTabSyncing(false);
-          resetTraceState();
+          if (inActiveMultiSession) {
+            appState.ACTIVE_DEBUG_FILE = normNext;
+          } else {
+            resetTraceState();
+          }
           updateEditorChrome();
           renderScriptTabsUI();
           renderVfsTreeUI();
@@ -278,8 +377,7 @@ export function initScriptTabsAndImportEvents() {
       const tabEl = closestElement(e, "[data-script-tab-id]");
       if (!tabEl) return;
       const tabId = tabEl.getAttribute("data-script-tab-id");
-      const lang = appState.LANG === "python" ? "python" : "ts";
-      const store = ensureScriptTabsForLang(lang);
+      const store = ensureScriptTabsForLang("ts");
       const targetTab = store.tabs.find((t) => t.id === tabId);
       if (!targetTab) return;
       const titleSpan = tabEl.querySelector ? tabEl.querySelector(".nb-tab-title") : null;
@@ -299,8 +397,7 @@ export function initScriptTabsAndImportEvents() {
         committed = true;
         const rawVal = input.value.trim();
         if (rawVal) {
-          const ext = lang === "python" ? ".py" : ".ts";
-          const nextName = /\.[A-Za-z0-9]{1,12}$/.test(rawVal) ? rawVal : rawVal + ext;
+          const nextName = /\.[A-Za-z0-9]{1,12}$/.test(rawVal) ? rawVal : rawVal + ".ts";
           const oldPath = targetTab.vfsPath;
           targetTab.title = nextName;
           if (!targetTab.isSample && oldPath && VFS_NODES.has(oldPath)) {
@@ -346,18 +443,72 @@ export function initScriptTabsAndImportEvents() {
 }
 
 export function openVfsScriptFile(path: string, name: string, content: string): void {
-  const lang = appState.LANG === "python" ? "python" : "ts";
   if (editor && editor.value) {
     syncActiveScriptTabSource(editor.value);
   }
-  const tab = upsertVfsScriptTab(path, name, content, lang);
+  const tab = upsertVfsScriptTab(path, name, content, "ts");
   setScriptTabSyncing(true);
   editor.value = tab.source;
-  setFileName(tab.title);
+  setFileName(tab.vfsPath || tab.title);
   setScriptTabSyncing(false);
   resetTraceState();
   updateEditorChrome();
   renderScriptTabsUI();
+}
+
+export function switchToScriptFile(targetPath: string): void {
+  const normPath = normalizeWorkspaceModulePath(targetPath);
+  if (!normPath) return;
+  const store = ensureScriptTabsForLang("ts");
+  const currentActive = getActiveScriptTab("ts");
+  const currentNorm = normalizeWorkspaceModulePath(currentActive.vfsPath || currentActive.title);
+  if (currentNorm === normPath && normalizeWorkspaceModulePath(appState.FILE_NAME) === normPath) {
+    return;
+  }
+
+  if (editor && editor.value) {
+    syncActiveScriptTabSource(editor.value);
+  }
+
+  let targetTab = store.tabs.find(
+    (t) => normalizeWorkspaceModulePath(t.vfsPath || t.title) === normPath
+  );
+  if (!targetTab) {
+    ensureVfsInitialized();
+    const vfsNode = VFS_NODES.get(normPath);
+    if (vfsNode && vfsNode.type === "file") {
+      targetTab = upsertVfsScriptTab(normPath, vfsNode.name, vfsNode.content ?? "", "ts");
+    }
+  }
+  if (!targetTab) return;
+
+  store.activeTabId = targetTab.id;
+  appState.ACTIVE_DEBUG_FILE = normPath;
+  setScriptTabSyncing(true);
+  if (editor) editor.value = targetTab.source;
+  setFileName(targetTab.vfsPath || targetTab.title);
+  setScriptTabSyncing(false);
+  renderScriptTabsUI();
+  renderVfsTreeUI();
+}
+
+export function collectWorkspaceFileMap(): Map<string, string> {
+  const map = new Map<string, string>();
+  ensureVfsInitialized();
+  VFS_NODES.forEach((node, path) => {
+    if (node.type === "file" && typeof node.content === "string") {
+      const norm = normalizeWorkspaceModulePath(path);
+      if (norm) map.set(norm, node.content.replace(/\r/g, ""));
+    }
+  });
+  const store = ensureScriptTabsForLang("ts");
+  store.tabs.forEach((tab) => {
+    const key = normalizeWorkspaceModulePath(tab.vfsPath || tab.title);
+    if (key) {
+      map.set(key, (tab.source || "").replace(/\r/g, ""));
+    }
+  });
+  return map;
 }
 
 export function onVfsFileDeleted(delPath: string): void {
@@ -379,7 +530,11 @@ export function onVfsFileRenamed(oldPath: string, nextPath: string, nextName: st
 
 registerUiHooks({
   getActiveWorkspacePath: () => getActiveScriptTab().vfsPath,
+  collectWorkspaceFileMap,
   openVfsScriptFile,
+  switchToScriptFile,
   onVfsFileDeleted,
   onVfsFileRenamed,
 });
+
+

@@ -15,7 +15,7 @@
 <body>
 <div id="bar">
   <span id="status">沙箱加载中…</span>
-  <span id="hint">分享代码在隔离 iframe 中运行，不能访问本页 DOM / localStorage；编辑内容不会自动保存；Python 模式受 Worker 限制，建议在完整页面运行。</span>
+  <span id="hint">分享代码在隔离 iframe 中运行，不能访问本页 DOM / localStorage；编辑内容不会自动保存。</span>
 </div>
 <iframe id="frame" title="Shared Playground sandbox" sandbox="allow-scripts allow-downloads"></iframe>
 <script>
@@ -30,14 +30,13 @@
     const data = event.data;
     if (!data || data.type !== 'ts-playground-ready') return;
     ready = true;
-    const lang = data.lang === 'python' ? 'Python' : 'TypeScript';
-    status.textContent = '沙箱已就绪 · ' + lang + (data.fileName ? ' · ' + data.fileName : '');
+    status.textContent = '沙箱已就绪 · TypeScript' + (data.fileName ? ' · ' + data.fileName : '');
   });
 
   frame.src = 'index.html?sandbox=1' + hash;
 
   setTimeout(function () {
-    if (!ready) status.textContent = '沙箱加载超时：请检查浏览器是否允许 iframe 脚本；Python 模式请改用完整页面。';
+    if (!ready) status.textContent = '沙箱加载超时：请检查浏览器是否允许 iframe 脚本。';
   }, 15000);
 })();
 </script>

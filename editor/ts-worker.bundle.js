@@ -467,8 +467,8 @@ declare function setInterval(handler: (...args: any[]) => void, timeout?: number
 declare function clearInterval(id?: number): void;
 declare function queueMicrotask(callback: () => void): void;
 declare function sleep<T = void>(ms?: number, value?: T): Promise<T>;
-declare function checkpoint(...args: any[]): void;
-declare function \u65AD\u70B9(...args: any[]): void;
+declare function checkpoint(cond?: boolean, msg?: string): void;
+declare function \u65AD\u70B9(cond?: boolean, msg?: string): void;
 
 interface FsStats {
   size: number;

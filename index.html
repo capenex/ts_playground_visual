@@ -28,10 +28,6 @@
     <button type="button" class="mode-tab" data-mode="notebook" title="Jupyter 交互式单元格笔记本模式（支持跨单元格共享变量与单 Cell 调试）">📓 Notebook</button>
   </div>
   <div class="spacer"></div>
-  <select id="langSel" title="切换语言模式（TypeScript / Python）">
-    <option value="ts">TS</option>
-    <option value="python">PY</option>
-  </select>
   <select id="sampleSel" title="内置样例（切换后自动开启 Debug 模式）" hidden>
     <option value="showcase">showcase · 综合美学演示 (含检查点)</option>
     <option value="mergesort">mergesort · 归并排序 (递归调用栈演示)</option>
@@ -45,14 +41,14 @@
     <option value="async_loop">async_loop · 异步 Event Loop (async/await/Promise/Timer)</option>
   </select>
   <div class="top-menu-wrap" id="importMenuWrap">
-    <button id="btnImport" class="top-menu-btn" title="导入内置示例（examples/）或上传本地代码文件（.ts / .py / .ipynb）">
+    <button id="btnImport" class="top-menu-btn" title="导入内置示例（examples/）或上传本地代码文件（.ts / .ipynb）">
       <span>📂 导入</span>
       <span class="top-menu-caret">▾</span>
     </button>
     <div class="top-menu-pop import-menu-pop" id="importMenuPop">
-      <button type="button" id="btnUploadLocalFile" class="menu-item" title="从本地设备选择文件上传（支持 .ts / .py / .ipynb / .txt / .json）">
+      <button type="button" id="btnUploadLocalFile" class="menu-item" title="从本地设备选择文件上传（支持 .ts / .ipynb / .txt / .json）">
         <span>📤 上传本地文件…</span>
-        <span class="sub-tag">.ts / .py / .ipynb</span>
+        <span class="sub-tag">.ts / .ipynb</span>
       </button>
       <button type="button" id="btnOpenTsTutorials" class="menu-item tutorial-menu-btn" title="打开窗口选择并导入 TypeScript 进阶交互式教学 Notebook (.ipynb)">
         <span>🎓 TS 进阶教学资料…</span>
@@ -68,7 +64,7 @@
       </div>
     </div>
   </div>
-  <input id="fileInput" type="file" accept=".ts,.tsx,.js,.jsx,.py,.ipynb,.txt,.json,.csv,text/plain,application/json" hidden>
+  <input id="fileInput" type="file" accept=".ts,.tsx,.js,.jsx,.ipynb,.txt,.json,.csv,text/plain,application/json" hidden>
   <button id="btnRun" class="primary" title="Ctrl/Cmd+Enter">▶ 运行</button>
   <button id="btnTrace" class="trace-btn" title="编译通过后开启 Debug 模式，每走一步当场计算 (Ctrl/Cmd+Shift+Enter)">🐞 Debug 调试</button>
   <div class="top-menu-wrap" id="exportMenuWrap">
@@ -125,7 +121,7 @@
     <div class="code-workspace-row" id="codeWorkspaceRow">
       <div class="code-workspace-main">
         <div id="editorWrap">
-          <div id="gutter" title="点击行号可在该行快速插入/移除 checkpoint() 检查点函数"></div>
+          <div id="gutter"></div>
           <div id="codeScroll">
             <pre id="highlight" aria-hidden="true"></pre>
             <div id="cmEditor" aria-label="代码编辑器"></div>
@@ -197,8 +193,8 @@
   <button id="prev" title="回看上一步 (←)">‹ 上一步</button>
   <div id="cnt">未在调试</div>
   <button id="next" title="当场计算并执行下一步 (→ / Space)">下一步 ›</button>
-  <button id="nextCheckpoint" class="ckpt-btn" title="连续当场计算，直到遇到下一个 checkpoint() 检查点或运行时报错为止">⏭ 运行到下一个检查点</button>
-  <button id="btnAddCheckpoint" class="add-ckpt-btn" title="在代码当前位置添加 checkpoint() 检查点函数">＋ 添加检查点函数</button>
+  <button id="nextCheckpoint" class="ckpt-btn" title="连续当场计算，直到遇到下一个触发的 checkpoint(cond?, msg?) 检查点或运行时报错为止">⏭ 运行到下一个检查点</button>
+  <button id="btnAddCheckpoint" class="add-ckpt-btn" title="在代码当前行添加或删除 checkpoint() 检查点函数 (Ctrl+C)">＋ 添加检查点函数</button>
   <button id="auto">▶ 自动</button>
   <div class="spacer"></div>
   <div class="hint" id="ctlHint">Debug 模式：每步当场计算 · 悬停查看变量 · 报错红色定位 · ▶ 运行超 2s 自动熔断并报出死循环行号</div>
@@ -229,8 +225,6 @@
         <li>装饰器、JSX / TSX、完整标准库类型、类型级运算、<code>satisfies</code> 的完整语义</li>
         <li>所有 tsc 的诊断规则与错误码</li>
       </ul>
-      <h3>Python 模式</h3>
-      <p>只做运行前语法检查（<code>ast.parse</code> / <code>compile</code>），不做静态类型检查；类型注解不参与校验。</p>
       <p class="warn">因此可能出现漏报（错误没标红）或误报（合法写法被标红）。以实际运行结果和官方 <code>tsc</code> 为准。</p>
     </div>
   </div>
@@ -256,17 +250,6 @@
 </div>
 
 <script src="js/app.bundle.js?v=20261023a"></script>
-
-<script src="python/py_engine.js"></script>
-<script>
-(function () {
-  const langSel = document.getElementById('langSel');
-  if (langSel) {
-    langSel.value = 'ts';
-    langSel.onchange = () => PY_ENGINE.setLang(langSel.value);
-  }
-})();
-</script>
 <script src="app-session.js"></script>
 <script src="editor/cm.bundle.js?v=20261022a"></script>
 </body>

@@ -26,7 +26,7 @@ function visualShowcase(nums: number[], target: number): number {
     }
     if (sum >= target) {
       best = Math.max(best, sum);
-      checkpoint("窗口达标", r, sum, best);
+      checkpoint(sum >= target, "窗口达标");
     }
   }
   return best + tree.val + graph.nodes.length;

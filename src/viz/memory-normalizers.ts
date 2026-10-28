@@ -73,16 +73,11 @@ export function normalizeTree(value: Frame | null | undefined): StepAnim {
 }
 
 export function normalizeList(value: Frame | unknown[] | null | undefined) {
-  const pyMeta: Frame | null =
-    isFrame(value) && isFrame(value.__py_meta__)
-      ? value.__py_meta__
-      : null;
   if (Array.isArray(value)) {
-    const total = (pyMeta && typeof pyMeta.total === 'number') ? pyMeta.total : value.length;
+    const total = value.length;
     const out = { kind: 'list', items: value.slice(0, 30).map((x: unknown) => cloneDeepBounded(x, 1)), total };
     if (total > 20) {
       defineHidden(out, '__raw', value);
-      if (pyMeta) defineHidden(out, '__pyMeta', pyMeta);
     }
     return out;
   }
@@ -129,16 +124,12 @@ export function normalizeGraph(value: Frame | null | undefined): StepAnim {
 
 export function snapshot(kind: string, value: unknown, extra?: Record<string, unknown>): StepAnim {
   const recVal = isFrame(value) ? value : null;
-  const pyMeta = recVal && isFrame(recVal.__py_meta__) ? recVal.__py_meta__ : null;
   if (kind === 'stack') {
     const arr = Array.isArray(value) ? value : [];
-    const total = (pyMeta && typeof pyMeta.total === 'number') ? pyMeta.total : arr.length;
+    const total = arr.length;
     let items: unknown[];
     let baseIdx = 0;
-    if (pyMeta && Array.isArray(pyMeta.tail) && total > arr.length) {
-      items = pyMeta.tail.map((x: unknown) => cloneDeepBounded(x, 1));
-      baseIdx = Math.max(0, total - items.length);
-    } else if (arr.length > 40) {
+    if (arr.length > 40) {
       baseIdx = arr.length - 40;
       items = arr.slice(baseIdx).map(x => cloneDeepBounded(x, 1));
     } else {
@@ -148,12 +139,11 @@ export function snapshot(kind: string, value: unknown, extra?: Record<string, un
   }
   if (kind === 'array' || kind === 'heap' || kind === 'queue' || kind === 'uf') {
     const arr = Array.isArray(value) ? value : [];
-    const total = (pyMeta && typeof pyMeta.total === 'number') ? pyMeta.total : arr.length;
+    const total = arr.length;
     const items = arr.slice(0, 40).map(x => cloneDeepBounded(x, 1));
     const out = Object.assign({ kind, items, total }, extra || {});
     if (total > 20) {
       defineHidden(out, '__raw', arr);
-      if (pyMeta) defineHidden(out, '__pyMeta', pyMeta);
     }
     return out;
   }
@@ -180,7 +170,7 @@ export function snapshot(kind: string, value: unknown, extra?: Record<string, un
     const entries: Array<{ k: unknown; v: unknown }> = [];
     let total = 0;
     if (isMapLike(value)) {
-      total = (pyMeta && typeof pyMeta.total === 'number') ? pyMeta.total : value.size;
+      total = value.size;
       for (const [k, v] of value) {
         if (entries.length >= 40) break;
         entries.push({ k: cloneDeepBounded(k, 1), v: cloneDeepBounded(v, 1) });
@@ -203,7 +193,7 @@ export function snapshot(kind: string, value: unknown, extra?: Record<string, un
     const items: unknown[] = [];
     let total = 0;
     if (isSetLike(value)) {
-      total = (pyMeta && typeof pyMeta.total === 'number') ? pyMeta.total : value.size;
+      total = value.size;
       for (const v of value) {
         if (items.length >= 40) break;
         items.push(cloneDeepBounded(v, 1));
@@ -219,15 +209,14 @@ export function snapshot(kind: string, value: unknown, extra?: Record<string, un
     return out;
   }
   if (kind === 'grid') {
-    const totalRows = (pyMeta && typeof pyMeta.totalRows === 'number') ? pyMeta.totalRows : (Array.isArray(value) ? value.length : 0);
-    const totalCols = (pyMeta && typeof pyMeta.totalCols === 'number') ? pyMeta.totalCols : (Array.isArray(value) && Array.isArray(value[0]) ? value[0].length : 0);
+    const totalRows = Array.isArray(value) ? value.length : 0;
+    const totalCols = Array.isArray(value) && Array.isArray(value[0]) ? value[0].length : 0;
     const cloned = Array.isArray(value)
       ? value.slice(0, 30).map(r => Array.isArray(r) ? r.slice(0, 30).map(c => cloneDeepBounded(c, 2)) : r)
       : [[0]];
     const out = Object.assign({ kind, cells: cloned, mark: null, deps: [], totalRows, totalCols }, extra || {});
     if (totalRows > 10 || totalCols > 10) {
       defineHidden(out, '__raw', value);
-      if (pyMeta) defineHidden(out, '__pyMeta', pyMeta);
     }
     return out;
   }
@@ -267,8 +256,14 @@ export function classifyValue(name: string, value: unknown) {
 
     const ifaceDef = matchInterfaceForObject(n, obj);
     const annotType = appState.CURRENT_TS_META.varTypes.get(n);
-    const ifaceName = ifaceDef ? ifaceDef.name : (annotType || obj.__py_cls__ || 'object');
-    const isClass = Boolean((ifaceDef && ifaceDef.isClass) || obj.__py_cls__);
+    const runtimeCls =
+      typeof obj.__cls__ === 'string' && obj.__cls__
+        ? obj.__cls__
+        : obj.constructor && obj.constructor !== Object && obj.constructor.name
+        ? obj.constructor.name
+        : '';
+    const ifaceName = ifaceDef ? ifaceDef.name : (annotType || runtimeCls || 'object');
+    const isClass = Boolean((ifaceDef && ifaceDef.isClass) || runtimeCls);
     const fieldMap = new Map<string, { k: string; v: unknown; declaredType: string | undefined; optional: boolean }>();
     if (ifaceDef) {
       ifaceDef.fields.forEach((f: InterfaceFieldMeta) => {
@@ -447,8 +442,7 @@ function enrichFromNoteTextAccess(
   const propRe = /\b([A-Za-z_$][\w$]*)\s*\.\s*([A-Za-z_$][\w$]*)\b/g;
   let pm;
   while ((pm = propRe.exec(text))) {
-    const rawObj = pm[1] || '', propName = pm[2];
-    const objName: string = (rawObj === 'self' && !ds.self && ds.this) ? 'this' : rawObj;
+    const objName = pm[1] || '', propName = pm[2];
     const objItem = ds[objName];
     if (objItem && (objItem.kind === 'interface' || objItem.kind === 'object')) {
       objItem.hot = propName;
@@ -645,11 +639,7 @@ export function enrichFromNote(ds: Record<string, StepAnim> | null | undefined, 
         }
         if (total > 20) {
           const raw = d.__raw;
-          const pyMeta = d.__pyMeta;
           const getAt = (idx: number) => {
-            if (pyMeta && pyMeta.sparse && pyMeta.sparse.has(idx)) {
-              return cloneDeepBounded(pyMeta.sparse.get(idx), 1);
-            }
             if (typeof raw === 'string') return raw[idx] ?? '';
             if (Array.isArray(raw) && idx < raw.length) return cloneDeepBounded(raw[idx], 1);
             if (d.items && idx < d.items.length) return d.items[idx];
@@ -681,37 +671,30 @@ export function enrichFromNote(ds: Record<string, StepAnim> | null | undefined, 
       const totalRows = typeof d.totalRows === 'number' ? d.totalRows : (d.cells ? d.cells.length : 0);
       const totalCols = typeof d.totalCols === 'number' ? d.totalCols : (d.cells && d.cells[0] ? d.cells[0].length : 0);
       if (totalRows > 10 || totalCols > 10) {
-        const pyMeta = d.__pyMeta;
-        if (pyMeta && Array.isArray(pyMeta.rowIndices) && Array.isArray(pyMeta.colIndices) && Array.isArray(pyMeta.viewCells)) {
-          d.rowIndices = pyMeta.rowIndices;
-          d.colIndices = pyMeta.colIndices;
-          d.viewCells = pyMeta.viewCells;
-        } else {
-          let focusR = Array.isArray(d.mark) ? d.mark[0] : (d.deps && d.deps[0] ? d.deps[0][0] : undefined);
-          let focusC = Array.isArray(d.mark) ? d.mark[1] : (d.deps && d.deps[0] ? d.deps[0][1] : undefined);
-          if (focusR === undefined || focusC === undefined) {
-            const coordPairs: Array<[string, string]> = [['i', 'j'], ['r', 'c'], ['row', 'col'], ['x', 'y']];
-            for (const [rk, ck] of coordPairs) {
-              const rv = safeV[rk];
-              const cv = safeV[ck];
-              if (typeof rv === 'number' && typeof cv === 'number') {
-                focusR = rv;
-                focusC = cv;
-                break;
-              }
+        let focusR = Array.isArray(d.mark) ? d.mark[0] : (d.deps && d.deps[0] ? d.deps[0][0] : undefined);
+        let focusC = Array.isArray(d.mark) ? d.mark[1] : (d.deps && d.deps[0] ? d.deps[0][1] : undefined);
+        if (focusR === undefined || focusC === undefined) {
+          const coordPairs: Array<[string, string]> = [['i', 'j'], ['r', 'c'], ['row', 'col'], ['x', 'y']];
+          for (const [rk, ck] of coordPairs) {
+            const rv = safeV[rk];
+            const cv = safeV[ck];
+            if (typeof rv === 'number' && typeof cv === 'number') {
+              focusR = rv;
+              focusC = cv;
+              break;
             }
           }
-          const rowIndices = selectGridAxisIndices(totalRows, focusR, 8);
-          const colIndices = selectGridAxisIndices(totalCols, focusC, 8);
-          const rawGrid = Array.isArray(d.__raw) ? d.__raw : d.cells;
-          d.rowIndices = rowIndices;
-          d.colIndices = colIndices;
-          d.viewCells = rowIndices.map(r => {
-            const rowCandidate = rawGrid ? rawGrid[r] : undefined;
-            const rowArr: unknown[] = Array.isArray(rowCandidate) ? rowCandidate : [];
-            return colIndices.map(c => cloneDeepBounded(rowArr[c], 2));
-          });
         }
+        const rowIndices = selectGridAxisIndices(totalRows, focusR, 8);
+        const colIndices = selectGridAxisIndices(totalCols, focusC, 8);
+        const rawGrid = Array.isArray(d.__raw) ? d.__raw : d.cells;
+        d.rowIndices = rowIndices;
+        d.colIndices = colIndices;
+        d.viewCells = rowIndices.map(r => {
+          const rowCandidate = rawGrid ? rawGrid[r] : undefined;
+          const rowArr: unknown[] = Array.isArray(rowCandidate) ? rowCandidate : [];
+          return colIndices.map(c => cloneDeepBounded(rowArr[c], 2));
+        });
       }
     }
 
@@ -719,7 +702,6 @@ export function enrichFromNote(ds: Record<string, StepAnim> | null | undefined, 
     delete d.__rawNodes;
     delete d.__rawVals;
     delete d.__nodeMap;
-    delete d.__pyMeta;
     delete d.__extraFocal;
   });
 }
@@ -834,14 +816,40 @@ export function deriveAnimAndNote(
   if (ckptCall && ckptCall[1] !== undefined) {
     const fnName = clean.startsWith('断点') ? '断点' : 'checkpoint';
     const args = splitTopLevel(ckptCall[1]).map(s => s.trim()).filter(Boolean);
+    const hasRuntimeTrigger = Boolean(nextV && '__ckptTriggered' in nextV);
+    const triggered = hasRuntimeTrigger && nextV
+      ? Boolean(nextV.__ckptTriggered)
+      : (args.length === 0 ? true : Boolean(safeEvalExpr(args[0] || '', v)));
+    if (!triggered) {
+      const condExpr = args[0] || 'false';
+      const anim = {
+        type: 'compare',
+        lhs: condExpr,
+        rhs: '',
+        op: '?',
+        lhsVal: 'false',
+        rhsVal: '',
+        result: false,
+      };
+      return { anim, note: `○ ${fnName}(${condExpr})  →  false（条件未满足，跳过检查点）`, isCheckpoint: false };
+    }
     const ckptVals = nextV && Array.isArray(nextV.__ckptVals) ? nextV.__ckptVals.map(String) : null;
-    const argVals = ckptVals && ckptVals.length === args.length
-      ? ckptVals
-      : args.map(a => formatShortVal(safeEvalExpr(a, v)));
-    const anim = { type: 'checkpoint', fn: fnName, args, argVals };
-    const detail = args.length
-      ? args.map((a, idx) => (argVals[idx] !== undefined && argVals[idx] !== a ? `${a}=${argVals[idx]}` : a)).join(', ')
-      : '已命中断点';
+    let msgStr = '';
+    if (ckptVals && ckptVals.length > 0 && ckptVals[0]) {
+      msgStr = ckptVals[0];
+    } else if (args.length >= 2 && args[1]) {
+      const evaluatedMsg = safeEvalExpr(args[1], v);
+      msgStr = evaluatedMsg !== undefined && evaluatedMsg !== null
+        ? String(evaluatedMsg)
+        : args[1].replace(/^['"`]|['"`]$/g, '');
+    }
+    const anim = {
+      type: 'checkpoint',
+      fn: fnName,
+      args: msgStr ? [msgStr] : [],
+      argVals: msgStr ? [msgStr] : [],
+    };
+    const detail = msgStr ? msgStr : '已命中断点';
     return { anim, note: `◉ ${fnName}(${detail})`, isCheckpoint: true };
   }
 
@@ -1022,6 +1030,7 @@ export function getActiveFrame(st: StepSnapshot | Frame | null | undefined) {
       idx: 0,
       total: 1,
       isTop: true,
+      file: st.file || appState.DEBUG_SESSION.entryFile || '',
       fn: 'global',
       label: 'global',
       line: st.line,
@@ -1038,6 +1047,7 @@ export function getActiveFrame(st: StepSnapshot | Frame | null | undefined) {
     idx,
     total: stack.length,
     isTop: idx === topIdx,
+    file: frame.file || st.file || appState.DEBUG_SESSION.entryFile || '',
     fn: frame.fn || 'global',
     label: frame.label || 'global',
     line: frame.line || st.line,
@@ -1045,3 +1055,4 @@ export function getActiveFrame(st: StepSnapshot | Frame | null | undefined) {
     ds: (frame.ds && Object.keys(frame.ds).length ? frame.ds : st.ds) || {},
   };
 }
+

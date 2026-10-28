@@ -16,7 +16,6 @@
   const editor = document.getElementById('editor');
   const fileNameEl = document.getElementById('fileName');
   const sampleSel = document.getElementById('sampleSel');
-  const langSel = document.getElementById('langSel');
   const shareBtn = document.getElementById('btnShareLink');
   const exportWrap = document.getElementById('exportMenuWrap');
 
@@ -29,26 +28,25 @@
   }
 
   function currentLang() {
-    return (typeof LANG !== 'undefined' && LANG === 'python') ? 'python' : 'ts';
+    return 'ts';
   }
 
   function currentName() {
     if (typeof FILE_NAME !== 'undefined' && FILE_NAME) return FILE_NAME;
-    return (fileNameEl && fileNameEl.value) || (currentLang() === 'python' ? 'playground.py' : 'playground.ts');
+    return (fileNameEl && fileNameEl.value) || 'playground.ts';
   }
 
   function snapshot() {
     const lang = currentLang();
     const current = { src: editor ? editor.value : '', name: currentName() };
     if (typeof LANG_BUFFERS !== 'undefined') {
-      LANG_BUFFERS[lang] = current;
+      LANG_BUFFERS.ts = current;
     }
     return {
       v: 1,
       at: Date.now(),
       lang,
-      ts: (typeof LANG_BUFFERS !== 'undefined' && LANG_BUFFERS.ts) ? LANG_BUFFERS.ts : null,
-      python: (typeof LANG_BUFFERS !== 'undefined' && LANG_BUFFERS.python) ? LANG_BUFFERS.python : null,
+      ts: (typeof LANG_BUFFERS !== 'undefined' && LANG_BUFFERS.ts) ? LANG_BUFFERS.ts : current,
     };
   }
 
@@ -72,7 +70,7 @@
       if (!raw) return null;
       const state = JSON.parse(raw);
       if (!state || state.v !== 1) return null;
-      const buf = state.lang === 'python' ? state.python : state.ts;
+      const buf = state.ts;
       if (!buf || typeof buf.src !== 'string') return null;
       return state;
     } catch (_) {
@@ -82,27 +80,16 @@
 
   function applyState(state, source) {
     if (!state) return false;
-    const lang = state.lang === 'python' ? 'python' : 'ts';
-    const buf = lang === 'python' ? state.python : state.ts;
+    const buf = state.ts;
     if (!buf || typeof buf.src !== 'string') return false;
 
     if (typeof LANG_BUFFERS !== 'undefined') {
       LANG_BUFFERS.ts = state.ts || null;
-      LANG_BUFFERS.python = state.python || null;
     }
-    if (typeof PY_ENGINE !== 'undefined' && PY_ENGINE.setLang) {
-      PY_ENGINE.setLang(lang, {
-        src: buf.src,
-        name: buf.name || (lang === 'python' ? 'shared.py' : 'shared.ts'),
-        restoring: true,
-        start: false,
-      });
-    } else {
-      if (typeof LANG !== 'undefined') LANG = lang;
-      if (editor) editor.value = buf.src;
-      if (fileNameEl) fileNameEl.value = buf.name || 'shared.ts';
-      if (typeof updateEditorChrome === 'function') updateEditorChrome();
-    }
+    if (typeof LANG !== 'undefined') LANG = 'ts';
+    if (editor) editor.value = buf.src;
+    if (fileNameEl) fileNameEl.value = buf.name || 'shared.ts';
+    if (typeof updateEditorChrome === 'function') updateEditorChrome();
 
     if (source === 'share') {
       shareMode = true;
@@ -187,13 +174,11 @@
       const state = await unpackState(hash.slice(3));
       let normalized = state;
       if (!state || state.v !== 1) {
-        if (state && (state.src || state.ts || state.python)) {
-          const lang = state.lang === 'python' ? 'python' : 'ts';
+        if (state && (state.src || state.ts)) {
           normalized = {
             v: 1,
-            lang,
-            ts: lang === 'ts' ? { src: state.src || (state.ts && state.ts.src), name: state.name || (state.ts && state.ts.name) } : null,
-            python: lang === 'python' ? { src: state.src || (state.python && state.python.src), name: state.name || (state.python && state.python.name) } : null,
+            lang: 'ts',
+            ts: { src: state.src || (state.ts && state.ts.src), name: state.name || (state.ts && state.ts.name) },
           };
         } else {
           throw new Error('无效的分享数据');
@@ -227,22 +212,7 @@
       qsSample = qs.get('sample') || qs.get('trace');
     } catch (_) { /* ignore */ }
 
-    if (qsLang === 'python' && typeof PY_ENGINE !== 'undefined') {
-      if (qsSample && PY_ENGINE.samples && PY_ENGINE.samples[qsSample]) {
-        PY_ENGINE.setLang('python', {
-          src: PY_ENGINE.samples[qsSample],
-          name: qsSample + '.py',
-          restoring: true,
-          start: true,
-          sampleKey: qsSample,
-        });
-      } else {
-        PY_ENGINE.setLang('python');
-      }
-      ready = true;
-      return;
-    }
-    if (qsLang === 'ts') {
+    if (qsLang === 'ts' || qsSample) {
       try { loadSample(qsSample && SAMPLES[qsSample] ? qsSample : 'showcase'); } catch (_) {}
       ready = true;
       return;
@@ -274,19 +244,13 @@
       setTimeout(scheduleSave, 700);
     });
   }
-  if (langSel) {
-    langSel.addEventListener('change', () => {
-      shareMode = false;
-      setTimeout(scheduleSave, 900);
-    });
-  }
   if (shareBtn) shareBtn.addEventListener('click', copyShareLink);
   window.addEventListener('pagehide', saveNow);
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') saveNow();
   });
   setTimeout(() => {
-    saySafe('ℹ 类型检查：TS 为内置子集检查器（不是完整 tsc）；Python 只做语法检查。点击 SOURCE 旁徽标查看边界。', 'dim');
+    saySafe('ℹ 类型检查：TS 为内置子集检查器（不是完整 tsc）。点击 SOURCE 旁徽标查看边界。', 'dim');
     if (IN_SANDBOX) {
       saySafe('ℹ 沙箱预览模式：不能访问本地会话，编辑内容不会自动保存；分享代码不会自动运行。', 'dim');
     }
@@ -297,7 +261,7 @@
       if (window.parent && window.parent !== window) {
         window.parent.postMessage({
           type: 'ts-playground-ready',
-          lang: (typeof LANG !== 'undefined' ? LANG : 'ts'),
+          lang: 'ts',
           fileName: (typeof FILE_NAME !== 'undefined' ? FILE_NAME : ''),
         }, '*');
       }

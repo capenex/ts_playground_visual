@@ -3,11 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "TypeScript / Python visual playground and step debugger",
+  "description": "TypeScript visual playground and step debugger",
   "scripts": {
     "dev": "node scripts/build-editor.mjs && node server.mjs",
     "start": "node scripts/build-editor.mjs && node server.mjs",
-    "serve": "node python/serve.mjs",
+    "serve": "node server.mjs",
     "test": "node test-pipeline.mjs",
     "lint": "node test-pipeline.mjs",
     "build:editor": "node scripts/build-editor.mjs",
@@ -19,7 +19,6 @@
   "license": "UNLICENSED",
   "dependencies": {
     "@codemirror/lang-javascript": "^6.2.5",
-    "@codemirror/lang-python": "^6.2.1",
     "@codemirror/lint": "^6.9.7",
     "@codemirror/search": "^6.7.2",
     "codemirror": "^6.0.2",

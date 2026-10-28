@@ -26,107 +26,59 @@ export function setClipboardCell(cell: NotebookCell | null): void {
 }
 
 /* ── Default Built-In Notebooks (Matches Reference Screenshot & Visual Demo) ── */
-export function createDefaultNotebooks(lang: "ts" | "python"): [NotebookDocument, ...NotebookDocument[]] {
-  const isPy = lang === "python";
+export function createDefaultNotebooks(_lang: "ts" = "ts"): [NotebookDocument, ...NotebookDocument[]] {
   const c1Id = nextCellId();
   const c2Id = nextCellId();
   const c3Id = nextCellId();
   const c4Id = nextCellId();
   const c5Id = nextCellId();
 
-  const introCells: NotebookCell[] = isPy
-    ? [
-        {
-          id: c1Id,
-          type: "markdown",
-          source:
-            "### 📓 交互式算法笔记本 (Python Kernel)\n支持**跨单元格共享变量上下文**、内联输出以及针对任意单元格的 **🐞 单步可视化调试**（右侧实时联动 `LOCALS` 与 `WATCH` 数据结构画布）。",
-          executionCount: null,
-          status: "idle",
-          output: null,
-          markdownRendered: true,
-        },
-        {
-          id: c2Id,
-          type: "code",
-          source: "a = 1",
-          executionCount: 3,
-          status: "success",
-          output: { logs: [], returnValue: null, error: null },
-        },
-        {
-          id: c3Id,
-          type: "code",
-          source: "print(a)",
-          executionCount: 4,
-          status: "success",
-          output: { logs: ["1"], returnValue: null, error: null },
-        },
-        {
-          id: c4Id,
-          type: "code",
-          source:
-            "# 跨单元格使用上方定义的变量 a，构建数组并在右侧 WATCH 面板观察\nnums = [a, a + 2, a + 4, 9, 13, 18]\nnums.append(25)\nprint(\"当前数组:\", nums)",
-          executionCount: null,
-          status: "idle",
-          output: null,
-        },
-        {
-          id: c5Id,
-          type: "code",
-          source:
-            "# 点击此单元格右上角 🐞 可基于上方已生成的 nums 单步调试二分查找\nl, r = 0, len(nums) - 1\ntarget = 13\nwhile l <= r:\n    mid = (l + r) // 2\n    checkpoint(\"mid\", mid, nums[mid])\n    if nums[mid] == target:\n        print(\"找到目标索引:\", mid)\n        break\n    elif nums[mid] < target:\n        l = mid + 1\n    else:\n        r = mid - 1",
-          executionCount: null,
-          status: "idle",
-          output: null,
-        },
-      ]
-    : [
-        {
-          id: c1Id,
-          type: "markdown",
-          source:
-            "### 📓 交互式算法笔记本 (TypeScript Kernel)\n支持**跨单元格共享变量上下文**、内联输出以及针对任意单元格的 **🐞 单步可视化调试**（右侧实时联动 `LOCALS` 与 `WATCH` 数据结构画布）。",
-          executionCount: null,
-          status: "idle",
-          output: null,
-          markdownRendered: true,
-        },
-        {
-          id: c2Id,
-          type: "code",
-          source: "let a: number = 1;",
-          executionCount: 3,
-          status: "success",
-          output: { logs: [], returnValue: null, error: null },
-        },
-        {
-          id: c3Id,
-          type: "code",
-          source: "console.log(a);",
-          executionCount: 4,
-          status: "success",
-          output: { logs: ["1"], returnValue: null, error: null },
-        },
-        {
-          id: c4Id,
-          type: "code",
-          source:
-            "// 跨单元格使用上方定义的变量 a，构建数组并在右侧 WATCH 面板观察\nconst nums: number[] = [a, a + 2, a + 4, 9, 13, 18];\nnums.push(25);\nconsole.log('当前数组:', nums);",
-          executionCount: null,
-          status: "idle",
-          output: null,
-        },
-        {
-          id: c5Id,
-          type: "code",
-          source:
-            "// 点击此单元格右上角 🐞 可基于上方已生成的 nums 单步调试二分查找\nlet l: number = 0, r: number = nums.length - 1;\nconst target: number = 13;\nwhile (l <= r) {\n  const mid: number = (l + r) >> 1;\n  checkpoint(l, mid, r);\n  if (nums[mid] === target) {\n    console.log('找到目标索引:', mid);\n    break;\n  }\n  if (nums[mid] < target) l = mid + 1;\n  else r = mid - 1;\n}",
-          executionCount: null,
-          status: "idle",
-          output: null,
-        },
-      ];
+  const introCells: NotebookCell[] = [
+    {
+      id: c1Id,
+      type: "markdown",
+      source:
+        "### 📓 交互式算法笔记本 (TypeScript Kernel)\n支持**跨单元格共享变量上下文**、内联输出以及针对任意单元格的 **🐞 单步可视化调试**（右侧实时联动 `LOCALS` 与 `WATCH` 数据结构画布）。",
+      executionCount: null,
+      status: "idle",
+      output: null,
+      markdownRendered: true,
+    },
+    {
+      id: c2Id,
+      type: "code",
+      source: "let a: number = 1;",
+      executionCount: 3,
+      status: "success",
+      output: { logs: [], returnValue: null, error: null },
+    },
+    {
+      id: c3Id,
+      type: "code",
+      source: "console.log(a);",
+      executionCount: 4,
+      status: "success",
+      output: { logs: ["1"], returnValue: null, error: null },
+    },
+    {
+      id: c4Id,
+      type: "code",
+      source:
+        "// 跨单元格使用上方定义的变量 a，构建数组并在右侧 WATCH 面板观察\nconst nums: number[] = [a, a + 2, a + 4, 9, 13, 18];\nnums.push(25);\nconsole.log('当前数组:', nums);",
+      executionCount: null,
+      status: "idle",
+      output: null,
+    },
+    {
+      id: c5Id,
+      type: "code",
+      source:
+        "// 点击此单元格右上角 🐞 可基于上方已生成的 nums 单步调试二分查找\nlet l: number = 0, r: number = nums.length - 1;\nconst target: number = 13;\nwhile (l <= r) {\n  const mid: number = (l + r) >> 1;\n  checkpoint(nums[mid] === target, '找到目标值');\n  if (nums[mid] === target) {\n    console.log('找到目标索引:', mid);\n    break;\n  }\n  if (nums[mid] < target) l = mid + 1;\n  else r = mid - 1;\n}",
+      executionCount: null,
+      status: "idle",
+      output: null,
+    },
+  ];
 
   const u1Id = nextCellId();
   const u2Id = nextCellId();
@@ -134,7 +86,7 @@ export function createDefaultNotebooks(lang: "ts" | "python"): [NotebookDocument
     {
       id: u1Id,
       type: "code",
-      source: isPy ? "x = 10\ny = 20\nx + y" : "const x: number = 10;\nconst y: number = 20;\nx + y",
+      source: "const x: number = 10;\nconst y: number = 20;\nx + y",
       executionCount: null,
       status: "idle",
       output: null,
@@ -153,27 +105,22 @@ export function createDefaultNotebooks(lang: "ts" | "python"): [NotebookDocument
     {
       id: "nb_intro",
       title: "Intro.ipynb",
-      lang,
+      lang: "ts",
       execCounter: 4,
       activeCellId: c2Id,
       debuggingCellId: null,
       cells: introCells,
-      executedHistory: isPy
-        ? [
-            { cellId: c2Id, execCount: 3, source: "a = 1" },
-            { cellId: c3Id, execCount: 4, source: "print(a)" },
-          ]
-        : [
-            { cellId: c2Id, execCount: 3, source: "let a: number = 1;" },
-            { cellId: c3Id, execCount: 4, source: "console.log(a);" },
-          ],
+      executedHistory: [
+        { cellId: c2Id, execCount: 3, source: "let a: number = 1;" },
+        { cellId: c3Id, execCount: 4, source: "console.log(a);" },
+      ],
       lastGlobalVars: { a: 1 },
       lastGlobalDs: {},
     },
     {
       id: "nb_untitled",
       title: "Untitled.ipynb",
-      lang,
+      lang: "ts",
       execCounter: 0,
       activeCellId: u1Id,
       debuggingCellId: null,
@@ -185,27 +132,24 @@ export function createDefaultNotebooks(lang: "ts" | "python"): [NotebookDocument
   ];
 }
 
-export const notebooksByLang: Record<"ts" | "python", { docs: NotebookDocument[]; activeDocId: string }> = {
+export const notebooksByLang: Record<"ts", { docs: NotebookDocument[]; activeDocId: string }> = {
   ts: { docs: [], activeDocId: "nb_intro" },
-  python: { docs: [], activeDocId: "nb_intro" },
 };
 
-export function ensureLangNotebooks(lang: "ts" | "python") {
-  const key = lang === "python" ? "python" : "ts";
-  if (!notebooksByLang[key].docs.length) {
-    const docs = createDefaultNotebooks(key);
-    notebooksByLang[key].docs = docs;
-    notebooksByLang[key].activeDocId = docs[0].id;
+export function ensureLangNotebooks(_lang: "ts" = "ts") {
+  if (!notebooksByLang.ts.docs.length) {
+    const docs = createDefaultNotebooks("ts");
+    notebooksByLang.ts.docs = docs;
+    notebooksByLang.ts.activeDocId = docs[0].id;
   }
-  return notebooksByLang[key];
+  return notebooksByLang.ts;
 }
 
 export function getActiveNotebook(): NotebookDocument {
-  const lang = appState.LANG === "python" ? "python" : "ts";
-  const store = ensureLangNotebooks(lang);
+  const store = ensureLangNotebooks("ts");
   let doc = store.docs.find((d) => d.id === store.activeDocId) ?? store.docs[0];
   if (!doc) {
-    doc = createDefaultNotebooks(lang)[0];
+    doc = createDefaultNotebooks("ts")[0];
     store.docs.push(doc);
   }
   store.activeDocId = doc.id;
@@ -419,9 +363,9 @@ export function serializeNotebookToIpynbJson(doc: NotebookDocument): string {
     nbformat_minor: 5,
     metadata: {
       kernelspec: {
-        display_name: doc.lang === "python" ? "Python 3 (Pyodide)" : "TypeScript (Playground Visual)",
-        language: doc.lang === "python" ? "python" : "typescript",
-        name: doc.lang,
+        display_name: "TypeScript (Playground Visual)",
+        language: "typescript",
+        name: "ts",
       },
     },
     cells: doc.cells.map((c) => ({
@@ -459,7 +403,7 @@ export function serializeNotebookToIpynbJson(doc: NotebookDocument): string {
 export function parseIpynbJsonToDocument(
   jsonText: string,
   fileName: string,
-  lang: "ts" | "python"
+  lang: "ts" = "ts"
 ): NotebookDocument | null {
   try {
     const data = JSON.parse(jsonText);
@@ -605,7 +549,7 @@ export const TS_NOTEBOOK_TUTORIALS: TsNotebookTutorialItem[] = [
           "let totalLatency: number = 0;\n\n" +
           "for (let i: number = 0; i < cluster.length; i++) {\n" +
           "  const item: ServiceNode = cluster[i];\n" +
-          "  checkpoint(i, item.id, item.latencyMs);\n" +
+          '  checkpoint(item.healthy && item.latencyMs < 100, "发现低延迟健康节点");\n' +
           "  if (item.healthy && item.latencyMs < 100) {\n" +
           "    fastHosts.push(item.host);\n" +
           "    totalLatency = totalLatency + item.latencyMs;\n" +
@@ -692,7 +636,7 @@ export const TS_NOTEBOOK_TUTORIALS: TsNotebookTutorialItem[] = [
           '  const key: string = st === JobStatus.Completed ? "Completed" : "Failed";\n' +
           "  const prev: number = stats.get(key) || 0;\n" +
           "  stats.set(key, prev + 1);\n" +
-          "  checkpoint(i, key, stats.get(key));\n" +
+          '  checkpoint(st === JobStatus.Failed, "检测到失败任务");\n' +
           "}\n\n" +
           'console.log("成功任务数:", stats.get("Completed"), "失败任务数:", stats.get("Failed"));',
       },
@@ -776,7 +720,7 @@ export const TS_NOTEBOOK_TUTORIALS: TsNotebookTutorialItem[] = [
           "  const cost: number = requests[i];\n" +
           "  const res: string = gatewayLimiter.requestToken(cost);\n" +
           "  verdicts.push(res);\n" +
-          "  checkpoint(cost, res, gatewayLimiter.remaining());\n" +
+          '  checkpoint(res !== "NORMAL_OK", "触发突发池或限流");\n' +
           "}\n\n" +
           'console.log("流量裁决序列:", verdicts.join(" -> "));',
       },
@@ -862,7 +806,7 @@ export const TS_NOTEBOOK_TUTORIALS: TsNotebookTutorialItem[] = [
           "  visited.add(v);\n" +
           "  stack.push(v);\n" +
           "  treeSum = treeSum + v;\n" +
-          "  checkpoint(i, v, treeSum);\n" +
+          '  checkpoint(treeSum > 100, "节点累计和超百");\n' +
           "}\n\n" +
           'console.log("采样节点累计和:", treeSum, "去重集合大小:", visited.size);',
       },
@@ -946,7 +890,7 @@ export const TS_NOTEBOOK_TUTORIALS: TsNotebookTutorialItem[] = [
           '  timeline.push("2:before-await");\n' +
           "  const quota: number = await computeStage(2);\n" +
           '  timeline.push("4:after-await-" + quota);\n' +
-          "  checkpoint(timeline, quota);\n" +
+          '  checkpoint(quota > 200, "异步流水线恢复");\n' +
           '  return timeline.join(" -> ");\n' +
           "}\n\n" +
           "runAsyncPipeline()",
@@ -1007,7 +951,7 @@ export const TS_NOTEBOOK_TUTORIALS: TsNotebookTutorialItem[] = [
           "  if (pairVal > windowBest) {\n" +
           "    windowBest = pairVal;\n" +
           "  }\n" +
-          "  checkpoint(l, r, pairVal, windowBest);\n" +
+          '  checkpoint(pairVal >= 15, "双指针配对和达标");\n' +
           "  l = l + 1;\n" +
           "  r = r - 1;\n" +
           "}\n" +
@@ -1027,7 +971,7 @@ export const TS_NOTEBOOK_TUTORIALS: TsNotebookTutorialItem[] = [
           "for (let i: number = 1; i < rows; i++) {\n" +
           "  for (let j: number = 1; j < cols; j++) {\n" +
           "    dp[i][j] = dp[i - 1][j] + dp[i][j - 1];\n" +
-          "    checkpoint(i, j, dp[i][j]);\n" +
+          '    checkpoint(dp[i][j] >= 6, "网格路径数过半");\n' +
           "  }\n" +
           "}\n\n" +
           'console.log("网格右下角不同路径总数:", dp[rows - 1][cols - 1]);',

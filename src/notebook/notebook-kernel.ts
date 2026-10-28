@@ -70,7 +70,7 @@ export function typecheckNotebookCellTS(
   doc: NotebookDocument,
   cell: NotebookCell
 ): Array<{ line: number; code: string; message: string }> {
-  if (appState.LANG === "python" || cell.type !== "code") return [];
+  if (cell.type !== "code") return [];
   const rawCell = String(cell.source || "").replace(/\r\n?/g, "\n");
   if (!rawCell.trim()) return [];
   const { preambleLines, combinedTs } = buildTsTypecheckContext(doc, cell);
@@ -141,88 +141,6 @@ export function syncNotebookGlobalsToSidePanel(doc = getActiveNotebook()): void 
     doc.execCounter > 0 ? `Notebook [${doc.execCounter}] · 全局上下文` : "Notebook 就绪",
     ""
   );
-}
-
-export async function runPythonNotebookCell(
-  doc: NotebookDocument,
-  cell: NotebookCell,
-  rawSrc: string,
-  advanceToNext: boolean
-): Promise<boolean> {
-  try {
-    const payload = await PY_ENGINE.run(rawSrc, {
-      trace: false,
-      useNotebookKernel: true,
-      timeLimit: 6,
-    });
-    if (payload.syntaxError) {
-      const err = payload.syntaxError;
-      const msg = `SyntaxError (第 ${err.line || 1} 行): ${err.msg || "语法错误"}`;
-      cell.status = "error";
-      cell.output = { logs: [], returnValue: null, error: msg, errorLine: err.line || 1 };
-      say(`✗ [${doc.title}] ${msg}`, "err");
-      uiHooks.renderNotebookUI();
-      return false;
-    }
-    doc.execCounter += 1;
-    cell.executionCount = doc.execCounter;
-    const logs = payload.stdout ? String(payload.stdout).replace(/\n$/, "").split("\n") : [];
-    const rvHydrated = PY_ENGINE.hydrate(payload.returnValue);
-    const hasReturn = rvHydrated !== undefined && rvHydrated !== null && payload.entryExpr;
-    const rvStr = hasReturn ? PY_ENGINE.fmtReturn(rvHydrated) : null;
-
-    if (payload.meta) {
-      PY_ENGINE.applyMeta(payload.meta);
-    }
-
-    const vRaw = PY_ENGINE.hydrateVars(payload.finalVars || {});
-    const v = PY_ENGINE.cloneVars(vRaw);
-    const ds: Record<string, StepAnim> = {};
-    Object.keys(vRaw).forEach((name) => {
-      const d = classifyValue(name, vRaw[name]);
-      if (d) ds[name] = d;
-    });
-    populateInterfaceSchemas(ds);
-    doc.lastGlobalVars = v;
-    doc.lastGlobalDs = ds;
-
-    if (payload.error) {
-      cell.status = "error";
-      cell.output = {
-        logs,
-        returnValue: null,
-        error: payload.error,
-        errorLine: payload.errorLine || 1,
-      };
-      say(`✗ [Cell ${cell.executionCount}] 第 ${payload.errorLine || 1} 行报错: ${payload.error}`, "err");
-    } else {
-      cell.status = "success";
-      cell.output = {
-        logs,
-        returnValue: rvStr,
-        error: null,
-      };
-      doc.executedHistory = doc.executedHistory.filter((h) => h.cellId !== cell.id);
-      doc.executedHistory.push({ cellId: cell.id, execCount: cell.executionCount, source: rawSrc });
-      say(
-        `✓ [Cell ${cell.executionCount}] 执行完成` +
-          (logs.length ? ` · 输出: ${logs.join(" | ")}` : "") +
-          (rvStr ? `  →  ${rvStr}` : ""),
-        "ok"
-      );
-    }
-    syncNotebookGlobalsToSidePanel(doc);
-    if (advanceToNext && !payload.error) {
-      moveFocusToNextCell(doc, cell.id, true);
-    }
-    uiHooks.renderNotebookUI();
-    return !payload.error;
-  } catch (err: unknown) {
-    cell.status = "error";
-    cell.output = { logs: [], returnValue: null, error: (err instanceof Error && err.message) || String(err) };
-    uiHooks.renderNotebookUI();
-    return false;
-  }
 }
 
 export function runTsNotebookCell(
@@ -486,102 +404,7 @@ export async function runNotebookCell(cellId?: string, advanceToNext = false): P
   cell.status = "running";
   uiHooks.renderNotebookUI();
 
-  if (appState.LANG === "python") {
-    return runPythonNotebookCell(doc, cell, rawSrc, advanceToNext);
-  }
   return runTsNotebookCell(doc, cell, rawSrc, advanceToNext);
-}
-
-export async function debugPythonNotebookCell(
-  doc: NotebookDocument,
-  cell: NotebookCell,
-  rawSrc: string
-): Promise<boolean> {
-  cell.status = "debugging";
-  doc.debuggingCellId = cell.id;
-  uiHooks.renderNotebookUI();
-  try {
-    say(`… 正在录制单元格 [${cell.executionCount || " "}] 的 Python 单步轨迹…`, "dim");
-    const payload = await PY_ENGINE.run(rawSrc, {
-      trace: true,
-      useNotebookKernel: true,
-      maxSteps: 2000,
-      timeLimit: 6,
-    });
-    if (payload.syntaxError) {
-      const err = payload.syntaxError;
-      cell.status = "error";
-      doc.debuggingCellId = null;
-      cell.output = {
-        logs: [],
-        returnValue: null,
-        error: `SyntaxError (第 ${err.line || 1} 行): ${err.msg || "语法错误"}`,
-        errorLine: err.line || 1,
-      };
-      uiHooks.renderNotebookUI();
-      return false;
-    }
-    doc.execCounter += 1;
-    cell.executionCount = doc.execCounter;
-    const sourceLines = rawSrc.split("\n");
-    PY_ENGINE.applyMeta(payload.meta || {});
-    payload.__returnValueHydrated = PY_ENGINE.hydrate(payload.returnValue);
-    payload.__callExpr = payload.entryExpr || "";
-    const steps = PY_ENGINE.buildSteps(payload, sourceLines);
-
-    resetTraceState();
-    appState.TRACE = { title: `${doc.title} · Cell [${cell.executionCount}]`, code: sourceLines, steps };
-    appState.DEBUG_SESSION = {
-      active: true,
-      finished: true,
-      crashed: Boolean(payload.error),
-      error: payload.error || null,
-      errorLine: payload.errorLine || -1,
-      returnValue: payload.__returnValueHydrated,
-      compiledFn: null,
-      originalLines: sourceLines,
-      callExpr: payload.entryExpr || "undefined",
-    };
-
-    const vRaw = PY_ENGINE.hydrateVars(payload.finalVars || {});
-    const v = PY_ENGINE.cloneVars(vRaw);
-    const ds: Record<string, StepAnim> = {};
-    Object.keys(vRaw).forEach((name) => {
-      const d = classifyValue(name, vRaw[name]);
-      if (d) ds[name] = d;
-    });
-    populateInterfaceSchemas(ds);
-    doc.lastGlobalVars = v;
-    doc.lastGlobalDs = ds;
-
-    const logs = payload.stdout ? String(payload.stdout).replace(/\n$/, "").split("\n") : [];
-    cell.output = {
-      logs,
-      returnValue:
-        payload.__returnValueHydrated !== undefined && payload.__returnValueHydrated !== null && payload.entryExpr
-          ? PY_ENGINE.fmtReturn(payload.__returnValueHydrated)
-          : null,
-      error: payload.error || null,
-      errorLine: payload.errorLine || null,
-    };
-
-    appState.cur = 0;
-    appState.SELECTED_FRAME_IDX = null;
-    appState.watched = new Set();
-    appState.SEEN_VARS_EVER = new Set();
-    appState.layoutSpan = Object.create(null);
-    initWatchedVars();
-    uiHooks.renderPicker();
-    uiHooks.renderStatic(appState.cur, false);
-    uiHooks.renderNotebookUI();
-    say(`✓ [Cell ${cell.executionCount}] 已进入单步调试模式（共 ${steps.length} 步，可使用底部控制栏逐步观察）`, "ok");
-    return true;
-  } catch (_err: unknown) {
-    cell.status = "error";
-    doc.debuggingCellId = null;
-    uiHooks.renderNotebookUI();
-    return false;
-  }
 }
 
 export function debugTsNotebookCell(
@@ -730,9 +553,6 @@ export async function debugNotebookCell(cellId?: string): Promise<boolean> {
   uiHooks.stopAuto();
   uiHooks.clearFlyLayer();
 
-  if (appState.LANG === "python") {
-    return debugPythonNotebookCell(doc, cell, rawSrc);
-  }
   return debugTsNotebookCell(doc, cell, rawSrc);
 }
 
@@ -751,11 +571,6 @@ export async function restartNotebookKernel(silent = false): Promise<void> {
     c.status = "idle";
     c.output = null;
   });
-  if (appState.LANG === "python" && typeof PY_ENGINE !== "undefined") {
-    try {
-      await PY_ENGINE.run("", { resetKernel: true, trace: false });
-    } catch (_) {}
-  }
   resetTraceState();
   syncNotebookGlobalsToSidePanel(doc);
   uiHooks.renderNotebookUI();

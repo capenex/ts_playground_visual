@@ -4,6 +4,51 @@
 
 ---
 
+## [v0.8.0] - 2026-10-27 · 架构纯粹化与门禁模块化：移除 Python 子系统 (ADR-001) & 重构 `test-pipeline.mjs`
+
+### 📜 架构决策记录（Architecture Decision Record）
+
+#### ADR-001：废弃并物理移除 Python (Pyodide) 子系统，收敛为单语言 TypeScript 可视化引擎
+- **状态（Status）**：已批准并完成实施（2026-10-27）
+- **背景与问题（Context）**：
+  1. **架构异构与工程割裂**：TypeScript 主引擎已完成 7 层单向无环图（DAG）、`strict + noUncheckedIndexedAccess`、`0 any / 0 ! / 0 as` 的全量模块化重构；而早期加入的 Python 子系统（`/python/py_engine.js`、`py_worker.js`、`py_bridge.py`）仍为游离于 TypeScript 编译管线之外的原生 JS + Python 脚本，通过 `window.PY_ENGINE` 全局桥在 16 个核心 TS 模块中硬编码了 `if (appState.LANG === 'python')` 分支。
+  2. **双引擎能力代差**：TypeScript 引擎具备 AST 级静态类型诊断（`typecheckTS`）、确定性虚拟事件循环（`async/await` / `Promise` / `setTimeout` 可视化）、6 门交互式进阶课程与按需惰性步进求值；Python 模式仅能借助外部 CDN 的 Pyodide WASM（~15MB）做全量轨迹预跑与 `ast.parse` 语法检查，且强依赖 `SharedArrayBuffer`（`COOP/COEP` 跨源隔离响应头）。
+  3. **后续演进路线冲突**：项目后续核心迭代聚焦于 **TypeScript 多文件模块联动运行（Multi-file `import/export`）** 与 **1080p 60fps 视频导出深度优化**。若继续维持双语言架构，VFS 模块解析、多文件标签页状态机及快照归一化层均需承受双倍耦合成本。
+- **评估选项（Options Considered）**：
+  - *方案 A（全面弃用并移除 Python 子系统）*：物理删除 `/python/*`、`/examples/python/*` 与 `src/samples/py-samples.ts`，清理全部 16 个 TS 模块中的双语言分支，全仓收敛为纯 TypeScript 引擎。
+  - *方案 B（重构 Python 桥接层为强类型 TS 插件）*：耗费高昂工程预算重写 `py_engine.js` 与 Worker 协议，但仍无法消除 Pyodide ~15MB 外部 CDN 依赖与能力代差。
+  - *方案 C（冻结现状）*：保留历史技术债，持续拖慢后续 TS 多文件运行与视频导出迭代。
+- **最终决策（Decision）**：采用 **方案 A**，果断割舍 Python 子系统，将项目定位收敛为纯粹的 **TypeScript Playground VISUAL (Visual TypeScript Engine)**。
+- **得失权衡（Consequences — Gains vs. Losses）**：
+  - **【得 · 架构与工程收益（Gains）】**：
+    1. **核心架构纯粹化与认知负载减半**：物理删除 11 个 Python 相关文件，清理 16 个 TS 模块中的双语言条件分支（`runner.ts`、`notebook-kernel.ts`、`memory-normalizers.ts`、`format.ts` 等），全仓收敛为 **33 个纯 TypeScript 模块（21 个纯逻辑实现模块 + 1 个环境声明模块 100% 0 DOM / 0 Storage）**，消除双套栈帧与堆快照格式转换隐患。
+    2. **包体积缩减与 100% 离线自包含**：移除 `@codemirror/lang-python` 后，`editor/cm.bundle.js` 体积由 **668 KB 降至 528 KB（直降 140 KB / -21%）**；彻底摆脱对外部 jsDelivr Pyodide CDN（~15MB WASM）及服务器 `COOP/COEP` 跨源隔离响应头的依赖，任何静态托管平台开箱即用。
+    3. **为后续核心特性扫清障碍**：VFS、脚本标签栏与编译器管线不再受 `.py` 分支掣肘，可将 100% 研发精力投入 **TypeScript 多文件模块联动步进** 与 **WebM 录制渲染管线优化**。
+  - **【失 · 功能牺牲与迁移代价（Losses & Trade-offs）】**：
+    1. **丧失双语言教学与算法刷题受众**：彻底失去在浏览器端编写、运行和单步可视化调试 `.py` 脚本与 Python Jupyter Notebook 的能力；习惯使用 Python 刷题（LeetCode 风格）或希望在同一沙箱内做「TS vs. Python 同题对比教学」的用户将无法使用 Python 模式。
+    2. **丧失 Python 标准库开箱即用的算法表达力**：Python 内置的 `collections.deque`、`Counter`、`defaultdict`、`heapq`、`bisect` 以及简洁切片/列表推导式在算法原型验证上比 TypeScript 更简短；移除后，用户必须使用 TypeScript 手写或基于数组/Map 构造对应数据结构。
+    3. **前期研发沉没成本核销**：早期投入精力攻克的 `py_bridge.py` AST 行级追踪器、`SharedArrayBuffer + Int32Array` Worker 同步阻塞通信机制、Python `dict`/`set`/`tuple`/类实例堆图归一化规则，以及 6 个精心编写的 Python 算法示例（`quickstart.py`、`bfs.py`、`binary_search.py`、`lcs.py`、`structures.py`、`classes.py`）全部作废。
+    4. **向后兼容性折损**：历史上生成的包含 `lang=python` 的分享链接或本地保存的 `.py` 工作区缓存不再可执行（仅能由 `app-session.js` 与 `vfs-store.ts` 自动降级回退至 TypeScript 默认工作区，避免页面白屏崩溃）。
+
+---
+
+### 🧪 测试架构模块化拆分（`test-pipeline.mjs` ➔ `/tests/01..05`）与门禁漏洞根治
+- **领域模块化拆分（2,529 行单体 ➔ 52 行总控 + 5 大领域套件）**：
+  - 新增 `/tests/harness.mjs`（共享 VM 沙箱与词法级源码清洗器），并将原 2,529 行的 `test-pipeline.mjs` 按架构分层拆分为：
+    - `tests/01-static-gates.test.mjs`（10 大架构/类型安全静态门禁 + `tsc --noEmit` + HTML/沙箱完整性）
+    - `tests/02-compiler-typecheck.test.mjs`（TS 转译、插桩、静态类型检查器与 10 个内置 TS 示例）
+    - `tests/03-runtime-debug.test.mjs`（`runOnce` 死循环看门狗、按需单步调试、调用栈深度、`checkpoint()` 与虚拟事件循环）
+    - `tests/04-viz-editor.test.mjs`（数据结构分类、焦点窗口切片、`VIZ` 渲染、`hl` 高亮、CM6 Bundle 与 WebM 封装）
+    - `tests/05-workspace-nb.test.mjs`（`/workspace` VFS、`fs` 垫片、多标签页、Notebook 内核与 6 门 TS 进阶课程）
+- **根治静态门禁盲区与架构违规**：
+  - **修复模板插值与正则字面量扫描盲区**：升级 `stripCommentsAndStrings` 支持跳过正则字面量 `/.../` 并递归扫描模板字符串插值 `${...}`，捕获并消除了 `src/runtime/event-loop.ts`（第 401–405 行）隐藏在 `${...}` 内的 4 处 `as` 断言。
+  - **实现 21 个纯逻辑实现模块 100% 零 DOM / 零 Storage 引用（Gate 9 全量覆盖）**：将 `StepVizElement extends HTMLElement` 迁至 `src/ui/dom.ts`；在 `src/runtime/vfs-store.ts` 中引入 `registerVfsStorageAdapter` 依赖注入接口，将 `localStorage` 读写下沉至 `src/ui/vfs.ts`。
+  - **新增 Gate 10（Python 零残留与 33 模块精确数量门禁）**：强制校验 `/python`、`/examples/python`、`src/samples/py-samples.ts` 物理清零，全仓精确 33 个 TS 模块且 `PY_ENGINE` / `__py_meta__` / `__py_cls__` 出现次数为 `0`。
+  - **无浏览器环境 E2E 冒烟兜底**：为 `smoke-e2e.mjs` 增加容器无 Chrome 二进制时的 Headless VM 冒烟回退路径。
+- **核心文档全量同步**：同步更新 `ARCHITECTURE.md`、`README.md`、`USER_GUIDE.md`、`SYNTAX_REFERENCE.md`、`DEPLOY.md`、`CHANGELOG.md`。
+
+---
+
 ## [v0.7.0] - 2026-10-27 · 数据与视图彻底分离（34 模块 DAG）与 100% 零 `as` 类型断言治理
 
 ### 🏗️ 五阶段数据与 UI 视图分离重构（17 ➔ 34 模块）

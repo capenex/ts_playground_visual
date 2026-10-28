@@ -4,7 +4,6 @@
 import * as stateMod from './state';
 import * as domMod from './ui/dom';
 import * as tsSamplesMod from './samples/ts-samples';
-import * as pySamplesMod from './samples/py-samples';
 import * as commentsMod from './compiler/comments';
 import * as transpileMod from './compiler/transpile';
 import * as instrumenterMod from './compiler/instrumenter';
@@ -28,7 +27,6 @@ const allExports = {
   ...stateMod,
   ...domMod,
   ...tsSamplesMod,
-  ...pySamplesMod,
   ...commentsMod,
   ...transpileMod,
   ...instrumenterMod,

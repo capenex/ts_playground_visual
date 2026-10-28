@@ -4,7 +4,6 @@
 import type {
   Diag,
   InterfaceSchemaMeta,
-  PyEngineBridge,
   StepAnim,
   StepSnapshot,
 } from './types';
@@ -54,7 +53,7 @@ export interface WebCodecsVideoFrameConstructor {
 
 export interface PlaygroundCMBridge {
   syncFromApp(state: {
-    language: 'ts' | 'python';
+    language: 'ts';
     text: string;
     lines: string[];
     declared: Set<string>;
@@ -130,7 +129,6 @@ export interface VfsClientApi {
 }
 
 declare global {
-  var PY_ENGINE: PyEngineBridge;
   var VideoEncoder: WebCodecsVideoEncoderConstructor | undefined;
   var VideoFrame: WebCodecsVideoFrameConstructor | undefined;
 
@@ -148,7 +146,7 @@ declare global {
   var runNotebookCell: ((cellId?: string, advanceToNext?: boolean) => Promise<boolean>) | undefined;
   var debugNotebookCell: ((cellId?: string) => Promise<boolean>) | undefined;
   var renderNotebookUI: ((focusActiveEditor?: boolean) => void) | undefined;
-  var openSampleScriptTab: ((title: string, source: string, lang?: 'ts' | 'python') => void) | undefined;
+  var openSampleScriptTab: ((title: string, source: string, lang?: 'ts') => void) | undefined;
   var syncActiveScriptTabFromFileName: ((newFileName: string) => void) | undefined;
   var syncActiveScriptTabSource: ((src: string) => void) | undefined;
   var importNotebookFromJson: ((jsonText: string, fileName: string) => boolean) | undefined;
@@ -165,7 +163,6 @@ declare global {
     __cmView?: unknown;
     __CM_CURSOR_LINE?: number;
     __BOOT_DEFERRED?: boolean;
-    onNotebookLangChanged?: (nextLang: 'ts' | 'python') => void;
     CURRENT_TS_META?: {
       interfaces: Map<string, InterfaceSchemaMeta>;
       varTypes: Map<string, string>;

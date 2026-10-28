@@ -5,7 +5,7 @@ function debugCrashDemo(nums: number[], limit: number): number {
     const x = nums[i];
     acc = acc + x;
     history.push(acc);
-    checkpoint("检查累加值", i, x, acc);
+    checkpoint(acc > 10, "检查累加值");
     if (acc > limit) {
       throw new Error("运行时异常: 累加值 acc(" + acc + ") 超过安全阈值 " + limit);
     }

@@ -25,7 +25,7 @@ function findChromeBinary() {
   for (const p of candidates) {
     if (existsSync(p)) return p;
   }
-  return 'google-chrome';
+  return null;
 }
 
 const chrome = findChromeBinary();
@@ -62,7 +62,44 @@ function cdp(ws, method, params = {}, sessionId) {
 cdp._id = 0;
 cdp._wait = new Map();
 
+async function runHeadlessVmSmoke() {
+  const { createSandboxedApp } = await import('./tests/harness.mjs');
+  const { sandbox, elements } = await createSandboxedApp();
+  let failed = 0;
+  const check = (name, cond, extra) => {
+    if (cond) console.log('OK  ' + name);
+    else {
+      console.log('FAIL ' + name + (extra !== undefined ? ' :: ' + String(extra) : ''));
+      failed++;
+    }
+  };
+
+  sandbox.loadSample('showcase');
+  check('editor chrome rendered with showcase', elements.get('editor').value.includes('function visualShowcase'));
+  check('auto debug on boot (no step numbers in #cnt)', elements.get('cnt').textContent.includes('调试'));
+  sandbox.runOnce();
+  check('run ok', /运行完成/.test(elements.get('log').textContent) && /29/.test(elements.get('log').textContent));
+  sandbox.startDebug(0);
+  check('debug mode started on demand (1st step only)', sandbox.TRACE.steps.length === 1);
+  sandbox.stepNext();
+  sandbox.stepNext();
+  sandbox.stepNext();
+  check('stepping computes steps on the spot', sandbox.TRACE.steps.length === 4 && sandbox.cur === 3);
+  sandbox.runToNextCheckpoint();
+  check('runToNextCheckpoint stops at checkpoint', Boolean(sandbox.TRACE.steps[sandbox.cur] && sandbox.TRACE.steps[sandbox.cur].isCheckpoint));
+  sandbox.loadSample('debug_crash');
+  for (let i = 0; i < 6; i++) sandbox.runToNextCheckpoint();
+  check('runtime error halts debug session and renders RUNTIME ERROR capsule', Boolean(sandbox.DEBUG_SESSION.crashed));
+
+  console.log(failed ? `\n${failed} FAILED` : '\nall passed (headless VM smoke)');
+  process.exitCode = failed ? 1 : 0;
+}
+
 async function main() {
+  if (!chrome) {
+    await runHeadlessVmSmoke();
+    return;
+  }
   if (existsSync(profile)) rmSync(profile, { recursive: true, force: true });
 
   const proc = spawn(

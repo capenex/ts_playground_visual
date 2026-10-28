@@ -29,7 +29,7 @@ async function runAsyncDemo(): Promise<string> {
   timeline.push("2:before-await");
   const score: number = await fetchScore(3, 20);
   timeline.push("6:after-await-" + score);
-  checkpoint(timeline, score);
+  checkpoint(score > 0, "异步等待完成");
   return timeline.join(" -> ");
 }
 

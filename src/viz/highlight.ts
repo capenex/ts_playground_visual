@@ -4,9 +4,9 @@
 import { blankStrings, isIdentPart, RESERVED_WORDS } from "../compiler/comments";
 import { stripTypes } from "../compiler/transpile";
 import { collectNames } from "../compiler/instrumenter";
-import { typecheckTS } from "../compiler/type-checker";
-import { inferRuntimeTsType } from "../compiler/tc-types";
-import { appState, esc, registerUiHooks } from "../state";
+import { typecheckTS, typecheckWorkspaceModules, normalizeWorkspaceModulePath } from "../compiler/type-checker";
+import { inferRuntimeTsType, formatFunctionTypeSignature } from "../compiler/tc-types";
+import { appState, esc, registerUiHooks, uiHooks } from "../state";
 import { Diag, StepAnim } from "../types";
 import { editor, gutterEl, highlightEl, hoverTipEl } from "../ui/dom";
 import { isMapLike, isSetLike, isRecord, formatShortVal } from "../utils/format";
@@ -27,7 +27,6 @@ let DECLARED_NAMES_CACHE: { src: string | null; names: Set<string> } = { src: nu
 /* All names the current buffer actually declares: const/let/var (incl. destructuring),
    function & arrow params, loop/catch bindings, function/class/interface/type names. */
 export function collectDeclaredNames(src: string | null | undefined): Set<string> {
-  if (appState.LANG === 'python') return PY_ENGINE.collectDeclared(src);
   const text = String(src == null ? '' : src);
   if (DECLARED_NAMES_CACHE.src === text) return DECLARED_NAMES_CACHE.names;
 
@@ -47,6 +46,15 @@ export function collectDeclaredNames(src: string | null | undefined): Set<string
       if (im[1]) names.add(im[1]);
     }
   }
+  const esmImpRe = /^\s*import\s+(?:type\s+)?(.+?)\s+from\s+['"][^'"]+['"]/gm;
+  while ((m = esmImpRe.exec(text))) {
+    const clause = (m[1] || '').replace(/\btype\b/g, ' ');
+    const idRe = /\b([A-Za-z_$][\w$]*)\b/g;
+    let im: RegExpExecArray | null;
+    while ((im = idRe.exec(clause))) {
+      if (im[1] && im[1] !== 'as') names.add(im[1]);
+    }
+  }
   const typeRe = /\b(?:function|class|interface|type|enum)\s+([A-Za-z_$][\w$]*)/g;
   const rawClean = blankStrings(text);
   while ((m = typeRe.exec(rawClean))) { if (m[1]) names.add(m[1]); }
@@ -58,18 +66,14 @@ export function collectDeclaredNames(src: string | null | undefined): Set<string
 }
 
 export function collectHighlightBuiltins(declared: Set<string>): Set<string> {
-  const source: Iterable<string> = appState.LANG === 'python'
-    ? ((typeof PY_ENGINE !== 'undefined' && PY_ENGINE.builtins) || [])
-    : HIGHLIGHT_BUILTINS;
   const out = new Set<string>();
-  Array.from(source).forEach((name: string) => {
+  Array.from(HIGHLIGHT_BUILTINS).forEach((name: string) => {
     if (!declared.has(name)) out.add(name);
   });
   return out;
 }
 
 export function hl(t: string, declared?: Set<string> | null): string {
-  if (appState.LANG === 'python') return PY_ENGINE.hl(t, declared);
   const re = /(\/\/.*$)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)|\b(function|const|let|var|new|class|extends|typeof|instanceof|import|export|from|async|await|interface|type|as|satisfies)\b|\b(for|if|else|return|while|do|switch|case|break|continue|try|catch|finally|throw|yield)\b|\b(number|string|boolean|void|any|unknown|never|Math|Map|Set|Array|Object|JSON|Number|String|Boolean|Promise|Record|Error)\b|\b(true|false|null|undefined|\d+(?:\.\d+)?)\b|(\b[A-Za-z_$][\w$]*)(?=\s*\()|(?<=\.)([A-Za-z_$][\w$]*)\b|([{,][ \t]*)([A-Za-z_$][\w$]*)(?=[ \t]*:)|(^[ \t]*)([A-Za-z_$][\w$]*)(?=[ \t]*:)|\b([A-Za-z_$][\w$]*)\b|(===|!==|>=|<=|=>|&&|\|\||\+\+|--)/g;
   let out = '', last = 0, m;
   while ((m = re.exec(t))) {
@@ -122,7 +126,6 @@ export function findExprSpan(line: string, target: string, fromIndex = 0) {
 }
 
 export function hlActiveLine(rawLine: string, anim?: StepAnim | null, declared?: Set<string> | null): string {
-  if (appState.LANG === 'python') return PY_ENGINE.hlActiveLine(rawLine, anim, declared);
   if (!anim) return hl(rawLine, declared);
   const h = (s: string) => hl(s, declared);
 
@@ -231,14 +234,23 @@ export function updateEditorChrome() {
   liveErrors.forEach((d: Diag) => { if (d && d.line >= 1 && !liveByLine.has(d.line)) liveByLine.set(d.line, d); });
   const st = appState.TRACE.steps.length ? appState.TRACE.steps[appState.cur] : null;
   const activeFrame = st ? getActiveFrame(st) : null;
-  const curLine = activeFrame ? activeFrame.line : (st ? st.line : -1);
-  const showVizOnLine = Boolean(st && (!activeFrame || activeFrame.isTop) && (st.anim || st.error) && curLine >= 1 && curLine <= lines.length);
+  const stepFile = (activeFrame && activeFrame.file) || (st && st.file) || appState.DEBUG_SESSION.entryFile || '';
+  const isMultiModule = Boolean(
+    appState.TRACE.moduleSources && Object.keys(appState.TRACE.moduleSources).length > 1
+  );
+  const currentEditorFile = normalizeWorkspaceModulePath(appState.FILE_NAME || appState.ACTIVE_DEBUG_FILE || '');
+  const viewingStepFile =
+    !isMultiModule || !stepFile || !currentEditorFile || stepFile === currentEditorFile;
+  const curLine = viewingStepFile ? (activeFrame ? activeFrame.line : (st ? st.line : -1)) : -1;
+  const showVizOnLine = Boolean(
+    viewingStepFile && st && (!activeFrame || activeFrame.isTop) && (st.anim || st.error) && curLine >= 1 && curLine <= lines.length
+  );
 
   const errorBadge = (lineNum: number) => {
     const d = liveByLine.get(lineNum);
     if (!d) return '';
     const tip = (d.code ? d.code + ': ' : '') + (d.message || '');
-    return '<span class="ln-err-badge" title="' + esc(tip) + '">✗ ' + esc(d.code || (appState.LANG === 'python' ? 'PY' : 'TS')) + '</span>';
+    return '<span class="ln-err-badge" title="' + esc(tip) + '">✗ ' + esc(d.code || 'TS') + '</span>';
   };
 
   if (window.PlaygroundCM) {
@@ -279,14 +291,39 @@ export function updateEditorChrome() {
   syncScroll();
 }
 
-let LIVE_TYPE_CACHE: { src: string | null; diags: Diag[] } = { src: null, diags: [] };
+let LIVE_TYPE_CACHE: { key: string | null; diags: Diag[] } = { key: null, diags: [] };
 export function liveTypeDiags(src: string | null | undefined): Diag[] {
-  if (appState.LANG === 'python') return appState.PY_DIAGS;
   const text = String(src == null ? '' : src);
-  if (LIVE_TYPE_CACHE.src === text) return LIVE_TYPE_CACHE.diags;
+  const currentFile = normalizeWorkspaceModulePath(appState.FILE_NAME || 'main.ts');
+  const hasModuleSyntax = /^\s*(?:import|export)\b/m.test(text);
+  let fileMap = new Map<string, string>();
+  let mapSig = '';
+  if (hasModuleSyntax) {
+    try {
+      fileMap = uiHooks.collectWorkspaceFileMap();
+      const keys = Array.from(fileMap.keys()).sort();
+      if (keys.length > 0) {
+        mapSig = keys.map(k => `${k}:${(fileMap.get(k) || '').length}`).join('|');
+      }
+    } catch (_) {
+      fileMap = new Map<string, string>();
+    }
+  }
+  const cacheKey = `${currentFile}::${appState.STRICT_TS ? 1 : 0}::${mapSig}::${text}`;
+  if (LIVE_TYPE_CACHE.key === cacheKey) return LIVE_TYPE_CACHE.diags;
   let diags: Diag[] = [];
-  try { diags = typecheckTS(text, appState.STRICT_TS) || []; } catch (_) { diags = []; }
-  LIVE_TYPE_CACHE = { src: text, diags };
+  try {
+    if (hasModuleSyntax && fileMap.size > 0) {
+      fileMap.set(currentFile, text);
+      const { diagnostics } = typecheckWorkspaceModules(currentFile, text, fileMap, appState.STRICT_TS);
+      diags = diagnostics.filter((d: Diag) => !d.file || d.file === currentFile);
+    } else {
+      diags = typecheckTS(text, appState.STRICT_TS) || [];
+    }
+  } catch (_) {
+    diags = [];
+  }
+  LIVE_TYPE_CACHE = { key: cacheKey, diags };
   return diags;
 }
 
@@ -366,10 +403,7 @@ export function hoverInfoFor(name: string | null | undefined) {
   let ds = (frame && frame.ds) || st.ds || {};
   let frameLabel = frame ? frame.label : 'global';
   const found = (obj: object, key: string) => Object.prototype.hasOwnProperty.call(obj, key);
-  let lookupKey = name;
-  if (name === 'self' && !found(v, 'self') && !ds.self && (found(v, 'this') || ds.this)) {
-    lookupKey = 'this';
-  }
+  const lookupKey = name;
   if (!found(v, lookupKey) && !ds[lookupKey]) {
     const globalFrame = st.callStack && st.callStack[0];
     if (globalFrame && globalFrame.v && (found(globalFrame.v, lookupKey) || (globalFrame.ds && globalFrame.ds[lookupKey]))) {
@@ -386,7 +420,7 @@ export function hoverInfoFor(name: string | null | undefined) {
     (d && d.interfaceName && d.interfaceName !== 'object' ? d.interfaceName : null);
   const kindStr = d
     ? (d.kind === 'interface' && d.isClass ? (d.interfaceName ? 'class · ' + d.interfaceName : 'class') : d.kind)
-    : (declaredType || inferRuntimeTsType(val));
+    : (typeof val === 'function' ? formatFunctionTypeSignature(lookupKey, val) : (declaredType || inferRuntimeTsType(val)));
   return {
     name,
     val,
@@ -399,14 +433,14 @@ export function hoverInfoFor(name: string | null | undefined) {
 
 export type HoverInfo = NonNullable<ReturnType<typeof hoverInfoFor>>;
 
-export function formatHoverVal(val: unknown): string {
+export function formatHoverVal(val: unknown, varName?: string): string {
   if (val === undefined) return 'undefined';
   if (val === null) return 'null';
-  if (typeof val === 'function') return 'ƒ ' + (val.name || 'function');
+  if (typeof val === 'function') return formatFunctionTypeSignature(varName || val.name || '', val);
   if (typeof val === 'string') return JSON.stringify(val.length > 140 ? val.slice(0, 138) + '…' : val);
   if (typeof val === 'number' || typeof val === 'boolean') return String(val);
   if (Array.isArray(val)) {
-    const head: string = val.slice(0, 12).map(formatHoverVal).join(', ');
+    const head: string = val.slice(0, 12).map((item: unknown) => formatHoverVal(item)).join(', ');
     return '[' + head + (val.length > 12 ? ', … (' + val.length + ' 项)' : '') + ']';
   }
   if (isMapLike(val)) return 'Map(' + val.size + ')';
@@ -423,7 +457,7 @@ export function formatHoverVal(val: unknown): string {
    and would otherwise print "[object Object]" for nested tree/graph nodes. */
 export function hoverValueSummary(info: HoverInfo) {
   const d = info.d;
-  if (!d) return formatHoverVal(info.val);
+  if (!d) return formatHoverVal(info.val, info.name);
   const short = formatShortVal;
   if (Array.isArray(d.items)) {
     const total = typeof d.total === 'number' ? d.total : d.items.length;

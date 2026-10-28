@@ -696,6 +696,15 @@ export function createTypeInferEngine(ctx: TypeCheckContext, evalEngine: TypeEva
         const argTypes = args.map(a => inferType(a, lineNum));
 
         if (callee === 'checkpoint' || callee === '断点') {
+          if (args.length > 2) {
+            addDiag(lineNum, 'TS2554', `"${callee}" 最多接收 2 个参数 (cond?: boolean, msg?: string)，但传入了 ${args.length} 个`);
+          }
+          if (argTypes[0] && argTypes[0] !== 'any' && !isTsAssignable(argTypes[0], 'boolean')) {
+            addDiag(lineNum, 'TS2345', `"${callee}" 的第 1 个参数（触发条件）类型 "${argTypes[0]}" 不能赋给类型 "boolean"`);
+          }
+          if (argTypes[1] && argTypes[1] !== 'any' && !isTsAssignable(argTypes[1], 'string')) {
+            addDiag(lineNum, 'TS2345', `"${callee}" 的第 2 个参数（打印消息）类型 "${argTypes[1]}" 不能赋给类型 "string"`);
+          }
           return 'void';
         }
         if (/^Math\.(max|min|abs|floor|ceil|round|pow|sqrt|trunc|sign)$/.test(callee)) {

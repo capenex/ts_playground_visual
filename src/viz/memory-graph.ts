@@ -1,7 +1,8 @@
 /* ================================================================
    Call Stack & Data Structure Card Renderers (src/viz/memory-graph.ts)
    ================================================================ */
-import { appState, esc, registerUiHooks } from "../state";
+import { formatFunctionTypeSignature } from "../compiler/tc-types";
+import { appState, esc, registerUiHooks, uiHooks } from "../state";
 import { Frame, StepSnapshot } from "../types";
 import { $, callStackBarEl, callStackHintEl, cntEl, consoleEl, pickEl, slotsEl, varsEl } from "../ui/dom";
 import { isRecord, safeJSONStringify } from "../utils/format";
@@ -29,22 +30,31 @@ export function renderCallStack(st: StepSnapshot | Frame | null | undefined) {
   }
   const stack: Frame[] = (Array.isArray(st.callStack) && st.callStack.length)
     ? st.callStack
-    : [{ fn: 'global', label: 'global', line: st.line, v: st.v || {}, ds: st.ds || {} }];
+    : [{ file: st.file, fn: 'global', label: 'global', line: st.line, v: st.v || {}, ds: st.ds || {} }];
   const active = getActiveFrame(st);
   const activeIdx = active ? active.idx : 0;
   const activeIsTop = active ? active.isTop : true;
   const activeLabel = active ? active.label : 'global';
+  const isMultiModule = Boolean(
+    appState.TRACE.moduleSources && Object.keys(appState.TRACE.moduleSources).length > 1
+  );
   callStackBarEl.innerHTML = stack.map((f: Frame, fIdx: number) => {
     const isSel = fIdx === activeIdx;
     const isTop = fIdx === stack.length - 1;
     const cls = 'cs-crumb' + (isSel ? ' active' : '') + (isTop ? ' is-top' : '') + (!isTop && isSel ? ' inspecting' : '');
     const sep = fIdx > 0 ? '<span class="cs-sep">▸</span>' : '';
-    return sep + `<button type="button" class="${cls}" data-frame-idx="${fIdx}" title="切换到栈帧 ${esc(f.label)} (第 ${f.line || st.line} 行)">${esc(f.label)}</button>`;
+    const shortFile = f.file ? (f.file.split('/').pop() || f.file) : '';
+    const displayLabel = isMultiModule && shortFile && !String(f.label || '').startsWith('<module:')
+      ? `[${shortFile}] ${f.label}`
+      : String(f.label || 'global');
+    const titlePrefix = f.file ? `${f.file} · ` : '';
+    return sep + `<button type="button" class="${cls}" data-frame-idx="${fIdx}" title="切换到栈帧 ${esc(titlePrefix + String(f.label || 'global'))} (第 ${f.line || st.line} 行)">${esc(displayLabel)}</button>`;
   }).join('');
   if (callStackHintEl) {
+    const activeFileTag = isMultiModule && active && active.file ? ` (${active.file}) ` : '';
     callStackHintEl.textContent = activeIsTop
-      ? `栈深 ${stack.length} · 点击栈帧可切换`
-      : `正在查看栈帧 ${activeIdx + 1}/${stack.length}: ${activeLabel}`;
+      ? `栈深 ${stack.length}${activeFileTag} · 点击栈帧可切换`
+      : `正在查看栈帧 ${activeIdx + 1}/${stack.length}${activeFileTag}: ${activeLabel}`;
   }
 }
 
@@ -509,6 +519,85 @@ export function updateControlButtons() {
   if (autoBtn) autoBtn.disabled = atEnd;
 }
 
+function formatTypeTokensHtml(typeExpr: string): string {
+  return esc(typeExpr).replace(/\b([A-Za-z_$][\w$]*)\b/g, '<span class="ft-type">$1</span>');
+}
+
+export function formatFnTypeHtml(sig: string): string {
+  const s = String(sig || '() => any').trim();
+  let d = 0;
+  let arrowIdx = -1;
+  for (let i = 0; i < s.length - 1; i++) {
+    const ch = s[i];
+    if (ch === '(' || ch === '<' || ch === '[') d++;
+    else if (ch === ')' || ch === '>' || ch === ']') d = Math.max(0, d - 1);
+    else if (d === 0 && ch === '=' && s[i + 1] === '>') {
+      arrowIdx = i;
+      break;
+    }
+  }
+  if (arrowIdx < 0) {
+    return formatTypeTokensHtml(s);
+  }
+  const left = s.slice(0, arrowIdx).trim();
+  const right = s.slice(arrowIdx + 2).trim();
+
+  let genPrefix = '';
+  let paramsPart = left;
+  if (left.startsWith('<')) {
+    let gd = 0;
+    for (let i = 0; i < left.length; i++) {
+      if (left[i] === '<') gd++;
+      else if (left[i] === '>') {
+        gd--;
+        if (gd === 0) {
+          genPrefix = left.slice(0, i + 1);
+          paramsPart = left.slice(i + 1).trim();
+          break;
+        }
+      }
+    }
+  }
+
+  let paramsInner = paramsPart;
+  if (paramsPart.startsWith('(') && paramsPart.endsWith(')')) {
+    paramsInner = paramsPart.slice(1, -1);
+  }
+  const paramList: string[] = [];
+  let pd = 0;
+  let last = 0;
+  for (let i = 0; i < paramsInner.length; i++) {
+    const ch = paramsInner[i];
+    if (ch === '(' || ch === '<' || ch === '[' || ch === '{') pd++;
+    else if (ch === ')' || ch === '>' || ch === ']' || ch === '}') pd = Math.max(0, pd - 1);
+    else if (pd === 0 && ch === ',') {
+      paramList.push(paramsInner.slice(last, i).trim());
+      last = i + 1;
+    }
+  }
+  const tail = paramsInner.slice(last).trim();
+  if (tail) paramList.push(tail);
+
+  const formattedParams = paramList
+    .map(p => {
+      const m = p.match(/^(\.\.\.)?([A-Za-z_$][\w$]*)(\?)?\s*:\s*([\s\S]+)$/);
+      if (m && m[2] && m[4]) {
+        const dots = m[1] ? `<span class="ft-punct">...</span>` : '';
+        const opt = m[3] ? `<span class="ft-punct">?</span>` : '';
+        return `${dots}<span class="ft-param">${esc(m[2])}</span>${opt}<span class="ft-punct">: </span>${formatTypeTokensHtml(m[4].trim())}`;
+      }
+      return formatTypeTokensHtml(p);
+    })
+    .join('<span class="ft-punct">, </span>');
+
+  const genHtml = genPrefix ? formatTypeTokensHtml(genPrefix) : '';
+  return (
+    `${genHtml}<span class="ft-punct">(</span>${formattedParams}<span class="ft-punct">)</span>` +
+    ` <span class="ft-arrow">=&gt;</span> ` +
+    formatTypeTokensHtml(right)
+  );
+}
+
 export function renderStatic(i: number, withAnim = false) {
   hideHoverTip();
   const st = appState.TRACE.steps[i];
@@ -527,13 +616,34 @@ export function renderStatic(i: number, withAnim = false) {
 
   renderCallStack(st);
   const activeFrame = getActiveFrame(st);
+  const targetFile = (activeFrame && activeFrame.file) || st.file || appState.DEBUG_SESSION.entryFile || '';
+  if (
+    targetFile &&
+    appState.TRACE.moduleSources &&
+    Object.keys(appState.TRACE.moduleSources).length > 1
+  ) {
+    appState.ACTIVE_DEBUG_FILE = targetFile;
+    uiHooks.switchToScriptFile(targetFile);
+  }
   const v = (activeFrame && activeFrame.v) || st.v || {};
   const prevV = (prevSt && prevSt.v) || {};
   const primEntries = Object.keys(v).map(k => {
     const val = v[k];
     if (val !== null && typeof val === 'object') return '';
-    const changed = Boolean(activeFrame && activeFrame.isTop && prevSt && prevV[k] !== val);
-    return '<div class="pair' + (changed ? ' changed' : '') + '" data-var="' + esc(k) + '"><span class="k">' + esc(k) + '</span><span class="v">' + esc(val) + '</span></div>';
+    const isFn = typeof val === 'function';
+    const prevVal = prevV[k];
+    const changed = Boolean(
+      activeFrame &&
+      activeFrame.isTop &&
+      prevSt &&
+      (isFn
+        ? typeof prevVal !== 'function' || formatFunctionTypeSignature(k, prevVal) !== formatFunctionTypeSignature(k, val)
+        : prevVal !== val)
+    );
+    const valHtml = isFn
+      ? '<span class="v fn-type">' + formatFnTypeHtml(formatFunctionTypeSignature(k, val)) + '</span>'
+      : '<span class="v">' + esc(val) + '</span>';
+    return '<div class="pair' + (changed ? ' changed' : '') + '" data-var="' + esc(k) + '"><span class="k">' + esc(k) + '</span>' + valHtml + '</div>';
   }).join('');
   if (primEntries) {
     varsEl.innerHTML = primEntries;
@@ -547,15 +657,18 @@ export function renderStatic(i: number, withAnim = false) {
   }
 
   let animDesc = '';
+  const fileTag = st.file && appState.TRACE.moduleSources && Object.keys(appState.TRACE.moduleSources).length > 1
+    ? `${st.file} · `
+    : '';
   if (st.error) {
-    animDesc = `<div class="anim-desc" style="color:var(--red)">runtime error · 已停止在报错行 (第 ${st.line} 行)</div>`;
+    animDesc = `<div class="anim-desc" style="color:var(--red)">runtime error · 已停止在报错行 (${esc(fileTag)}第 ${st.line} 行)</div>`;
   } else if (st.anim) {
-    if (st.anim.type === 'assign') animDesc = `<div class="anim-desc">assign · ${esc(st.anim.from)} → ${esc(st.anim.to)} = ${esc(st.anim.val)}</div>`;
-    else if (st.anim.type === 'compare') animDesc = `<div class="anim-desc">compare · ${esc(st.anim.lhs)} ${esc(st.anim.op)} ${esc(st.anim.rhs)} ⇒ ${esc(st.anim.result)}</div>`;
-    else if (st.anim.type === 'call') animDesc = `<div class="anim-desc">call · ${esc(st.anim.fn)}(${esc((st.anim.argVals || []).join(', '))})</div>`;
-    else if (st.anim.type === 'checkpoint') animDesc = `<div class="anim-desc" style="color:var(--cyan)">checkpoint · 检查点已命中 (${esc((st.anim.argVals || []).join(', ') || '无参数')})</div>`;
+    if (st.anim.type === 'assign') animDesc = `<div class="anim-desc">${esc(fileTag)}assign · ${esc(st.anim.from)} → ${esc(st.anim.to)} = ${esc(st.anim.val)}</div>`;
+    else if (st.anim.type === 'compare') animDesc = `<div class="anim-desc">${esc(fileTag)}compare · ${esc(st.anim.lhs)} ${esc(st.anim.op)} ${esc(st.anim.rhs)} ⇒ ${esc(st.anim.result)}</div>`;
+    else if (st.anim.type === 'call') animDesc = `<div class="anim-desc">${esc(fileTag)}call · ${esc(st.anim.fn)}(${esc((st.anim.argVals || []).join(', '))})</div>`;
+    else if (st.anim.type === 'checkpoint') animDesc = `<div class="anim-desc" style="color:var(--cyan)">${esc(fileTag)}checkpoint · ${esc((st.anim.argVals && st.anim.argVals[0]) ? st.anim.argVals[0] : '检查点已命中')}</div>`;
   }
-  consoleEl.innerHTML = '<div><span class="p">›</span>' + esc(st.note || '') + '</div>' + animDesc;
+  consoleEl.innerHTML = '<div><span class="p">›</span>' + (fileTag ? '<span class="dim">[' + esc(st.file || '') + '] </span>' : '') + esc(st.note || '') + '</div>' + animDesc;
 
   if (st.error) {
     cntEl.textContent = '✗ 运行时报错';

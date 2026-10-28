@@ -20,7 +20,8 @@ const MIME = {
   '.jpeg': 'image/jpeg',
   '.webm': 'video/webm',
   '.ico': 'image/x-icon',
-  '.py': 'text/plain; charset=utf-8',
+  '.ts': 'text/plain; charset=utf-8',
+  '.ipynb': 'application/json; charset=utf-8',
   '.wasm': 'application/wasm',
   '.zip': 'application/zip',
 };

@@ -22,6 +22,17 @@ export const VFS_NODES = new Map<string, VfsNode>();
 
 const vfsListeners = new Set<() => void>();
 
+export interface VfsStorageAdapter {
+  load: () => string | null;
+  save: (rawJson: string) => void;
+}
+
+let vfsStorageAdapter: VfsStorageAdapter | null = null;
+
+export function registerVfsStorageAdapter(adapter: VfsStorageAdapter): void {
+  vfsStorageAdapter = adapter;
+}
+
 export function subscribeVfsStore(listener: () => void): () => void {
   vfsListeners.add(listener);
   return () => {
@@ -101,9 +112,8 @@ export function ensureVfsInitialized(): void {
   vfsBootInitialized = true;
   VFS_NODES.clear();
   try {
-    if (typeof localStorage !== "undefined") {
-      localStorage.removeItem("ts-visual-vfs-v1");
-      const raw = localStorage.getItem(VFS_STORAGE_KEY);
+    if (vfsStorageAdapter) {
+      const raw = vfsStorageAdapter.load();
       if (raw) {
         const parsed: unknown = JSON.parse(raw);
         if (Array.isArray(parsed)) {
@@ -129,12 +139,12 @@ export function ensureVfsInitialized(): void {
 
 export function persistVfsToClientStorage(): void {
   try {
-    if (typeof localStorage === "undefined") return;
+    if (!vfsStorageAdapter) return;
     const customNodes: VfsNode[] = [];
     VFS_NODES.forEach((node) => {
       customNodes.push(node);
     });
-    localStorage.setItem(VFS_STORAGE_KEY, JSON.stringify(customNodes));
+    vfsStorageAdapter.save(JSON.stringify(customNodes));
   } catch (_) {
     /* ignore storage errors */
   }

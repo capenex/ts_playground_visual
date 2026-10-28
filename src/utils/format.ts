@@ -75,13 +75,13 @@ export function cloneDeepBounded(val: unknown, depth = 0): unknown {
   }
   const out: Record<string, unknown> = {};
   const clsName =
-    typeof val.__py_cls__ === 'string' && val.__py_cls__
-      ? val.__py_cls__
+    typeof val.__cls__ === 'string' && val.__cls__
+      ? val.__cls__
       : val.constructor && val.constructor !== Object && val.constructor.name
       ? val.constructor.name
       : '';
   if (clsName) {
-    defineHidden(out, '__py_cls__', clsName);
+    defineHidden(out, '__cls__', clsName);
   }
   Object.keys(val).slice(0, 20).forEach(k => {
     out[k] = cloneDeepBounded(val[k], depth + 1);

@@ -2,7 +2,11 @@
    Centralized DOM Element Registry & Console View Adapter (src/ui/dom.ts)
    ================================================================ */
 import { registerUiHooks, uiHooks } from '../state';
-import type { ConsoleLogEntry, StepVizElement } from '../types';
+import type { ConsoleLogEntry } from '../types';
+
+export interface StepVizElement extends HTMLElement {
+  __vizHtml?: string;
+}
 
 export const $ = <T extends HTMLElement = HTMLElement>(id: string): T =>
   document.getElementById<T>(id);

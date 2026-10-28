@@ -16,6 +16,7 @@ import {
   createTypeCheckContext,
   extractTsInterfaceMetadata,
   FnSigInfo,
+  formatFnSigInfoToTypeString,
   inferLiteralType,
   isTsAssignable,
   normalizeTsType,
@@ -29,10 +30,12 @@ import {
 } from "./tc-types";
 import { createTypeEvalEngine, TypeEvalEngine } from "./tc-eval";
 import { createTypeInferEngine, TypeInferEngine } from "./tc-infer";
+import { buildModuleGraph, ModuleGraphResult, ModuleNode } from "./module-graph";
 
 export * from "./tc-types";
 export * from "./tc-eval";
 export * from "./tc-infer";
+export * from "./module-graph";
 
 let _TYPECHECK_CACHE: { src: string | null; strict: boolean | null; diags: Diag[] } = { src: null, strict: null, diags: [] };
 
@@ -444,13 +447,22 @@ export function checkPass2Statements(
     if (!trimmed || trimmed.startsWith('@')) continue;
 
     if (/^import\b/.test(trimmed)) {
-      const impMatch = trimmed.replace(/;$/, '').trim().match(/^import\s+([\s\S]+?)\s+from\s+(['"])([^'"]+)\2\s*$/);
+      const impMatch = trimmed.replace(/;$/, '').trim().match(/^import\s+(?:type\s+)?([\s\S]+?)\s+from\s+(['"])([^'"]+)\2\s*$/);
       if (impMatch) {
         const clause = (impMatch[1] || '').trim();
         const modSpec = (impMatch[3] || '').trim();
         const isFsRoot = modSpec === 'fs' || modSpec === 'node:fs';
         const isFsPromises = modSpec === 'fs/promises' || modSpec === 'node:fs/promises';
         const modType = isFsPromises ? '__FsPromises__' : (isFsRoot ? '__FsModule__' : 'any');
+        const isAlreadyLinked = (localName: string) =>
+          !isFsRoot &&
+          !isFsPromises &&
+          (env.has(localName) ||
+            fns.has(localName) ||
+            interfaces.has(localName) ||
+            ctx.typeAliases.has(localName) ||
+            ctx.genericTypeAliases.has(localName) ||
+            ctx.enumsSet.has(localName));
         const registerNamedBindings = (braceStr: string) => {
           const inner = braceStr.replace(/^\{|\}$/g, '').trim();
           if (!inner) return;
@@ -461,24 +473,56 @@ export function checkPass2Statements(
             const imported = asM && asM[1] ? asM[1] : spec;
             const local = asM && asM[2] ? asM[2] : spec;
             if (!/^[A-Za-z_$][\w$]*$/.test(local)) return;
+            if (isAlreadyLinked(local)) return;
             const bType = (isFsRoot && imported === 'promises') ? '__FsPromises__' : 'any';
             env.set(local, { type: bType, isConst: true, line: lineNum, declaredType: bType });
           });
         };
         const nsM = clause.match(/^\*\s+as\s+([A-Za-z_$][\w$]*)$/);
         if (nsM && nsM[1]) {
-          env.set(nsM[1], { type: modType, isConst: true, line: lineNum, declaredType: modType });
+          if (!isAlreadyLinked(nsM[1])) {
+            env.set(nsM[1], { type: modType, isConst: true, line: lineNum, declaredType: modType });
+          }
         } else if (clause.startsWith('{') && clause.endsWith('}')) {
           registerNamedBindings(clause);
         } else {
           const defNamedM = clause.match(/^([A-Za-z_$][\w$]*)\s*,\s*(\{[\s\S]+\})$/);
           if (defNamedM && defNamedM[1] && defNamedM[2]) {
-            env.set(defNamedM[1], { type: modType, isConst: true, line: lineNum, declaredType: modType });
+            if (!isAlreadyLinked(defNamedM[1])) {
+              env.set(defNamedM[1], { type: modType, isConst: true, line: lineNum, declaredType: modType });
+            }
             registerNamedBindings(defNamedM[2]);
           } else if (/^[A-Za-z_$][\w$]*$/.test(clause)) {
-            env.set(clause, { type: modType, isConst: true, line: lineNum, declaredType: modType });
+            if (!isAlreadyLinked(clause)) {
+              env.set(clause, { type: modType, isConst: true, line: lineNum, declaredType: modType });
+            }
           }
         }
+      }
+      continue;
+    }
+
+    if (/^export\s+(?:type\s+)?\{[^}]*\}(?:\s+from\s+['"][^'"]+['"])?\s*;?$/.test(trimmed)) {
+      const braceM = trimmed.match(/^export\s+(type\s+)?\{([^}]*)\}(?:\s+from\s+['"]([^'"]+)['"])?/);
+      if (braceM && braceM[2] !== undefined && !braceM[3]) {
+        splitTopLevel(braceM[2]).forEach(rawItem => {
+          const item = rawItem.trim().replace(/^type\s+/, '').trim();
+          if (!item) return;
+          const asM = item.match(/^([A-Za-z_$][\w$]*)\s+as\s+([A-Za-z_$][\w$]*)$/);
+          const local = asM && asM[1] ? asM[1] : item;
+          if (/^[A-Za-z_$][\w$]*$/.test(local) && !isKnownIdentifier(local)) {
+            addDiag(lineNum, 'TS2304', `找不到要导出的名称 "${local}"`);
+          }
+        });
+      }
+      continue;
+    }
+
+    if (/^export\s+default\b/.test(trimmed) && !/^export\s+default\s+(?:async\s+)?(?:function|class|abstract\s+class)\b/.test(trimmed)) {
+      const defExpr = trimmed.replace(/^export\s+default\s+/, '').replace(/;\s*$/, '').trim();
+      if (defExpr) {
+        const defT = inferType(defExpr, lineNum);
+        env.set('__default_export__', { type: defT, isConst: true, line: lineNum, declaredType: defT });
       }
       continue;
     }
@@ -1394,6 +1438,27 @@ export function checkPass2Statements(
   }
 }
 
+function syncContextFunctionTypesToMeta(ctx: TypeCheckContext): void {
+  const meta = appState.CURRENT_TS_META;
+  if (!meta) return;
+  if (!meta.fnTypes) meta.fnTypes = new Map<string, string>();
+  const fnTypes = meta.fnTypes;
+  const varTypes = meta.varTypes;
+  ctx.fns.forEach((sig, fnKey) => {
+    if (!fnKey || fnKey.includes('.') || fnKey.startsWith('<')) return;
+    const formatted = formatFnSigInfoToTypeString(sig);
+    fnTypes.set(fnKey, formatted);
+    varTypes.set(fnKey, formatted);
+  });
+  ctx.env.forEach((info, vName) => {
+    const candidate = info.declaredType || info.type;
+    if (candidate && candidate.includes('=>')) {
+      fnTypes.set(vName, candidate);
+      varTypes.set(vName, candidate);
+    }
+  });
+}
+
 export function typecheckTS(src: string, strict = appState.STRICT_TS) {
   extractTsInterfaceMetadata(src);
   if (!strict) return [];
@@ -1407,6 +1472,7 @@ export function typecheckTS(src: string, strict = appState.STRICT_TS) {
 
   collectPass1Declarations(ctx, evalEngine, inferEngine);
   checkPass2Statements(ctx, evalEngine, inferEngine);
+  syncContextFunctionTypesToMeta(ctx);
 
   const { diagnostics } = ctx;
 
@@ -1424,6 +1490,231 @@ export function typecheckTS(src: string, strict = appState.STRICT_TS) {
     _TYPECHECK_CACHE = { src, strict, diags: diagnostics.map(d => ({ ...d })) };
   }
   return diagnostics;
+}
+
+function linkSymbolFromDependency(
+  targetCtx: TypeCheckContext,
+  depCtx: TypeCheckContext,
+  depNode: ModuleNode,
+  importedName: string,
+  localName: string,
+  lineNum: number
+): void {
+  const expSpec = depNode.exports.find(e => e.exported === importedName);
+  const srcName = expSpec ? expSpec.local : importedName;
+
+  // Copy supporting nominal types referenced by exported functions/classes
+  depCtx.interfaces.forEach((shape, ifaceName) => {
+    if (!targetCtx.interfaces.has(ifaceName)) {
+      targetCtx.interfaces.set(ifaceName, new Map(shape));
+    }
+  });
+  depCtx.interfaceTypeParams.forEach((tParams, ifaceName) => {
+    if (!targetCtx.interfaceTypeParams.has(ifaceName)) {
+      targetCtx.interfaceTypeParams.set(ifaceName, [...tParams]);
+    }
+  });
+  depCtx.classParents.forEach((parent, clsName) => {
+    if (!targetCtx.classParents.has(clsName)) {
+      targetCtx.classParents.set(clsName, parent);
+    }
+  });
+  depCtx.typeAliases.forEach((aliasBody, aliasName) => {
+    if (!targetCtx.typeAliases.has(aliasName)) {
+      targetCtx.typeAliases.set(aliasName, aliasBody);
+    }
+  });
+  depCtx.genericTypeAliases.forEach((gInfo, aliasName) => {
+    if (!targetCtx.genericTypeAliases.has(aliasName)) {
+      targetCtx.genericTypeAliases.set(aliasName, { ...gInfo });
+    }
+  });
+  depCtx.enumsSet.forEach(en => targetCtx.enumsSet.add(en));
+  depCtx.enumMembers.forEach((mems, en) => {
+    if (!targetCtx.enumMembers.has(en)) targetCtx.enumMembers.set(en, new Set(mems));
+  });
+  depCtx.enumValueTypes.forEach((vts, en) => {
+    if (!targetCtx.enumValueTypes.has(en)) targetCtx.enumValueTypes.set(en, new Set(vts));
+  });
+  // Also copy class methods `ClassName.methodName`
+  depCtx.fns.forEach((sig, fnKey) => {
+    if (fnKey.includes('.') && !targetCtx.fns.has(fnKey)) {
+      targetCtx.fns.set(fnKey, { ...sig });
+    }
+  });
+
+  if (depCtx.fns.has(srcName)) {
+    const fnSig = depCtx.fns.get(srcName);
+    if (fnSig) {
+      targetCtx.fns.set(localName, { ...fnSig, name: localName });
+    }
+  }
+  if (depCtx.interfaces.has(srcName)) {
+    const shape = depCtx.interfaces.get(srcName);
+    if (shape) {
+      targetCtx.interfaces.set(localName, new Map(shape));
+      const tParams = depCtx.interfaceTypeParams.get(srcName);
+      if (tParams) targetCtx.interfaceTypeParams.set(localName, [...tParams]);
+      if (depCtx.abstractClasses.has(srcName)) targetCtx.abstractClasses.add(localName);
+      depCtx.fns.forEach((sig, fnKey) => {
+        if (fnKey.startsWith(srcName + '.')) {
+          const suffix = fnKey.slice(srcName.length);
+          targetCtx.fns.set(localName + suffix, { ...sig });
+        }
+      });
+    }
+  }
+  if (depCtx.typeAliases.has(srcName)) {
+    const body = depCtx.typeAliases.get(srcName);
+    if (body) targetCtx.typeAliases.set(localName, body);
+  }
+  if (depCtx.genericTypeAliases.has(srcName)) {
+    const g = depCtx.genericTypeAliases.get(srcName);
+    if (g) targetCtx.genericTypeAliases.set(localName, { ...g });
+  }
+  if (depCtx.enumsSet.has(srcName)) {
+    targetCtx.enumsSet.add(localName);
+    const mems = depCtx.enumMembers.get(srcName);
+    if (mems) targetCtx.enumMembers.set(localName, new Set(mems));
+    const vts = depCtx.enumValueTypes.get(srcName);
+    if (vts) targetCtx.enumValueTypes.set(localName, new Set(vts));
+  }
+  if (depCtx.env.has(srcName)) {
+    const vInfo = depCtx.env.get(srcName);
+    if (vInfo) {
+      targetCtx.env.set(localName, {
+        type: vInfo.declaredType || vInfo.type,
+        isConst: true,
+        line: lineNum,
+        declaredType: vInfo.declaredType || vInfo.type,
+      });
+    }
+  }
+}
+
+export function typecheckWorkspaceModules(
+  entryFile: string,
+  entrySource: string,
+  fileMap: ReadonlyMap<string, string> | Record<string, string>,
+  strict = appState.STRICT_TS
+): { diagnostics: Diag[]; diags: Diag[]; graph: ModuleGraphResult } {
+  const graph = buildModuleGraph(entryFile, entrySource, fileMap);
+  if (!graph.isMultiFile) {
+    const singleDiags: Diag[] = typecheckTS(entrySource, strict).map(d => ({
+      ...d,
+      file: ('file' in d && d.file) ? d.file : graph.entryFile,
+    }));
+    return { diagnostics: singleDiags, diags: singleDiags, graph };
+  }
+
+  appState.CURRENT_TS_META = {
+    interfaces: new Map(),
+    varTypes: new Map(),
+    fnTypes: new Map(),
+  };
+
+  for (const modFile of graph.order) {
+    const modNode = graph.modules.get(modFile);
+    if (modNode) {
+      extractTsInterfaceMetadata(modNode.rawSource, true);
+    }
+  }
+  // Propagate aliased imports in CURRENT_TS_META even when strict is false
+  for (const modFile of graph.order) {
+    const modNode = graph.modules.get(modFile);
+    if (!modNode) continue;
+    for (const imp of modNode.imports) {
+      for (const bind of imp.bindings) {
+        if (bind.imported !== '*' && bind.local !== bind.imported) {
+          const fnSig = appState.CURRENT_TS_META.fnTypes?.get(bind.imported);
+          if (fnSig && appState.CURRENT_TS_META.fnTypes) {
+            appState.CURRENT_TS_META.fnTypes.set(bind.local, fnSig);
+          }
+          const vType = appState.CURRENT_TS_META.varTypes.get(bind.imported);
+          if (vType) {
+            appState.CURRENT_TS_META.varTypes.set(bind.local, vType);
+          }
+        }
+      }
+    }
+  }
+
+  if (!strict) {
+    const diags = [...graph.diagnostics];
+    return { diagnostics: diags, diags, graph };
+  }
+
+  const allDiagnostics: Diag[] = [...graph.diagnostics];
+  const checkedContexts = new Map<string, TypeCheckContext>();
+
+  for (const modFile of graph.order) {
+    const modNode = graph.modules.get(modFile);
+    if (!modNode) continue;
+
+    const ctx = createTypeCheckContext(modNode.rawSource);
+    const evalEngine = createTypeEvalEngine(ctx);
+    const inferEngine = createTypeInferEngine(ctx, evalEngine);
+
+    for (const imp of modNode.imports) {
+      if (imp.isBuiltinFs || !imp.resolvedPath) continue;
+      const depCtx = checkedContexts.get(imp.resolvedPath);
+      const depNode = graph.modules.get(imp.resolvedPath);
+      if (!depCtx || !depNode) continue;
+
+      for (const bind of imp.bindings) {
+        if (bind.imported === '*') {
+          const nsTypeName = `__ModuleNs_${imp.resolvedPath.replace(/[^A-Za-z0-9_]/g, '_')}__`;
+          const nsShape = new Map<string, PropShapeInfo>();
+          for (const exp of depNode.exports) {
+            if (exp.kind === 'type') continue;
+            const localV = depCtx.env.get(exp.local);
+            if (localV) {
+              nsShape.set(exp.exported, {
+                type: localV.declaredType || localV.type,
+                rawType: localV.declaredType || localV.type,
+                optional: false,
+              });
+            }
+            const localFn = depCtx.fns.get(exp.local);
+            if (localFn) {
+              ctx.fns.set(`${nsTypeName}.${exp.exported}`, { ...localFn, name: `${nsTypeName}.${exp.exported}` });
+              nsShape.set(exp.exported, {
+                type: 'function',
+                rawType: 'function',
+                optional: false,
+              });
+            }
+          }
+          ctx.interfaces.set(nsTypeName, nsShape);
+          ctx.env.set(bind.local, {
+            type: nsTypeName,
+            isConst: true,
+            line: imp.line,
+            declaredType: nsTypeName,
+          });
+        } else {
+          linkSymbolFromDependency(ctx, depCtx, depNode, bind.imported, bind.local, imp.line);
+        }
+      }
+    }
+
+    collectPass1Declarations(ctx, evalEngine, inferEngine);
+    checkPass2Statements(ctx, evalEngine, inferEngine);
+    syncContextFunctionTypesToMeta(ctx);
+    checkedContexts.set(modFile, ctx);
+
+    for (const d of ctx.diagnostics) {
+      allDiagnostics.push({
+        file: modFile,
+        line: d.line,
+        code: d.code,
+        message: d.message,
+        severity: 'error',
+      });
+    }
+  }
+
+  return { diagnostics: allDiagnostics, diags: allDiagnostics, graph };
 }
 
 const _TS_WORKER_STATE: {

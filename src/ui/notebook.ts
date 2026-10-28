@@ -152,10 +152,9 @@ export function exportActiveNotebookIpynb() {
 }
 
 export function importNotebookFromJson(jsonText: string, fileName: string): boolean {
-  const lang = appState.LANG === "python" ? "python" : "ts";
-  const newDoc = parseIpynbJsonToDocument(jsonText, fileName, lang);
+  const newDoc = parseIpynbJsonToDocument(jsonText, fileName, "ts");
   if (!newDoc) return false;
-  const store = ensureLangNotebooks(lang);
+  const store = ensureLangNotebooks("ts");
   store.docs.push(newDoc);
   store.activeDocId = newDoc.id;
   setViewMode("notebook");
@@ -220,14 +219,11 @@ function renderCellCodeHighlight(
 ): { hlHtml: string; gutterHtml: string; stepVizHtml: string; stepVizLine: number } {
   const doc = getActiveNotebook();
   const lines = cell.source.replace(/\r\n?/g, "\n").split("\n");
-  const { combinedTs } = appState.LANG === "python" ? { combinedTs: cell.source } : buildTsTypecheckContext(doc, cell);
+  const { combinedTs } = buildTsTypecheckContext(doc, cell);
   const declared = collectDeclaredNames(combinedTs);
-  if (appState.LANG === "python" && doc.lastGlobalVars) {
-    Object.keys(doc.lastGlobalVars).forEach((k) => declared.add(k));
-  }
 
   const liveByLine = new Map<number, { line: number; code: string; message: string }>();
-  if (appState.LANG !== "python" && cell.type === "code") {
+  if (cell.type === "code") {
     const cellDiags = typecheckNotebookCellTS(doc, cell);
     cellDiags.forEach((d) => {
       if (d && d.line >= 1 && !liveByLine.has(d.line)) {
@@ -265,7 +261,7 @@ function renderCellCodeHighlight(
         (cell.status === "error" && cell.output && cell.output.errorLine === ln) ||
         Boolean(isCur && st && st.error);
       const hasCkpt = /^\s*(?:checkpoint|断点)\s*\(/.test(t);
-      return `<div class="nb-gline${isCur ? " cur" : ""}${isErr ? " err" : ""}${hasCkpt ? " ckpt" : ""}" data-line="${ln}" title="点击在第 ${ln} 行插入/移除 checkpoint()">${ln}</div>`;
+      return `<div class="nb-gline${isCur ? " cur" : ""}${isErr ? " err" : ""}${hasCkpt ? " ckpt" : ""}" data-line="${ln}">${ln}</div>`;
     })
     .join("");
 
@@ -282,8 +278,7 @@ export function renderNotebookUI(focusActiveEditor = false) {
   const wrap = $("notebookWrap");
   if (!wrap || appState.VIEW_MODE !== "notebook") return;
 
-  const lang = appState.LANG === "python" ? "python" : "ts";
-  const store = ensureLangNotebooks(lang);
+  const store = ensureLangNotebooks("ts");
   const doc = getActiveNotebook();
   const activeCell = getActiveCell(doc);
 
@@ -390,7 +385,7 @@ export function renderNotebookUI(focusActiveEditor = false) {
         `<div class="nb-cell-gutter">${gutterHtml}</div>` +
         `<div class="nb-cell-code-box" style="height:${editorHeight}px">` +
         `<pre class="nb-cell-hl" aria-hidden="true">${hlHtml}</pre>` +
-        `<textarea class="nb-cell-textarea" data-cell-id="${esc(cell.id)}" style="height:${editorHeight}px" spellcheck="false" autocomplete="off" placeholder="${lang === "python" ? "# 输入 Python 代码，Shift+Enter 运行，点右上 🐞 单步调试" : "// 输入 TypeScript 代码，Shift+Enter 运行，点右上 🐞 单步调试"}">${esc(cell.source)}</textarea>` +
+        `<textarea class="nb-cell-textarea" data-cell-id="${esc(cell.id)}" style="height:${editorHeight}px" spellcheck="false" autocomplete="off" placeholder="// 输入 TypeScript 代码，Shift+Enter 运行，点右上 🐞 单步调试">${esc(cell.source)}</textarea>` +
         `</div>` +
         `<div class="nb-cell-actions">` +
         `<button type="button" class="nb-act-btn run-act" data-cell-act="run" data-cell-id="${esc(cell.id)}" title="运行此单元格 (Shift+Enter)">▶</button>` +
@@ -443,8 +438,7 @@ function toggleNotebookCellCheckpoint(cellId: string, lineNum: number) {
     lines.splice(lineNum - 1, 1);
   } else {
     const indent = (targetLine.match(/^\s*/) || [""])[0];
-    const stmt = appState.LANG === "python" ? "checkpoint()" : "checkpoint();";
-    lines.splice(lineNum - 1, 0, indent + stmt);
+    lines.splice(lineNum - 1, 0, indent + "checkpoint();");
   }
   cell.source = lines.join("\n");
   renderNotebookUI();
@@ -461,8 +455,7 @@ function initNotebookTabsEvents() {
     const target = eventTargetElement(e);
     if (!target) return;
     const closeBtn = closestElement(target, "[data-close-doc]");
-    const lang = appState.LANG === "python" ? "python" : "ts";
-    const store = ensureLangNotebooks(lang);
+    const store = ensureLangNotebooks("ts");
     if (closeBtn) {
       e.stopPropagation();
       const closeId = closeBtn.getAttribute("data-close-doc");
@@ -486,7 +479,7 @@ function initNotebookTabsEvents() {
       const newDoc: NotebookDocument = {
         id: nextDocId(),
         title: `Untitled-${store.docs.length + 1}.ipynb`,
-        lang,
+        lang: "ts",
         execCounter: 0,
         activeCellId: cId,
         debuggingCellId: null,
@@ -525,8 +518,7 @@ function initNotebookTabsEvents() {
   tabsEl.addEventListener("dblclick", (e: MouseEvent) => {
     const tab = closestElement(e, ".nb-tab");
     if (!tab || !tab.dataset.docId) return;
-    const lang = appState.LANG === "python" ? "python" : "ts";
-    const store = ensureLangNotebooks(lang);
+    const store = ensureLangNotebooks("ts");
     const targetDoc = store.docs.find((d) => d.id === tab.dataset.docId) || getActiveNotebook();
     const titleSpan = tab.querySelector ? tab.querySelector(".nb-tab-title") : null;
     if (!titleSpan) return;
@@ -598,15 +590,6 @@ function initNotebookCellsEvents() {
       const last = doc.cells[doc.cells.length - 1];
       insertNotebookCell("below", last ? last.id : undefined, "markdown");
       return;
-    }
-
-    const gline = closestElement(target, ".nb-gline");
-    if (gline && gline.dataset.line) {
-      const cellEl = closestElement(gline, ".nb-cell");
-      if (cellEl && cellEl.dataset.cellId) {
-        toggleNotebookCellCheckpoint(cellEl.dataset.cellId, parseInt(gline.dataset.line, 10));
-        return;
-      }
     }
 
     const actEl = closestElement(target, "[data-cell-act]");
@@ -732,7 +715,7 @@ function initNotebookCellsEvents() {
       e.preventDefault();
       const s = ta.selectionStart || 0;
       const t = ta.selectionEnd || 0;
-      const indent = appState.LANG === "python" ? "    " : "  ";
+      const indent = "  ";
       ta.value = ta.value.slice(0, s) + indent + ta.value.slice(t);
       ta.selectionStart = ta.selectionEnd = s + indent.length;
       ta.dispatchEvent(new Event("input", { bubbles: true }));
@@ -747,6 +730,15 @@ function initNotebookCellsEvents() {
       e.preventDefault();
       debugNotebookCell(cid);
       return;
+    }
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "c") {
+      if ((ta.selectionStart || 0) === (ta.selectionEnd || 0) && cid) {
+        e.preventDefault();
+        const pos = ta.selectionStart || 0;
+        const curLine = ta.value.slice(0, pos).split("\n").length;
+        toggleNotebookCellCheckpoint(cid, curLine);
+        return;
+      }
     }
     if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
       e.preventDefault();
@@ -805,19 +797,6 @@ export function initNotebookUI() {
   bindBtn("nbBtnRunAll", () => runAllNotebookCells());
 
   initNotebookCellsEvents();
-
-  if (typeof window !== "undefined") {
-    window.onNotebookLangChanged = (_nextLang: "ts" | "python") => {
-      renderImportSampleMenu();
-      renderScriptTabsUI();
-      renderVfsTreeUI();
-      if (appState.VIEW_MODE === "notebook") {
-        const doc = getActiveNotebook();
-        syncNotebookGlobalsToSidePanel(doc);
-        renderNotebookUI();
-      }
-    };
-  }
 }
 
 /* ── TypeScript Advanced Interactive Tutorial Selector Modal ── */
@@ -825,14 +804,7 @@ let selectedTutorialId: string =
   TS_NOTEBOOK_TUTORIALS[0]?.id ?? "ts-adv-01-interfaces-structural";
 
 function ensureTsLanguageActive(): void {
-  if (appState.LANG !== "ts") {
-    appState.LANG = "ts";
-    const langSel = $<HTMLSelectElement>("langSel");
-    if (langSel) langSel.value = "ts";
-    if (typeof PY_ENGINE !== "undefined" && PY_ENGINE.setLang) {
-      PY_ENGINE.setLang("ts");
-    }
-  }
+  appState.LANG = "ts";
 }
 
 function syncTutorialDocToVfs(doc: NotebookDocument): void {
@@ -1064,8 +1036,7 @@ function initTutorialModalEvents(): void {
 }
 
 export function openVfsNotebookFile(name: string, content: string | undefined): void {
-  const lang = appState.LANG === "python" ? "python" : "ts";
-  const store = ensureLangNotebooks(lang);
+  const store = ensureLangNotebooks("ts");
   const existing = store.docs.find((d) => d.title === name);
   if (existing) {
     store.activeDocId = existing.id;

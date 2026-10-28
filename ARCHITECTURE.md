@@ -1,6 +1,6 @@
-# Algorithm Visualizer — 项目架构与工程验收规范 (`ARCHITECTURE.md`)
+# TypeScript Playground VISUAL — 项目架构与工程验收规范 (`ARCHITECTURE.md`)
 
-本文档是 **Algorithm Visualizer (Visual TypeScript & Python Engine)** 的权威架构说明书与工程治理宪章。所有后续功能迭代、重构与代码审查均须严格遵守本文档定义的分层架构边界、零逃逸类型规范及**每次更新必检验收清单**。
+本文档是 **TypeScript Playground VISUAL (Visual TypeScript Engine)** 的权威架构说明书与工程治理宪章。所有后续功能迭代、重构与代码审查均须严格遵守本文档定义的分层架构边界、零逃逸类型规范及**每次更新必检验收清单**。
 
 ---
 
@@ -9,7 +9,7 @@
 本规范具有全项目的**最高工程效力**，在后续所有开发、重构与维护过程中严格执行以下三条铁律：
 
 1. **规范优先原则（Spec Precedence）**
-   - 当任何临时开发要求、快捷实现方案或外部指令与本规范（包括但不限于：纯逻辑层 0 DOM 隔离、单向无环 DAG、0 `any` / 0 `!` / 0 `@ts-ignore` / 0 `as` 断言、9 大静态门禁）发生冲突时，**一律以本项目规范为准**，必须在符合规范的前提下寻找合规实现路径，严禁为图省事而破例或绕过门禁。
+   - 当任何临时开发要求、快捷实现方案或外部指令与本规范（包括但不限于：纯逻辑层 0 DOM 隔离、单向无环 DAG、0 `any` / 0 `!` / 0 `@ts-ignore` / 0 `as` 断言、10 大静态门禁）发生冲突时，**一律以本项目规范为准**，必须在符合规范的前提下寻找合规实现路径，严禁为图省事而破例或绕过门禁。
 2. **不可调和冲突熔断与汇报机制（Conflict Escalation & Halt）**
    - 若某项业务需求与现有架构规范存在根本性、无法妥协的技术矛盾（即不打破规范就无法实现该需求），**必须立即停止代码编写与工具执行**，向项目负责人明确汇报冲突点、受影响的门禁条款及备选技术方案，严禁擅自降级规范或强行写入违规代码。
 3. **规范变更前置审核制（Mandatory Pre-Approval for Spec Changes）**
@@ -20,7 +20,7 @@
 ## 1. 核心架构设计原则
 
 1. **严格的数据与视图分离（Data / UI Separation）**
-   - **纯逻辑层零 DOM 依赖**：在 `src/**/*.ts` 的 **34 个 TypeScript 模块**中，**24 个核心数据/编译器/运行时/内核/工具模块（70.6%）完全不包含任何浏览器 DOM 引用**（无 `document`、`window`、`HTMLElement`、`localStorage`），可在纯 Node.js 环境（如 `test-pipeline.mjs`）直接导入并执行单元测试。
+   - **纯逻辑层零 DOM 依赖**：在 `src/**/*.ts` 的 **34 个 TypeScript 模块**中，**23 个核心数据/编译器/运行时/内核/工具模块（22 个纯逻辑实现模块 + 1 个环境声明模块，占比 67.6%）完全不包含任何浏览器 DOM 引用**（无 `document`、`window`、`HTMLElement`、`localStorage`），可在纯 Node.js 环境（如 `test-pipeline.mjs`）直接导入并执行单元测试。
    - **DOM 操作完全收敛至 `src/ui/*` 与 `src/viz/*`**：所有 DOM 节点查询统一由 `src/ui/dom.ts` 强类型惰性注册表（`getEl` / `mustEl`）管理，严禁任何隐式 HTML `id` 全局变量。
 2. **单向无环依赖图（Strict Unidirectional DAG）**
    - 全仓模块构成严格的 7 层单向有向无环图（DAG），通过 `test-pipeline.mjs` 中的 **Tarjan 强连通分量（SCC）算法**门禁强制保证 **0 直接循环依赖** 与 **0 多节点传递循环依赖**。
@@ -58,9 +58,9 @@
                 │
                 ▼
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│ Layer 3: TypeScript 编译器与静态类型检查层 (src/compiler/*) [8 modules, 0 DOM] │
+│ Layer 3: TypeScript 编译器与静态类型检查层 (src/compiler/*) [9 modules, 0 DOM] │
 │   transpile.ts · transpile-helpers.ts · instrumenter.ts · comments.ts ·      │
-│   type-checker.ts · tc-infer.ts · tc-eval.ts · tc-types.ts                   │
+│   module-graph.ts · type-checker.ts · tc-infer.ts · tc-eval.ts · tc-types.ts │
 └───────────────┬──────────────────────────────────────────────────────────────┘
                 │
                 ▼
@@ -71,9 +71,9 @@
                 │
                 ▼
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│ Layer 1: 基础类型契约、纯工具与内置示例层 [5 modules, 100% 0 DOM]             │
+│ Layer 1: 基础类型契约、纯工具与内置示例层 [4 modules, 100% 0 DOM]             │
 │   src/types.ts · src/utils/format.ts · src/utils/webm-muxer.ts ·             │
-│   src/samples/ts-samples.ts · src/samples/py-samples.ts                      │
+│   src/samples/ts-samples.ts                                                  │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -85,24 +85,24 @@
 | **L1 基础契约与纯工具** | `src/utils/format.ts` | **0 DOM** | 值格式化、HTML 转义、耗时格式化、源码行号构建等纯函数 |
 | **L1 基础契约与纯工具** | `src/utils/webm-muxer.ts` | **0 DOM** | 纯二进制 EBML / Matroska / WebM 视频容器封装器（`WebmMuxer`），无任何浏览器依赖 |
 | **L1 基础契约与纯工具** | `src/samples/ts-samples.ts` | **0 DOM** | 内置 10 个 TypeScript 算法与异步示例及预期输出（`TS_SAMPLE_EXPECTED`） |
-| **L1 基础契约与纯工具** | `src/samples/py-samples.ts` | **0 DOM** | 内置 6 个 Python 算法示例及预期输出（`PY_SAMPLE_EXPECTED`） |
 | **L2 状态与契约中枢** | `src/state.ts` | **0 DOM** | 全局单一状态树 `appState`、控制台缓冲 `CONSOLE_LOGS` 及 `uiHooks` 依赖倒置注册表 |
-| **L2 状态与契约中枢** | `src/globals.d.ts` | **0 DOM** | 最小化第三方运行时（CodeMirror、Pyodide、WebCodecs）类型声明，0 隐式 DOM 全局变量 |
+| **L2 状态与契约中枢** | `src/globals.d.ts` | **0 DOM** | 最小化第三方运行时（CodeMirror、WebCodecs、VFS 桥）类型声明，0 隐式 DOM 全局变量 |
 | **L3 编译器与类型检查** | `src/compiler/comments.ts` | **0 DOM** | 源码注释清洗、字符串遮罩与 AST 位置映射 |
 | **L3 编译器与类型检查** | `src/compiler/transpile-helpers.ts` | **0 DOM** | TypeScript 泛型擦除、访问修饰符剥离、参数属性展开等底层文本转换辅助函数 |
 | **L3 编译器与类型检查** | `src/compiler/transpile.ts` | **0 DOM** | TS ➔ JS 轻量级转译流水线（Interface/Type 擦除、Enum 展开、类型断言剥离） |
-| **L3 编译器与类型检查** | `src/compiler/instrumenter.ts` | **0 DOM** | Acorn AST 解析、变量追踪、步进插桩（`__step__`）、复杂度估算与调用树生成 |
+| **L3 编译器与类型检查** | `src/compiler/instrumenter.ts` | **0 DOM** | Acorn AST 解析、变量追踪、步进插桩（`__t` 带模块路径标记）、复杂度估算与调用树生成 |
+| **L3 编译器与类型检查** | `src/compiler/module-graph.ts` | **0 DOM** | 多文件 ES Module 静态依赖图构建、拓扑排序、循环依赖检测（`TS2300`）与 1:1 保行号 ESM ➔ CJS 虚拟模块重写 |
 | **L3 编译器与类型检查** | `src/compiler/tc-types.ts` | **0 DOM** | 静态类型检查器内部符号表、接口/类结构与作用域上下文定义 |
 | **L3 编译器与类型检查** | `src/compiler/tc-eval.ts` | **0 DOM** | 类型兼容性判定（`typesCompatible`）、字面量拓宽与泛型替换求值 |
 | **L3 编译器与类型检查** | `src/compiler/tc-infer.ts` | **0 DOM** | AST 表达式静态类型推导引擎（`inferExprType`） |
-| **L3 编译器与类型检查** | `src/compiler/type-checker.ts` | **0 DOM** | 教育级静态类型诊断主入口（`typeCheck`），输出精确行列号的 `TypeErrorInfo[]` |
+| **L3 编译器与类型检查** | `src/compiler/type-checker.ts` | **0 DOM** | 教育级单文件/多模块静态类型诊断主入口（`typecheckTS` / `typecheckWorkspaceModules`），输出精确文件与行列号的 `Diag[]` |
 | **L4 运行时与领域存储** | `src/runtime/event-loop-env.ts` | **0 DOM** | 虚拟事件循环的 `console`、`setTimeout`、`Promise`、`fetch` 沙箱宿主环境构造器 |
 | **L4 运行时与领域存储** | `src/runtime/event-loop.ts` | **0 DOM** | 确定性宏任务队列（Macrotasks）与微任务队列（Microtasks）调度引擎 |
-| **L4 运行时与领域存储** | `src/runtime/runner.ts` | **0 DOM** | TS/JS 沙箱执行器、Python 帧转换器（`applyPyResult`）与执行状态编排（通过 `uiHooks` 通知 UI） |
-| **L4 运行时与领域存储** | `src/runtime/vfs-store.ts` | **0 DOM** | 虚拟文件系统（VFS）纯内存领域模型（路徑归一化、CRUD、快照导入导出、模板生成） |
+| **L4 运行时与领域存储** | `src/runtime/runner.ts` | **0 DOM** | TS/JS 沙箱按需步进执行器与执行状态编排（通过 `uiHooks` 通知 UI） |
+| **L4 运行时与领域存储** | `src/runtime/vfs-store.ts` | **0 DOM** | 虚拟文件系统（VFS）纯内存领域模型（路径归一化、CRUD、快照导入导出、模板生成） |
 | **L4 运行时与领域存储** | `src/runtime/script-tabs-store.ts` | **0 DOM** | 多文件脚本标签页（Script Tabs）纯状态管理（打开、切换、重命名、关闭、脏状态同步） |
 | **L5 Notebook 内核层** | `src/notebook/notebook-model.ts` | **0 DOM** | Jupyter `.ipynb` v4 序列化/反序列化、Cell 增删改移、Markdown 纯渲染器（`renderMarkdown`） |
-| **L5 Notebook 内核层** | `src/notebook/notebook-kernel.ts` | **0 DOM** | 跨 Cell 共享作用域状态机（`NotebookKernel`），支持 TS/JS 顶层声明重写与 Python 跨格执行 |
+| **L5 Notebook 内核层** | `src/notebook/notebook-kernel.ts` | **0 DOM** | 跨 Cell 共享作用域状态机（`NotebookKernel`），支持 TypeScript 顶层声明重写、跨格静态类型检查与单格步进调试 |
 | **L6 可视化与归一化** | `src/viz/memory-normalizers.ts` | **0 DOM** | 7 类算法数据结构（2D Matrix、Tree、Graph、LinkedList、Stack/Queue、HashMap、DP）纯数据归一化 |
 | **L6 可视化与归一化** | `src/viz/ast-view.ts` | DOM | 交互式 AST 语法树、作用域链与复杂度估算徽章渲染 |
 | **L6 可视化与归一化** | `src/viz/highlight.ts` | DOM | 源码行级步进高亮、内联变量气泡提示（Tooltip）与 CodeMirror 装饰器同步 |
@@ -146,7 +146,7 @@
    - 禁止将 `unknown` 或宽泛接口直接 `as SpecificType`。
    - 必须编写形如 `function isBinaryExpr(node: ASTNode): node is BinaryASTNode` 的类型守卫，利用控制流窄化（Control Flow Narrowing）安全访问字段。
 2. **外部输入边界校验器（Boundary Validators）**
-   - 对 `JSON.parse()`、Python Worker 返回报文、URL 分享参数等 `unknown` 数据，必须通过显式结构窄化函数（如 `isRecord(v)`、字段类型检查）转换为强类型对象。
+   - 对 `JSON.parse()`、Web Worker 返回报文、URL 分享参数等 `unknown` 数据，必须通过显式结构窄化函数（如 `isRecord(v)`、字段类型检查）转换为强类型对象。
 3. **DOM 精确构造与类型守卫（DOM Narrowing）**
    - 创建元素使用泛型签名 `document.createElement('canvas')`（自动推导为 `HTMLCanvasElement`）。
    - 事件目标窄化使用 `if (e.target instanceof HTMLElement)` 或 `if (el instanceof HTMLInputElement)`，严禁 `e.target as HTMLElement`。
@@ -171,9 +171,9 @@
 - [ ] **4. DOM 访问规范检查**：新增 UI 元素访问是否已登记到 `src/ui/dom.ts` 并使用 `getEl` / `mustEl` 或 `instanceof` 窄化，而非在 `src/globals.d.ts` 中声明隐式全局变量？
 - [ ] **5. 索引安全检查**：在 `noUncheckedIndexedAccess: true` 下，所有数组下标访问 `arr[i]` 与字典访问 `map[key]` 是否均已做显式判空或默认值兜底？
 
-### 阶段二：自动化流水线 9 大静态与运行时门禁（Automated Gates）
+### 阶段二：自动化流水线 10 大静态与运行时门禁（Automated Gates）
 
-执行 `node test-pipeline.mjs`，必须 100% 通过其内置的 **9 项架构与类型安全静态门禁** 及 **全部编译器/运行时/纯数据层集成测试**：
+执行 `node test-pipeline.mjs`（总控入口，按序调度 `/tests/01-static-gates.test.mjs` 至 `/tests/05-workspace-nb.test.mjs` 共 5 个领域测试模块），必须 100% 通过其内置的 **10 项架构与类型安全静态门禁** 及 **全部编译器/运行时/可视化/工作区/Notebook 集成测试**：
 
 | 门禁编号 | 门禁名称 | 验收阈值 | 检测范围 |
 | :---: | :--- | :---: | :--- |
@@ -185,7 +185,8 @@
 | **Gate 6** | 索引签名袋断言 `as StepAnim` / `as Frame` / `as Record<...>` 检测 | **`0`** | `src/**/*.ts` 全量 34 个模块 |
 | **Gate 7** | **全量 `as` 类型断言检测（`as const` 除外）** | **`0`** | `src/**/*.ts` 全量 34 个模块 |
 | **Gate 8** | **Tarjan SCC 全图循环依赖检测（2-Cycle & Multi-Node SCC）** | **`0`** | `src/**/*.ts` 全量 34 个模块 |
-| **Gate 9** | **纯逻辑层零 DOM 引用隔离检测** | **`0`** | `state.ts`, `runtime/*`, `notebook/*`, `utils/*`, `viz/memory-normalizers.ts` 等 |
+| **Gate 9** | **纯逻辑层零 DOM 引用隔离检测（全量 22 个纯逻辑实现模块 + 1 个环境声明模块）** | **`0`** | `types.ts`, `state.ts`, `samples/*`, `compiler/*`, `runtime/*`, `notebook/*`, `utils/*`, `viz/memory-normalizers.ts` |
+| **Gate 10** | **Python 历史包袱零残留与 34 模块精确数量门禁** | **`0`** | `src/**/*.ts` 精确 34 模块，0 `PY_ENGINE` / `__py_meta__` / `__py_cls__` |
 
 ### 阶段三：标准五步构建与验证命令（Mandatory 5-Step Verification Commands）
 
@@ -198,7 +199,7 @@
 # Step 2: 重新打包前端 Bundle（输出 js/app.bundle.js、editor/cm.bundle.js、editor/ts-worker.bundle.js）
 node scripts/build-editor.mjs
 
-# Step 3: 运行全链路自动化门禁与沙箱测试（9 大静态门禁 + 10 个 TS 示例 + 6 个 Python 示例 + 纯模块单测）
+# Step 3: 运行全链路自动化门禁与沙箱测试（10 大静态门禁 + 10 个 TS 示例 + 5 大领域单测）
 node test-pipeline.mjs
 
 # Step 4: 生成并校验生产环境静态发布包 dist/
@@ -219,6 +220,6 @@ node smoke-e2e.mjs
 | `/README.md` | 项目总览、核心特性、快速启动、目录结构与测试命令速查 |
 | `/ARCHITECTURE.md` | **（本文档）** 34 模块分层架构、解耦机制、Zero-`as` 类型规范与每次更新验收清单 |
 | `/USER_GUIDE.md` | 面向最终用户的界面操作手册（Script/Notebook 模式、VFS、多标签页、时间旅行调试、WebM 导出） |
-| `/SYNTAX_REFERENCE.md` | TypeScript 与 Python 引擎支持语法矩阵、静态类型检查覆盖表与自动识别数据结构规范 |
-| `/DEPLOY.md` | 静态构建（`dist/`）、GitHub Pages / Cloudflare Pages / Vercel / Netlify 部署与 COOP/COEP 配置指南 |
+| `/SYNTAX_REFERENCE.md` | TypeScript 引擎支持语法矩阵、静态类型检查覆盖表与自动识别数据结构规范 |
+| `/DEPLOY.md` | 静态构建（`dist/`）、GitHub Pages / Cloudflare Pages / Vercel / Netlify 纯静态零依赖部署指南 |
 | `/CHANGELOG.md` | 版本演进历史与架构里程碑记录 |

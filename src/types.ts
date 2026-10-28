@@ -3,6 +3,7 @@
    ================================================================ */
 
 export interface Diag {
+  file?: string;
   line: number;
   col?: number;
   endCol?: number;
@@ -39,6 +40,7 @@ export interface InterfaceSchemaMeta {
 export interface TsMeta {
   varTypes: Map<string, string>;
   interfaces: Map<string, InterfaceSchemaMeta>;
+  fnTypes?: Map<string, string>;
 }
 
 export interface HeapObj {
@@ -50,6 +52,7 @@ export interface HeapObj {
 
 export interface StepAnim {
   id?: number | string;
+  file?: string;
   fn?: string;
   name?: string;
   label?: string;
@@ -121,7 +124,6 @@ export interface StepAnim {
   __rawNodes?: object[];
   __rawVals?: unknown[];
   __nodeMap?: Map<object, number>;
-  __pyMeta?: Frame;
   __extraFocal?: number[];
   sparse?: Map<number, unknown>;
   left?: Frame | number | null;
@@ -173,6 +175,7 @@ export interface EventLoopSnapshot {
 }
 
 export interface StepSnapshot {
+  file?: string;
   line: number;
   note: string;
   rawNote?: string;
@@ -200,7 +203,9 @@ export interface StepSnapshot {
 
 export interface TraceData {
   title: string;
+  entryFile?: string;
   code: string[];
+  moduleSources?: Record<string, string[]>;
   steps: StepSnapshot[];
   returnValue?: unknown;
   tsMeta?: TsMeta;
@@ -212,9 +217,12 @@ export interface DebugSession {
   crashed: boolean;
   error: string | Error | null;
   errorLine: number;
+  errorFile?: string;
   returnValue: unknown;
   compiledFn: Function | null;
+  entryFile?: string;
   originalLines: string[];
+  moduleSources?: Record<string, string[]>;
   callExpr: string;
   hasAsync?: boolean;
   tsMeta?: TsMeta;
@@ -254,7 +262,7 @@ export interface NotebookExecutedEntry {
 export interface NotebookDocument {
   id: string;
   title: string;
-  lang: 'ts' | 'python';
+  lang: 'ts';
   execCounter: number;
   activeCellId: string;
   debuggingCellId: string | null;
@@ -262,45 +270,4 @@ export interface NotebookDocument {
   executedHistory: NotebookExecutedEntry[];
   lastGlobalVars: Record<string, unknown>;
   lastGlobalDs: Record<string, StepAnim>;
-}
-
-export interface StepVizElement extends HTMLElement {
-  __vizHtml?: string;
-}
-
-export interface PyPayload {
-  syntaxError?: { line?: number; msg?: string } | null;
-  stdout?: string;
-  returnValue?: unknown;
-  entryExpr?: string;
-  meta?: Record<string, unknown>;
-  finalVars?: Record<string, unknown>;
-  error?: string | null;
-  errorLine?: number | null;
-  __returnValueHydrated?: unknown;
-  __callExpr?: string;
-}
-
-export interface PyEngineBridge {
-  builtins?: Iterable<string>;
-  samples?: Record<string, string>;
-  PY_SAMPLES?: Record<string, string>;
-  collectDeclared(src: string | null | undefined): Set<string>;
-  hl(t: string, declared?: Set<string> | null): string;
-  hlActiveLine(rawLine: string, anim?: StepAnim | null, declared?: Set<string> | null): string;
-  start(targetStep?: number): Promise<boolean> | boolean;
-  stepNext(fromAuto?: boolean): void;
-  stepPrev(): void;
-  runToNextCheckpoint(): void;
-  runOnce(): void;
-  runOnly(timeoutMs?: number): Promise<unknown> | unknown;
-  run(src: string, opts?: Record<string, unknown>): Promise<PyPayload>;
-  hydrate(val: unknown): unknown;
-  hydrateVars(vars: Record<string, unknown>): Record<string, unknown>;
-  cloneVars(vars: Record<string, unknown>): Record<string, unknown>;
-  fmtReturn(val: unknown): string;
-  applyMeta(meta: Record<string, unknown>): void;
-  buildSteps(payload: PyPayload, sourceLines: string[]): StepSnapshot[];
-  loadSample(key: string): void;
-  setLang?(lang: 'ts' | 'python'): void;
 }

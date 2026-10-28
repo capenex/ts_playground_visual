@@ -31,7 +31,7 @@ export const SAMPLES: Record<string, string> = {
     }
     if (sum >= target) {
       best = Math.max(best, sum);
-      checkpoint("窗口达标", r, sum, best);
+      checkpoint(sum >= target, "窗口达标");
     }
   }
   return best + tree.val + graph.nodes.length;
@@ -83,7 +83,7 @@ mergeSort(0, 7)
     const x = nums[i];
     acc = acc + x;
     history.push(acc);
-    checkpoint("检查累加值", i, x, acc);
+    checkpoint(acc > 10, "检查累加值");
     if (acc > limit) {
       throw new Error("运行时异常: 累加值 acc(" + acc + ") 超过安全阈值 " + limit);
     }
@@ -248,7 +248,7 @@ async function runAsyncDemo(): Promise<string> {
   timeline.push("2:before-await");
   const score: number = await fetchScore(3, 20);
   timeline.push("6:after-await-" + score);
-  checkpoint(timeline, score);
+  checkpoint(score > 0, "异步等待完成");
   return timeline.join(" -> ");
 }
 

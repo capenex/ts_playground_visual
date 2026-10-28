@@ -7,6 +7,7 @@ import { collectNames, instrument, resolveEntry, blankJsLine, snapFnExpr } from 
 import { typecheckTS, extractTsInterfaceMetadata } from "../compiler/type-checker";
 import { say, clearLog, safeJSONStringify, resetTraceState } from "../runtime/event-loop";
 import { computeAndAppendNextStep, startDebug, initWatchedVars, runOnce, reportTypeErrors } from "../runtime/runner";
+import { syncActiveScriptTabSource } from "../runtime/script-tabs-store";
 import { appState, AUTO_PLAY_MS, MAX_STEPS, registerUiHooks, uiHooks, VIDEO_SPEED_OPTIONS } from "../state";
 import { discoverVars, renderPicker, renderStatic, selectStackFrame } from "../viz/memory-graph";
 import {
@@ -29,7 +30,6 @@ import {
   eventTargetNode,
   fileInputEl,
   fileNameEl,
-  gutterEl,
   mainEl,
   pickEl,
   resizerEl,
@@ -75,7 +75,6 @@ export function stepNext(fromAuto = false) {
 }
 
 export function runToNextCheckpoint() {
-  if (appState.LANG === 'python') return PY_ENGINE.runToNextCheckpoint();
   stopAuto();
   appState.SELECTED_FRAME_IDX = null;
   if (document.body && document.body.classList) document.body.classList.remove('editing-code');
@@ -222,26 +221,6 @@ export function rebuildDebugAtPosition(newTargetLine: number, targetVisits: numb
 }
 
 export function addCheckpointFunction(preferredLine?: number) {
-  if (appState.LANG === 'python') {
-    const text = editor.value.replace(/\r\n?/g, '\n');
-    const lines = text.split('\n');
-    let line = preferredLine || appState.TRACE.steps[appState.cur]?.line || (window.__CM_CURSOR_LINE || appState.lastEditorCursorLine) || lines.length;
-    line = Math.max(1, Math.min(lines.length, line));
-    const current = lines[line - 1] || '';
-    const indent = (current.match(/^\s*/) || [''])[0];
-    if (/:\s*(?:#.*)?$/.test(current)) {
-      lines.splice(line, 0, indent + '    checkpoint()');
-      line = line + 1;
-    } else {
-      lines.splice(line - 1, 0, indent + 'checkpoint()');
-    }
-    editor.value = lines.join('\n');
-    appState.lastEditorCursorLine = line;
-    resetTraceState();
-    PY_ENGINE.start(0);
-    say('✓ 已插入 checkpoint()，正在重新录制 Python 执行步骤', 'ok');
-    return;
-  }
   const text = editor.value.replace(/\r\n?/g, '\n');
   const lines = text.split('\n');
 
@@ -298,21 +277,35 @@ export function addCheckpointFunction(preferredLine?: number) {
 
   const refLine = lines[targetIdx] || '';
   const refTrim = refLine.trim();
+  const isCkptStmt = (s: string) => /^(?:checkpoint|断点)\s*\([\s\S]*\)\s*;?$/.test(s.trim());
 
-  if (typeof preferredLine === 'number' && /^(?:checkpoint|断点)\s*\([^)]*\)\s*;?$/.test(refTrim)) {
-    const removedLine = targetIdx + 1;
-    lines.splice(targetIdx, 1);
+  let removeIdx = -1;
+  if (isCkptStmt(refTrim)) {
+    removeIdx = targetIdx;
+  } else if (refTrim.endsWith('{') && targetIdx + 1 < lines.length && isCkptStmt(lines[targetIdx + 1] || '')) {
+    removeIdx = targetIdx + 1;
+  }
+
+  if (removeIdx >= 0) {
+    const removedLine = removeIdx + 1;
+    lines.splice(removeIdx, 1);
     editor.value = lines.join('\n');
+    syncActiveScriptTabSource(editor.value);
     if (staleTimer) clearTimeout(staleTimer);
     if (wasActive) {
-      const newTargetLine = origCurLine > removedLine ? origCurLine - 1 : (origCurLine === removedLine ? -1 : origCurLine);
-      rebuildDebugAtPosition(newTargetLine, origLineVisits, Math.max(0, prevCurIdx - 1));
+      if (appState.TRACE.moduleSources && Object.keys(appState.TRACE.moduleSources).length > 1) {
+        startDebug(Math.max(0, prevCurIdx - 1));
+      } else {
+        const newTargetLine = origCurLine > removedLine ? origCurLine - 1 : (origCurLine === removedLine ? -1 : origCurLine);
+        rebuildDebugAtPosition(newTargetLine, origLineVisits, Math.max(0, prevCurIdx - 1));
+      }
     } else {
       startDebug(0);
     }
     const keepLine = Math.max(1, Math.min(lines.length, Math.min(removedLine, lines.length)));
+    appState.lastEditorCursorLine = keepLine;
     scrollCodeTo(keepLine);
-    say('· 已移除第 ' + removedLine + ' 行的 checkpoint() 检查点函数（保持当前调试进度）', 'dim');
+    say('· 已移除第 ' + removedLine + ' 行的 checkpoint() 检查点函数 (Ctrl+C)', 'dim');
     return;
   }
 
@@ -326,17 +319,22 @@ export function addCheckpointFunction(preferredLine?: number) {
   const insertedLineNum = insertIdx + 1;
   lines.splice(insertIdx, 0, indent + 'checkpoint();');
   editor.value = lines.join('\n');
+  syncActiveScriptTabSource(editor.value);
   appState.lastEditorCursorLine = insertedLineNum;
 
   if (staleTimer) clearTimeout(staleTimer);
   if (wasActive) {
-    const newTargetLine = origCurLine >= insertedLineNum ? origCurLine + 1 : origCurLine;
-    rebuildDebugAtPosition(newTargetLine, origLineVisits, prevCurIdx);
+    if (appState.TRACE.moduleSources && Object.keys(appState.TRACE.moduleSources).length > 1) {
+      startDebug(prevCurIdx);
+    } else {
+      const newTargetLine = origCurLine >= insertedLineNum ? origCurLine + 1 : origCurLine;
+      rebuildDebugAtPosition(newTargetLine, origLineVisits, prevCurIdx);
+    }
   } else {
     startDebug(0);
   }
   scrollCodeTo(insertedLineNum);
-  say('✓ 已在第 ' + insertedLineNum + ' 行添加检查点函数 checkpoint()（保持当前调试位置，点击左下「⏭ 运行到下一个检查点」即可运行至检查点）', 'ok');
+  say('✓ 已在第 ' + insertedLineNum + ' 行添加检查点函数 checkpoint()（可按 Ctrl+C 随时增删该行检查点）', 'ok');
 }
 
 export function go(i: number) {
@@ -355,13 +353,6 @@ if ($('nextCheckpoint')) {
 }
 if ($('btnAddCheckpoint')) {
   $('btnAddCheckpoint').onclick = () => addCheckpointFunction();
-}
-if (gutterEl) {
-  gutterEl.addEventListener('click', (e: MouseEvent) => {
-    const g = closestElement(e, '.gline');
-    if (!g || !g.dataset.line) return;
-    addCheckpointFunction(parseInt(g.dataset.line, 10));
-  });
 }
 
 $('auto').onclick = async () => {
@@ -453,15 +444,13 @@ export function sanitizeFileName(name: string | null | undefined) {
     .replace(/\s+/g, ' ')
     .trim()
     .replace(/[.\s]+$/, '');   // Windows rejects trailing dots/spaces
-  return cleaned || (appState.LANG === 'python' ? 'playground.py' : 'playground.ts');
+  return cleaned || 'playground.ts';
 }
 
 /* Name actually written to disk: keep a real extension, otherwise append .ts */
 export function exportFileName() {
-  const fallback = appState.LANG === 'python' ? 'playground.py' : 'playground.ts';
-  const name = appState.FILE_NAME || fallback;
-  const ext = appState.LANG === 'python' ? '.py' : '.ts';
-  return /\.[A-Za-z0-9]{1,12}$/.test(name) ? name : name + ext;
+  const name = appState.FILE_NAME || 'playground.ts';
+  return /\.[A-Za-z0-9]{1,12}$/.test(name) ? name : name + '.ts';
 }
 
 export function setFileName(name: string | null | undefined) {
@@ -483,7 +472,7 @@ export function loadImportedSource(text: string | null | undefined, name?: strin
     globalThis.setViewMode('script');
   }
   editor.value = src;
-  setFileName(name || (appState.LANG === 'python' ? 'imported.py' : 'imported.ts'));
+  setFileName(name || 'imported.ts');
   if (typeof globalThis.syncActiveScriptTabSource === 'function') {
     try { globalThis.syncActiveScriptTabSource(src); } catch (_) {}
   }
@@ -667,10 +656,18 @@ editor.addEventListener('keydown', (e: KeyboardEvent) => {
   if (e.key === 'Tab') {
     e.preventDefault();
     const s = editor.selectionStart, t = editor.selectionEnd;
-    const indent = appState.LANG === 'python' ? '    ' : '  ';
+    const indent = '  ';
     editor.value = editor.value.slice(0, s) + indent + editor.value.slice(t);
     editor.selectionStart = editor.selectionEnd = s + indent.length;
     onSourceChanged();
+  }
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'c') {
+    if ((editor.selectionStart || 0) === (editor.selectionEnd || 0)) {
+      e.preventDefault();
+      recordEditorCursorLine();
+      addCheckpointFunction(appState.lastEditorCursorLine);
+      return;
+    }
   }
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
     e.preventDefault();
@@ -690,7 +687,6 @@ export function onSourceChanged() {
   recordEditorCursorLine();
   appState.TYPE_ERROR_LINES.clear();
   appState.RUNTIME_ERROR_LINES.clear();
-  if (appState.LANG === 'python') appState.PY_DIAGS.length = 0;
   hideHoverTip();
   updateEditorChrome();
   if (appState.TRACE.steps.length || appState.DEBUG_SESSION.active) {
@@ -731,6 +727,15 @@ addEventListener('resize', () => positionStepViz());
 addEventListener('keydown', e => {
   if (isEditorFocused()) return;
   const target = eventTargetElement(e);
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'c') {
+    if (target && target.closest && target.closest('input,textarea')) return;
+    const sel = typeof window !== 'undefined' && typeof window.getSelection === 'function' ? String(window.getSelection() || '') : '';
+    if (!sel && appState.VIEW_MODE !== 'notebook') {
+      e.preventDefault();
+      addCheckpointFunction();
+      return;
+    }
+  }
   if (e.key === 'ArrowRight' || e.key === ' ') {
     if (target && target.closest && target.closest('button,select,input,textarea')) return;
     e.preventDefault();

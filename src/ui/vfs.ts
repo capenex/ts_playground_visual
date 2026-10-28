@@ -5,16 +5,30 @@ import { say } from "../runtime/event-loop";
 import {
   ensureVfsInitialized,
   persistVfsToClientStorage,
+  registerVfsStorageAdapter,
   resolveWorkspacePath,
   subscribeVfsStore,
   VFS_EXPANDED_FOLDERS,
   VFS_NODES,
+  VFS_STORAGE_KEY,
   VfsNode,
 } from "../runtime/vfs-store";
-import { appState, esc, uiHooks } from "../state";
+import { esc, uiHooks } from "../state";
 import { $, closestElement, editor, eventTargetElement } from "./dom";
 
 export * from "../runtime/vfs-store";
+
+registerVfsStorageAdapter({
+  load: () => {
+    if (typeof localStorage === "undefined") return null;
+    localStorage.removeItem("ts-visual-vfs-v1");
+    return localStorage.getItem(VFS_STORAGE_KEY);
+  },
+  save: (rawJson: string) => {
+    if (typeof localStorage === "undefined") return;
+    localStorage.setItem(VFS_STORAGE_KEY, rawJson);
+  },
+});
 
 let pendingVfsDeletePath: string | null = null;
 
@@ -77,8 +91,6 @@ export function renderVfsTreeUI() {
     const icon =
       ext === "ipynb"
         ? "📓"
-        : ext === "py"
-        ? "🐍"
         : ext === "ts"
         ? "📘"
         : ext === "json"
@@ -137,13 +149,6 @@ export function openVfsFile(rawPath: string) {
     return;
   }
 
-  const isPyFile = node.name.endsWith(".py");
-  if (isPyFile && appState.LANG !== "python" && typeof PY_ENGINE !== "undefined" && PY_ENGINE.setLang) {
-    PY_ENGINE.setLang("python");
-  } else if (node.name.endsWith(".ts") && appState.LANG === "python" && typeof PY_ENGINE !== "undefined" && PY_ENGINE.setLang) {
-    PY_ENGINE.setLang("ts");
-  }
-
   uiHooks.setViewMode("script");
   uiHooks.openVfsScriptFile(node.path, node.name, node.content || "");
   renderVfsTreeUI();
@@ -175,12 +180,11 @@ export function initVfsSidebarEvents() {
   if (btnNewFile) {
     btnNewFile.onclick = () => {
       ensureVfsInitialized();
-      const ext = appState.LANG === "python" ? ".py" : ".ts";
       let idx = 1;
-      while (VFS_NODES.has(`file_${idx}${ext}`)) idx++;
-      const name = `file_${idx}${ext}`;
+      while (VFS_NODES.has(`file_${idx}.ts`)) idx++;
+      const name = `file_${idx}.ts`;
       const path = name;
-      const content = appState.LANG === "python" ? `# ${name}\n` : `// ${name}\n`;
+      const content = `// ${name}\n`;
       VFS_NODES.set(path, {
         path,
         name,

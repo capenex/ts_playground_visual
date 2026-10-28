@@ -398,11 +398,11 @@ export function formatCallArgItem(val: unknown): string {
     if (val.length <= 4) return '[' + val.map((x: unknown): string => formatCallArgItem(x)).join(', ') + ']';
     return '[' + val.slice(0, 3).map((x: unknown): string => formatCallArgItem(x)).join(', ') + ', …]';
   }
-  if (isMapLike(val)) return `Map(${(val as Map<unknown, unknown>).size})`;
-  if (isSetLike(val)) return `Set(${(val as Set<unknown>).size})`;
+  if (isMapLike(val)) return `Map(${val.size})`;
+  if (isSetLike(val)) return `Set(${val.size})`;
   if (typeof val === 'object') {
-    if ('val' in val && ('left' in val || 'right' in val)) return `Tree(${(val as { val: unknown }).val})`;
-    if ('val' in val && 'next' in val) return `List(${(val as { val: unknown }).val})`;
+    if ('val' in val && ('left' in val || 'right' in val)) return `Tree(${val.val})`;
+    if ('val' in val && 'next' in val) return `List(${val.val})`;
     return '{…}';
   }
   return String(val);

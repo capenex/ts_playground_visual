@@ -44,8 +44,7 @@
     ACTIVE_NB_CELL_ID: null,
     FILE_NAME: "playground.ts",
     LANG: "ts",
-    LANG_BUFFERS: { ts: null, python: null },
-    PY_DIAGS: [],
+    LANG_BUFFERS: { ts: null },
     CONSOLE_LOGS: [],
     VIDEO_EXPORT_SPEED: 1,
     IS_EXPORTING_VIDEO: false,
@@ -63,6 +62,8 @@
     RUNTIME_ERROR_LINES: /* @__PURE__ */ new Set(),
     lastEditorCursorLine: -1,
     ENTRY_CALL_LINE: 0,
+    ENTRY_FILE_PATH: "",
+    ACTIVE_DEBUG_FILE: "",
     CURRENT_TS_META: {
       interfaces: /* @__PURE__ */ new Map(),
       varTypes: /* @__PURE__ */ new Map()
@@ -150,6 +151,9 @@
     loadSample: () => {
     },
     getActiveWorkspacePath: () => "",
+    collectWorkspaceFileMap: () => /* @__PURE__ */ new Map(),
+    switchToScriptFile: () => {
+    },
     openVfsNotebookFile: () => {
     },
     openVfsScriptFile: () => {
@@ -410,7 +414,7 @@
     }
     if (sum >= target) {
       best = Math.max(best, sum);
-      checkpoint("\u7A97\u53E3\u8FBE\u6807", r, sum, best);
+      checkpoint(sum >= target, "\u7A97\u53E3\u8FBE\u6807");
     }
   }
   return best + tree.val + graph.nodes.length;
@@ -462,7 +466,7 @@ mergeSort(0, 7)
     const x = nums[i];
     acc = acc + x;
     history.push(acc);
-    checkpoint("\u68C0\u67E5\u7D2F\u52A0\u503C", i, x, acc);
+    checkpoint(acc > 10, "\u68C0\u67E5\u7D2F\u52A0\u503C");
     if (acc > limit) {
       throw new Error("\u8FD0\u884C\u65F6\u5F02\u5E38: \u7D2F\u52A0\u503C acc(" + acc + ") \u8D85\u8FC7\u5B89\u5168\u9608\u503C " + limit);
     }
@@ -627,7 +631,7 @@ async function runAsyncDemo(): Promise<string> {
   timeline.push("2:before-await");
   const score: number = await fetchScore(3, 20);
   timeline.push("6:after-await-" + score);
-  checkpoint(timeline, score);
+  checkpoint(score > 0, "\u5F02\u6B65\u7B49\u5F85\u5B8C\u6210");
   return timeline.join(" -> ");
 }
 
@@ -649,20 +653,6 @@ runAsyncDemo()
   var EXPECTED_LINES = Object.fromEntries(
     Object.entries(SAMPLES).map(([k, v]) => [k, v.trim().split("\n")])
   );
-
-  // src/samples/py-samples.ts
-  var py_samples_exports = {};
-  __export(py_samples_exports, {
-    getPyEngine: () => getPyEngine,
-    getPySamples: () => getPySamples
-  });
-  function getPyEngine() {
-    return typeof PY_ENGINE !== "undefined" ? PY_ENGINE : null;
-  }
-  function getPySamples() {
-    const eng = getPyEngine();
-    return eng && eng.PY_SAMPLES ? eng.PY_SAMPLES : {};
-  }
 
   // src/compiler/comments.ts
   var comments_exports = {};
@@ -2521,10 +2511,10 @@ runAsyncDemo()
       return;
     }
     const m = s.match(/^([A-Za-z_$][\w$]*)$/);
-    if (m && m[1] && !RESERVED_WORDS.has(m[1])) names.add(m[1]);
+    if (m && m[1] && !RESERVED_WORDS.has(m[1]) && !m[1].startsWith("__")) names.add(m[1]);
   }
   function collectNames(js) {
-    const clean = blankStrings(js.replace(/\/\*__import__\*\/[^\n]*/g, ""));
+    const clean = blankStrings(js);
     const names = /* @__PURE__ */ new Set();
     let m;
     const forRe = /\bfor\s*\(\s*(?:const|let|var)\s+(.+?)\s+(?:of|in)\b/g;
@@ -2777,13 +2767,14 @@ runAsyncDemo()
     }
     return -1;
   }
-  function instrument(js, originalLines, names) {
+  function instrument(js, originalLines, names, filePath) {
     const lines = js.split("\n");
     const out = [];
     let parenDepth = 0;
     const braceStack = [];
     let prevContinued = false;
     let prevUnbracedControl = false;
+    const fileArgSuffix = filePath ? ", " + JSON.stringify(filePath) : "";
     for (let i = 0; i < lines.length; i++) {
       const raw = lines[i] ?? "";
       const t = raw.trim();
@@ -2813,7 +2804,7 @@ runAsyncDemo()
       const note = srcLine.length > 72 ? srcLine.slice(0, 69) + "\u2026" : srcLine;
       const insideClass = braceStack.some((k) => k === "classbody");
       const withThis = insideClass && !inClassBody && !/\bsuper\s*\(/.test(t);
-      const callExpr = "__t(" + (i + 1) + ", " + JSON.stringify(note) + ", " + snapFnExpr(names) + (withThis ? ", this" : "") + ")";
+      const callExpr = filePath ? "__t(" + (i + 1) + ", " + JSON.stringify(note) + ", " + snapFnExpr(names) + ", " + (withThis ? "this" : "undefined") + fileArgSuffix + ")" : "__t(" + (i + 1) + ", " + JSON.stringify(note) + ", " + snapFnExpr(names) + (withThis ? ", this" : "") + ")";
       const canInjectHeader = parenDepth === 0 && !inObject && !inClassBody && !prevContinued && !prevUnbracedControl;
       let activeAsyncFn = null;
       for (let bIdx = braceStack.length - 1; bIdx >= 0; bIdx--) {
@@ -2884,7 +2875,7 @@ runAsyncDemo()
       let transformedRaw = raw;
       if (fnHeader && openFnBraceIdx >= 0 && !closeFnSplices.some((s) => s.fnInfo === fnHeader)) {
         const headPrefix = fnHeader.isAsync ? raw.slice(0, openFnBraceIdx + 1).replace(/\basync\s+/, "") : raw.slice(0, openFnBraceIdx + 1);
-        const enterHook = fnHeader.isAsync ? ` return (__t && __t.__async ? __t.__async(function* () { var ${fnHeader.fidVar} = (typeof __t === "function" && __t.__enter) ? __t.__enter(${JSON.stringify(fnHeader.name)}, ${JSON.stringify(fnHeader.params)}, [${fnHeader.params.join(", ")}], ${fnHeader.line}, ${snapFnExpr(names)}) : 0; try {` : ` var ${fnHeader.fidVar} = (typeof __t === "function" && __t.__enter) ? __t.__enter(${JSON.stringify(fnHeader.name)}, ${JSON.stringify(fnHeader.params)}, [${fnHeader.params.join(", ")}], ${fnHeader.line}, ${snapFnExpr(names)}) : 0; try {`;
+        const enterHook = fnHeader.isAsync ? ` return (__t && __t.__async ? __t.__async(function* () { var ${fnHeader.fidVar} = (typeof __t === "function" && __t.__enter) ? __t.__enter(${JSON.stringify(fnHeader.name)}, ${JSON.stringify(fnHeader.params)}, [${fnHeader.params.join(", ")}], ${fnHeader.line}, ${snapFnExpr(names)}${fileArgSuffix}) : 0; try {` : ` var ${fnHeader.fidVar} = (typeof __t === "function" && __t.__enter) ? __t.__enter(${JSON.stringify(fnHeader.name)}, ${JSON.stringify(fnHeader.params)}, [${fnHeader.params.join(", ")}], ${fnHeader.line}, ${snapFnExpr(names)}${fileArgSuffix}) : 0; try {`;
         transformedRaw = headPrefix + enterHook + raw.slice(openFnBraceIdx + 1);
       } else if (closeFnSplices.length > 0) {
         let rebuilt = transformedRaw;
@@ -2996,6 +2987,8 @@ runAsyncDemo()
   var type_checker_exports = {};
   __export(type_checker_exports, {
     BUILTIN_TS_GLOBALS: () => BUILTIN_TS_GLOBALS,
+    buildExportAssignmentFooter: () => buildExportAssignmentFooter,
+    buildModuleGraph: () => buildModuleGraph,
     checkPass2Statements: () => checkPass2Statements,
     collectPass1Declarations: () => collectPass1Declarations,
     createTypeCheckContext: () => createTypeCheckContext,
@@ -3003,6 +2996,8 @@ runAsyncDemo()
     createTypeInferEngine: () => createTypeInferEngine,
     ensureTsWorker: () => ensureTsWorker,
     extractTsInterfaceMetadata: () => extractTsInterfaceMetadata,
+    formatFnSigInfoToTypeString: () => formatFnSigInfoToTypeString,
+    formatFunctionTypeSignature: () => formatFunctionTypeSignature,
     inferExpr: () => inferExpr,
     inferLiteralType: () => inferLiteralType,
     inferRuntimeTsType: () => inferRuntimeTsType,
@@ -3012,11 +3007,15 @@ runAsyncDemo()
     matchInterfaceForObject: () => matchInterfaceForObject,
     matchTemplateLiteralType: () => matchTemplateLiteralType,
     normalizeTsType: () => normalizeTsType,
+    normalizeWorkspaceModulePath: () => normalizeWorkspaceModulePath,
+    parseModuleImportsAndExports: () => parseModuleImportsAndExports,
     parseObjectLiteralEntries: () => parseObjectLiteralEntries,
     parseTopLevelConditional: () => parseTopLevelConditional,
     parseType: () => parseType,
     parseTypeParams: () => parseTypeParams,
     requestTsWorkerCheck: () => requestTsWorkerCheck,
+    resolveModuleImportPath: () => resolveModuleImportPath,
+    rewriteModuleEsmToCjs: () => rewriteModuleEsmToCjs,
     splitTopLevelDecl: () => splitTopLevelDecl,
     splitTopLevelIntersection: () => splitTopLevelIntersection,
     splitTopLevelUnion: () => splitTopLevelUnion,
@@ -3025,7 +3024,8 @@ runAsyncDemo()
     substituteTypeParamsInStr: () => substituteTypeParamsInStr,
     typeCheck: () => typeCheck,
     typeToStr: () => typeToStr,
-    typecheckTS: () => typecheckTS
+    typecheckTS: () => typecheckTS,
+    typecheckWorkspaceModules: () => typecheckWorkspaceModules
   });
 
   // src/utils/format.ts
@@ -3095,9 +3095,9 @@ runAsyncDemo()
       return items;
     }
     const out = {};
-    const clsName = typeof val.__py_cls__ === "string" && val.__py_cls__ ? val.__py_cls__ : val.constructor && val.constructor !== Object && val.constructor.name ? val.constructor.name : "";
+    const clsName = typeof val.__cls__ === "string" && val.__cls__ ? val.__cls__ : val.constructor && val.constructor !== Object && val.constructor.name ? val.constructor.name : "";
     if (clsName) {
-      defineHidden(out, "__py_cls__", clsName);
+      defineHidden(out, "__cls__", clsName);
     }
     Object.keys(val).slice(0, 20).forEach((k) => {
       out[k] = cloneDeepBounded(val[k], depth + 1);
@@ -3283,14 +3283,123 @@ runAsyncDemo()
     if (isSetLike(val)) return "Set";
     return typeof val;
   }
-  function extractTsInterfaceMetadata(src) {
-    const interfaces = /* @__PURE__ */ new Map();
-    const varTypes = /* @__PURE__ */ new Map();
+  function formatSingleFnParamClause(rawParam) {
+    const cleaned = rawParam.trim().replace(/^(?:(?:public|private|protected|readonly)\s+)+/, "");
+    if (!cleaned) return { name: "", formatted: "", rawType: null };
+    let eqIdx = -1;
+    let depth = 0;
+    for (let i = 0; i < cleaned.length; i++) {
+      const ch = cleaned[i];
+      if (ch === '"' || ch === "'" || ch === "`") {
+        i = skipString(cleaned, i) - 1;
+        continue;
+      }
+      if (ch === "(" || ch === "[" || ch === "{" || ch === "<") depth++;
+      else if (ch === ")" || ch === "]" || ch === "}" || ch === ">" && cleaned[i - 1] !== "=") {
+        depth = Math.max(0, depth - 1);
+      } else if (ch === "=" && depth === 0 && cleaned[i + 1] !== ">" && cleaned[i + 1] !== "=" && cleaned[i - 1] !== "=" && cleaned[i - 1] !== "!" && cleaned[i - 1] !== "<" && cleaned[i - 1] !== ">") {
+        eqIdx = i;
+        break;
+      }
+    }
+    const headPart = eqIdx >= 0 ? cleaned.slice(0, eqIdx).trim() : cleaned;
+    const defaultPart = eqIdx >= 0 ? cleaned.slice(eqIdx + 1).trim() : "";
+    let colonIdx = -1;
+    depth = 0;
+    for (let i = 0; i < headPart.length; i++) {
+      const ch = headPart[i];
+      if (ch === '"' || ch === "'" || ch === "`") {
+        i = skipString(headPart, i) - 1;
+        continue;
+      }
+      if (ch === "(" || ch === "[" || ch === "{" || ch === "<") depth++;
+      else if (ch === ")" || ch === "]" || ch === "}" || ch === ">" && headPart[i - 1] !== "=") {
+        depth = Math.max(0, depth - 1);
+      } else if (ch === ":" && depth === 0) {
+        colonIdx = i;
+        break;
+      }
+    }
+    if (colonIdx >= 0) {
+      const pLeft = headPart.slice(0, colonIdx).trim();
+      const pType = headPart.slice(colonIdx + 1).trim() || "any";
+      const cleanName2 = pLeft.replace(/^\.\.\./, "").replace(/\?$/, "").trim();
+      return {
+        name: cleanName2,
+        formatted: `${pLeft}: ${pType}`,
+        rawType: pType
+      };
+    }
+    let inferredType = "any";
+    if (defaultPart) {
+      if (/^[+-]?\d+(?:\.\d+)?$/.test(defaultPart)) inferredType = "number";
+      else if (/^(true|false)$/.test(defaultPart)) inferredType = "boolean";
+      else if (/^["'`]/.test(defaultPart)) inferredType = "string";
+    }
+    const cleanName = headPart.replace(/^\.\.\./, "").replace(/\?$/, "").trim();
+    const isRest = headPart.startsWith("...");
+    return {
+      name: cleanName,
+      formatted: `${headPart}: ${isRest && inferredType === "any" ? "any[]" : inferredType}`,
+      rawType: null
+    };
+  }
+  function formatFnSigInfoToTypeString(sig) {
+    const tParams = sig.typeParams && sig.typeParams.length > 0 ? "<" + sig.typeParams.map(
+      (tp) => tp.name + (tp.constraint ? ` extends ${tp.constraint}` : "") + (tp.defaultType ? ` = ${tp.defaultType}` : "")
+    ).join(", ") + ">" : "";
+    const paramsStr = sig.params.map((p) => `${p.isRest ? "..." : ""}${p.name}${p.optional ? "?" : ""}: ${p.rawType || p.type || "any"}`).join(", ");
+    const retStr = sig.rawReturnType || sig.returnType || "any";
+    return `${tParams}(${paramsStr}) => ${retStr}`;
+  }
+  function formatFunctionTypeSignature(varName, fnVal) {
+    const meta = appState.CURRENT_TS_META;
+    if (varName && meta) {
+      const fromFnMap = meta.fnTypes ? meta.fnTypes.get(varName) : void 0;
+      if (fromFnMap && fromFnMap.includes("=>")) return fromFnMap;
+      const fromVarMap = meta.varTypes ? meta.varTypes.get(varName) : void 0;
+      if (fromVarMap && fromVarMap.includes("=>")) return fromVarMap;
+    }
+    if (typeof fnVal === "function" && fnVal.name && meta) {
+      const fnName = fnVal.name;
+      const fromFnMap = meta.fnTypes ? meta.fnTypes.get(fnName) : void 0;
+      if (fromFnMap && fromFnMap.includes("=>")) return fromFnMap;
+      const fromVarMap = meta.varTypes ? meta.varTypes.get(fnName) : void 0;
+      if (fromVarMap && fromVarMap.includes("=>")) return fromVarMap;
+    }
+    if (typeof fnVal === "function") {
+      try {
+        const fnStr = Function.prototype.toString.call(fnVal).trim();
+        const openP = fnStr.indexOf("(");
+        if (openP >= 0 && openP < 80) {
+          const closeP = findBalancedParen(fnStr, openP);
+          if (closeP > openP) {
+            const rawParams = splitTopLevel(fnStr.slice(openP + 1, closeP)).map((s) => s.trim()).filter(Boolean);
+            const formatted = rawParams.map((p) => formatSingleFnParamClause(p).formatted).filter(Boolean).join(", ");
+            const isAsync = /^async\b/.test(fnStr);
+            return `(${formatted}) => ${isAsync ? "Promise<any>" : "any"}`;
+          }
+        }
+        const singleArrow = fnStr.match(/^(?:async\s+)?([A-Za-z_$][\w$]*)\s*=>/);
+        if (singleArrow && singleArrow[1]) {
+          const isAsync = /^async\b/.test(fnStr);
+          return `(${singleArrow[1]}: any) => ${isAsync ? "Promise<any>" : "any"}`;
+        }
+      } catch (_) {
+      }
+    }
+    return "(...args: any[]) => any";
+  }
+  function extractTsInterfaceMetadata(src, merge = false) {
+    const interfaces = merge && appState.CURRENT_TS_META?.interfaces ? new Map(appState.CURRENT_TS_META.interfaces) : /* @__PURE__ */ new Map();
+    const varTypes = merge && appState.CURRENT_TS_META?.varTypes ? new Map(appState.CURRENT_TS_META.varTypes) : /* @__PURE__ */ new Map();
+    const fnTypes = merge && appState.CURRENT_TS_META?.fnTypes ? new Map(appState.CURRENT_TS_META.fnTypes) : /* @__PURE__ */ new Map();
     if (!src || typeof src !== "string") {
-      appState.CURRENT_TS_META = { interfaces, varTypes };
+      appState.CURRENT_TS_META = { interfaces, varTypes, fnTypes };
       return appState.CURRENT_TS_META;
     }
     const lines = src.replace(/\r\n?/g, "\n").split("\n");
+    const localTypeAliases = /* @__PURE__ */ new Map();
     let activeIface = null;
     let activeIfaceLine = 1;
     let activeIsClass = false;
@@ -3449,24 +3558,106 @@ runAsyncDemo()
         });
         continue;
       }
-      const fnM = trimmed.match(/^(?:export\s+)?(?:default\s+)?function\s+[A-Za-z_$][\w$]*\s*\(([^)]*)\)/);
-      if (fnM && fnM[1]?.trim()) {
-        splitTopLevel(fnM[1]).forEach((p) => {
-          const pm = p.trim().match(/^([A-Za-z_$][\w$]*)\??\s*:\s*(.+)$/);
-          if (pm && pm[1] && pm[2]) varTypes.set(pm[1], pm[2].trim());
-        });
+      const typeAliasM = trimmed.match(/^(?:export\s+)?type\s+([A-Za-z_$][\w$]*)(?:\s*<[^>]*>)?\s*=\s*(.+?);?$/);
+      if (typeAliasM && typeAliasM[1] && typeAliasM[2]) {
+        localTypeAliases.set(typeAliasM[1], typeAliasM[2].trim());
+        continue;
       }
-      const varM = trimmed.match(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*:\s*([^=]+?)(?:\s*=|$)/);
-      if (varM && varM[1] && varM[2]) {
-        varTypes.set(varM[1], varM[2].trim());
-      } else {
-        const varNewM = trimmed.match(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*new\s+([A-Za-z_$][\w$]*)\s*(?:<[^>]*>)?\s*\(/);
-        if (varNewM && varNewM[1] && varNewM[2] && !/^(Map|Set|Array)$/.test(varNewM[2])) {
-          varTypes.set(varNewM[1], varNewM[2]);
+      const fnHdrM = trimmed.match(/^(?:export\s+)?(?:default\s+)?(async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)/);
+      if (fnHdrM && fnHdrM[2] && trimmed.includes("(")) {
+        const isAsyncFn = Boolean(fnHdrM[1]);
+        const fnName = fnHdrM[2];
+        let headerStr = trimmed;
+        let scanIdx = i;
+        const findFnOpenParen = (str) => {
+          let pos = fnHdrM[0].length;
+          while (pos < str.length && isWS(str[pos])) pos++;
+          if (str[pos] === "<") {
+            let ad = 1, k = pos + 1;
+            while (k < str.length && ad > 0) {
+              if (str[k] === '"' || str[k] === "'" || str[k] === "`") {
+                k = skipString(str, k);
+                continue;
+              }
+              if (str[k] === "<") ad++;
+              else if (str[k] === ">" && str[k - 1] !== "=") ad--;
+              k++;
+            }
+            pos = k;
+          }
+          return str.indexOf("(", pos);
+        };
+        let openP = findFnOpenParen(headerStr);
+        while ((openP < 0 || findBalancedParen(headerStr, openP) < 0) && scanIdx + 1 < lines.length) {
+          scanIdx++;
+          headerStr += " " + stripInlineCommentSafe(lines[scanIdx]).trim();
+          openP = findFnOpenParen(headerStr);
         }
+        const closeP = openP >= 0 ? findBalancedParen(headerStr, openP) : -1;
+        if (closeP > openP) {
+          const tParamPart = headerStr.slice(fnHdrM[0].length, openP).trim();
+          const paramInner = headerStr.slice(openP + 1, closeP).trim();
+          const rawParams = paramInner ? splitTopLevel(paramInner) : [];
+          const formattedParams = [];
+          rawParams.forEach((p) => {
+            const parsedP = formatSingleFnParamClause(p);
+            if (parsedP.formatted) formattedParams.push(parsedP.formatted);
+            if (parsedP.name && parsedP.rawType) {
+              varTypes.set(parsedP.name, parsedP.rawType);
+            }
+          });
+          const afterClose = headerStr.slice(closeP + 1).trim();
+          const retM = afterClose.match(/^:\s*([^{;]+?)(?:\s*\{[\s\S]*|\s*;)?$/);
+          const retType = retM && retM[1] ? retM[1].trim() : isAsyncFn ? "Promise<any>" : "any";
+          const fnSig = `${tParamPart ? tParamPart : ""}(${formattedParams.join(", ")}) => ${retType}`;
+          fnTypes.set(fnName, fnSig);
+          varTypes.set(fnName, fnSig);
+        }
+        continue;
+      }
+      const varDeclM = trimmed.match(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*:\s*((?:[^=]|=>)+?)(?:\s*=\s*(?!>)\s*([\s\S]+)|;?$)/);
+      if (varDeclM && varDeclM[1] && varDeclM[2]) {
+        const vName = varDeclM[1];
+        let declT = varDeclM[2].trim().replace(/;$/, "").trim();
+        const resolvedAlias = localTypeAliases.get(declT);
+        if (resolvedAlias && resolvedAlias.includes("=>")) {
+          declT = resolvedAlias;
+        }
+        varTypes.set(vName, declT);
+        if (declT.includes("=>")) {
+          fnTypes.set(vName, declT);
+        }
+        continue;
+      }
+      const varArrowM = trimmed.match(
+        /^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(async\s+)?(?:function\s*\*?(?:\s+[A-Za-z_$][\w$]*)?\s*)?(<[^>]+>\s*)?\(([^)]*)\)\s*(?::\s*([^=]+?))?\s*(?:=>|\{)/
+      );
+      if (varArrowM && varArrowM[1]) {
+        const vName = varArrowM[1];
+        const isAsyncArrow = Boolean(varArrowM[2]);
+        const tParamPart = (varArrowM[3] || "").trim();
+        const paramInner = (varArrowM[4] || "").trim();
+        const rawParams = paramInner ? splitTopLevel(paramInner) : [];
+        const formattedParams = [];
+        rawParams.forEach((p) => {
+          const parsedP = formatSingleFnParamClause(p);
+          if (parsedP.formatted) formattedParams.push(parsedP.formatted);
+          if (parsedP.name && parsedP.rawType) {
+            varTypes.set(parsedP.name, parsedP.rawType);
+          }
+        });
+        const retType = varArrowM[5] ? varArrowM[5].trim() : isAsyncArrow ? "Promise<any>" : "any";
+        const fnSig = `${tParamPart}(${formattedParams.join(", ")}) => ${retType}`;
+        fnTypes.set(vName, fnSig);
+        varTypes.set(vName, fnSig);
+        continue;
+      }
+      const varNewM = trimmed.match(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*new\s+([A-Za-z_$][\w$]*)\s*(?:<[^>]*>)?\s*\(/);
+      if (varNewM && varNewM[1] && varNewM[2] && !/^(Map|Set|Array)$/.test(varNewM[2])) {
+        varTypes.set(varNewM[1], varNewM[2]);
       }
     }
-    appState.CURRENT_TS_META = { interfaces, varTypes };
+    appState.CURRENT_TS_META = { interfaces, varTypes, fnTypes };
     return appState.CURRENT_TS_META;
   }
   function matchInterfaceForObject(name, value) {
@@ -3477,9 +3668,9 @@ runAsyncDemo()
       if (interfaces.has(cleanT)) return interfaces.get(cleanT) || null;
     }
     if (value && typeof value === "object") {
-      const pyCls = typeof value.__py_cls__ === "string" ? value.__py_cls__ : "";
-      if (pyCls && interfaces.has(pyCls)) {
-        return interfaces.get(pyCls) || null;
+      const clsName = typeof value.__cls__ === "string" ? value.__cls__ : "";
+      if (clsName && interfaces.has(clsName)) {
+        return interfaces.get(clsName) || null;
       }
     }
     if (!value || typeof value !== "object") return null;
@@ -5483,6 +5674,15 @@ runAsyncDemo()
           const args = argsRaw ? splitTopLevel(argsRaw).map((a) => a.trim()) : [];
           const argTypes = args.map((a) => inferType(a, lineNum));
           if (callee === "checkpoint" || callee === "\u65AD\u70B9") {
+            if (args.length > 2) {
+              addDiag(lineNum, "TS2554", `"${callee}" \u6700\u591A\u63A5\u6536 2 \u4E2A\u53C2\u6570 (cond?: boolean, msg?: string)\uFF0C\u4F46\u4F20\u5165\u4E86 ${args.length} \u4E2A`);
+            }
+            if (argTypes[0] && argTypes[0] !== "any" && !isTsAssignable(argTypes[0], "boolean")) {
+              addDiag(lineNum, "TS2345", `"${callee}" \u7684\u7B2C 1 \u4E2A\u53C2\u6570\uFF08\u89E6\u53D1\u6761\u4EF6\uFF09\u7C7B\u578B "${argTypes[0]}" \u4E0D\u80FD\u8D4B\u7ED9\u7C7B\u578B "boolean"`);
+            }
+            if (argTypes[1] && argTypes[1] !== "any" && !isTsAssignable(argTypes[1], "string")) {
+              addDiag(lineNum, "TS2345", `"${callee}" \u7684\u7B2C 2 \u4E2A\u53C2\u6570\uFF08\u6253\u5370\u6D88\u606F\uFF09\u7C7B\u578B "${argTypes[1]}" \u4E0D\u80FD\u8D4B\u7ED9\u7C7B\u578B "string"`);
+            }
             return "void";
           }
           if (/^Math\.(max|min|abs|floor|ceil|round|pow|sqrt|trunc|sign)$/.test(callee)) {
@@ -6039,6 +6239,609 @@ runAsyncDemo()
     };
   }
 
+  // src/compiler/module-graph.ts
+  function normalizeWorkspaceModulePath(rawPath) {
+    const cleaned = String(rawPath ?? "").trim().replace(/\\/g, "/").replace(/^\/+/, "");
+    const stripped = cleaned.startsWith("workspace/") ? cleaned.slice("workspace/".length) : cleaned.startsWith("./") ? cleaned.slice(2) : cleaned;
+    const parts = stripped.split("/");
+    const resolved = [];
+    for (const seg of parts) {
+      if (!seg || seg === ".") continue;
+      if (seg === "..") {
+        if (resolved.length > 0) resolved.pop();
+        continue;
+      }
+      resolved.push(seg);
+    }
+    return resolved.join("/");
+  }
+  function resolveModuleImportPath(fromFile, specifier, availableFiles) {
+    const spec = String(specifier ?? "").trim();
+    if (!spec) return null;
+    if (spec === "fs" || spec === "node:fs" || spec === "fs/promises" || spec === "node:fs/promises") {
+      return "fs";
+    }
+    const normFrom = normalizeWorkspaceModulePath(fromFile || "main.ts");
+    const fromParts = normFrom.split("/").filter(Boolean);
+    fromParts.pop();
+    let targetSegments = [];
+    if (spec.startsWith("./") || spec.startsWith("../")) {
+      targetSegments = [...fromParts];
+      const relParts = spec.split("/");
+      for (const seg of relParts) {
+        if (!seg || seg === ".") continue;
+        if (seg === "..") {
+          if (targetSegments.length === 0) return null;
+          targetSegments.pop();
+        } else {
+          targetSegments.push(seg);
+        }
+      }
+    } else if (spec.startsWith("/workspace/") || spec.startsWith("workspace/")) {
+      const norm = normalizeWorkspaceModulePath(spec);
+      targetSegments = norm.split("/").filter(Boolean);
+    } else if (spec.startsWith("/")) {
+      const norm = normalizeWorkspaceModulePath(spec.slice(1));
+      targetSegments = norm.split("/").filter(Boolean);
+    } else {
+      const norm = normalizeWorkspaceModulePath(spec);
+      targetSegments = norm.split("/").filter(Boolean);
+    }
+    const baseCandidate = targetSegments.join("/");
+    if (!baseCandidate) return null;
+    const candidates = [];
+    if (/\.[A-Za-z0-9]+$/.test(baseCandidate)) {
+      candidates.push(baseCandidate);
+      if (baseCandidate.endsWith(".js")) {
+        candidates.push(baseCandidate.slice(0, -3) + ".ts");
+      }
+    } else {
+      candidates.push(baseCandidate + ".ts");
+      candidates.push(baseCandidate + ".tsx");
+      candidates.push(baseCandidate + ".js");
+      candidates.push(baseCandidate + "/index.ts");
+    }
+    if (fromParts.length > 0 && !spec.startsWith(".")) {
+      const dirCandidate = [...fromParts, ...targetSegments].join("/");
+      if (!/\.[A-Za-z0-9]+$/.test(dirCandidate)) {
+        candidates.push(dirCandidate + ".ts");
+      } else {
+        candidates.push(dirCandidate);
+      }
+    }
+    if (availableFiles && availableFiles.size > 0) {
+      for (const cand of candidates) {
+        if (availableFiles.has(cand)) return cand;
+      }
+      for (const cand of candidates) {
+        const lower = cand.toLowerCase();
+        for (const existingKey of availableFiles.keys()) {
+          if (existingKey.toLowerCase() === lower) return existingKey;
+        }
+      }
+      return null;
+    }
+    return candidates[0] || null;
+  }
+  function parseNamedSpecifiersList(braceInner, parentTypeOnly) {
+    const bindings = [];
+    const parts = splitTopLevel(braceInner);
+    for (const rawPart of parts) {
+      let part = rawPart.trim();
+      if (!part) continue;
+      let isTypeOnly = parentTypeOnly;
+      if (/^type\s+/.test(part)) {
+        isTypeOnly = true;
+        part = part.replace(/^type\s+/, "").trim();
+      }
+      const asMatch = part.match(/^([A-Za-z_$][\w$]*)\s+as\s+([A-Za-z_$][\w$]*)$/);
+      const imported = asMatch && asMatch[1] ? asMatch[1] : part;
+      const local = asMatch && asMatch[2] ? asMatch[2] : part;
+      if (/^[A-Za-z_$][\w$]*$/.test(imported) && /^[A-Za-z_$][\w$]*$/.test(local)) {
+        bindings.push({ imported, local, isTypeOnly });
+      }
+    }
+    return bindings;
+  }
+  function parseModuleImportsAndExports(src, currentFile = "main.ts", availableFiles) {
+    const lines = String(src ?? "").replace(/\r/g, "").split("\n");
+    const imports = [];
+    const exports = [];
+    let hasRelativeImports = false;
+    for (let i = 0; i < lines.length; i++) {
+      const lineNum = i + 1;
+      const rawLine = lines[i] ?? "";
+      const trimmed = stripInlineCommentSafe(rawLine).trim();
+      if (!trimmed) continue;
+      if (/^import\b/.test(trimmed)) {
+        const cleanStmt = trimmed.replace(/;\s*$/, "").trim();
+        const sideEffectM = cleanStmt.match(/^import\s+(['"])([^'"]+)\1$/);
+        if (sideEffectM && sideEffectM[2]) {
+          const spec = sideEffectM[2].trim();
+          const isBuiltinFs = spec === "fs" || spec === "node:fs" || spec === "fs/promises" || spec === "node:fs/promises";
+          if (!isBuiltinFs) hasRelativeImports = true;
+          imports.push({
+            line: lineNum,
+            specifier: spec,
+            resolvedPath: resolveModuleImportPath(currentFile, spec, availableFiles),
+            isTypeOnly: false,
+            isBuiltinFs,
+            bindings: []
+          });
+          continue;
+        }
+        const impM = cleanStmt.match(/^import\s+(type\s+)?([\s\S]+?)\s+from\s+(['"])([^'"]+)\3$/);
+        if (impM && impM[2] && impM[4]) {
+          const isTypeOnly = Boolean(impM[1]);
+          const clause = impM[2].trim();
+          const spec = impM[4].trim();
+          const isBuiltinFs = spec === "fs" || spec === "node:fs" || spec === "fs/promises" || spec === "node:fs/promises";
+          if (!isBuiltinFs) hasRelativeImports = true;
+          const bindings = [];
+          const nsM = clause.match(/^\*\s+as\s+([A-Za-z_$][\w$]*)$/);
+          if (nsM && nsM[1]) {
+            bindings.push({ imported: "*", local: nsM[1], isTypeOnly });
+          } else if (clause.startsWith("{") && clause.endsWith("}")) {
+            bindings.push(...parseNamedSpecifiersList(clause.slice(1, -1), isTypeOnly));
+          } else {
+            const defAndNamedM = clause.match(/^([A-Za-z_$][\w$]*)\s*,\s*\{([\s\S]*)\}$/);
+            if (defAndNamedM && defAndNamedM[1] && defAndNamedM[2] !== void 0) {
+              bindings.push({ imported: "default", local: defAndNamedM[1], isTypeOnly });
+              bindings.push(...parseNamedSpecifiersList(defAndNamedM[2], isTypeOnly));
+            } else if (/^[A-Za-z_$][\w$]*$/.test(clause)) {
+              bindings.push({ imported: "default", local: clause, isTypeOnly });
+            }
+          }
+          imports.push({
+            line: lineNum,
+            specifier: spec,
+            resolvedPath: resolveModuleImportPath(currentFile, spec, availableFiles),
+            isTypeOnly,
+            isBuiltinFs,
+            bindings
+          });
+        }
+        continue;
+      }
+      if (/^export\b/.test(trimmed)) {
+        const cleanStmt = trimmed.replace(/;\s*$/, "").trim();
+        const exportListM = cleanStmt.match(/^export\s+(type\s+)?\{([^}]*)\}(?:\s+from\s+(['"])([^'"]+)\3)?$/);
+        if (exportListM && exportListM[2] !== void 0) {
+          const isTypeExport = Boolean(exportListM[1]);
+          const fromSpec = exportListM[4] ? exportListM[4].trim() : void 0;
+          if (fromSpec) {
+            hasRelativeImports = true;
+            imports.push({
+              line: lineNum,
+              specifier: fromSpec,
+              resolvedPath: resolveModuleImportPath(currentFile, fromSpec, availableFiles),
+              isTypeOnly: isTypeExport,
+              isBuiltinFs: false,
+              bindings: []
+            });
+          }
+          const items = splitTopLevel(exportListM[2]);
+          for (const rawItem of items) {
+            let item = rawItem.trim();
+            if (!item) continue;
+            let itemTypeOnly = isTypeExport;
+            if (/^type\s+/.test(item)) {
+              itemTypeOnly = true;
+              item = item.replace(/^type\s+/, "").trim();
+            }
+            const asM = item.match(/^([A-Za-z_$][\w$]*)\s+as\s+([A-Za-z_$][\w$]*)$/);
+            const local = asM && asM[1] ? asM[1] : item;
+            const exported = asM && asM[2] ? asM[2] : item;
+            if (/^[A-Za-z_$][\w$]*$/.test(local) && /^[A-Za-z_$][\w$]*$/.test(exported)) {
+              exports.push({
+                line: lineNum,
+                exported,
+                local,
+                kind: fromSpec ? "reexport" : itemTypeOnly ? "type" : "value",
+                reexportSpecifier: fromSpec
+              });
+            }
+          }
+          continue;
+        }
+        const typeExportM = cleanStmt.match(/^export\s+(?:declare\s+)?(interface|type)\s+([A-Za-z_$][\w$]*)/);
+        if (typeExportM && typeExportM[2]) {
+          exports.push({
+            line: lineNum,
+            exported: typeExportM[2],
+            local: typeExportM[2],
+            kind: "type"
+          });
+          continue;
+        }
+        const enumExportM = cleanStmt.match(/^export\s+(?:const\s+)?enum\s+([A-Za-z_$][\w$]*)/);
+        if (enumExportM && enumExportM[1]) {
+          exports.push({
+            line: lineNum,
+            exported: enumExportM[1],
+            local: enumExportM[1],
+            kind: "enum"
+          });
+          continue;
+        }
+        const fnExportM = cleanStmt.match(/^export\s+(default\s+)?(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)?/);
+        if (fnExportM) {
+          const isDefault = Boolean(fnExportM[1]);
+          const fnName = fnExportM[2] || "__default_export__";
+          exports.push({
+            line: lineNum,
+            exported: isDefault ? "default" : fnName,
+            local: fnName,
+            kind: "function"
+          });
+          if (isDefault && fnExportM[2]) {
+            exports.push({
+              line: lineNum,
+              exported: fnExportM[2],
+              local: fnExportM[2],
+              kind: "function"
+            });
+          }
+          continue;
+        }
+        const clsExportM = cleanStmt.match(/^export\s+(default\s+)?(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)?/);
+        if (clsExportM) {
+          const isDefault = Boolean(clsExportM[1]);
+          const clsName = clsExportM[2] || "__default_export__";
+          exports.push({
+            line: lineNum,
+            exported: isDefault ? "default" : clsName,
+            local: clsName,
+            kind: "class"
+          });
+          if (isDefault && clsExportM[2]) {
+            exports.push({
+              line: lineNum,
+              exported: clsExportM[2],
+              local: clsExportM[2],
+              kind: "class"
+            });
+          }
+          continue;
+        }
+        const varExportM = cleanStmt.match(/^export\s+(?:const|let|var)\s+([\s\S]+)$/);
+        if (varExportM && varExportM[1]) {
+          const decls = splitTopLevel(varExportM[1]);
+          for (const d of decls) {
+            const idM = d.trim().match(/^([A-Za-z_$][\w$]*)/);
+            if (idM && idM[1]) {
+              exports.push({
+                line: lineNum,
+                exported: idM[1],
+                local: idM[1],
+                kind: "value"
+              });
+            }
+          }
+          continue;
+        }
+        if (/^export\s+default\b/.test(cleanStmt)) {
+          exports.push({
+            line: lineNum,
+            exported: "default",
+            local: "__default_export__",
+            kind: "value"
+          });
+        }
+      }
+    }
+    return { imports, exports, hasRelativeImports };
+  }
+  function rewriteModuleEsmToCjs(src, currentFile = "main.ts", availableFiles) {
+    const normCurrent = normalizeWorkspaceModulePath(currentFile || "main.ts");
+    const lines = String(src ?? "").replace(/\r/g, "").split("\n");
+    const outLines = [];
+    const exportedBindings = [];
+    const seenExported = /* @__PURE__ */ new Set();
+    const recordExport = (exported, local) => {
+      const key = `${exported}:${local}`;
+      if (!seenExported.has(key)) {
+        seenExported.add(key);
+        exportedBindings.push({ exported, local });
+      }
+    };
+    for (let i = 0; i < lines.length; i++) {
+      const rawLine = lines[i] ?? "";
+      const trimmed = stripInlineCommentSafe(rawLine).trim();
+      const indentMatch = rawLine.match(/^(\s*)/);
+      const indent = indentMatch && indentMatch[1] ? indentMatch[1] : "";
+      if (/^import\b/.test(trimmed)) {
+        const cleanStmt = trimmed.replace(/;\s*$/, "").trim();
+        const sideM = cleanStmt.match(/^import\s+(['"])([^'"]+)\1$/);
+        if (sideM && sideM[2]) {
+          const spec = sideM[2].trim();
+          const resolved = resolveModuleImportPath(normCurrent, spec, availableFiles) || spec;
+          outLines.push(`${indent}/*__import__*/ __require(${JSON.stringify(resolved)}, ${JSON.stringify(normCurrent)});`);
+          continue;
+        }
+        const impM = cleanStmt.match(/^import\s+(type\s+)?([\s\S]+?)\s+from\s+(['"])([^'"]+)\3$/);
+        if (impM && impM[2] && impM[4]) {
+          const isTypeOnly = Boolean(impM[1]);
+          const clause = impM[2].trim();
+          const spec = impM[4].trim();
+          if (isTypeOnly) {
+            outLines.push(`${indent}/*__import_type__*/`);
+            continue;
+          }
+          if (spec === "fs" || spec === "node:fs" || spec === "fs/promises" || spec === "node:fs/promises") {
+            outLines.push(indent + transpileFsImportStatement(rawLine.trim()));
+            continue;
+          }
+          const resolved = resolveModuleImportPath(normCurrent, spec, availableFiles) || spec;
+          const targetTypeExports = /* @__PURE__ */ new Set();
+          if (availableFiles && availableFiles.has(resolved)) {
+            const targetSrc = availableFiles.get(resolved) || "";
+            const parsedTarget = parseModuleImportsAndExports(targetSrc, resolved, availableFiles);
+            for (const exp of parsedTarget.exports) {
+              if (exp.kind === "type") {
+                targetTypeExports.add(exp.exported);
+              }
+            }
+          }
+          const reqCall = `__require(${JSON.stringify(resolved)}, ${JSON.stringify(normCurrent)})`;
+          const nsM = clause.match(/^\*\s+as\s+([A-Za-z_$][\w$]*)$/);
+          if (nsM && nsM[1]) {
+            outLines.push(`${indent}/*__import__*/ var ${nsM[1]} = ${reqCall};`);
+            continue;
+          }
+          if (clause.startsWith("{") && clause.endsWith("}")) {
+            const bindings = parseNamedSpecifiersList(clause.slice(1, -1), false).filter(
+              (b) => !b.isTypeOnly && !targetTypeExports.has(b.imported)
+            );
+            if (bindings.length === 0) {
+              outLines.push(`${indent}/*__import_type__*/`);
+            } else {
+              const destructure = bindings.map((b) => b.imported === b.local ? b.local : `${b.imported}: ${b.local}`).join(", ");
+              outLines.push(`${indent}/*__import__*/ var { ${destructure} } = ${reqCall};`);
+            }
+            continue;
+          }
+          const defAndNamedM = clause.match(/^([A-Za-z_$][\w$]*)\s*,\s*\{([\s\S]*)\}$/);
+          if (defAndNamedM && defAndNamedM[1] && defAndNamedM[2] !== void 0) {
+            const defLocal = defAndNamedM[1];
+            const named = parseNamedSpecifiersList(defAndNamedM[2], false).filter(
+              (b) => !b.isTypeOnly && !targetTypeExports.has(b.imported)
+            );
+            const tmpVar = `__mod_${i + 1}`;
+            const destructure = named.map((b) => b.imported === b.local ? b.local : `${b.imported}: ${b.local}`).join(", ");
+            const namedPart = destructure ? `, { ${destructure} } = ${tmpVar}` : "";
+            outLines.push(
+              `${indent}/*__import__*/ var ${tmpVar} = ${reqCall}, ${defLocal} = (${tmpVar} && ${tmpVar}.default !== undefined ? ${tmpVar}.default : ${tmpVar})${namedPart};`
+            );
+            continue;
+          }
+          if (/^[A-Za-z_$][\w$]*$/.test(clause)) {
+            const tmpVar = `__mod_${i + 1}`;
+            outLines.push(
+              `${indent}/*__import__*/ var ${tmpVar} = ${reqCall}, ${clause} = (${tmpVar} && ${tmpVar}.default !== undefined ? ${tmpVar}.default : ${tmpVar});`
+            );
+            continue;
+          }
+        }
+      }
+      if (/^export\b/.test(trimmed)) {
+        const cleanStmt = trimmed.replace(/;\s*$/, "").trim();
+        const exportListM = cleanStmt.match(/^export\s+(type\s+)?\{([^}]*)\}(?:\s+from\s+(['"])([^'"]+)\3)?$/);
+        if (exportListM && exportListM[2] !== void 0) {
+          const isTypeOnly = Boolean(exportListM[1]);
+          const fromSpec = exportListM[4] ? exportListM[4].trim() : "";
+          if (isTypeOnly) {
+            outLines.push(`${indent}/*__export_type__*/`);
+            continue;
+          }
+          const items = parseNamedSpecifiersList(exportListM[2], false).filter((b) => !b.isTypeOnly);
+          if (fromSpec) {
+            const resolved = resolveModuleImportPath(normCurrent, fromSpec, availableFiles) || fromSpec;
+            const tmpVar = `__reexp_${i + 1}`;
+            const assigns = items.map((b) => `__exports.${b.local} = ${tmpVar}.${b.imported};`).join(" ");
+            outLines.push(
+              `${indent}/*__import__*/ var ${tmpVar} = __require(${JSON.stringify(resolved)}, ${JSON.stringify(normCurrent)}); ${assigns}`
+            );
+          } else {
+            items.forEach((b) => recordExport(b.local, b.imported));
+            outLines.push(`${indent}/*__export__*/`);
+          }
+          continue;
+        }
+        if (/^export\s+(?:declare\s+)?(?:interface|type)\b/.test(cleanStmt)) {
+          outLines.push(rawLine.replace(/^(\s*)export\s+/, "$1"));
+          continue;
+        }
+        const fnM = cleanStmt.match(/^export\s+(default\s+)?(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)?/);
+        if (fnM) {
+          const isDefault = Boolean(fnM[1]);
+          const fnName = fnM[2] || "";
+          if (isDefault && fnName) {
+            recordExport("default", fnName);
+            recordExport(fnName, fnName);
+            outLines.push(rawLine.replace(/^(\s*)export\s+default\s+/, "$1"));
+          } else if (isDefault && !fnName) {
+            recordExport("default", "__default_export__");
+            outLines.push(rawLine.replace(/^(\s*)export\s+default\s+/, "$1const __default_export__ = "));
+          } else if (fnName) {
+            recordExport(fnName, fnName);
+            outLines.push(rawLine.replace(/^(\s*)export\s+/, "$1"));
+          } else {
+            outLines.push(rawLine.replace(/^(\s*)export\s+/, "$1"));
+          }
+          continue;
+        }
+        const clsM = cleanStmt.match(/^export\s+(default\s+)?(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)?/);
+        if (clsM) {
+          const isDefault = Boolean(clsM[1]);
+          const clsName = clsM[2] || "";
+          if (isDefault && clsName) {
+            recordExport("default", clsName);
+            recordExport(clsName, clsName);
+            outLines.push(rawLine.replace(/^(\s*)export\s+default\s+/, "$1"));
+          } else if (isDefault && !clsName) {
+            recordExport("default", "__default_export__");
+            outLines.push(rawLine.replace(/^(\s*)export\s+default\s+/, "$1const __default_export__ = "));
+          } else if (clsName) {
+            recordExport(clsName, clsName);
+            outLines.push(rawLine.replace(/^(\s*)export\s+/, "$1"));
+          } else {
+            outLines.push(rawLine.replace(/^(\s*)export\s+/, "$1"));
+          }
+          continue;
+        }
+        const enumM = cleanStmt.match(/^export\s+(?:const\s+)?enum\s+([A-Za-z_$][\w$]*)/);
+        if (enumM && enumM[1]) {
+          recordExport(enumM[1], enumM[1]);
+          outLines.push(rawLine.replace(/^(\s*)export\s+/, "$1"));
+          continue;
+        }
+        const varM = cleanStmt.match(/^export\s+(?:const|let|var)\s+([\s\S]+)$/);
+        if (varM && varM[1]) {
+          const decls = splitTopLevel(varM[1]);
+          for (const d of decls) {
+            const idM = d.trim().match(/^([A-Za-z_$][\w$]*)/);
+            if (idM && idM[1]) {
+              recordExport(idM[1], idM[1]);
+            }
+          }
+          outLines.push(rawLine.replace(/^(\s*)export\s+/, "$1"));
+          continue;
+        }
+        if (/^export\s+default\b/.test(cleanStmt)) {
+          recordExport("default", "__default_export__");
+          outLines.push(rawLine.replace(/^(\s*)export\s+default\s+/, "$1const __default_export__ = "));
+          continue;
+        }
+      }
+      outLines.push(rawLine);
+    }
+    return {
+      code: outLines.join("\n"),
+      exportedBindings
+    };
+  }
+  function buildExportAssignmentFooter(exportedBindings) {
+    if (exportedBindings.length === 0) return "";
+    const getters = exportedBindings.map(
+      (b) => `try { Object.defineProperty(__exports, ${JSON.stringify(b.exported)}, { enumerable: true, configurable: true, get: function(){ return ${b.local}; } }); } catch (_) { try { __exports[${JSON.stringify(b.exported)}] = ${b.local}; } catch (__e) {} }`
+    ).join(" ");
+    return `if (typeof __exports === "object" && __exports) { ${getters} }`;
+  }
+  function isReadonlyStringMap(val) {
+    return typeof val.forEach === "function" && typeof val.get === "function";
+  }
+  function buildModuleGraph(entryFile, entrySource, fileMap) {
+    const normEntry = normalizeWorkspaceModulePath(entryFile || "main.ts") || "main.ts";
+    const allFiles = /* @__PURE__ */ new Map();
+    if (isReadonlyStringMap(fileMap)) {
+      fileMap.forEach((content, k) => {
+        const nk = normalizeWorkspaceModulePath(k);
+        if (nk) allFiles.set(nk, content.replace(/\r/g, ""));
+      });
+    } else {
+      Object.keys(fileMap).forEach((k) => {
+        const nk = normalizeWorkspaceModulePath(k);
+        const content = fileMap[k];
+        if (nk && typeof content === "string") allFiles.set(nk, content.replace(/\r/g, ""));
+      });
+    }
+    allFiles.set(normEntry, String(entrySource ?? "").replace(/\r/g, ""));
+    const entryParsed = parseModuleImportsAndExports(
+      allFiles.get(normEntry) || "",
+      normEntry,
+      allFiles
+    );
+    const modules = /* @__PURE__ */ new Map();
+    const diagnostics = [];
+    const order = [];
+    const visiting = /* @__PURE__ */ new Set();
+    const visited = /* @__PURE__ */ new Set();
+    function visit(filePath) {
+      if (visited.has(filePath)) return;
+      visiting.add(filePath);
+      const rawSource = allFiles.get(filePath) ?? "";
+      const parsed = filePath === normEntry ? entryParsed : parseModuleImportsAndExports(rawSource, filePath, allFiles);
+      const deps = [];
+      for (const imp of parsed.imports) {
+        if (imp.isBuiltinFs) continue;
+        if (!imp.resolvedPath || !allFiles.has(imp.resolvedPath)) {
+          diagnostics.push({
+            file: filePath,
+            line: imp.line,
+            code: "TS2307",
+            message: `\u627E\u4E0D\u5230\u6A21\u5757 "${imp.specifier}"\uFF08\u8BF7\u786E\u8BA4\u6587\u4EF6\u5DF2\u5B58\u5728\u4E8E /workspace \u5DE5\u4F5C\u533A\u4E2D\uFF09`,
+            severity: "error"
+          });
+          continue;
+        }
+        const depPath = imp.resolvedPath;
+        if (!deps.includes(depPath)) deps.push(depPath);
+        if (visiting.has(depPath)) {
+          diagnostics.push({
+            file: filePath,
+            line: imp.line,
+            code: "TS2300",
+            message: `\u68C0\u6D4B\u5230\u6A21\u5757\u5FAA\u73AF\u4F9D\u8D56: "${filePath}" -> "${depPath}"`,
+            severity: "error"
+          });
+          continue;
+        }
+        visit(depPath);
+      }
+      const node = {
+        file: filePath,
+        rawSource,
+        lines: rawSource.split("\n"),
+        imports: parsed.imports,
+        exports: parsed.exports,
+        dependencies: deps
+      };
+      modules.set(filePath, node);
+      visiting.delete(filePath);
+      visited.add(filePath);
+      order.push(filePath);
+    }
+    visit(normEntry);
+    modules.forEach((modNode) => {
+      for (const imp of modNode.imports) {
+        if (imp.isBuiltinFs || !imp.resolvedPath) continue;
+        const targetMod = modules.get(imp.resolvedPath);
+        if (!targetMod) continue;
+        const exportedSet = /* @__PURE__ */ new Set();
+        for (const exp of targetMod.exports) {
+          exportedSet.add(exp.exported);
+          if (exp.reexportSpecifier) {
+            const reRes = resolveModuleImportPath(targetMod.file, exp.reexportSpecifier, allFiles);
+            if (reRes && modules.has(reRes)) {
+              modules.get(reRes)?.exports.forEach((re) => exportedSet.add(re.exported));
+            }
+          }
+        }
+        for (const bind of imp.bindings) {
+          if (bind.imported === "*") continue;
+          if (!exportedSet.has(bind.imported)) {
+            diagnostics.push({
+              file: modNode.file,
+              line: imp.line,
+              code: "TS2305",
+              message: `\u6A21\u5757 "${imp.specifier}" (${imp.resolvedPath}) \u6CA1\u6709\u5BFC\u51FA\u6210\u5458 "${bind.imported}"`,
+              severity: "error"
+            });
+          }
+        }
+      }
+    });
+    const isMultiFile = order.length > 1 || entryParsed.hasRelativeImports || entryParsed.exports.length > 0;
+    return {
+      entryFile: normEntry,
+      isMultiFile,
+      order,
+      modules,
+      diagnostics
+    };
+  }
+
   // src/compiler/type-checker.ts
   var _TYPECHECK_CACHE = { src: null, strict: null, diags: [] };
   function collectPass1Declarations(ctx, evalEngine, inferEngine) {
@@ -6434,13 +7237,14 @@ runAsyncDemo()
       let trimmed = stripInlineCommentSafe(rawLine).trim();
       if (!trimmed || trimmed.startsWith("@")) continue;
       if (/^import\b/.test(trimmed)) {
-        const impMatch = trimmed.replace(/;$/, "").trim().match(/^import\s+([\s\S]+?)\s+from\s+(['"])([^'"]+)\2\s*$/);
+        const impMatch = trimmed.replace(/;$/, "").trim().match(/^import\s+(?:type\s+)?([\s\S]+?)\s+from\s+(['"])([^'"]+)\2\s*$/);
         if (impMatch) {
           const clause = (impMatch[1] || "").trim();
           const modSpec = (impMatch[3] || "").trim();
           const isFsRoot = modSpec === "fs" || modSpec === "node:fs";
           const isFsPromises = modSpec === "fs/promises" || modSpec === "node:fs/promises";
           const modType = isFsPromises ? "__FsPromises__" : isFsRoot ? "__FsModule__" : "any";
+          const isAlreadyLinked = (localName) => !isFsRoot && !isFsPromises && (env.has(localName) || fns.has(localName) || interfaces.has(localName) || ctx.typeAliases.has(localName) || ctx.genericTypeAliases.has(localName) || ctx.enumsSet.has(localName));
           const registerNamedBindings = (braceStr) => {
             const inner = braceStr.replace(/^\{|\}$/g, "").trim();
             if (!inner) return;
@@ -6451,24 +7255,54 @@ runAsyncDemo()
               const imported = asM && asM[1] ? asM[1] : spec;
               const local = asM && asM[2] ? asM[2] : spec;
               if (!/^[A-Za-z_$][\w$]*$/.test(local)) return;
+              if (isAlreadyLinked(local)) return;
               const bType = isFsRoot && imported === "promises" ? "__FsPromises__" : "any";
               env.set(local, { type: bType, isConst: true, line: lineNum, declaredType: bType });
             });
           };
           const nsM = clause.match(/^\*\s+as\s+([A-Za-z_$][\w$]*)$/);
           if (nsM && nsM[1]) {
-            env.set(nsM[1], { type: modType, isConst: true, line: lineNum, declaredType: modType });
+            if (!isAlreadyLinked(nsM[1])) {
+              env.set(nsM[1], { type: modType, isConst: true, line: lineNum, declaredType: modType });
+            }
           } else if (clause.startsWith("{") && clause.endsWith("}")) {
             registerNamedBindings(clause);
           } else {
             const defNamedM = clause.match(/^([A-Za-z_$][\w$]*)\s*,\s*(\{[\s\S]+\})$/);
             if (defNamedM && defNamedM[1] && defNamedM[2]) {
-              env.set(defNamedM[1], { type: modType, isConst: true, line: lineNum, declaredType: modType });
+              if (!isAlreadyLinked(defNamedM[1])) {
+                env.set(defNamedM[1], { type: modType, isConst: true, line: lineNum, declaredType: modType });
+              }
               registerNamedBindings(defNamedM[2]);
             } else if (/^[A-Za-z_$][\w$]*$/.test(clause)) {
-              env.set(clause, { type: modType, isConst: true, line: lineNum, declaredType: modType });
+              if (!isAlreadyLinked(clause)) {
+                env.set(clause, { type: modType, isConst: true, line: lineNum, declaredType: modType });
+              }
             }
           }
+        }
+        continue;
+      }
+      if (/^export\s+(?:type\s+)?\{[^}]*\}(?:\s+from\s+['"][^'"]+['"])?\s*;?$/.test(trimmed)) {
+        const braceM = trimmed.match(/^export\s+(type\s+)?\{([^}]*)\}(?:\s+from\s+['"]([^'"]+)['"])?/);
+        if (braceM && braceM[2] !== void 0 && !braceM[3]) {
+          splitTopLevel(braceM[2]).forEach((rawItem) => {
+            const item = rawItem.trim().replace(/^type\s+/, "").trim();
+            if (!item) return;
+            const asM = item.match(/^([A-Za-z_$][\w$]*)\s+as\s+([A-Za-z_$][\w$]*)$/);
+            const local = asM && asM[1] ? asM[1] : item;
+            if (/^[A-Za-z_$][\w$]*$/.test(local) && !isKnownIdentifier(local)) {
+              addDiag(lineNum, "TS2304", `\u627E\u4E0D\u5230\u8981\u5BFC\u51FA\u7684\u540D\u79F0 "${local}"`);
+            }
+          });
+        }
+        continue;
+      }
+      if (/^export\s+default\b/.test(trimmed) && !/^export\s+default\s+(?:async\s+)?(?:function|class|abstract\s+class)\b/.test(trimmed)) {
+        const defExpr = trimmed.replace(/^export\s+default\s+/, "").replace(/;\s*$/, "").trim();
+        if (defExpr) {
+          const defT = inferType(defExpr, lineNum);
+          env.set("__default_export__", { type: defT, isConst: true, line: lineNum, declaredType: defT });
         }
         continue;
       }
@@ -7371,6 +8205,26 @@ runAsyncDemo()
       }
     }
   }
+  function syncContextFunctionTypesToMeta(ctx) {
+    const meta = appState.CURRENT_TS_META;
+    if (!meta) return;
+    if (!meta.fnTypes) meta.fnTypes = /* @__PURE__ */ new Map();
+    const fnTypes = meta.fnTypes;
+    const varTypes = meta.varTypes;
+    ctx.fns.forEach((sig, fnKey) => {
+      if (!fnKey || fnKey.includes(".") || fnKey.startsWith("<")) return;
+      const formatted = formatFnSigInfoToTypeString(sig);
+      fnTypes.set(fnKey, formatted);
+      varTypes.set(fnKey, formatted);
+    });
+    ctx.env.forEach((info, vName) => {
+      const candidate = info.declaredType || info.type;
+      if (candidate && candidate.includes("=>")) {
+        fnTypes.set(vName, candidate);
+        varTypes.set(vName, candidate);
+      }
+    });
+  }
   function typecheckTS(src, strict = appState.STRICT_TS) {
     extractTsInterfaceMetadata(src);
     if (!strict) return [];
@@ -7382,6 +8236,7 @@ runAsyncDemo()
     const inferEngine = createTypeInferEngine(ctx, evalEngine);
     collectPass1Declarations(ctx, evalEngine, inferEngine);
     checkPass2Statements(ctx, evalEngine, inferEngine);
+    syncContextFunctionTypesToMeta(ctx);
     const { diagnostics } = ctx;
     if (_TS_WORKER_STATE.lastSrc === src && Array.isArray(_TS_WORKER_STATE.lastDiags)) {
       _TS_WORKER_STATE.lastDiags.forEach((wd) => {
@@ -7396,6 +8251,201 @@ runAsyncDemo()
       _TYPECHECK_CACHE = { src, strict, diags: diagnostics.map((d) => ({ ...d })) };
     }
     return diagnostics;
+  }
+  function linkSymbolFromDependency(targetCtx, depCtx, depNode, importedName, localName, lineNum) {
+    const expSpec = depNode.exports.find((e) => e.exported === importedName);
+    const srcName = expSpec ? expSpec.local : importedName;
+    depCtx.interfaces.forEach((shape, ifaceName) => {
+      if (!targetCtx.interfaces.has(ifaceName)) {
+        targetCtx.interfaces.set(ifaceName, new Map(shape));
+      }
+    });
+    depCtx.interfaceTypeParams.forEach((tParams, ifaceName) => {
+      if (!targetCtx.interfaceTypeParams.has(ifaceName)) {
+        targetCtx.interfaceTypeParams.set(ifaceName, [...tParams]);
+      }
+    });
+    depCtx.classParents.forEach((parent, clsName) => {
+      if (!targetCtx.classParents.has(clsName)) {
+        targetCtx.classParents.set(clsName, parent);
+      }
+    });
+    depCtx.typeAliases.forEach((aliasBody, aliasName) => {
+      if (!targetCtx.typeAliases.has(aliasName)) {
+        targetCtx.typeAliases.set(aliasName, aliasBody);
+      }
+    });
+    depCtx.genericTypeAliases.forEach((gInfo, aliasName) => {
+      if (!targetCtx.genericTypeAliases.has(aliasName)) {
+        targetCtx.genericTypeAliases.set(aliasName, { ...gInfo });
+      }
+    });
+    depCtx.enumsSet.forEach((en) => targetCtx.enumsSet.add(en));
+    depCtx.enumMembers.forEach((mems, en) => {
+      if (!targetCtx.enumMembers.has(en)) targetCtx.enumMembers.set(en, new Set(mems));
+    });
+    depCtx.enumValueTypes.forEach((vts, en) => {
+      if (!targetCtx.enumValueTypes.has(en)) targetCtx.enumValueTypes.set(en, new Set(vts));
+    });
+    depCtx.fns.forEach((sig, fnKey) => {
+      if (fnKey.includes(".") && !targetCtx.fns.has(fnKey)) {
+        targetCtx.fns.set(fnKey, { ...sig });
+      }
+    });
+    if (depCtx.fns.has(srcName)) {
+      const fnSig = depCtx.fns.get(srcName);
+      if (fnSig) {
+        targetCtx.fns.set(localName, { ...fnSig, name: localName });
+      }
+    }
+    if (depCtx.interfaces.has(srcName)) {
+      const shape = depCtx.interfaces.get(srcName);
+      if (shape) {
+        targetCtx.interfaces.set(localName, new Map(shape));
+        const tParams = depCtx.interfaceTypeParams.get(srcName);
+        if (tParams) targetCtx.interfaceTypeParams.set(localName, [...tParams]);
+        if (depCtx.abstractClasses.has(srcName)) targetCtx.abstractClasses.add(localName);
+        depCtx.fns.forEach((sig, fnKey) => {
+          if (fnKey.startsWith(srcName + ".")) {
+            const suffix = fnKey.slice(srcName.length);
+            targetCtx.fns.set(localName + suffix, { ...sig });
+          }
+        });
+      }
+    }
+    if (depCtx.typeAliases.has(srcName)) {
+      const body = depCtx.typeAliases.get(srcName);
+      if (body) targetCtx.typeAliases.set(localName, body);
+    }
+    if (depCtx.genericTypeAliases.has(srcName)) {
+      const g = depCtx.genericTypeAliases.get(srcName);
+      if (g) targetCtx.genericTypeAliases.set(localName, { ...g });
+    }
+    if (depCtx.enumsSet.has(srcName)) {
+      targetCtx.enumsSet.add(localName);
+      const mems = depCtx.enumMembers.get(srcName);
+      if (mems) targetCtx.enumMembers.set(localName, new Set(mems));
+      const vts = depCtx.enumValueTypes.get(srcName);
+      if (vts) targetCtx.enumValueTypes.set(localName, new Set(vts));
+    }
+    if (depCtx.env.has(srcName)) {
+      const vInfo = depCtx.env.get(srcName);
+      if (vInfo) {
+        targetCtx.env.set(localName, {
+          type: vInfo.declaredType || vInfo.type,
+          isConst: true,
+          line: lineNum,
+          declaredType: vInfo.declaredType || vInfo.type
+        });
+      }
+    }
+  }
+  function typecheckWorkspaceModules(entryFile, entrySource, fileMap, strict = appState.STRICT_TS) {
+    const graph = buildModuleGraph(entryFile, entrySource, fileMap);
+    if (!graph.isMultiFile) {
+      const singleDiags = typecheckTS(entrySource, strict).map((d) => ({
+        ...d,
+        file: "file" in d && d.file ? d.file : graph.entryFile
+      }));
+      return { diagnostics: singleDiags, diags: singleDiags, graph };
+    }
+    appState.CURRENT_TS_META = {
+      interfaces: /* @__PURE__ */ new Map(),
+      varTypes: /* @__PURE__ */ new Map(),
+      fnTypes: /* @__PURE__ */ new Map()
+    };
+    for (const modFile of graph.order) {
+      const modNode = graph.modules.get(modFile);
+      if (modNode) {
+        extractTsInterfaceMetadata(modNode.rawSource, true);
+      }
+    }
+    for (const modFile of graph.order) {
+      const modNode = graph.modules.get(modFile);
+      if (!modNode) continue;
+      for (const imp of modNode.imports) {
+        for (const bind of imp.bindings) {
+          if (bind.imported !== "*" && bind.local !== bind.imported) {
+            const fnSig = appState.CURRENT_TS_META.fnTypes?.get(bind.imported);
+            if (fnSig && appState.CURRENT_TS_META.fnTypes) {
+              appState.CURRENT_TS_META.fnTypes.set(bind.local, fnSig);
+            }
+            const vType = appState.CURRENT_TS_META.varTypes.get(bind.imported);
+            if (vType) {
+              appState.CURRENT_TS_META.varTypes.set(bind.local, vType);
+            }
+          }
+        }
+      }
+    }
+    if (!strict) {
+      const diags = [...graph.diagnostics];
+      return { diagnostics: diags, diags, graph };
+    }
+    const allDiagnostics = [...graph.diagnostics];
+    const checkedContexts = /* @__PURE__ */ new Map();
+    for (const modFile of graph.order) {
+      const modNode = graph.modules.get(modFile);
+      if (!modNode) continue;
+      const ctx = createTypeCheckContext(modNode.rawSource);
+      const evalEngine = createTypeEvalEngine(ctx);
+      const inferEngine = createTypeInferEngine(ctx, evalEngine);
+      for (const imp of modNode.imports) {
+        if (imp.isBuiltinFs || !imp.resolvedPath) continue;
+        const depCtx = checkedContexts.get(imp.resolvedPath);
+        const depNode = graph.modules.get(imp.resolvedPath);
+        if (!depCtx || !depNode) continue;
+        for (const bind of imp.bindings) {
+          if (bind.imported === "*") {
+            const nsTypeName = `__ModuleNs_${imp.resolvedPath.replace(/[^A-Za-z0-9_]/g, "_")}__`;
+            const nsShape = /* @__PURE__ */ new Map();
+            for (const exp of depNode.exports) {
+              if (exp.kind === "type") continue;
+              const localV = depCtx.env.get(exp.local);
+              if (localV) {
+                nsShape.set(exp.exported, {
+                  type: localV.declaredType || localV.type,
+                  rawType: localV.declaredType || localV.type,
+                  optional: false
+                });
+              }
+              const localFn = depCtx.fns.get(exp.local);
+              if (localFn) {
+                ctx.fns.set(`${nsTypeName}.${exp.exported}`, { ...localFn, name: `${nsTypeName}.${exp.exported}` });
+                nsShape.set(exp.exported, {
+                  type: "function",
+                  rawType: "function",
+                  optional: false
+                });
+              }
+            }
+            ctx.interfaces.set(nsTypeName, nsShape);
+            ctx.env.set(bind.local, {
+              type: nsTypeName,
+              isConst: true,
+              line: imp.line,
+              declaredType: nsTypeName
+            });
+          } else {
+            linkSymbolFromDependency(ctx, depCtx, depNode, bind.imported, bind.local, imp.line);
+          }
+        }
+      }
+      collectPass1Declarations(ctx, evalEngine, inferEngine);
+      checkPass2Statements(ctx, evalEngine, inferEngine);
+      syncContextFunctionTypesToMeta(ctx);
+      checkedContexts.set(modFile, ctx);
+      for (const d of ctx.diagnostics) {
+        allDiagnostics.push({
+          file: modFile,
+          line: d.line,
+          code: d.code,
+          message: d.message,
+          severity: "error"
+        });
+      }
+    }
+    return { diagnostics: allDiagnostics, diags: allDiagnostics, graph };
   }
   var _TS_WORKER_STATE = {
     worker: null,
@@ -8379,6 +9429,7 @@ runAsyncDemo()
   var runner_exports = {};
   __export(runner_exports, {
     buildFrameSnapshotFromClosure: () => buildFrameSnapshotFromClosure,
+    collectWorkspaceFilesAndEntry: () => collectWorkspaceFilesAndEntry,
     computeAndAppendNextStep: () => computeAndAppendNextStep,
     evalCall: () => evalCall,
     generateTrace: () => generateTrace,
@@ -8389,6 +9440,540 @@ runAsyncDemo()
     runTrace: () => runTrace,
     startDebug: () => startDebug
   });
+
+  // src/runtime/vfs-store.ts
+  var VFS_STORAGE_KEY = "ts-visual-vfs-workspace-v2";
+  var vfsBootInitialized = false;
+  var VFS_EXPANDED_FOLDERS = /* @__PURE__ */ new Set();
+  var VFS_NODES = /* @__PURE__ */ new Map();
+  var vfsListeners = /* @__PURE__ */ new Set();
+  var vfsStorageAdapter = null;
+  function registerVfsStorageAdapter(adapter) {
+    vfsStorageAdapter = adapter;
+  }
+  function subscribeVfsStore(listener) {
+    vfsListeners.add(listener);
+    return () => {
+      vfsListeners.delete(listener);
+    };
+  }
+  function notifyVfsStoreChanged() {
+    vfsListeners.forEach((fn) => fn());
+  }
+  function resolveWorkspacePath(rawPath, allowEmptyRoot = false) {
+    const raw = String(rawPath ?? "").trim().replace(/\\/g, "/");
+    if (!raw || raw === "." || raw === "./" || raw === "workspace" || raw === "/workspace" || raw === "workspace/" || raw === "/workspace/") {
+      if (allowEmptyRoot) return "";
+      throw new Error(`EISDIR: illegal operation on workspace root directory '${rawPath}'`);
+    }
+    if (/^[A-Za-z]:/.test(raw) || raw.startsWith("~")) {
+      throw new Error(`EACCES: permission denied, file operations outside workspace are not allowed: '${rawPath}'`);
+    }
+    if (raw.startsWith("/")) {
+      if (raw !== "/workspace" && !raw.startsWith("/workspace/")) {
+        throw new Error(`EACCES: permission denied, file operations outside workspace are not allowed: '${rawPath}'`);
+      }
+    }
+    let stripped = raw;
+    if (stripped.startsWith("/workspace/")) {
+      stripped = stripped.slice("/workspace/".length);
+    } else if (stripped.startsWith("workspace/")) {
+      stripped = stripped.slice("workspace/".length);
+    } else if (stripped.startsWith("./")) {
+      stripped = stripped.slice(2);
+    }
+    const rawSegments = stripped.split("/");
+    const resolved = [];
+    for (const seg of rawSegments) {
+      if (!seg || seg === ".") continue;
+      if (seg === "..") {
+        if (resolved.length === 0) {
+          throw new Error(`EACCES: permission denied, file operations outside workspace are not allowed: '${rawPath}'`);
+        }
+        resolved.pop();
+        continue;
+      }
+      resolved.push(seg);
+    }
+    const firstSeg = resolved[0] || "";
+    if (firstSeg === "examples" || firstSeg === "notebooks") {
+      throw new Error(`EACCES: permission denied, file operations outside workspace are not allowed: '${rawPath}'`);
+    }
+    const finalPath = resolved.join("/");
+    if (!finalPath && !allowEmptyRoot) {
+      throw new Error(`EISDIR: illegal operation on workspace root directory '${rawPath}'`);
+    }
+    return finalPath;
+  }
+  function isPersistedVfsNode(item) {
+    if (!isRecord(item)) return false;
+    return typeof item.path === "string" && typeof item.name === "string" && (item.type === "file" || item.type === "folder");
+  }
+  function ensureVfsInitialized() {
+    if (vfsBootInitialized) return;
+    vfsBootInitialized = true;
+    VFS_NODES.clear();
+    try {
+      if (vfsStorageAdapter) {
+        const raw = vfsStorageAdapter.load();
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            for (const item of parsed) {
+              if (isPersistedVfsNode(item)) {
+                VFS_NODES.set(item.path, {
+                  path: item.path,
+                  name: item.name,
+                  type: item.type,
+                  parentPath: typeof item.parentPath === "string" ? item.parentPath : "",
+                  content: typeof item.content === "string" ? item.content : void 0,
+                  readonly: Boolean(item.readonly)
+                });
+              }
+            }
+          }
+        }
+      }
+    } catch (_) {
+    }
+  }
+  function persistVfsToClientStorage() {
+    try {
+      if (!vfsStorageAdapter) return;
+      const customNodes = [];
+      VFS_NODES.forEach((node) => {
+        customNodes.push(node);
+      });
+      vfsStorageAdapter.save(JSON.stringify(customNodes));
+    } catch (_) {
+    }
+  }
+  function ensureParentFoldersExist(relPath) {
+    const parts = relPath.split("/").filter(Boolean);
+    if (parts.length <= 1) return;
+    let acc = "";
+    for (let i = 0; i < parts.length - 1; i++) {
+      const folderName = parts[i] || "";
+      const parentPath = acc;
+      acc = acc ? `${acc}/${folderName}` : folderName;
+      if (!VFS_NODES.has(acc)) {
+        VFS_NODES.set(acc, {
+          path: acc,
+          name: folderName,
+          type: "folder",
+          parentPath
+        });
+        VFS_EXPANDED_FOLDERS.add(acc);
+      }
+    }
+  }
+  function serializeFsData(data) {
+    if (typeof data === "string") return data;
+    if (data instanceof Uint8Array) {
+      return typeof TextDecoder !== "undefined" ? new TextDecoder().decode(data) : String(data);
+    }
+    if (data !== null && typeof data === "object") {
+      try {
+        return JSON.stringify(data, null, 2);
+      } catch (_) {
+        return String(data);
+      }
+    }
+    return String(data ?? "");
+  }
+  function createVfsCoreApi() {
+    const api = {
+      resolveWorkspacePath(rawPath, allowEmptyRoot = false) {
+        return resolveWorkspacePath(rawPath, allowEmptyRoot);
+      },
+      readFile(path) {
+        ensureVfsInitialized();
+        const rel = resolveWorkspacePath(path, false);
+        const node = VFS_NODES.get(rel);
+        if (!node) return null;
+        if (node.type === "folder") {
+          throw new Error(`EISDIR: illegal operation on a directory, read '${path}'`);
+        }
+        return node.content ?? "";
+      },
+      writeFile(path, content) {
+        ensureVfsInitialized();
+        const rel = resolveWorkspacePath(path, false);
+        const existing = VFS_NODES.get(rel);
+        if (existing && existing.type === "folder") {
+          throw new Error(`EISDIR: illegal operation on a directory, open '${path}'`);
+        }
+        ensureParentFoldersExist(rel);
+        const parts = rel.split("/");
+        const name = parts.pop() || rel;
+        const parentPath = parts.join("/");
+        VFS_NODES.set(rel, {
+          path: rel,
+          name,
+          type: "file",
+          parentPath,
+          content: serializeFsData(content)
+        });
+        persistVfsToClientStorage();
+        notifyVfsStoreChanged();
+        return true;
+      },
+      appendFile(path, content) {
+        ensureVfsInitialized();
+        const rel = resolveWorkspacePath(path, false);
+        const existing = VFS_NODES.get(rel);
+        if (existing && existing.type === "folder") {
+          throw new Error(`EISDIR: illegal operation on a directory, open '${path}'`);
+        }
+        const prev = existing && existing.type === "file" ? existing.content ?? "" : "";
+        return api.writeFile(rel, prev + serializeFsData(content));
+      },
+      listFiles(dirPath = "") {
+        ensureVfsInitialized();
+        const rel = resolveWorkspacePath(dirPath, true);
+        if (rel !== "") {
+          const dirNode = VFS_NODES.get(rel);
+          if (!dirNode) {
+            throw new Error(`ENOENT: no such file or directory, scandir '${dirPath}'`);
+          }
+          if (dirNode.type !== "folder") {
+            throw new Error(`ENOTDIR: not a directory, scandir '${dirPath}'`);
+          }
+        }
+        const out = [];
+        VFS_NODES.forEach((node) => {
+          if (node.parentPath === rel) out.push(node.name);
+        });
+        return out;
+      },
+      readdir(dirPath = "") {
+        return api.listFiles(dirPath);
+      },
+      listAll() {
+        ensureVfsInitialized();
+        return Array.from(VFS_NODES.keys()).sort();
+      },
+      exists(path) {
+        ensureVfsInitialized();
+        const rel = resolveWorkspacePath(path, true);
+        if (rel === "") return true;
+        return VFS_NODES.has(rel);
+      },
+      deleteFile(path) {
+        ensureVfsInitialized();
+        const rel = resolveWorkspacePath(path, false);
+        const node = VFS_NODES.get(rel);
+        if (!node) {
+          throw new Error(`ENOENT: no such file or directory, unlink '${path}'`);
+        }
+        const prefix = rel + "/";
+        Array.from(VFS_NODES.keys()).forEach((k) => {
+          if (k === rel || k.startsWith(prefix)) {
+            VFS_NODES.delete(k);
+          }
+        });
+        persistVfsToClientStorage();
+        notifyVfsStoreChanged();
+        return true;
+      },
+      unlink(path) {
+        return api.deleteFile(path);
+      },
+      mkdir(path) {
+        ensureVfsInitialized();
+        const rel = resolveWorkspacePath(path, true);
+        if (!rel) return true;
+        ensureParentFoldersExist(rel + "/_");
+        persistVfsToClientStorage();
+        notifyVfsStoreChanged();
+        return true;
+      },
+      stat(path) {
+        ensureVfsInitialized();
+        const rel = resolveWorkspacePath(path, true);
+        if (rel === "") {
+          return {
+            size: 0,
+            isFile: () => false,
+            isDirectory: () => true
+          };
+        }
+        const node = VFS_NODES.get(rel);
+        if (!node) {
+          throw new Error(`ENOENT: no such file or directory, stat '${path}'`);
+        }
+        const isDir = node.type === "folder";
+        const size = isDir ? 0 : (node.content ?? "").length;
+        return {
+          size,
+          isFile: () => !isDir,
+          isDirectory: () => isDir
+        };
+      },
+      clear() {
+        ensureVfsInitialized();
+        VFS_NODES.clear();
+        persistVfsToClientStorage();
+        notifyVfsStoreChanged();
+      }
+    };
+    return api;
+  }
+  function bindGlobalVfsApi() {
+    const api = createVfsCoreApi();
+    const fsPromises = {
+      async readFile(path, _options) {
+        const content = api.readFile(path);
+        if (content === null) {
+          throw new Error(`ENOENT: no such file or directory, open '${path}'`);
+        }
+        return content;
+      },
+      async writeFile(path, data, _options) {
+        api.writeFile(path, serializeFsData(data));
+      },
+      async appendFile(path, data, _options) {
+        api.appendFile(path, serializeFsData(data));
+      },
+      async unlink(path) {
+        api.deleteFile(path);
+      },
+      async rm(path, _options) {
+        api.deleteFile(path);
+      },
+      async readdir(path = "", _options) {
+        return api.listFiles(path);
+      },
+      async mkdir(path, _options) {
+        api.mkdir(path);
+        return void 0;
+      },
+      async rmdir(path, _options) {
+        api.deleteFile(path);
+      },
+      async stat(path) {
+        return api.stat(path);
+      },
+      async access(path, _mode) {
+        if (!api.exists(path)) {
+          throw new Error(`ENOENT: no such file or directory, access '${path}'`);
+        }
+      },
+      async exists(path) {
+        return api.exists(path);
+      },
+      async copyFile(src, dest) {
+        const content = api.readFile(src);
+        if (content === null) {
+          throw new Error(`ENOENT: no such file or directory, copyfile '${src}'`);
+        }
+        api.writeFile(dest, content);
+      },
+      async rename(oldPath, newPath) {
+        const content = api.readFile(oldPath);
+        if (content === null) {
+          throw new Error(`ENOENT: no such file or directory, rename '${oldPath}'`);
+        }
+        api.writeFile(newPath, content);
+        api.deleteFile(oldPath);
+      }
+    };
+    const fsShim = {
+      promises: fsPromises,
+      readFileSync(path, _options) {
+        const content = api.readFile(path);
+        if (content === null) {
+          throw new Error(`ENOENT: no such file or directory, open '${path}'`);
+        }
+        return content;
+      },
+      writeFileSync(path, data, _options) {
+        api.writeFile(path, serializeFsData(data));
+      },
+      appendFileSync(path, data, _options) {
+        api.appendFile(path, serializeFsData(data));
+      },
+      existsSync(path) {
+        return api.exists(path);
+      },
+      unlinkSync(path) {
+        api.deleteFile(path);
+      },
+      rmSync(path, _options) {
+        api.deleteFile(path);
+      },
+      readdirSync(path = "") {
+        return api.listFiles(path);
+      },
+      mkdirSync(path, _options) {
+        api.mkdir(path);
+        return void 0;
+      },
+      rmdirSync(path, _options) {
+        api.deleteFile(path);
+      },
+      statSync(path) {
+        return api.stat(path);
+      },
+      copyFileSync(src, dest) {
+        const content = api.readFile(src);
+        if (content === null) {
+          throw new Error(`ENOENT: no such file or directory, copyfile '${src}'`);
+        }
+        api.writeFile(dest, content);
+      },
+      renameSync(oldPath, newPath) {
+        const content = api.readFile(oldPath);
+        if (content === null) {
+          throw new Error(`ENOENT: no such file or directory, rename '${oldPath}'`);
+        }
+        api.writeFile(newPath, content);
+        api.deleteFile(oldPath);
+      }
+    };
+    globalThis.__VFS__ = api;
+    globalThis.vfs = api;
+    globalThis.__FS_SHIM__ = fsShim;
+  }
+
+  // src/runtime/script-tabs-store.ts
+  var scriptTabSeq = 1;
+  var syncingScriptTab = false;
+  function nextScriptTabId() {
+    return "stab_" + ++scriptTabSeq;
+  }
+  function isScriptTabSyncing() {
+    return syncingScriptTab;
+  }
+  function setScriptTabSyncing(val) {
+    syncingScriptTab = val;
+  }
+  var SCRIPT_TABS = {
+    ts: { activeTabId: "", tabs: [] }
+  };
+  var TS_SAMPLE_METADATA = [
+    { key: "showcase", label: "showcase.ts \xB7 \u7EFC\u5408\u6F14\u793A", desc: "\u6ED1\u52A8\u7A97\u53E3 + \u5355\u8C03\u6808 + Map + \u6811\u4E0E\u56FE" },
+    { key: "mergesort", label: "mergesort.ts \xB7 \u5F52\u5E76\u6392\u5E8F", desc: "\u5206\u6CBB\u9012\u5F52\u4E0E\u5DE6\u53F3\u5B50\u6570\u7EC4\u5F52\u5E76" },
+    { key: "debug_crash", label: "debug_crash.ts \xB7 \u8D8A\u754C\u6392\u9519", desc: "\u4E8C\u5206\u67E5\u627E <= \u8D8A\u754C Bug \u73B0\u573A\u5B9A\u4F4D" },
+    { key: "lcs", label: "lcs.ts \xB7 \u6700\u957F\u516C\u5171\u5B50\u5E8F\u5217", desc: "\u4E8C\u7EF4 DP \u7F51\u683C\u89C4\u5212" },
+    { key: "analyze", label: "analyze.ts \xB7 \u9891\u7387\u7EDF\u8BA1", desc: "\u6570\u7EC4\u4E0E Map \u54C8\u5E0C\u7EDF\u8BA1" },
+    { key: "window", label: "window.ts \xB7 \u6ED1\u52A8\u7A97\u53E3", desc: "\u53CC\u6307\u9488\u5B9A\u957F\u6ED1\u52A8\u7A97\u53E3" },
+    { key: "structures", label: "structures.ts \xB7 \u6570\u636E\u7ED3\u6784\u5168\u5BB6\u6876", desc: "\u6808 / \u961F\u5217 / \u5806 / \u5E76\u67E5\u96C6 / \u6811 / \u56FE" },
+    { key: "counter", label: "counter.ts \xB7 \u95ED\u5305\u8BA1\u6570\u5668", desc: "\u9AD8\u9636\u51FD\u6570\u4E0E\u8BCD\u6CD5\u4F5C\u7528\u57DF\u95ED\u5305" },
+    { key: "classes", label: "classes.ts \xB7 \u7C7B\u4E0E\u7EE7\u627F", desc: "class / extends / super \u5B9E\u4F8B\u65B9\u6CD5" },
+    { key: "async_loop", label: "async_loop.ts \xB7 \u4E8B\u4EF6\u5FAA\u73AF", desc: "async / await \u4E0E\u5FAE\u4EFB\u52A1\u961F\u5217" }
+  ];
+  function ensureScriptTabsForLang(_lang = "ts") {
+    ensureVfsInitialized();
+    const store = SCRIPT_TABS.ts;
+    if (store.tabs.length === 0) {
+      const curFileName = appState.FILE_NAME;
+      const editorSrc = uiHooks.getEditorSource();
+      const defaultTitle = curFileName ? curFileName : "showcase.ts";
+      const defaultSrc = editorSrc ? editorSrc : SAMPLES.showcase || "";
+      const tabId = nextScriptTabId();
+      store.tabs.push({
+        id: tabId,
+        title: defaultTitle,
+        lang: "ts",
+        source: defaultSrc,
+        vfsPath: "",
+        isSample: true
+      });
+      store.activeTabId = tabId;
+    }
+    const firstTab = store.tabs[0];
+    if (firstTab && !store.tabs.some((t) => t.id === store.activeTabId)) {
+      store.activeTabId = firstTab.id;
+    }
+    return store;
+  }
+  function getActiveScriptTab(_lang) {
+    const store = ensureScriptTabsForLang("ts");
+    const found = store.tabs.find((t) => t.id === store.activeTabId) ?? store.tabs[0];
+    if (found) return found;
+    return {
+      id: "stab_0",
+      title: "showcase.ts",
+      lang: "ts",
+      source: "",
+      vfsPath: "",
+      isSample: true
+    };
+  }
+  function syncActiveScriptTabSource(src) {
+    const activeTab = getActiveScriptTab("ts");
+    if (!activeTab) return;
+    activeTab.source = src;
+    if (!activeTab.isSample && activeTab.vfsPath) {
+      const node = VFS_NODES.get(activeTab.vfsPath);
+      if (node && node.type === "file") {
+        node.content = src;
+        persistVfsToClientStorage();
+      }
+    }
+  }
+  function upsertSampleScriptTab(title, source, _lang) {
+    const store = ensureScriptTabsForLang("ts");
+    let tab = store.tabs.find((t) => (t.isSample || !t.vfsPath) && t.title === title);
+    if (!tab) {
+      tab = {
+        id: nextScriptTabId(),
+        title,
+        lang: "ts",
+        source,
+        vfsPath: "",
+        isSample: true
+      };
+      store.tabs.push(tab);
+    } else {
+      tab.source = source;
+      tab.vfsPath = "";
+      tab.isSample = true;
+    }
+    store.activeTabId = tab.id;
+    return tab;
+  }
+  function upsertVfsScriptTab(path, name, content, _lang) {
+    const store = ensureScriptTabsForLang("ts");
+    let tab = store.tabs.find((t) => !t.isSample && t.vfsPath === path);
+    if (!tab) {
+      tab = {
+        id: nextScriptTabId(),
+        title: name,
+        lang: "ts",
+        source: content,
+        vfsPath: path,
+        isSample: false
+      };
+      store.tabs.push(tab);
+    } else {
+      tab.source = content;
+      tab.vfsPath = path;
+      tab.isSample = false;
+    }
+    store.activeTabId = tab.id;
+    return tab;
+  }
+  function handleVfsFileDeletedInTabs(delPath) {
+    const prefix = delPath + "/";
+    SCRIPT_TABS.ts.tabs.forEach((t) => {
+      if (t.vfsPath === delPath || t.vfsPath.startsWith(prefix)) {
+        t.vfsPath = "";
+      }
+    });
+  }
+  function handleVfsFileRenamedInTabs(oldPath, nextPath, nextName) {
+    const store = ensureScriptTabsForLang("ts");
+    const matchingTab = store.tabs.find((t) => t.vfsPath === oldPath);
+    if (!matchingTab) return { updated: false, isActive: false };
+    matchingTab.title = nextName;
+    matchingTab.vfsPath = nextPath;
+    return {
+      updated: true,
+      isActive: store.activeTabId === matchingTab.id
+    };
+  }
 
   // src/viz/memory-normalizers.ts
   var asChildFrame = (v) => isFrame(v) ? v : null;
@@ -8439,13 +10024,11 @@ runAsyncDemo()
     return out;
   }
   function normalizeList(value) {
-    const pyMeta = isFrame(value) && isFrame(value.__py_meta__) ? value.__py_meta__ : null;
     if (Array.isArray(value)) {
-      const total = pyMeta && typeof pyMeta.total === "number" ? pyMeta.total : value.length;
+      const total = value.length;
       const out2 = { kind: "list", items: value.slice(0, 30).map((x) => cloneDeepBounded(x, 1)), total };
       if (total > 20) {
         defineHidden(out2, "__raw", value);
-        if (pyMeta) defineHidden(out2, "__pyMeta", pyMeta);
       }
       return out2;
     }
@@ -8490,16 +10073,12 @@ runAsyncDemo()
   }
   function snapshot(kind, value, extra) {
     const recVal = isFrame(value) ? value : null;
-    const pyMeta = recVal && isFrame(recVal.__py_meta__) ? recVal.__py_meta__ : null;
     if (kind === "stack") {
       const arr = Array.isArray(value) ? value : [];
-      const total = pyMeta && typeof pyMeta.total === "number" ? pyMeta.total : arr.length;
+      const total = arr.length;
       let items;
       let baseIdx = 0;
-      if (pyMeta && Array.isArray(pyMeta.tail) && total > arr.length) {
-        items = pyMeta.tail.map((x) => cloneDeepBounded(x, 1));
-        baseIdx = Math.max(0, total - items.length);
-      } else if (arr.length > 40) {
+      if (arr.length > 40) {
         baseIdx = arr.length - 40;
         items = arr.slice(baseIdx).map((x) => cloneDeepBounded(x, 1));
       } else {
@@ -8509,12 +10088,11 @@ runAsyncDemo()
     }
     if (kind === "array" || kind === "heap" || kind === "queue" || kind === "uf") {
       const arr = Array.isArray(value) ? value : [];
-      const total = pyMeta && typeof pyMeta.total === "number" ? pyMeta.total : arr.length;
+      const total = arr.length;
       const items = arr.slice(0, 40).map((x) => cloneDeepBounded(x, 1));
       const out = Object.assign({ kind, items, total }, extra || {});
       if (total > 20) {
         defineHidden(out, "__raw", arr);
-        if (pyMeta) defineHidden(out, "__pyMeta", pyMeta);
       }
       return out;
     }
@@ -8541,7 +10119,7 @@ runAsyncDemo()
       const entries = [];
       let total = 0;
       if (isMapLike(value)) {
-        total = pyMeta && typeof pyMeta.total === "number" ? pyMeta.total : value.size;
+        total = value.size;
         for (const [k, v] of value) {
           if (entries.length >= 40) break;
           entries.push({ k: cloneDeepBounded(k, 1), v: cloneDeepBounded(v, 1) });
@@ -8564,7 +10142,7 @@ runAsyncDemo()
       const items = [];
       let total = 0;
       if (isSetLike(value)) {
-        total = pyMeta && typeof pyMeta.total === "number" ? pyMeta.total : value.size;
+        total = value.size;
         for (const v of value) {
           if (items.length >= 40) break;
           items.push(cloneDeepBounded(v, 1));
@@ -8580,13 +10158,12 @@ runAsyncDemo()
       return out;
     }
     if (kind === "grid") {
-      const totalRows = pyMeta && typeof pyMeta.totalRows === "number" ? pyMeta.totalRows : Array.isArray(value) ? value.length : 0;
-      const totalCols = pyMeta && typeof pyMeta.totalCols === "number" ? pyMeta.totalCols : Array.isArray(value) && Array.isArray(value[0]) ? value[0].length : 0;
+      const totalRows = Array.isArray(value) ? value.length : 0;
+      const totalCols = Array.isArray(value) && Array.isArray(value[0]) ? value[0].length : 0;
       const cloned = Array.isArray(value) ? value.slice(0, 30).map((r) => Array.isArray(r) ? r.slice(0, 30).map((c) => cloneDeepBounded(c, 2)) : r) : [[0]];
       const out = Object.assign({ kind, cells: cloned, mark: null, deps: [], totalRows, totalCols }, extra || {});
       if (totalRows > 10 || totalCols > 10) {
         defineHidden(out, "__raw", value);
-        if (pyMeta) defineHidden(out, "__pyMeta", pyMeta);
       }
       return out;
     }
@@ -8624,8 +10201,9 @@ runAsyncDemo()
       }
       const ifaceDef = matchInterfaceForObject(n, obj);
       const annotType = appState.CURRENT_TS_META.varTypes.get(n);
-      const ifaceName = ifaceDef ? ifaceDef.name : annotType || obj.__py_cls__ || "object";
-      const isClass = Boolean(ifaceDef && ifaceDef.isClass || obj.__py_cls__);
+      const runtimeCls = typeof obj.__cls__ === "string" && obj.__cls__ ? obj.__cls__ : obj.constructor && obj.constructor !== Object && obj.constructor.name ? obj.constructor.name : "";
+      const ifaceName = ifaceDef ? ifaceDef.name : annotType || runtimeCls || "object";
+      const isClass = Boolean(ifaceDef && ifaceDef.isClass || runtimeCls);
       const fieldMap = /* @__PURE__ */ new Map();
       if (ifaceDef) {
         ifaceDef.fields.forEach((f) => {
@@ -8809,8 +10387,7 @@ runAsyncDemo()
     const propRe = /\b([A-Za-z_$][\w$]*)\s*\.\s*([A-Za-z_$][\w$]*)\b/g;
     let pm;
     while (pm = propRe.exec(text)) {
-      const rawObj = pm[1] || "", propName = pm[2];
-      const objName = rawObj === "self" && !ds.self && ds.this ? "this" : rawObj;
+      const objName = pm[1] || "", propName = pm[2];
       const objItem = ds[objName];
       if (objItem && (objItem.kind === "interface" || objItem.kind === "object")) {
         objItem.hot = propName;
@@ -8993,11 +10570,7 @@ runAsyncDemo()
           }
           if (total > 20) {
             const raw = d.__raw;
-            const pyMeta = d.__pyMeta;
             const getAt = (idx) => {
-              if (pyMeta && pyMeta.sparse && pyMeta.sparse.has(idx)) {
-                return cloneDeepBounded(pyMeta.sparse.get(idx), 1);
-              }
               if (typeof raw === "string") return raw[idx] ?? "";
               if (Array.isArray(raw) && idx < raw.length) return cloneDeepBounded(raw[idx], 1);
               if (d.items && idx < d.items.length) return d.items[idx];
@@ -9027,44 +10600,36 @@ runAsyncDemo()
         const totalRows = typeof d.totalRows === "number" ? d.totalRows : d.cells ? d.cells.length : 0;
         const totalCols = typeof d.totalCols === "number" ? d.totalCols : d.cells && d.cells[0] ? d.cells[0].length : 0;
         if (totalRows > 10 || totalCols > 10) {
-          const pyMeta = d.__pyMeta;
-          if (pyMeta && Array.isArray(pyMeta.rowIndices) && Array.isArray(pyMeta.colIndices) && Array.isArray(pyMeta.viewCells)) {
-            d.rowIndices = pyMeta.rowIndices;
-            d.colIndices = pyMeta.colIndices;
-            d.viewCells = pyMeta.viewCells;
-          } else {
-            let focusR = Array.isArray(d.mark) ? d.mark[0] : d.deps && d.deps[0] ? d.deps[0][0] : void 0;
-            let focusC = Array.isArray(d.mark) ? d.mark[1] : d.deps && d.deps[0] ? d.deps[0][1] : void 0;
-            if (focusR === void 0 || focusC === void 0) {
-              const coordPairs = [["i", "j"], ["r", "c"], ["row", "col"], ["x", "y"]];
-              for (const [rk, ck] of coordPairs) {
-                const rv = safeV[rk];
-                const cv = safeV[ck];
-                if (typeof rv === "number" && typeof cv === "number") {
-                  focusR = rv;
-                  focusC = cv;
-                  break;
-                }
+          let focusR = Array.isArray(d.mark) ? d.mark[0] : d.deps && d.deps[0] ? d.deps[0][0] : void 0;
+          let focusC = Array.isArray(d.mark) ? d.mark[1] : d.deps && d.deps[0] ? d.deps[0][1] : void 0;
+          if (focusR === void 0 || focusC === void 0) {
+            const coordPairs = [["i", "j"], ["r", "c"], ["row", "col"], ["x", "y"]];
+            for (const [rk, ck] of coordPairs) {
+              const rv = safeV[rk];
+              const cv = safeV[ck];
+              if (typeof rv === "number" && typeof cv === "number") {
+                focusR = rv;
+                focusC = cv;
+                break;
               }
             }
-            const rowIndices = selectGridAxisIndices(totalRows, focusR, 8);
-            const colIndices = selectGridAxisIndices(totalCols, focusC, 8);
-            const rawGrid = Array.isArray(d.__raw) ? d.__raw : d.cells;
-            d.rowIndices = rowIndices;
-            d.colIndices = colIndices;
-            d.viewCells = rowIndices.map((r) => {
-              const rowCandidate = rawGrid ? rawGrid[r] : void 0;
-              const rowArr = Array.isArray(rowCandidate) ? rowCandidate : [];
-              return colIndices.map((c) => cloneDeepBounded(rowArr[c], 2));
-            });
           }
+          const rowIndices = selectGridAxisIndices(totalRows, focusR, 8);
+          const colIndices = selectGridAxisIndices(totalCols, focusC, 8);
+          const rawGrid = Array.isArray(d.__raw) ? d.__raw : d.cells;
+          d.rowIndices = rowIndices;
+          d.colIndices = colIndices;
+          d.viewCells = rowIndices.map((r) => {
+            const rowCandidate = rawGrid ? rawGrid[r] : void 0;
+            const rowArr = Array.isArray(rowCandidate) ? rowCandidate : [];
+            return colIndices.map((c) => cloneDeepBounded(rowArr[c], 2));
+          });
         }
       }
       delete d.__raw;
       delete d.__rawNodes;
       delete d.__rawVals;
       delete d.__nodeMap;
-      delete d.__pyMeta;
       delete d.__extraFocal;
     });
   }
@@ -9180,10 +10745,36 @@ runAsyncDemo()
     if (ckptCall && ckptCall[1] !== void 0) {
       const fnName = clean.startsWith("\u65AD\u70B9") ? "\u65AD\u70B9" : "checkpoint";
       const args = splitTopLevel(ckptCall[1]).map((s) => s.trim()).filter(Boolean);
+      const hasRuntimeTrigger = Boolean(nextV && "__ckptTriggered" in nextV);
+      const triggered = hasRuntimeTrigger && nextV ? Boolean(nextV.__ckptTriggered) : args.length === 0 ? true : Boolean(safeEvalExpr(args[0] || "", v));
+      if (!triggered) {
+        const condExpr2 = args[0] || "false";
+        const anim2 = {
+          type: "compare",
+          lhs: condExpr2,
+          rhs: "",
+          op: "?",
+          lhsVal: "false",
+          rhsVal: "",
+          result: false
+        };
+        return { anim: anim2, note: `\u25CB ${fnName}(${condExpr2})  \u2192  false\uFF08\u6761\u4EF6\u672A\u6EE1\u8DB3\uFF0C\u8DF3\u8FC7\u68C0\u67E5\u70B9\uFF09`, isCheckpoint: false };
+      }
       const ckptVals = nextV && Array.isArray(nextV.__ckptVals) ? nextV.__ckptVals.map(String) : null;
-      const argVals = ckptVals && ckptVals.length === args.length ? ckptVals : args.map((a) => formatShortVal(safeEvalExpr(a, v)));
-      const anim = { type: "checkpoint", fn: fnName, args, argVals };
-      const detail = args.length ? args.map((a, idx) => argVals[idx] !== void 0 && argVals[idx] !== a ? `${a}=${argVals[idx]}` : a).join(", ") : "\u5DF2\u547D\u4E2D\u65AD\u70B9";
+      let msgStr = "";
+      if (ckptVals && ckptVals.length > 0 && ckptVals[0]) {
+        msgStr = ckptVals[0];
+      } else if (args.length >= 2 && args[1]) {
+        const evaluatedMsg = safeEvalExpr(args[1], v);
+        msgStr = evaluatedMsg !== void 0 && evaluatedMsg !== null ? String(evaluatedMsg) : args[1].replace(/^['"`]|['"`]$/g, "");
+      }
+      const anim = {
+        type: "checkpoint",
+        fn: fnName,
+        args: msgStr ? [msgStr] : [],
+        argVals: msgStr ? [msgStr] : []
+      };
+      const detail = msgStr ? msgStr : "\u5DF2\u547D\u4E2D\u65AD\u70B9";
       return { anim, note: `\u25C9 ${fnName}(${detail})`, isCheckpoint: true };
     }
     const callOnly = clean.match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\((.*)\)$/);
@@ -9356,6 +10947,7 @@ runAsyncDemo()
         idx: 0,
         total: 1,
         isTop: true,
+        file: st.file || appState.DEBUG_SESSION.entryFile || "",
         fn: "global",
         label: "global",
         line: st.line,
@@ -9370,6 +10962,7 @@ runAsyncDemo()
       idx,
       total: stack.length,
       isTop: idx === topIdx,
+      file: frame.file || st.file || appState.DEBUG_SESSION.entryFile || "",
       fn: frame.fn || "global",
       label: frame.label || "global",
       line: frame.line || st.line,
@@ -9380,13 +10973,156 @@ runAsyncDemo()
 
   // src/runtime/runner.ts
   function reportTypeErrors(diags) {
-    appState.TYPE_ERROR_LINES = new Set(diags.map((d) => d.line));
+    const activeFile = appState.ENTRY_FILE_PATH || appState.FILE_NAME || "main.ts";
+    appState.TYPE_ERROR_LINES = new Set(
+      diags.filter((d) => !d.file || d.file === activeFile).map((d) => d.line)
+    );
     uiHooks.updateEditorChrome();
     say(`\u2717 TypeScript \u4E25\u683C\u7C7B\u578B\u68C0\u67E5\u672A\u901A\u8FC7 (\u5171 ${diags.length} \u5904\u9519\u8BEF)\uFF1A`, "err");
     diags.forEach((d) => {
-      say(`  \u2022 ${d.code} [\u7B2C ${d.line} \u884C]: ${d.message}`, "err", d.line);
+      const filePrefix = d.file && d.file !== activeFile ? `${d.file} \xB7 ` : "";
+      say(`  \u2022 ${d.code} [${filePrefix}\u7B2C ${d.line} \u884C]: ${d.message || d.msg || ""}`, "err", d.line);
     });
-    if (diags[0]?.line) uiHooks.revealErrorLine(diags[0].line);
+    const firstDiag = diags[0];
+    if (firstDiag) {
+      if (firstDiag.file && firstDiag.file !== activeFile) {
+        uiHooks.switchToScriptFile(firstDiag.file);
+      }
+      if (firstDiag.line) uiHooks.revealErrorLine(firstDiag.line);
+    }
+  }
+  function collectWorkspaceFilesAndEntry(sourceOverride) {
+    ensureVfsInitialized();
+    const fileMap = /* @__PURE__ */ new Map();
+    VFS_NODES.forEach((node) => {
+      if (node.type === "file") {
+        const norm = normalizeWorkspaceModulePath(node.path);
+        if (norm) fileMap.set(norm, (node.content ?? "").replace(/\r/g, ""));
+      }
+    });
+    for (const tab of SCRIPT_TABS.ts.tabs) {
+      const tabPath = normalizeWorkspaceModulePath(tab.vfsPath || tab.title);
+      if (tabPath) {
+        fileMap.set(tabPath, (tab.source ?? "").replace(/\r/g, ""));
+      }
+    }
+    const activeTab = getActiveScriptTab("ts");
+    let entryFile = normalizeWorkspaceModulePath(
+      uiHooks.getActiveWorkspacePath() || activeTab.vfsPath || appState.FILE_NAME || activeTab.title || "main.ts"
+    ) || "main.ts";
+    let entrySource = typeof sourceOverride === "string" ? sourceOverride.replace(/\r/g, "") : uiHooks.getEditorSource().replace(/\r/g, "");
+    fileMap.set(entryFile, entrySource);
+    if (typeof sourceOverride !== "string" && appState.DEBUG_SESSION.entryFile && appState.ACTIVE_DEBUG_FILE && entryFile === appState.ACTIVE_DEBUG_FILE && entryFile !== appState.DEBUG_SESSION.entryFile && fileMap.has(appState.DEBUG_SESSION.entryFile)) {
+      const candidateJs = stripTypes(entrySource);
+      const childEntry = resolveEntry(entrySource, candidateJs);
+      if (childEntry.expr === "undefined") {
+        entryFile = appState.DEBUG_SESSION.entryFile;
+        entrySource = fileMap.get(entryFile) || entrySource;
+        uiHooks.switchToScriptFile(entryFile);
+      }
+    }
+    return { entryFile, entrySource, fileMap };
+  }
+  function compileMultiModuleBundle(graph, fileMap) {
+    const moduleSources = {};
+    const moduleFactories = [];
+    let hasAsync = false;
+    for (const modFile of graph.order) {
+      const modNode = graph.modules.get(modFile);
+      if (!modNode) continue;
+      moduleSources[modFile] = modNode.lines;
+      if (hasAsyncConstructs(modNode.rawSource)) hasAsync = true;
+      if (modFile === graph.entryFile) continue;
+      const esm = rewriteModuleEsmToCjs(modNode.rawSource, modFile, fileMap);
+      const enums = transpileEnums(esm.code);
+      if (enums.error) {
+        return {
+          ok: false,
+          errorFile: modFile,
+          errorLine: enums.error.line,
+          errorMessage: enums.error.message,
+          code: "",
+          call: "undefined",
+          entryLine: 0,
+          entryLines: [],
+          entryNames: [],
+          moduleSources,
+          hasAsync,
+          instrumented: false
+        };
+      }
+      const jsMod = stripTypes(enums.code);
+      const modNames = collectNames(jsMod);
+      const instMod = instrument(jsMod, modNode.lines, modNames, modFile);
+      const exportFooter = buildExportAssignmentFooter(esm.exportedBindings);
+      moduleFactories.push(
+        `${JSON.stringify(modFile)}: function(__exports, __require) {
+${instMod}
+${exportFooter}
+}`
+      );
+    }
+    const entryNode = graph.modules.get(graph.entryFile);
+    const entryRaw = entryNode ? entryNode.rawSource : fileMap.get(graph.entryFile) || "";
+    const entryLines = entryNode ? entryNode.lines : entryRaw.split("\n");
+    moduleSources[graph.entryFile] = entryLines;
+    const entryEsm = rewriteModuleEsmToCjs(entryRaw, graph.entryFile, fileMap);
+    const entryEnums = transpileEnums(entryEsm.code);
+    if (entryEnums.error) {
+      return {
+        ok: false,
+        errorFile: graph.entryFile,
+        errorLine: entryEnums.error.line,
+        errorMessage: entryEnums.error.message,
+        code: "",
+        call: "undefined",
+        entryLine: 0,
+        entryLines,
+        entryNames: [],
+        moduleSources,
+        hasAsync,
+        instrumented: false
+      };
+    }
+    const jsEntry = stripTypes(entryEnums.code);
+    const entry = resolveEntry(entryEsm.code, jsEntry);
+    const call = stripTypes(entry.expr || "undefined");
+    const jsEntryBody = entry.index >= 0 ? blankJsLine(jsEntry, entry.index) : jsEntry;
+    const entryNames = collectNames(jsEntryBody);
+    const instEntry = instrument(jsEntryBody, entryLines, entryNames, graph.entryFile);
+    const entryExportFooter = buildExportAssignmentFooter(entryEsm.exportedBindings);
+    const loaderPreamble = `var __modCache = Object.create(null), __modLoading = Object.create(null), __exports = Object.create(null);
+var __modules = {
+${moduleFactories.join(",\n")}
+};
+function __require(modId) {
+  if (__modCache[modId]) return __modCache[modId];
+  if (__modLoading[modId]) throw new Error("\u68C0\u6D4B\u5230\u6A21\u5757\u5FAA\u73AF\u4F9D\u8D56: " + modId);
+  var factory = __modules[modId];
+  if (typeof factory !== "function") throw new Error("\u627E\u4E0D\u5230\u6A21\u5757: " + modId);
+  __modLoading[modId] = true;
+  var exp = Object.create(null);
+  var modFid = (typeof __t === "function" && __t.__enter) ? __t.__enter("<module:" + modId + ">", [], [], 1, null, modId) : 0;
+  try { factory(exp, __require); } finally {
+    __modLoading[modId] = false;
+    if (modFid && typeof __t === "function" && __t.__leave) __t.__leave(modFid);
+  }
+  __modCache[modId] = exp;
+  return exp;
+}
+`;
+    const fullCode = `${loaderPreamble}${instEntry}${entryExportFooter ? "\n" + entryExportFooter : ""}`;
+    return {
+      ok: true,
+      code: fullCode,
+      call,
+      entryLine: entry.line || 0,
+      entryLines,
+      entryNames,
+      moduleSources,
+      hasAsync,
+      instrumented: true
+    };
   }
   function isSnapFn(val) {
     return typeof val === "function";
@@ -9401,7 +11137,15 @@ runAsyncDemo()
     const expr = stripTypes(call || "undefined");
     const budgetMs = o.budgetMs || 0;
     const entryLine = o.entryLine || 0;
-    const stub = o.instrumented ? "" : "var checkpoint = function(){}, \u65AD\u70B9 = checkpoint;\n";
+    const logs = [];
+    const handleCkpt = (args) => {
+      const arr = Array.isArray(args) ? args : [];
+      const triggered = arr.length === 0 || arr[0] === void 0 ? true : Boolean(arr[0]);
+      if (triggered && arr.length >= 2 && arr[1] !== void 0) {
+        logs.push(String(arr[1]));
+      }
+    };
+    const stub = o.instrumented ? "" : 'var checkpoint = function(){ if (typeof __t === "function" && __t.__ckpt) __t.__ckpt([].slice.call(arguments)); }, \u65AD\u70B9 = checkpoint;\n';
     const t0 = Date.now();
     let ticks = 0;
     let lastLine = 0;
@@ -9427,10 +11171,8 @@ runAsyncDemo()
     __t.__initGlobal = function(snapFn) {
       evLoop.loop.globalSnapFn = snapFn;
     };
-    __t.__ckpt = function() {
-    };
+    __t.__ckpt = handleCkpt;
     const body = stub + js + "\n;return (function(){ try { var __v = (" + expr + '); if (__t && __t.__drain) __v = __t.__drain(__v); return { ok:true, value:__v }; } catch (e) { return { ok:false, error: e && e.message ? e.message : String(e), stack: e && e.stack ? String(e.stack) : "", line: (e && e.__line) || 0, timeout: Boolean(e && e.__timeout) }; } })();';
-    const logs = [];
     const f = new Function("__t", "console", body);
     let r;
     const formatConsoleArg = (x) => {
@@ -9464,16 +11206,16 @@ runAsyncDemo()
     return { ...r, logs, elapsedMs: Date.now() - t0 };
   }
   function runOnce(budgetMs, sourceCode) {
-    if (appState.LANG === "python") return PY_ENGINE.runOnly(budgetMs);
     const budget = typeof budgetMs === "number" && budgetMs > 0 ? budgetMs : RUN_TIMEOUT_MS;
-    const src = typeof sourceCode === "string" ? sourceCode : uiHooks.getEditorSource();
+    const { entryFile, entrySource: src, fileMap } = collectWorkspaceFilesAndEntry(sourceCode);
+    appState.ENTRY_FILE_PATH = entryFile;
     const unsupported = detectUnsupportedSyntax2(src);
     if (unsupported.length && unsupported[0]) {
       unsupported.forEach((x) => say("\u2717 \u7B2C " + x.line + " \u884C\uFF1A\u6682\u4E0D\u652F\u6301 " + x.feature + " \u2014\u2014 " + x.hint, "err", x.line));
       uiHooks.revealErrorLine(unsupported[0].line);
       return;
     }
-    const diags = typecheckTS(src, appState.STRICT_TS);
+    const { diagnostics: diags, graph } = typecheckWorkspaceModules(entryFile, src, fileMap, appState.STRICT_TS);
     if (diags.length > 0) {
       reportTypeErrors(diags);
       return;
@@ -9483,32 +11225,60 @@ runAsyncDemo()
       appState.RUNTIME_ERROR_LINES.clear();
       uiHooks.updateEditorChrome();
     }
-    const enums = transpileEnums(src);
-    if (enums.error) {
-      say("\u2717 \u7B2C " + enums.error.line + " \u884C\uFF1A" + enums.error.message, "err", enums.error.line);
-      uiHooks.revealErrorLine(enums.error.line);
-      return;
-    }
-    const js = stripTypes(enums.code);
-    const originalLines = src.replace(/\r/g, "").split("\n");
-    const entry = resolveEntry(src, js);
-    const call = stripTypes(entry.expr || "undefined");
-    appState.ENTRY_CALL_LINE = entry.line || 0;
-    const jsBody = entry.index >= 0 ? blankJsLine(js, entry.index) : js;
-    let code = jsBody;
+    let code = "";
+    let call = "undefined";
+    let entryLine = 0;
+    let originalLines = src.replace(/\r/g, "").split("\n");
     let instrumented = false;
-    try {
-      const candidate = instrument(jsBody, originalLines, collectNames(jsBody));
-      new Function("__t", "console", candidate);
-      code = candidate;
-      instrumented = true;
-    } catch (_) {
+    if (graph.isMultiFile) {
+      const bundled = compileMultiModuleBundle(graph, fileMap);
+      if (!bundled.ok) {
+        if (bundled.errorFile && bundled.errorFile !== entryFile) {
+          uiHooks.switchToScriptFile(bundled.errorFile);
+        }
+        const errLine = bundled.errorLine || 1;
+        say("\u2717 " + (bundled.errorFile ? bundled.errorFile + " \xB7 " : "") + "\u7B2C " + errLine + " \u884C\uFF1A" + (bundled.errorMessage || "\u7F16\u8BD1\u9519\u8BEF"), "err", errLine);
+        uiHooks.revealErrorLine(errLine);
+        return;
+      }
+      code = bundled.code;
+      call = bundled.call;
+      entryLine = bundled.entryLine;
+      originalLines = bundled.entryLines;
+      appState.ENTRY_CALL_LINE = entryLine;
+      try {
+        new Function("__t", "console", code);
+        instrumented = true;
+      } catch (_) {
+        instrumented = false;
+      }
+    } else {
+      const enums = transpileEnums(src);
+      if (enums.error) {
+        say("\u2717 \u7B2C " + enums.error.line + " \u884C\uFF1A" + enums.error.message, "err", enums.error.line);
+        uiHooks.revealErrorLine(enums.error.line);
+        return;
+      }
+      const js = stripTypes(enums.code);
+      const entry = resolveEntry(src, js);
+      call = stripTypes(entry.expr || "undefined");
+      entryLine = entry.line || 0;
+      appState.ENTRY_CALL_LINE = entryLine;
+      const jsBody = entry.index >= 0 ? blankJsLine(js, entry.index) : js;
       code = jsBody;
-      instrumented = false;
+      try {
+        const candidate = instrument(jsBody, originalLines, collectNames(jsBody));
+        new Function("__t", "console", candidate);
+        code = candidate;
+        instrumented = true;
+      } catch (_) {
+        code = jsBody;
+        instrumented = false;
+      }
     }
     if (!instrumented) say("\u26A0 \u672C\u6B21\u8FD0\u884C\u672A\u80FD\u542F\u7528\u6B7B\u5FAA\u73AF\u7194\u65AD\uFF08\u63D2\u6869/\u7F16\u8BD1\u56DE\u9000\uFF09\uFF0C\u8BF7\u7559\u610F\u53EF\u80FD\u7684\u6B7B\u5FAA\u73AF", "dim");
     try {
-      const r = evalCall(code, call, { budgetMs: budget, instrumented, entryLine: entry.line });
+      const r = evalCall(code, call, { budgetMs: budget, instrumented, entryLine });
       r.logs.forEach((l) => say("  log: " + l, "dim"));
       if (!r.ok && r.timeout) {
         const line = r.line || 0;
@@ -9573,6 +11343,7 @@ runAsyncDemo()
     const win = detectWindowRange(raw);
     const snapFrame = {
       id: frame.id,
+      file: frame.file,
       fn: frame.fn,
       label: frame.label,
       line: frame.lastLine || frame.line || fallbackLine || 1,
@@ -9596,6 +11367,7 @@ runAsyncDemo()
       return false;
     }
     const originalLines = appState.DEBUG_SESSION.originalLines;
+    const entryFile = appState.DEBUG_SESSION.entryFile || appState.ENTRY_FILE_PATH || appState.FILE_NAME || "main.ts";
     const callIdx = originalLines.findIndex((l) => /\/\/\s*调用[:：]/.test(l));
     const globalCallLine = callIdx >= 0 ? callIdx + 1 : appState.ENTRY_CALL_LINE || 1;
     let count = 0;
@@ -9614,6 +11386,7 @@ runAsyncDemo()
     const liveCallStack = [
       {
         id: 0,
+        file: entryFile,
         fn: "global",
         label: "global",
         line: globalCallLine,
@@ -9647,7 +11420,7 @@ runAsyncDemo()
     if (appState.DEBUG_SESSION.hasAsync) {
       evLoop.loop.used = true;
     }
-    const __t = (line, note, snap, self) => {
+    const __t = (line, note, snap, self, file) => {
       const stepLine = line || curLineTracker || 1;
       if (line) curLineTracker = line;
       const idx = count++;
@@ -9655,8 +11428,10 @@ runAsyncDemo()
         throw new Error("\u6267\u884C\u8D85\u65F6 (>" + MAX_EXEC_MS + "ms)\uFF0C\u81EA\u52A8\u7194\u65AD\u4EE5\u9632\u9875\u9762\u5361\u6B7B");
       }
       const topFrame = liveCallStack[liveCallStack.length - 1];
+      const stepFile = file || topFrame && topFrame.file || entryFile;
       if (topFrame) {
         topFrame.lastLine = stepLine;
+        if (file) topFrame.file = file;
         if (isSnapFn(snap)) topFrame.snapFn = snap;
         if (isRecord(self)) topFrame.self = self;
       }
@@ -9693,7 +11468,8 @@ runAsyncDemo()
         const win = detectWindowRange(vRaw);
         const capturedStack = liveCallStack.map((fr, fIdx) => {
           const isTop = fIdx === liveCallStack.length - 1;
-          const fNote = isTop ? note || "" : originalLines[(fr.lastLine || fr.line || 1) - 1] || "";
+          const frLines = fr.file && appState.DEBUG_SESSION.moduleSources && appState.DEBUG_SESSION.moduleSources[fr.file] || originalLines;
+          const fNote = isTop ? note || "" : frLines[(fr.lastLine || fr.line || 1) - 1] || "";
           return buildFrameSnapshotFromClosure(fr, isTop ? stepLine : fr.line || 1, fNote);
         });
         pendingStepSnapFn = effectiveSnap;
@@ -9703,6 +11479,7 @@ runAsyncDemo()
           virtualTime: evLoop.loop.virtualTime
         };
         const stepToCommit = {
+          file: stepFile,
           line: stepLine,
           note: note || "",
           v,
@@ -9740,12 +11517,14 @@ runAsyncDemo()
         liveCallStack[0].snapFn = globalSnapFn;
       }
     };
-    __t.__enter = (fnName, paramNames, paramVals, defLine, snapFn) => {
+    __t.__enter = (fnName, paramNames, paramVals, defLine, snapFn, file) => {
       if (unwindingPause) return 0;
       const fid = ++frameSeq;
       const label = formatCallFrameLabel(fnName, paramNames, paramVals);
+      const callerFile = liveCallStack[liveCallStack.length - 1]?.file || entryFile;
       liveCallStack.push({
         id: fid,
+        file: file || callerFile,
         fn: fnName,
         label,
         line: defLine || 1,
@@ -9764,10 +11543,23 @@ runAsyncDemo()
         }
       }
     };
+    let ckptEvaluatedOnStep = false;
     __t.__ckpt = (args) => {
       if (activeRecording && pendingStep) {
-        pendingStep.isCheckpoint = true;
-        pendingStep.checkpointVals = (args || []).map((a) => formatShortVal(a));
+        ckptEvaluatedOnStep = true;
+        const arr = Array.isArray(args) ? args : [];
+        const triggered = arr.length === 0 || arr[0] === void 0 ? true : Boolean(arr[0]);
+        const msg = arr.length >= 2 && arr[1] !== void 0 ? String(arr[1]) : "";
+        if (triggered) {
+          pendingStep.isCheckpoint = true;
+          pendingStep.checkpointVals = msg ? [msg] : [];
+          if (msg) {
+            stepLogs.push(msg);
+          }
+        } else {
+          pendingStep.isCheckpoint = false;
+          pendingStep.checkpointVals = [];
+        }
       }
     };
     __t.__fin = (snap) => {
@@ -9816,11 +11608,12 @@ runAsyncDemo()
         const errMsg = runtimeErr instanceof Error && runtimeErr.message ? runtimeErr.message : runtimeErr && typeof runtimeErr === "object" && "message" in runtimeErr && typeof runtimeErr.message === "string" ? runtimeErr.message : String(runtimeErr);
         const callLine = globalCallLine;
         const errStep = {
+          file: entryFile,
           line: callLine,
           note: "\u2717 \u8FD0\u884C\u65F6\u9519\u8BEF: " + errMsg,
           v: {},
           ds: {},
-          callStack: [{ id: 0, fn: "global", label: "global", line: callLine, v: {}, ds: {} }],
+          callStack: [{ id: 0, file: entryFile, fn: "global", label: "global", line: callLine, v: {}, ds: {} }],
           anim: { type: "error", message: errMsg },
           isCheckpoint: false,
           error: errMsg
@@ -9832,6 +11625,7 @@ runAsyncDemo()
         appState.DEBUG_SESSION.crashed = true;
         appState.DEBUG_SESSION.error = errMsg;
         appState.DEBUG_SESSION.errorLine = callLine;
+        appState.DEBUG_SESSION.errorFile = entryFile;
         say("\u2717 \u8FD0\u884C\u65F6\u9519\u8BEF [\u7B2C " + callLine + " \u884C]: " + errMsg + "\uFF08\u5DF2\u505C\u6B62\u5728\u62A5\u9519\u5904\uFF09", "err");
         return true;
       }
@@ -9841,11 +11635,12 @@ runAsyncDemo()
           const schemaDs = {};
           populateInterfaceSchemas(schemaDs);
           const schemaStep = {
+            file: entryFile,
             line: firstIface.line || 1,
             note: `interface ${firstIface.name} { ${firstIface.fields.map((f) => f.k + (f.optional ? "?" : "") + ": " + f.declaredType).join("; ")} }`,
             v: {},
             ds: schemaDs,
-            callStack: [{ id: 0, fn: "global", label: "global", line: firstIface.line || 1, v: {}, ds: schemaDs }],
+            callStack: [{ id: 0, file: entryFile, fn: "global", label: "global", line: firstIface.line || 1, v: {}, ds: schemaDs }],
             anim: null,
             isCheckpoint: false,
             error: null,
@@ -9862,10 +11657,14 @@ runAsyncDemo()
       return false;
     }
     const stepObj = pendingStep;
-    const rawLine = originalLines[stepObj.line - 1] || stepObj.note || "";
+    const stepSourceLines = stepObj.file && appState.DEBUG_SESSION.moduleSources && appState.DEBUG_SESSION.moduleSources[stepObj.file] || originalLines;
+    const rawLine = stepSourceLines[stepObj.line - 1] || stepObj.note || "";
     const nextContext = Object.assign({}, nextVRaw || stepObj.vRaw);
     if (stepObj.checkpointVals) {
       nextContext["__ckptVals"] = stepObj.checkpointVals;
+    }
+    if (ckptEvaluatedOnStep) {
+      nextContext["__ckptTriggered"] = Boolean(stepObj.isCheckpoint);
     }
     if (nextVRaw) {
       const rawMap = nextVRaw;
@@ -9905,7 +11704,7 @@ runAsyncDemo()
     stepObj.anim = derived.anim;
     stepObj.rawNote = stepObj.note;
     stepObj.note = derived.note || stepObj.note;
-    if (derived.isCheckpoint) {
+    if (derived.isCheckpoint && (!ckptEvaluatedOnStep || stepObj.isCheckpoint)) {
       stepObj.isCheckpoint = true;
     }
     if (runtimeErr) {
@@ -9917,6 +11716,7 @@ runAsyncDemo()
       appState.DEBUG_SESSION.crashed = true;
       appState.DEBUG_SESSION.error = errMsg;
       appState.DEBUG_SESSION.errorLine = stepObj.line;
+      appState.DEBUG_SESSION.errorFile = stepObj.file || entryFile;
     } else if (!paused) {
       appState.DEBUG_SESSION.finished = true;
       appState.DEBUG_SESSION.returnValue = retVal;
@@ -9933,7 +11733,8 @@ runAsyncDemo()
       }
     });
     if (runtimeErr) {
-      say("\u2717 \u8FD0\u884C\u65F6\u9519\u8BEF [\u7B2C " + stepObj.line + " \u884C]: " + stepObj.error + "\uFF08\u5DF2\u8FD0\u884C\u5230\u62A5\u9519\u4E3A\u6B62\uFF09", "err");
+      const fileLabel = stepObj.file && stepObj.file !== entryFile ? `${stepObj.file} \xB7 ` : "";
+      say("\u2717 \u8FD0\u884C\u65F6\u9519\u8BEF [" + fileLabel + "\u7B2C " + stepObj.line + " \u884C]: " + stepObj.error + "\uFF08\u5DF2\u8FD0\u884C\u5230\u62A5\u9519\u4E3A\u6B62\uFF09", "err");
     } else if (!paused && !opts.silent) {
       say("\u2713 \u8C03\u8BD5\u8FD0\u884C\u5B8C\u6210  \u2192  " + safeJSONStringify(retVal), "ok");
     }
@@ -9943,10 +11744,9 @@ runAsyncDemo()
     return [];
   }
   function startDebug(initialStep = 0, sourceCode) {
-    if (appState.LANG === "python") return PY_ENGINE.start(initialStep);
     appState.SELECTED_FRAME_IDX = null;
-    const rawSrc = typeof sourceCode === "string" ? sourceCode : uiHooks.getEditorSource();
-    const src = rawSrc.replace(/\r/g, "");
+    const { entryFile, entrySource: src, fileMap } = collectWorkspaceFilesAndEntry(sourceCode);
+    appState.ENTRY_FILE_PATH = entryFile;
     const unsupported = detectUnsupportedSyntax2(src);
     if (unsupported.length && unsupported[0]) {
       resetTraceState();
@@ -9954,8 +11754,7 @@ runAsyncDemo()
       uiHooks.revealErrorLine(unsupported[0].line);
       return false;
     }
-    extractTsInterfaceMetadata(src);
-    const diags = typecheckTS(src, appState.STRICT_TS);
+    const { diagnostics: diags, graph } = typecheckWorkspaceModules(entryFile, src, fileMap, appState.STRICT_TS);
     if (diags.length > 0) {
       resetTraceState();
       reportTypeErrors(diags);
@@ -9965,37 +11764,71 @@ runAsyncDemo()
       appState.TYPE_ERROR_LINES.clear();
       appState.RUNTIME_ERROR_LINES.clear();
     }
-    const originalLines = src.split("\n");
-    const enums = transpileEnums(src);
-    if (enums.error) {
-      resetTraceState();
-      say("\u2717 \u7B2C " + enums.error.line + " \u884C\uFF1A" + enums.error.message, "err", enums.error.line);
-      uiHooks.revealErrorLine(enums.error.line);
-      return false;
-    }
-    const js0 = stripTypes(enums.code);
-    const entry = resolveEntry(src, js0);
-    const expr = stripTypes(entry.expr || "undefined");
-    appState.ENTRY_CALL_LINE = entry.line || 0;
-    const jsBody = entry.index >= 0 ? blankJsLine(js0, entry.index) : js0;
     let compiledFn;
-    try {
-      const names = collectNames(jsBody);
-      const js = instrument(jsBody, originalLines, names);
-      const snapStr = snapFnExpr(names);
-      const body = js + "\n;var __entryVal = (" + expr + ');\nif (typeof __t === "function" && __t.__drain) { __entryVal = __t.__drain(__entryVal, ' + snapStr + '); }\ntry{if(typeof __t==="function"&&__t.__fin)__t.__fin(' + snapStr + ");}catch(_){}\nreturn __entryVal;";
-      compiledFn = new Function("__t", "console", body);
-    } catch (e) {
-      resetTraceState();
-      say("\u2717 \u7F16\u8BD1\u5931\u8D25: " + (e instanceof Error && e.message ? e.message : e), "err");
-      return false;
+    let originalLines = src.split("\n");
+    let expr = "undefined";
+    let hasAsync = hasAsyncConstructs(src);
+    let moduleSources = { [entryFile]: originalLines };
+    if (graph.isMultiFile) {
+      const bundle = compileMultiModuleBundle(graph, fileMap);
+      if (!bundle.ok) {
+        resetTraceState();
+        if (bundle.errorFile && bundle.errorFile !== entryFile) {
+          uiHooks.switchToScriptFile(bundle.errorFile);
+        }
+        say("\u2717 \u7B2C " + (bundle.errorLine || 1) + " \u884C\uFF1A" + (bundle.errorMessage || "\u7F16\u8BD1\u5931\u8D25"), "err", bundle.errorLine || 1);
+        if (bundle.errorLine) uiHooks.revealErrorLine(bundle.errorLine);
+        return false;
+      }
+      originalLines = bundle.entryLines;
+      expr = stripTypes(bundle.call || "undefined");
+      appState.ENTRY_CALL_LINE = bundle.entryLine || 0;
+      hasAsync = bundle.hasAsync;
+      moduleSources = bundle.moduleSources;
+      try {
+        const entryNames = bundle.entryNames;
+        const snapStr = snapFnExpr(entryNames);
+        const body = bundle.code + "\n;var __entryVal = (" + expr + ');\nif (typeof __t === "function" && __t.__drain) { __entryVal = __t.__drain(__entryVal, ' + snapStr + '); }\ntry{if(typeof __t==="function"&&__t.__fin)__t.__fin(' + snapStr + ");}catch(_){}\nreturn __entryVal;";
+        compiledFn = new Function("__t", "console", body);
+      } catch (e) {
+        resetTraceState();
+        say("\u2717 \u7F16\u8BD1\u5931\u8D25: " + (e instanceof Error && e.message ? e.message : e), "err");
+        return false;
+      }
+    } else {
+      extractTsInterfaceMetadata(src);
+      const enums = transpileEnums(src);
+      if (enums.error) {
+        resetTraceState();
+        say("\u2717 \u7B2C " + enums.error.line + " \u884C\uFF1A" + enums.error.message, "err", enums.error.line);
+        uiHooks.revealErrorLine(enums.error.line);
+        return false;
+      }
+      const js0 = stripTypes(enums.code);
+      const entry = resolveEntry(src, js0);
+      expr = stripTypes(entry.expr || "undefined");
+      appState.ENTRY_CALL_LINE = entry.line || 0;
+      const jsBody = entry.index >= 0 ? blankJsLine(js0, entry.index) : js0;
+      try {
+        const names = collectNames(jsBody);
+        const js = instrument(jsBody, originalLines, names);
+        const snapStr = snapFnExpr(names);
+        const body = js + "\n;var __entryVal = (" + expr + ');\nif (typeof __t === "function" && __t.__drain) { __entryVal = __t.__drain(__entryVal, ' + snapStr + '); }\ntry{if(typeof __t==="function"&&__t.__fin)__t.__fin(' + snapStr + ");}catch(_){}\nreturn __entryVal;";
+        compiledFn = new Function("__t", "console", body);
+      } catch (e) {
+        resetTraceState();
+        say("\u2717 \u7F16\u8BD1\u5931\u8D25: " + (e instanceof Error && e.message ? e.message : e), "err");
+        return false;
+      }
     }
     uiHooks.stopAuto();
     uiHooks.clearFlyLayer();
     appState.TRACE = {
-      title: "TypeScript Playground \xB7 Debug",
+      title: graph.isMultiFile ? `TypeScript Multi-Module \xB7 ${entryFile}` : "TypeScript Playground \xB7 Debug",
       code: originalLines,
-      steps: []
+      steps: [],
+      entryFile,
+      moduleSources
     };
     appState.DEBUG_SESSION = {
       active: true,
@@ -10007,8 +11840,11 @@ runAsyncDemo()
       compiledFn,
       originalLines,
       callExpr: expr,
-      hasAsync: hasAsyncConstructs(src)
+      hasAsync,
+      entryFile,
+      moduleSources
     };
+    appState.ACTIVE_DEBUG_FILE = entryFile;
     appState.cur = 0;
     appState.watched = /* @__PURE__ */ new Set();
     appState.SEEN_VARS_EVER = /* @__PURE__ */ new Set();
@@ -10023,7 +11859,8 @@ runAsyncDemo()
     uiHooks.renderPicker();
     uiHooks.renderStatic(appState.cur, false);
     if (!appState.DEBUG_SESSION.crashed) {
-      say("\u2713 \u7F16\u8BD1\u901A\u8FC7 \xB7 \u5DF2\u8FDB\u5165 Debug \u6A21\u5F0F\uFF08\u6BCF\u8D70\u4E00\u6B65\u5F53\u573A\u8BA1\u7B97\uFF0C\u53EF\u968F\u65F6\u6B65\u8FDB\u6216\u8FD0\u884C\u5230\u4E0B\u4E00\u4E2A\u68C0\u67E5\u70B9\uFF09", "ok");
+      const multiBadge = graph.isMultiFile ? `\uFF08\u5171\u52A0\u8F7D ${graph.order.length} \u4E2A\u6A21\u5757\uFF09` : "";
+      say("\u2713 \u7F16\u8BD1\u901A\u8FC7" + multiBadge + " \xB7 \u5DF2\u8FDB\u5165 Debug \u6A21\u5F0F\uFF08\u6BCF\u8D70\u4E00\u6B65\u5F53\u573A\u8BA1\u7B97\uFF0C\u53EF\u968F\u65F6\u6B65\u8FDB\u6216\u8FD0\u884C\u5230\u4E0B\u4E00\u4E2A\u68C0\u67E5\u70B9\uFF09", "ok");
     }
     return true;
   }
@@ -10332,7 +12169,6 @@ runAsyncDemo()
   ]);
   var DECLARED_NAMES_CACHE = { src: null, names: /* @__PURE__ */ new Set() };
   function collectDeclaredNames(src) {
-    if (appState.LANG === "python") return PY_ENGINE.collectDeclared(src);
     const text = String(src == null ? "" : src);
     if (DECLARED_NAMES_CACHE.src === text) return DECLARED_NAMES_CACHE.names;
     const names = /* @__PURE__ */ new Set();
@@ -10356,6 +12192,15 @@ runAsyncDemo()
         if (im[1]) names.add(im[1]);
       }
     }
+    const esmImpRe = /^\s*import\s+(?:type\s+)?(.+?)\s+from\s+['"][^'"]+['"]/gm;
+    while (m = esmImpRe.exec(text)) {
+      const clause = (m[1] || "").replace(/\btype\b/g, " ");
+      const idRe = /\b([A-Za-z_$][\w$]*)\b/g;
+      let im;
+      while (im = idRe.exec(clause)) {
+        if (im[1] && im[1] !== "as") names.add(im[1]);
+      }
+    }
     const typeRe = /\b(?:function|class|interface|type|enum)\s+([A-Za-z_$][\w$]*)/g;
     const rawClean = blankStrings(text);
     while (m = typeRe.exec(rawClean)) {
@@ -10369,15 +12214,13 @@ runAsyncDemo()
     return names;
   }
   function collectHighlightBuiltins(declared) {
-    const source = appState.LANG === "python" ? typeof PY_ENGINE !== "undefined" && PY_ENGINE.builtins || [] : HIGHLIGHT_BUILTINS;
     const out = /* @__PURE__ */ new Set();
-    Array.from(source).forEach((name) => {
+    Array.from(HIGHLIGHT_BUILTINS).forEach((name) => {
       if (!declared.has(name)) out.add(name);
     });
     return out;
   }
   function hl(t, declared) {
-    if (appState.LANG === "python") return PY_ENGINE.hl(t, declared);
     const re = new RegExp("(\\/\\/.*$)|(\"(?:[^\"\\\\]|\\\\.)*\"|'(?:[^'\\\\]|\\\\.)*'|`(?:[^`\\\\]|\\\\.)*`)|\\b(function|const|let|var|new|class|extends|typeof|instanceof|import|export|from|async|await|interface|type|as|satisfies)\\b|\\b(for|if|else|return|while|do|switch|case|break|continue|try|catch|finally|throw|yield)\\b|\\b(number|string|boolean|void|any|unknown|never|Math|Map|Set|Array|Object|JSON|Number|String|Boolean|Promise|Record|Error)\\b|\\b(true|false|null|undefined|\\d+(?:\\.\\d+)?)\\b|(\\b[A-Za-z_$][\\w$]*)(?=\\s*\\()|(?<=\\.)([A-Za-z_$][\\w$]*)\\b|([{,][ \\t]*)([A-Za-z_$][\\w$]*)(?=[ \\t]*:)|(^[ \\t]*)([A-Za-z_$][\\w$]*)(?=[ \\t]*:)|\\b([A-Za-z_$][\\w$]*)\\b|(===|!==|>=|<=|=>|&&|\\|\\||\\+\\+|--)", "g");
     let out = "", last = 0, m;
     while (m = re.exec(t)) {
@@ -10425,7 +12268,6 @@ runAsyncDemo()
     return -1;
   }
   function hlActiveLine(rawLine, anim, declared) {
-    if (appState.LANG === "python") return PY_ENGINE.hlActiveLine(rawLine, anim, declared);
     if (!anim) return hl(rawLine, declared);
     const h = (s) => hl(s, declared);
     const declPrefix = rawLine.match(/^\s*(?:(?:export\s+)?(?:const|let|var)\b\s*)/);
@@ -10515,13 +12357,21 @@ runAsyncDemo()
     });
     const st = appState.TRACE.steps.length ? appState.TRACE.steps[appState.cur] : null;
     const activeFrame = st ? getActiveFrame(st) : null;
-    const curLine = activeFrame ? activeFrame.line : st ? st.line : -1;
-    const showVizOnLine = Boolean(st && (!activeFrame || activeFrame.isTop) && (st.anim || st.error) && curLine >= 1 && curLine <= lines.length);
+    const stepFile = activeFrame && activeFrame.file || st && st.file || appState.DEBUG_SESSION.entryFile || "";
+    const isMultiModule = Boolean(
+      appState.TRACE.moduleSources && Object.keys(appState.TRACE.moduleSources).length > 1
+    );
+    const currentEditorFile = normalizeWorkspaceModulePath(appState.FILE_NAME || appState.ACTIVE_DEBUG_FILE || "");
+    const viewingStepFile = !isMultiModule || !stepFile || !currentEditorFile || stepFile === currentEditorFile;
+    const curLine = viewingStepFile ? activeFrame ? activeFrame.line : st ? st.line : -1 : -1;
+    const showVizOnLine = Boolean(
+      viewingStepFile && st && (!activeFrame || activeFrame.isTop) && (st.anim || st.error) && curLine >= 1 && curLine <= lines.length
+    );
     const errorBadge = (lineNum) => {
       const d = liveByLine.get(lineNum);
       if (!d) return "";
       const tip = (d.code ? d.code + ": " : "") + (d.message || "");
-      return '<span class="ln-err-badge" title="' + esc(tip) + '">\u2717 ' + esc(d.code || (appState.LANG === "python" ? "PY" : "TS")) + "</span>";
+      return '<span class="ln-err-badge" title="' + esc(tip) + '">\u2717 ' + esc(d.code || "TS") + "</span>";
     };
     if (window.PlaygroundCM) {
       const errorLines = /* @__PURE__ */ new Set([...liveByLine.keys(), ...appState.TYPE_ERROR_LINES, ...appState.RUNTIME_ERROR_LINES]);
@@ -10558,18 +12408,39 @@ runAsyncDemo()
     updateStepViz(st, curLine, showVizOnLine, lines[curLine - 1] || "");
     syncScroll();
   }
-  var LIVE_TYPE_CACHE = { src: null, diags: [] };
+  var LIVE_TYPE_CACHE = { key: null, diags: [] };
   function liveTypeDiags(src) {
-    if (appState.LANG === "python") return appState.PY_DIAGS;
     const text = String(src == null ? "" : src);
-    if (LIVE_TYPE_CACHE.src === text) return LIVE_TYPE_CACHE.diags;
+    const currentFile = normalizeWorkspaceModulePath(appState.FILE_NAME || "main.ts");
+    const hasModuleSyntax = /^\s*(?:import|export)\b/m.test(text);
+    let fileMap = /* @__PURE__ */ new Map();
+    let mapSig = "";
+    if (hasModuleSyntax) {
+      try {
+        fileMap = uiHooks.collectWorkspaceFileMap();
+        const keys = Array.from(fileMap.keys()).sort();
+        if (keys.length > 0) {
+          mapSig = keys.map((k) => `${k}:${(fileMap.get(k) || "").length}`).join("|");
+        }
+      } catch (_) {
+        fileMap = /* @__PURE__ */ new Map();
+      }
+    }
+    const cacheKey = `${currentFile}::${appState.STRICT_TS ? 1 : 0}::${mapSig}::${text}`;
+    if (LIVE_TYPE_CACHE.key === cacheKey) return LIVE_TYPE_CACHE.diags;
     let diags = [];
     try {
-      diags = typecheckTS(text, appState.STRICT_TS) || [];
+      if (hasModuleSyntax && fileMap.size > 0) {
+        fileMap.set(currentFile, text);
+        const { diagnostics } = typecheckWorkspaceModules(currentFile, text, fileMap, appState.STRICT_TS);
+        diags = diagnostics.filter((d) => !d.file || d.file === currentFile);
+      } else {
+        diags = typecheckTS(text, appState.STRICT_TS) || [];
+      }
     } catch (_) {
       diags = [];
     }
-    LIVE_TYPE_CACHE = { src: text, diags };
+    LIVE_TYPE_CACHE = { key: cacheKey, diags };
     return diags;
   }
   function revealErrorLine(line, focus) {
@@ -10643,10 +12514,7 @@ runAsyncDemo()
     let ds = frame && frame.ds || st.ds || {};
     let frameLabel = frame ? frame.label : "global";
     const found = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
-    let lookupKey = name;
-    if (name === "self" && !found(v, "self") && !ds.self && (found(v, "this") || ds.this)) {
-      lookupKey = "this";
-    }
+    const lookupKey = name;
     if (!found(v, lookupKey) && !ds[lookupKey]) {
       const globalFrame = st.callStack && st.callStack[0];
       if (globalFrame && globalFrame.v && (found(globalFrame.v, lookupKey) || globalFrame.ds && globalFrame.ds[lookupKey])) {
@@ -10660,7 +12528,7 @@ runAsyncDemo()
     if (!hasVal && !d) return null;
     const val = hasVal ? v[lookupKey] : void 0;
     const declaredType = (appState.CURRENT_TS_META && appState.CURRENT_TS_META.varTypes ? appState.CURRENT_TS_META.varTypes.get(lookupKey) : null) || (d && d.interfaceName && d.interfaceName !== "object" ? d.interfaceName : null);
-    const kindStr = d ? d.kind === "interface" && d.isClass ? d.interfaceName ? "class \xB7 " + d.interfaceName : "class" : d.kind : declaredType || inferRuntimeTsType(val);
+    const kindStr = d ? d.kind === "interface" && d.isClass ? d.interfaceName ? "class \xB7 " + d.interfaceName : "class" : d.kind : typeof val === "function" ? formatFunctionTypeSignature(lookupKey, val) : declaredType || inferRuntimeTsType(val);
     return {
       name,
       val,
@@ -10670,14 +12538,14 @@ runAsyncDemo()
       frame: frameLabel
     };
   }
-  function formatHoverVal(val) {
+  function formatHoverVal(val, varName) {
     if (val === void 0) return "undefined";
     if (val === null) return "null";
-    if (typeof val === "function") return "\u0192 " + (val.name || "function");
+    if (typeof val === "function") return formatFunctionTypeSignature(varName || val.name || "", val);
     if (typeof val === "string") return JSON.stringify(val.length > 140 ? val.slice(0, 138) + "\u2026" : val);
     if (typeof val === "number" || typeof val === "boolean") return String(val);
     if (Array.isArray(val)) {
-      const head = val.slice(0, 12).map(formatHoverVal).join(", ");
+      const head = val.slice(0, 12).map((item) => formatHoverVal(item)).join(", ");
       return "[" + head + (val.length > 12 ? ", \u2026 (" + val.length + " \u9879)" : "") + "]";
     }
     if (isMapLike(val)) return "Map(" + val.size + ")";
@@ -10691,7 +12559,7 @@ runAsyncDemo()
   }
   function hoverValueSummary(info) {
     const d = info.d;
-    if (!d) return formatHoverVal(info.val);
+    if (!d) return formatHoverVal(info.val, info.name);
     const short = formatShortVal;
     if (Array.isArray(d.items)) {
       const total = typeof d.total === "number" ? d.total : d.items.length;
@@ -10844,6 +12712,7 @@ runAsyncDemo()
     discoverVars: () => discoverVars,
     drawArrows: () => drawArrows,
     enrichFromNote: () => enrichFromNote,
+    formatFnTypeHtml: () => formatFnTypeHtml,
     formatShortVal: () => formatShortVal,
     getActiveFrame: () => getActiveFrame,
     isFrame: () => isFrame,
@@ -10899,20 +12768,27 @@ runAsyncDemo()
       if (callStackHintEl) callStackHintEl.textContent = "\u70B9\u51FB\u6808\u5E27\u53EF\u5207\u6362\u4F5C\u7528\u57DF";
       return;
     }
-    const stack = Array.isArray(st.callStack) && st.callStack.length ? st.callStack : [{ fn: "global", label: "global", line: st.line, v: st.v || {}, ds: st.ds || {} }];
+    const stack = Array.isArray(st.callStack) && st.callStack.length ? st.callStack : [{ file: st.file, fn: "global", label: "global", line: st.line, v: st.v || {}, ds: st.ds || {} }];
     const active = getActiveFrame(st);
     const activeIdx = active ? active.idx : 0;
     const activeIsTop = active ? active.isTop : true;
     const activeLabel = active ? active.label : "global";
+    const isMultiModule = Boolean(
+      appState.TRACE.moduleSources && Object.keys(appState.TRACE.moduleSources).length > 1
+    );
     callStackBarEl.innerHTML = stack.map((f, fIdx) => {
       const isSel = fIdx === activeIdx;
       const isTop = fIdx === stack.length - 1;
       const cls = "cs-crumb" + (isSel ? " active" : "") + (isTop ? " is-top" : "") + (!isTop && isSel ? " inspecting" : "");
       const sep = fIdx > 0 ? '<span class="cs-sep">\u25B8</span>' : "";
-      return sep + `<button type="button" class="${cls}" data-frame-idx="${fIdx}" title="\u5207\u6362\u5230\u6808\u5E27 ${esc(f.label)} (\u7B2C ${f.line || st.line} \u884C)">${esc(f.label)}</button>`;
+      const shortFile = f.file ? f.file.split("/").pop() || f.file : "";
+      const displayLabel = isMultiModule && shortFile && !String(f.label || "").startsWith("<module:") ? `[${shortFile}] ${f.label}` : String(f.label || "global");
+      const titlePrefix = f.file ? `${f.file} \xB7 ` : "";
+      return sep + `<button type="button" class="${cls}" data-frame-idx="${fIdx}" title="\u5207\u6362\u5230\u6808\u5E27 ${esc(titlePrefix + String(f.label || "global"))} (\u7B2C ${f.line || st.line} \u884C)">${esc(displayLabel)}</button>`;
     }).join("");
     if (callStackHintEl) {
-      callStackHintEl.textContent = activeIsTop ? `\u6808\u6DF1 ${stack.length} \xB7 \u70B9\u51FB\u6808\u5E27\u53EF\u5207\u6362` : `\u6B63\u5728\u67E5\u770B\u6808\u5E27 ${activeIdx + 1}/${stack.length}: ${activeLabel}`;
+      const activeFileTag = isMultiModule && active && active.file ? ` (${active.file}) ` : "";
+      callStackHintEl.textContent = activeIsTop ? `\u6808\u6DF1 ${stack.length}${activeFileTag} \xB7 \u70B9\u51FB\u6808\u5E27\u53EF\u5207\u6362` : `\u6B63\u5728\u67E5\u770B\u6808\u5E27 ${activeIdx + 1}/${stack.length}${activeFileTag}: ${activeLabel}`;
     }
   }
   function truncMap(arr, render, d) {
@@ -11284,6 +13160,73 @@ runAsyncDemo()
     if (ckptBtn) ckptBtn.disabled = atEnd;
     if (autoBtn) autoBtn.disabled = atEnd;
   }
+  function formatTypeTokensHtml(typeExpr) {
+    return esc(typeExpr).replace(/\b([A-Za-z_$][\w$]*)\b/g, '<span class="ft-type">$1</span>');
+  }
+  function formatFnTypeHtml(sig) {
+    const s = String(sig || "() => any").trim();
+    let d = 0;
+    let arrowIdx = -1;
+    for (let i = 0; i < s.length - 1; i++) {
+      const ch = s[i];
+      if (ch === "(" || ch === "<" || ch === "[") d++;
+      else if (ch === ")" || ch === ">" || ch === "]") d = Math.max(0, d - 1);
+      else if (d === 0 && ch === "=" && s[i + 1] === ">") {
+        arrowIdx = i;
+        break;
+      }
+    }
+    if (arrowIdx < 0) {
+      return formatTypeTokensHtml(s);
+    }
+    const left = s.slice(0, arrowIdx).trim();
+    const right = s.slice(arrowIdx + 2).trim();
+    let genPrefix = "";
+    let paramsPart = left;
+    if (left.startsWith("<")) {
+      let gd = 0;
+      for (let i = 0; i < left.length; i++) {
+        if (left[i] === "<") gd++;
+        else if (left[i] === ">") {
+          gd--;
+          if (gd === 0) {
+            genPrefix = left.slice(0, i + 1);
+            paramsPart = left.slice(i + 1).trim();
+            break;
+          }
+        }
+      }
+    }
+    let paramsInner = paramsPart;
+    if (paramsPart.startsWith("(") && paramsPart.endsWith(")")) {
+      paramsInner = paramsPart.slice(1, -1);
+    }
+    const paramList = [];
+    let pd = 0;
+    let last = 0;
+    for (let i = 0; i < paramsInner.length; i++) {
+      const ch = paramsInner[i];
+      if (ch === "(" || ch === "<" || ch === "[" || ch === "{") pd++;
+      else if (ch === ")" || ch === ">" || ch === "]" || ch === "}") pd = Math.max(0, pd - 1);
+      else if (pd === 0 && ch === ",") {
+        paramList.push(paramsInner.slice(last, i).trim());
+        last = i + 1;
+      }
+    }
+    const tail = paramsInner.slice(last).trim();
+    if (tail) paramList.push(tail);
+    const formattedParams = paramList.map((p) => {
+      const m = p.match(/^(\.\.\.)?([A-Za-z_$][\w$]*)(\?)?\s*:\s*([\s\S]+)$/);
+      if (m && m[2] && m[4]) {
+        const dots = m[1] ? `<span class="ft-punct">...</span>` : "";
+        const opt = m[3] ? `<span class="ft-punct">?</span>` : "";
+        return `${dots}<span class="ft-param">${esc(m[2])}</span>${opt}<span class="ft-punct">: </span>${formatTypeTokensHtml(m[4].trim())}`;
+      }
+      return formatTypeTokensHtml(p);
+    }).join('<span class="ft-punct">, </span>');
+    const genHtml = genPrefix ? formatTypeTokensHtml(genPrefix) : "";
+    return `${genHtml}<span class="ft-punct">(</span>${formattedParams}<span class="ft-punct">)</span> <span class="ft-arrow">=&gt;</span> ` + formatTypeTokensHtml(right);
+  }
   function renderStatic(i, withAnim = false) {
     hideHoverTip();
     const st = appState.TRACE.steps[i];
@@ -11301,13 +13244,23 @@ runAsyncDemo()
     }
     renderCallStack(st);
     const activeFrame = getActiveFrame(st);
+    const targetFile = activeFrame && activeFrame.file || st.file || appState.DEBUG_SESSION.entryFile || "";
+    if (targetFile && appState.TRACE.moduleSources && Object.keys(appState.TRACE.moduleSources).length > 1) {
+      appState.ACTIVE_DEBUG_FILE = targetFile;
+      uiHooks.switchToScriptFile(targetFile);
+    }
     const v = activeFrame && activeFrame.v || st.v || {};
     const prevV = prevSt && prevSt.v || {};
     const primEntries = Object.keys(v).map((k) => {
       const val = v[k];
       if (val !== null && typeof val === "object") return "";
-      const changed = Boolean(activeFrame && activeFrame.isTop && prevSt && prevV[k] !== val);
-      return '<div class="pair' + (changed ? " changed" : "") + '" data-var="' + esc(k) + '"><span class="k">' + esc(k) + '</span><span class="v">' + esc(val) + "</span></div>";
+      const isFn = typeof val === "function";
+      const prevVal = prevV[k];
+      const changed = Boolean(
+        activeFrame && activeFrame.isTop && prevSt && (isFn ? typeof prevVal !== "function" || formatFunctionTypeSignature(k, prevVal) !== formatFunctionTypeSignature(k, val) : prevVal !== val)
+      );
+      const valHtml = isFn ? '<span class="v fn-type">' + formatFnTypeHtml(formatFunctionTypeSignature(k, val)) + "</span>" : '<span class="v">' + esc(val) + "</span>";
+      return '<div class="pair' + (changed ? " changed" : "") + '" data-var="' + esc(k) + '"><span class="k">' + esc(k) + "</span>" + valHtml + "</div>";
     }).join("");
     if (primEntries) {
       varsEl.innerHTML = primEntries;
@@ -11317,15 +13270,16 @@ runAsyncDemo()
       varsEl.innerHTML = '<div class="vempty">\uFF08\u672C\u5E27\u65E0\u539F\u59CB\u7C7B\u578B\u5C40\u90E8\u53D8\u91CF\uFF09</div>';
     }
     let animDesc = "";
+    const fileTag = st.file && appState.TRACE.moduleSources && Object.keys(appState.TRACE.moduleSources).length > 1 ? `${st.file} \xB7 ` : "";
     if (st.error) {
-      animDesc = `<div class="anim-desc" style="color:var(--red)">runtime error \xB7 \u5DF2\u505C\u6B62\u5728\u62A5\u9519\u884C (\u7B2C ${st.line} \u884C)</div>`;
+      animDesc = `<div class="anim-desc" style="color:var(--red)">runtime error \xB7 \u5DF2\u505C\u6B62\u5728\u62A5\u9519\u884C (${esc(fileTag)}\u7B2C ${st.line} \u884C)</div>`;
     } else if (st.anim) {
-      if (st.anim.type === "assign") animDesc = `<div class="anim-desc">assign \xB7 ${esc(st.anim.from)} \u2192 ${esc(st.anim.to)} = ${esc(st.anim.val)}</div>`;
-      else if (st.anim.type === "compare") animDesc = `<div class="anim-desc">compare \xB7 ${esc(st.anim.lhs)} ${esc(st.anim.op)} ${esc(st.anim.rhs)} \u21D2 ${esc(st.anim.result)}</div>`;
-      else if (st.anim.type === "call") animDesc = `<div class="anim-desc">call \xB7 ${esc(st.anim.fn)}(${esc((st.anim.argVals || []).join(", "))})</div>`;
-      else if (st.anim.type === "checkpoint") animDesc = `<div class="anim-desc" style="color:var(--cyan)">checkpoint \xB7 \u68C0\u67E5\u70B9\u5DF2\u547D\u4E2D (${esc((st.anim.argVals || []).join(", ") || "\u65E0\u53C2\u6570")})</div>`;
+      if (st.anim.type === "assign") animDesc = `<div class="anim-desc">${esc(fileTag)}assign \xB7 ${esc(st.anim.from)} \u2192 ${esc(st.anim.to)} = ${esc(st.anim.val)}</div>`;
+      else if (st.anim.type === "compare") animDesc = `<div class="anim-desc">${esc(fileTag)}compare \xB7 ${esc(st.anim.lhs)} ${esc(st.anim.op)} ${esc(st.anim.rhs)} \u21D2 ${esc(st.anim.result)}</div>`;
+      else if (st.anim.type === "call") animDesc = `<div class="anim-desc">${esc(fileTag)}call \xB7 ${esc(st.anim.fn)}(${esc((st.anim.argVals || []).join(", "))})</div>`;
+      else if (st.anim.type === "checkpoint") animDesc = `<div class="anim-desc" style="color:var(--cyan)">${esc(fileTag)}checkpoint \xB7 ${esc(st.anim.argVals && st.anim.argVals[0] ? st.anim.argVals[0] : "\u68C0\u67E5\u70B9\u5DF2\u547D\u4E2D")}</div>`;
     }
-    consoleEl.innerHTML = '<div><span class="p">\u203A</span>' + esc(st.note || "") + "</div>" + animDesc;
+    consoleEl.innerHTML = '<div><span class="p">\u203A</span>' + (fileTag ? '<span class="dim">[' + esc(st.file || "") + "] </span>" : "") + esc(st.note || "") + "</div>" + animDesc;
     if (st.error) {
       cntEl.textContent = "\u2717 \u8FD0\u884C\u65F6\u62A5\u9519";
       cntEl.className = "err";
@@ -11429,7 +13383,6 @@ runAsyncDemo()
     }
   }
   function runToNextCheckpoint() {
-    if (appState.LANG === "python") return PY_ENGINE.runToNextCheckpoint();
     stopAuto();
     appState.SELECTED_FRAME_IDX = null;
     if (document.body && document.body.classList) document.body.classList.remove("editing-code");
@@ -11563,26 +13516,6 @@ runAsyncDemo()
     return true;
   }
   function addCheckpointFunction(preferredLine) {
-    if (appState.LANG === "python") {
-      const text2 = editor.value.replace(/\r\n?/g, "\n");
-      const lines2 = text2.split("\n");
-      let line = preferredLine || appState.TRACE.steps[appState.cur]?.line || (window.__CM_CURSOR_LINE || appState.lastEditorCursorLine) || lines2.length;
-      line = Math.max(1, Math.min(lines2.length, line));
-      const current = lines2[line - 1] || "";
-      const indent2 = (current.match(/^\s*/) || [""])[0];
-      if (/:\s*(?:#.*)?$/.test(current)) {
-        lines2.splice(line, 0, indent2 + "    checkpoint()");
-        line = line + 1;
-      } else {
-        lines2.splice(line - 1, 0, indent2 + "checkpoint()");
-      }
-      editor.value = lines2.join("\n");
-      appState.lastEditorCursorLine = line;
-      resetTraceState();
-      PY_ENGINE.start(0);
-      say("\u2713 \u5DF2\u63D2\u5165 checkpoint()\uFF0C\u6B63\u5728\u91CD\u65B0\u5F55\u5236 Python \u6267\u884C\u6B65\u9AA4", "ok");
-      return;
-    }
     const text = editor.value.replace(/\r\n?/g, "\n");
     const lines = text.split("\n");
     const curStep = appState.TRACE.steps[appState.cur];
@@ -11635,20 +13568,33 @@ runAsyncDemo()
     }
     const refLine = lines[targetIdx] || "";
     const refTrim = refLine.trim();
-    if (typeof preferredLine === "number" && /^(?:checkpoint|断点)\s*\([^)]*\)\s*;?$/.test(refTrim)) {
-      const removedLine = targetIdx + 1;
-      lines.splice(targetIdx, 1);
+    const isCkptStmt = (s) => /^(?:checkpoint|断点)\s*\([\s\S]*\)\s*;?$/.test(s.trim());
+    let removeIdx = -1;
+    if (isCkptStmt(refTrim)) {
+      removeIdx = targetIdx;
+    } else if (refTrim.endsWith("{") && targetIdx + 1 < lines.length && isCkptStmt(lines[targetIdx + 1] || "")) {
+      removeIdx = targetIdx + 1;
+    }
+    if (removeIdx >= 0) {
+      const removedLine = removeIdx + 1;
+      lines.splice(removeIdx, 1);
       editor.value = lines.join("\n");
+      syncActiveScriptTabSource(editor.value);
       if (staleTimer) clearTimeout(staleTimer);
       if (wasActive) {
-        const newTargetLine = origCurLine > removedLine ? origCurLine - 1 : origCurLine === removedLine ? -1 : origCurLine;
-        rebuildDebugAtPosition(newTargetLine, origLineVisits, Math.max(0, prevCurIdx - 1));
+        if (appState.TRACE.moduleSources && Object.keys(appState.TRACE.moduleSources).length > 1) {
+          startDebug(Math.max(0, prevCurIdx - 1));
+        } else {
+          const newTargetLine = origCurLine > removedLine ? origCurLine - 1 : origCurLine === removedLine ? -1 : origCurLine;
+          rebuildDebugAtPosition(newTargetLine, origLineVisits, Math.max(0, prevCurIdx - 1));
+        }
       } else {
         startDebug(0);
       }
       const keepLine = Math.max(1, Math.min(lines.length, Math.min(removedLine, lines.length)));
+      appState.lastEditorCursorLine = keepLine;
       scrollCodeTo(keepLine);
-      say("\xB7 \u5DF2\u79FB\u9664\u7B2C " + removedLine + " \u884C\u7684 checkpoint() \u68C0\u67E5\u70B9\u51FD\u6570\uFF08\u4FDD\u6301\u5F53\u524D\u8C03\u8BD5\u8FDB\u5EA6\uFF09", "dim");
+      say("\xB7 \u5DF2\u79FB\u9664\u7B2C " + removedLine + " \u884C\u7684 checkpoint() \u68C0\u67E5\u70B9\u51FD\u6570 (Ctrl+C)", "dim");
       return;
     }
     let insertIdx = targetIdx;
@@ -11660,16 +13606,21 @@ runAsyncDemo()
     const insertedLineNum = insertIdx + 1;
     lines.splice(insertIdx, 0, indent + "checkpoint();");
     editor.value = lines.join("\n");
+    syncActiveScriptTabSource(editor.value);
     appState.lastEditorCursorLine = insertedLineNum;
     if (staleTimer) clearTimeout(staleTimer);
     if (wasActive) {
-      const newTargetLine = origCurLine >= insertedLineNum ? origCurLine + 1 : origCurLine;
-      rebuildDebugAtPosition(newTargetLine, origLineVisits, prevCurIdx);
+      if (appState.TRACE.moduleSources && Object.keys(appState.TRACE.moduleSources).length > 1) {
+        startDebug(prevCurIdx);
+      } else {
+        const newTargetLine = origCurLine >= insertedLineNum ? origCurLine + 1 : origCurLine;
+        rebuildDebugAtPosition(newTargetLine, origLineVisits, prevCurIdx);
+      }
     } else {
       startDebug(0);
     }
     scrollCodeTo(insertedLineNum);
-    say("\u2713 \u5DF2\u5728\u7B2C " + insertedLineNum + " \u884C\u6DFB\u52A0\u68C0\u67E5\u70B9\u51FD\u6570 checkpoint()\uFF08\u4FDD\u6301\u5F53\u524D\u8C03\u8BD5\u4F4D\u7F6E\uFF0C\u70B9\u51FB\u5DE6\u4E0B\u300C\u23ED \u8FD0\u884C\u5230\u4E0B\u4E00\u4E2A\u68C0\u67E5\u70B9\u300D\u5373\u53EF\u8FD0\u884C\u81F3\u68C0\u67E5\u70B9\uFF09", "ok");
+    say("\u2713 \u5DF2\u5728\u7B2C " + insertedLineNum + " \u884C\u6DFB\u52A0\u68C0\u67E5\u70B9\u51FD\u6570 checkpoint()\uFF08\u53EF\u6309 Ctrl+C \u968F\u65F6\u589E\u5220\u8BE5\u884C\u68C0\u67E5\u70B9\uFF09", "ok");
   }
   function go(i) {
     if (i > appState.cur) stepNext();
@@ -11689,13 +13640,6 @@ runAsyncDemo()
   }
   if ($("btnAddCheckpoint")) {
     $("btnAddCheckpoint").onclick = () => addCheckpointFunction();
-  }
-  if (gutterEl) {
-    gutterEl.addEventListener("click", (e) => {
-      const g = closestElement(e, ".gline");
-      if (!g || !g.dataset.line) return;
-      addCheckpointFunction(parseInt(g.dataset.line, 10));
-    });
   }
   $("auto").onclick = async () => {
     if (appState.timer) {
@@ -11780,13 +13724,11 @@ runAsyncDemo()
   }
   function sanitizeFileName(name) {
     const cleaned = String(name == null ? "" : name).replace(/[\\/:*?"<>|\u0000-\u001f]/g, "").replace(/\s+/g, " ").trim().replace(/[.\s]+$/, "");
-    return cleaned || (appState.LANG === "python" ? "playground.py" : "playground.ts");
+    return cleaned || "playground.ts";
   }
   function exportFileName() {
-    const fallback = appState.LANG === "python" ? "playground.py" : "playground.ts";
-    const name = appState.FILE_NAME || fallback;
-    const ext = appState.LANG === "python" ? ".py" : ".ts";
-    return /\.[A-Za-z0-9]{1,12}$/.test(name) ? name : name + ext;
+    const name = appState.FILE_NAME || "playground.ts";
+    return /\.[A-Za-z0-9]{1,12}$/.test(name) ? name : name + ".ts";
   }
   function setFileName(name) {
     appState.FILE_NAME = sanitizeFileName(name);
@@ -11809,7 +13751,7 @@ runAsyncDemo()
       globalThis.setViewMode("script");
     }
     editor.value = src;
-    setFileName(name || (appState.LANG === "python" ? "imported.py" : "imported.ts"));
+    setFileName(name || "imported.ts");
     if (typeof globalThis.syncActiveScriptTabSource === "function") {
       try {
         globalThis.syncActiveScriptTabSource(src);
@@ -11983,10 +13925,18 @@ runAsyncDemo()
     if (e.key === "Tab") {
       e.preventDefault();
       const s = editor.selectionStart, t = editor.selectionEnd;
-      const indent = appState.LANG === "python" ? "    " : "  ";
+      const indent = "  ";
       editor.value = editor.value.slice(0, s) + indent + editor.value.slice(t);
       editor.selectionStart = editor.selectionEnd = s + indent.length;
       onSourceChanged();
+    }
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "c") {
+      if ((editor.selectionStart || 0) === (editor.selectionEnd || 0)) {
+        e.preventDefault();
+        recordEditorCursorLine();
+        addCheckpointFunction(appState.lastEditorCursorLine);
+        return;
+      }
     }
     if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
       e.preventDefault();
@@ -12005,7 +13955,6 @@ runAsyncDemo()
     recordEditorCursorLine();
     appState.TYPE_ERROR_LINES.clear();
     appState.RUNTIME_ERROR_LINES.clear();
-    if (appState.LANG === "python") appState.PY_DIAGS.length = 0;
     hideHoverTip();
     updateEditorChrome();
     if (appState.TRACE.steps.length || appState.DEBUG_SESSION.active) {
@@ -12054,6 +14003,15 @@ runAsyncDemo()
   addEventListener("keydown", (e) => {
     if (isEditorFocused()) return;
     const target = eventTargetElement(e);
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "c") {
+      if (target && target.closest && target.closest("input,textarea")) return;
+      const sel = typeof window !== "undefined" && typeof window.getSelection === "function" ? String(window.getSelection() || "") : "";
+      if (!sel && appState.VIEW_MODE !== "notebook") {
+        e.preventDefault();
+        addCheckpointFunction();
+        return;
+      }
+    }
     if (e.key === "ArrowRight" || e.key === " ") {
       if (target && target.closest && target.closest("button,select,input,textarea")) return;
       e.preventDefault();
@@ -12431,7 +14389,11 @@ runAsyncDemo()
     const W = VIDEO_WIDTH, H = VIDEO_HEIGHT;
     const st = appState.TRACE.steps[stepIdx] || appState.TRACE.steps[0];
     const prevSt = stepIdx > 0 ? appState.TRACE.steps[stepIdx - 1] : null;
-    const codeLines = appState.TRACE.code && appState.TRACE.code.length ? appState.TRACE.code : editor.value.replace(/\r/g, "").split("\n");
+    const isMultiModule = Boolean(
+      appState.TRACE.moduleSources && Object.keys(appState.TRACE.moduleSources).length > 1
+    );
+    const stepModuleLines = st && st.file && appState.TRACE.moduleSources ? appState.TRACE.moduleSources[st.file] : void 0;
+    const codeLines = stepModuleLines && stepModuleLines.length ? stepModuleLines : appState.TRACE.code && appState.TRACE.code.length ? appState.TRACE.code : editor.value.replace(/\r/g, "").split("\n");
     ctx.fillStyle = "#07090d";
     ctx.fillRect(0, 0, W, H);
     ctx.fillStyle = "#0a0e14";
@@ -12466,7 +14428,8 @@ runAsyncDemo()
     ctx.stroke();
     ctx.font = '700 12px "Segoe UI", sans-serif';
     ctx.fillStyle = "#98a2b3";
-    ctx.fillText("SOURCE", 22, mainTop + 26);
+    const sourceHeaderLabel = isMultiModule && st && st.file ? `SOURCE \xB7 ${st.file}` : "SOURCE";
+    ctx.fillText(sourceHeaderLabel, 22, mainTop + 26);
     const curLine = st ? st.line : -1;
     const lh = 26;
     const codeStartY = mainTop + 46;
@@ -12528,7 +14491,10 @@ runAsyncDemo()
     ctx.fillStyle = "#98a2b3";
     ctx.fillText("LOCALS", sideX + 20, mainTop + 24);
     const stackFrames = st && Array.isArray(st.callStack) && st.callStack.length ? st.callStack : [{ label: "global" }];
-    const stackChainTxt = stackFrames.map((f) => f.label).join(" \u25B8 ");
+    const stackChainTxt = stackFrames.map((f) => {
+      const shortFile = f.file ? f.file.split("/").pop() || f.file : "";
+      return isMultiModule && shortFile && !String(f.label || "").startsWith("<module:") ? `[${shortFile}] ${f.label}` : String(f.label || "global");
+    }).join(" \u25B8 ");
     roundRectPath(ctx, sideX + 20, mainTop + 32, sideW - 40, 26, 7);
     ctx.fillStyle = "#0b1018";
     ctx.fill();
@@ -12543,8 +14509,10 @@ runAsyncDemo()
     let locX = sideX + 20, locY = mainTop + 66;
     const primKeys = Object.keys(v).filter((k) => v[k] === null || typeof v[k] !== "object");
     primKeys.forEach((k) => {
-      const valStr = String(v[k]);
-      const changed = prevSt && prevV[k] !== v[k];
+      const rawVal = v[k];
+      const isFn = typeof rawVal === "function";
+      const valStr = isFn ? formatFunctionTypeSignature(k, rawVal) : String(rawVal);
+      const changed = prevSt && (isFn ? typeof prevV[k] !== "function" : prevV[k] !== rawVal);
       ctx.font = '600 13px "Cascadia Code", Consolas, monospace';
       const chipW = ctx.measureText(`${k} : ${valStr}`).width + 24;
       if (locX + chipW > W - 20 && locX > sideX + 20) {
@@ -12654,10 +14622,6 @@ runAsyncDemo()
     ctx.fillText(`TypeScript Playground \xB7 1920\xD71080 60fps \u89C6\u9891\u5BFC\u51FA (${speedMult}x \u500D\u901F)`, 184, mainBottom + 33);
   }
   function loadSample(key) {
-    if (appState.LANG === "python") {
-      PY_ENGINE.loadSample(key);
-      return;
-    }
     const targetKey = SAMPLES[key] ? key : "showcase";
     if ($("sampleSel")) $("sampleSel").value = targetKey;
     const src = SAMPLES[targetKey] || "";
@@ -12679,15 +14643,14 @@ runAsyncDemo()
       const hash = typeof location !== "undefined" && location.hash || "";
       const qs0 = typeof location !== "undefined" && location.search ? new URLSearchParams(location.search) : null;
       const hasUrlChoice = Boolean(qs0 && (qs0.has("trace") || qs0.has("sample") || qs0.has("step")));
-      const wantsPython = Boolean(qs0 && qs0.get("lang") === "python");
       let hasSaved = false;
-      if (!hasUrlChoice && !wantsPython && typeof localStorage !== "undefined") {
+      if (!hasUrlChoice && typeof localStorage !== "undefined") {
         try {
           hasSaved = Boolean(localStorage.getItem("ts-playground-session-v1"));
         } catch (_) {
         }
       }
-      if (hash.startsWith("#s=") || wantsPython || hasSaved) {
+      if (hash.startsWith("#s=") || hasSaved) {
         window.__BOOT_DEFERRED = true;
         editor.value = "";
         clearLog("\u6B63\u5728\u6062\u590D\u4E0A\u6B21\u4F1A\u8BDD / \u5206\u4EAB\u4EE3\u7801\u2026");
@@ -13285,405 +15248,23 @@ runAsyncDemo()
     notifyVfsStoreChanged: () => notifyVfsStoreChanged,
     openVfsFile: () => openVfsFile,
     persistVfsToClientStorage: () => persistVfsToClientStorage,
+    registerVfsStorageAdapter: () => registerVfsStorageAdapter,
     renderVfsTreeUI: () => renderVfsTreeUI,
     resolveWorkspacePath: () => resolveWorkspacePath,
     serializeFsData: () => serializeFsData,
     subscribeVfsStore: () => subscribeVfsStore
   });
-
-  // src/runtime/vfs-store.ts
-  var VFS_STORAGE_KEY = "ts-visual-vfs-workspace-v2";
-  var vfsBootInitialized = false;
-  var VFS_EXPANDED_FOLDERS = /* @__PURE__ */ new Set();
-  var VFS_NODES = /* @__PURE__ */ new Map();
-  var vfsListeners = /* @__PURE__ */ new Set();
-  function subscribeVfsStore(listener) {
-    vfsListeners.add(listener);
-    return () => {
-      vfsListeners.delete(listener);
-    };
-  }
-  function notifyVfsStoreChanged() {
-    vfsListeners.forEach((fn) => fn());
-  }
-  function resolveWorkspacePath(rawPath, allowEmptyRoot = false) {
-    const raw = String(rawPath ?? "").trim().replace(/\\/g, "/");
-    if (!raw || raw === "." || raw === "./" || raw === "workspace" || raw === "/workspace" || raw === "workspace/" || raw === "/workspace/") {
-      if (allowEmptyRoot) return "";
-      throw new Error(`EISDIR: illegal operation on workspace root directory '${rawPath}'`);
-    }
-    if (/^[A-Za-z]:/.test(raw) || raw.startsWith("~")) {
-      throw new Error(`EACCES: permission denied, file operations outside workspace are not allowed: '${rawPath}'`);
-    }
-    if (raw.startsWith("/")) {
-      if (raw !== "/workspace" && !raw.startsWith("/workspace/")) {
-        throw new Error(`EACCES: permission denied, file operations outside workspace are not allowed: '${rawPath}'`);
-      }
-    }
-    let stripped = raw;
-    if (stripped.startsWith("/workspace/")) {
-      stripped = stripped.slice("/workspace/".length);
-    } else if (stripped.startsWith("workspace/")) {
-      stripped = stripped.slice("workspace/".length);
-    } else if (stripped.startsWith("./")) {
-      stripped = stripped.slice(2);
-    }
-    const rawSegments = stripped.split("/");
-    const resolved = [];
-    for (const seg of rawSegments) {
-      if (!seg || seg === ".") continue;
-      if (seg === "..") {
-        if (resolved.length === 0) {
-          throw new Error(`EACCES: permission denied, file operations outside workspace are not allowed: '${rawPath}'`);
-        }
-        resolved.pop();
-        continue;
-      }
-      resolved.push(seg);
-    }
-    const firstSeg = resolved[0] || "";
-    if (firstSeg === "examples" || firstSeg === "notebooks") {
-      throw new Error(`EACCES: permission denied, file operations outside workspace are not allowed: '${rawPath}'`);
-    }
-    const finalPath = resolved.join("/");
-    if (!finalPath && !allowEmptyRoot) {
-      throw new Error(`EISDIR: illegal operation on workspace root directory '${rawPath}'`);
-    }
-    return finalPath;
-  }
-  function isPersistedVfsNode(item) {
-    if (!isRecord(item)) return false;
-    return typeof item.path === "string" && typeof item.name === "string" && (item.type === "file" || item.type === "folder");
-  }
-  function ensureVfsInitialized() {
-    if (vfsBootInitialized) return;
-    vfsBootInitialized = true;
-    VFS_NODES.clear();
-    try {
-      if (typeof localStorage !== "undefined") {
-        localStorage.removeItem("ts-visual-vfs-v1");
-        const raw = localStorage.getItem(VFS_STORAGE_KEY);
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed)) {
-            for (const item of parsed) {
-              if (isPersistedVfsNode(item)) {
-                VFS_NODES.set(item.path, {
-                  path: item.path,
-                  name: item.name,
-                  type: item.type,
-                  parentPath: typeof item.parentPath === "string" ? item.parentPath : "",
-                  content: typeof item.content === "string" ? item.content : void 0,
-                  readonly: Boolean(item.readonly)
-                });
-              }
-            }
-          }
-        }
-      }
-    } catch (_) {
-    }
-  }
-  function persistVfsToClientStorage() {
-    try {
+  registerVfsStorageAdapter({
+    load: () => {
+      if (typeof localStorage === "undefined") return null;
+      localStorage.removeItem("ts-visual-vfs-v1");
+      return localStorage.getItem(VFS_STORAGE_KEY);
+    },
+    save: (rawJson) => {
       if (typeof localStorage === "undefined") return;
-      const customNodes = [];
-      VFS_NODES.forEach((node) => {
-        customNodes.push(node);
-      });
-      localStorage.setItem(VFS_STORAGE_KEY, JSON.stringify(customNodes));
-    } catch (_) {
+      localStorage.setItem(VFS_STORAGE_KEY, rawJson);
     }
-  }
-  function ensureParentFoldersExist(relPath) {
-    const parts = relPath.split("/").filter(Boolean);
-    if (parts.length <= 1) return;
-    let acc = "";
-    for (let i = 0; i < parts.length - 1; i++) {
-      const folderName = parts[i] || "";
-      const parentPath = acc;
-      acc = acc ? `${acc}/${folderName}` : folderName;
-      if (!VFS_NODES.has(acc)) {
-        VFS_NODES.set(acc, {
-          path: acc,
-          name: folderName,
-          type: "folder",
-          parentPath
-        });
-        VFS_EXPANDED_FOLDERS.add(acc);
-      }
-    }
-  }
-  function serializeFsData(data) {
-    if (typeof data === "string") return data;
-    if (data instanceof Uint8Array) {
-      return typeof TextDecoder !== "undefined" ? new TextDecoder().decode(data) : String(data);
-    }
-    if (data !== null && typeof data === "object") {
-      try {
-        return JSON.stringify(data, null, 2);
-      } catch (_) {
-        return String(data);
-      }
-    }
-    return String(data ?? "");
-  }
-  function createVfsCoreApi() {
-    const api = {
-      resolveWorkspacePath(rawPath, allowEmptyRoot = false) {
-        return resolveWorkspacePath(rawPath, allowEmptyRoot);
-      },
-      readFile(path) {
-        ensureVfsInitialized();
-        const rel = resolveWorkspacePath(path, false);
-        const node = VFS_NODES.get(rel);
-        if (!node) return null;
-        if (node.type === "folder") {
-          throw new Error(`EISDIR: illegal operation on a directory, read '${path}'`);
-        }
-        return node.content ?? "";
-      },
-      writeFile(path, content) {
-        ensureVfsInitialized();
-        const rel = resolveWorkspacePath(path, false);
-        const existing = VFS_NODES.get(rel);
-        if (existing && existing.type === "folder") {
-          throw new Error(`EISDIR: illegal operation on a directory, open '${path}'`);
-        }
-        ensureParentFoldersExist(rel);
-        const parts = rel.split("/");
-        const name = parts.pop() || rel;
-        const parentPath = parts.join("/");
-        VFS_NODES.set(rel, {
-          path: rel,
-          name,
-          type: "file",
-          parentPath,
-          content: serializeFsData(content)
-        });
-        persistVfsToClientStorage();
-        notifyVfsStoreChanged();
-        return true;
-      },
-      appendFile(path, content) {
-        ensureVfsInitialized();
-        const rel = resolveWorkspacePath(path, false);
-        const existing = VFS_NODES.get(rel);
-        if (existing && existing.type === "folder") {
-          throw new Error(`EISDIR: illegal operation on a directory, open '${path}'`);
-        }
-        const prev = existing && existing.type === "file" ? existing.content ?? "" : "";
-        return api.writeFile(rel, prev + serializeFsData(content));
-      },
-      listFiles(dirPath = "") {
-        ensureVfsInitialized();
-        const rel = resolveWorkspacePath(dirPath, true);
-        if (rel !== "") {
-          const dirNode = VFS_NODES.get(rel);
-          if (!dirNode) {
-            throw new Error(`ENOENT: no such file or directory, scandir '${dirPath}'`);
-          }
-          if (dirNode.type !== "folder") {
-            throw new Error(`ENOTDIR: not a directory, scandir '${dirPath}'`);
-          }
-        }
-        const out = [];
-        VFS_NODES.forEach((node) => {
-          if (node.parentPath === rel) out.push(node.name);
-        });
-        return out;
-      },
-      readdir(dirPath = "") {
-        return api.listFiles(dirPath);
-      },
-      listAll() {
-        ensureVfsInitialized();
-        return Array.from(VFS_NODES.keys()).sort();
-      },
-      exists(path) {
-        ensureVfsInitialized();
-        const rel = resolveWorkspacePath(path, true);
-        if (rel === "") return true;
-        return VFS_NODES.has(rel);
-      },
-      deleteFile(path) {
-        ensureVfsInitialized();
-        const rel = resolveWorkspacePath(path, false);
-        const node = VFS_NODES.get(rel);
-        if (!node) {
-          throw new Error(`ENOENT: no such file or directory, unlink '${path}'`);
-        }
-        const prefix = rel + "/";
-        Array.from(VFS_NODES.keys()).forEach((k) => {
-          if (k === rel || k.startsWith(prefix)) {
-            VFS_NODES.delete(k);
-          }
-        });
-        persistVfsToClientStorage();
-        notifyVfsStoreChanged();
-        return true;
-      },
-      unlink(path) {
-        return api.deleteFile(path);
-      },
-      mkdir(path) {
-        ensureVfsInitialized();
-        const rel = resolveWorkspacePath(path, true);
-        if (!rel) return true;
-        ensureParentFoldersExist(rel + "/_");
-        persistVfsToClientStorage();
-        notifyVfsStoreChanged();
-        return true;
-      },
-      stat(path) {
-        ensureVfsInitialized();
-        const rel = resolveWorkspacePath(path, true);
-        if (rel === "") {
-          return {
-            size: 0,
-            isFile: () => false,
-            isDirectory: () => true
-          };
-        }
-        const node = VFS_NODES.get(rel);
-        if (!node) {
-          throw new Error(`ENOENT: no such file or directory, stat '${path}'`);
-        }
-        const isDir = node.type === "folder";
-        const size = isDir ? 0 : (node.content ?? "").length;
-        return {
-          size,
-          isFile: () => !isDir,
-          isDirectory: () => isDir
-        };
-      },
-      clear() {
-        ensureVfsInitialized();
-        VFS_NODES.clear();
-        persistVfsToClientStorage();
-        notifyVfsStoreChanged();
-      }
-    };
-    return api;
-  }
-  function bindGlobalVfsApi() {
-    const api = createVfsCoreApi();
-    const fsPromises = {
-      async readFile(path, _options) {
-        const content = api.readFile(path);
-        if (content === null) {
-          throw new Error(`ENOENT: no such file or directory, open '${path}'`);
-        }
-        return content;
-      },
-      async writeFile(path, data, _options) {
-        api.writeFile(path, serializeFsData(data));
-      },
-      async appendFile(path, data, _options) {
-        api.appendFile(path, serializeFsData(data));
-      },
-      async unlink(path) {
-        api.deleteFile(path);
-      },
-      async rm(path, _options) {
-        api.deleteFile(path);
-      },
-      async readdir(path = "", _options) {
-        return api.listFiles(path);
-      },
-      async mkdir(path, _options) {
-        api.mkdir(path);
-        return void 0;
-      },
-      async rmdir(path, _options) {
-        api.deleteFile(path);
-      },
-      async stat(path) {
-        return api.stat(path);
-      },
-      async access(path, _mode) {
-        if (!api.exists(path)) {
-          throw new Error(`ENOENT: no such file or directory, access '${path}'`);
-        }
-      },
-      async exists(path) {
-        return api.exists(path);
-      },
-      async copyFile(src, dest) {
-        const content = api.readFile(src);
-        if (content === null) {
-          throw new Error(`ENOENT: no such file or directory, copyfile '${src}'`);
-        }
-        api.writeFile(dest, content);
-      },
-      async rename(oldPath, newPath) {
-        const content = api.readFile(oldPath);
-        if (content === null) {
-          throw new Error(`ENOENT: no such file or directory, rename '${oldPath}'`);
-        }
-        api.writeFile(newPath, content);
-        api.deleteFile(oldPath);
-      }
-    };
-    const fsShim = {
-      promises: fsPromises,
-      readFileSync(path, _options) {
-        const content = api.readFile(path);
-        if (content === null) {
-          throw new Error(`ENOENT: no such file or directory, open '${path}'`);
-        }
-        return content;
-      },
-      writeFileSync(path, data, _options) {
-        api.writeFile(path, serializeFsData(data));
-      },
-      appendFileSync(path, data, _options) {
-        api.appendFile(path, serializeFsData(data));
-      },
-      existsSync(path) {
-        return api.exists(path);
-      },
-      unlinkSync(path) {
-        api.deleteFile(path);
-      },
-      rmSync(path, _options) {
-        api.deleteFile(path);
-      },
-      readdirSync(path = "") {
-        return api.listFiles(path);
-      },
-      mkdirSync(path, _options) {
-        api.mkdir(path);
-        return void 0;
-      },
-      rmdirSync(path, _options) {
-        api.deleteFile(path);
-      },
-      statSync(path) {
-        return api.stat(path);
-      },
-      copyFileSync(src, dest) {
-        const content = api.readFile(src);
-        if (content === null) {
-          throw new Error(`ENOENT: no such file or directory, copyfile '${src}'`);
-        }
-        api.writeFile(dest, content);
-      },
-      renameSync(oldPath, newPath) {
-        const content = api.readFile(oldPath);
-        if (content === null) {
-          throw new Error(`ENOENT: no such file or directory, rename '${oldPath}'`);
-        }
-        api.writeFile(newPath, content);
-        api.deleteFile(oldPath);
-      }
-    };
-    globalThis.__VFS__ = api;
-    globalThis.vfs = api;
-    globalThis.__FS_SHIM__ = fsShim;
-  }
-
-  // src/ui/vfs.ts
+  });
   var pendingVfsDeletePath = null;
   function renderVfsTreeUI() {
     const treeEl = $("vfsTreeList");
@@ -13715,7 +15296,7 @@ runAsyncDemo()
       }
       const isAct = Boolean(activePath && node.path === activePath);
       const ext = (node.name.split(".").pop() || "").toLowerCase();
-      const icon = ext === "ipynb" ? "\u{1F4D3}" : ext === "py" ? "\u{1F40D}" : ext === "ts" ? "\u{1F4D8}" : ext === "json" ? "\u{1F5C2}" : "\u{1F4C4}";
+      const icon = ext === "ipynb" ? "\u{1F4D3}" : ext === "ts" ? "\u{1F4D8}" : ext === "json" ? "\u{1F5C2}" : "\u{1F4C4}";
       return `<div class="vfs-file-row${isAct ? " active" : ""}" data-vfs-file="${esc(node.path)}" style="padding-left:${padLeft}px" title="${esc(node.path)}\uFF08\u5355\u51FB\u6253\u5F00 \xB7 \u53CC\u51FB\u91CD\u547D\u540D\uFF09"><span class="vfs-icon">${icon}</span><span class="vfs-name">${esc(node.name)}</span>` + delBtnHtml + `</div>` + buildConfirmHtml(node);
     };
     const roots = childrenOf("");
@@ -13756,12 +15337,6 @@ runAsyncDemo()
       uiHooks.openVfsNotebookFile(node.name, node.content);
       return;
     }
-    const isPyFile = node.name.endsWith(".py");
-    if (isPyFile && appState.LANG !== "python" && typeof PY_ENGINE !== "undefined" && PY_ENGINE.setLang) {
-      PY_ENGINE.setLang("python");
-    } else if (node.name.endsWith(".ts") && appState.LANG === "python" && typeof PY_ENGINE !== "undefined" && PY_ENGINE.setLang) {
-      PY_ENGINE.setLang("ts");
-    }
     uiHooks.setViewMode("script");
     uiHooks.openVfsScriptFile(node.path, node.name, node.content || "");
     renderVfsTreeUI();
@@ -13790,13 +15365,11 @@ runAsyncDemo()
     if (btnNewFile) {
       btnNewFile.onclick = () => {
         ensureVfsInitialized();
-        const ext = appState.LANG === "python" ? ".py" : ".ts";
         let idx = 1;
-        while (VFS_NODES.has(`file_${idx}${ext}`)) idx++;
-        const name = `file_${idx}${ext}`;
+        while (VFS_NODES.has(`file_${idx}.ts`)) idx++;
+        const name = `file_${idx}.ts`;
         const path = name;
-        const content = appState.LANG === "python" ? `# ${name}
-` : `// ${name}
+        const content = `// ${name}
 `;
         VFS_NODES.set(path, {
           path,
@@ -13946,16 +15519,16 @@ runAsyncDemo()
   // src/ui/script-tabs.ts
   var script_tabs_exports = {};
   __export(script_tabs_exports, {
-    PY_SAMPLE_METADATA: () => PY_SAMPLE_METADATA,
     SCRIPT_TABS: () => SCRIPT_TABS,
     TS_SAMPLE_METADATA: () => TS_SAMPLE_METADATA,
+    collectWorkspaceFileMap: () => collectWorkspaceFileMap,
     ensureScriptTabsForLang: () => ensureScriptTabsForLang,
     getActiveScriptTab: () => getActiveScriptTab,
-    getPySamplesDict: () => getPySamplesDict,
     handleVfsFileDeletedInTabs: () => handleVfsFileDeletedInTabs,
     handleVfsFileRenamedInTabs: () => handleVfsFileRenamedInTabs,
     initScriptTabsAndImportEvents: () => initScriptTabsAndImportEvents,
     isScriptTabSyncing: () => isScriptTabSyncing,
+    loadMultiFileSampleProject: () => loadMultiFileSampleProject,
     nextScriptTabId: () => nextScriptTabId,
     onVfsFileDeleted: () => onVfsFileDeleted,
     onVfsFileRenamed: () => onVfsFileRenamed,
@@ -13964,174 +15537,12 @@ runAsyncDemo()
     renderImportSampleMenu: () => renderImportSampleMenu,
     renderScriptTabsUI: () => renderScriptTabsUI,
     setScriptTabSyncing: () => setScriptTabSyncing,
+    switchToScriptFile: () => switchToScriptFile,
     syncActiveScriptTabFromFileName: () => syncActiveScriptTabFromFileName,
     syncActiveScriptTabSource: () => syncActiveScriptTabSource,
     upsertSampleScriptTab: () => upsertSampleScriptTab,
     upsertVfsScriptTab: () => upsertVfsScriptTab
   });
-
-  // src/runtime/script-tabs-store.ts
-  var scriptTabSeq = 1;
-  var syncingScriptTab = false;
-  function nextScriptTabId() {
-    return "stab_" + ++scriptTabSeq;
-  }
-  function isScriptTabSyncing() {
-    return syncingScriptTab;
-  }
-  function setScriptTabSyncing(val) {
-    syncingScriptTab = val;
-  }
-  var SCRIPT_TABS = {
-    ts: { activeTabId: "", tabs: [] },
-    python: { activeTabId: "", tabs: [] }
-  };
-  var TS_SAMPLE_METADATA = [
-    { key: "showcase", label: "showcase.ts \xB7 \u7EFC\u5408\u6F14\u793A", desc: "\u6ED1\u52A8\u7A97\u53E3 + \u5355\u8C03\u6808 + Map + \u6811\u4E0E\u56FE" },
-    { key: "mergesort", label: "mergesort.ts \xB7 \u5F52\u5E76\u6392\u5E8F", desc: "\u5206\u6CBB\u9012\u5F52\u4E0E\u5DE6\u53F3\u5B50\u6570\u7EC4\u5F52\u5E76" },
-    { key: "debug_crash", label: "debug_crash.ts \xB7 \u8D8A\u754C\u6392\u9519", desc: "\u4E8C\u5206\u67E5\u627E <= \u8D8A\u754C Bug \u73B0\u573A\u5B9A\u4F4D" },
-    { key: "lcs", label: "lcs.ts \xB7 \u6700\u957F\u516C\u5171\u5B50\u5E8F\u5217", desc: "\u4E8C\u7EF4 DP \u7F51\u683C\u89C4\u5212" },
-    { key: "analyze", label: "analyze.ts \xB7 \u9891\u7387\u7EDF\u8BA1", desc: "\u6570\u7EC4\u4E0E Map \u54C8\u5E0C\u7EDF\u8BA1" },
-    { key: "window", label: "window.ts \xB7 \u6ED1\u52A8\u7A97\u53E3", desc: "\u53CC\u6307\u9488\u5B9A\u957F\u6ED1\u52A8\u7A97\u53E3" },
-    { key: "structures", label: "structures.ts \xB7 \u6570\u636E\u7ED3\u6784\u5168\u5BB6\u6876", desc: "\u6808 / \u961F\u5217 / \u5806 / \u5E76\u67E5\u96C6 / \u6811 / \u56FE" },
-    { key: "counter", label: "counter.ts \xB7 \u95ED\u5305\u8BA1\u6570\u5668", desc: "\u9AD8\u9636\u51FD\u6570\u4E0E\u8BCD\u6CD5\u4F5C\u7528\u57DF\u95ED\u5305" },
-    { key: "classes", label: "classes.ts \xB7 \u7C7B\u4E0E\u7EE7\u627F", desc: "class / extends / super \u5B9E\u4F8B\u65B9\u6CD5" },
-    { key: "async_loop", label: "async_loop.ts \xB7 \u4E8B\u4EF6\u5FAA\u73AF", desc: "async / await \u4E0E\u5FAE\u4EFB\u52A1\u961F\u5217" }
-  ];
-  var PY_SAMPLE_METADATA = [
-    { key: "quickstart", label: "quickstart.py \xB7 \u5192\u6CE1\u6392\u5E8F", desc: "Python \u5217\u8868\u539F\u5730\u4EA4\u6362\u4E0E\u53CC\u5C42\u5FAA\u73AF" },
-    { key: "binary_search", label: "binary_search.py \xB7 \u4E8C\u5206\u67E5\u627E", desc: "\u53CC\u6307\u9488\u6298\u534A\u641C\u7D22\u4E0E checkpoint()" },
-    { key: "bfs", label: "bfs.py \xB7 BFS \u5E7F\u5EA6\u4F18\u5148\u641C\u7D22", desc: "deque \u961F\u5217\u4E0E\u96C6\u5408\u8BBF\u95EE\u6807\u8BB0" },
-    { key: "lcs", label: "lcs.py \xB7 DP \u6700\u957F\u516C\u5171\u5B50\u5E8F\u5217", desc: "\u4E8C\u7EF4\u5217\u8868\u63A8\u5BFC\u5F0F\u4E0E\u52A8\u6001\u89C4\u5212" },
-    { key: "structures", label: "structures.py \xB7 \u7ED3\u6784\u96C6\u5408", desc: "TreeNode / ListNode / \u5B57\u5178 / \u96C6\u5408" },
-    { key: "classes", label: "classes.py \xB7 \u7C7B\u4E0E\u5B9E\u4F8B", desc: "Counter \u7C7B\u6784\u9020\u4E0E\u5B9E\u4F8B\u5C5E\u6027\u8FFD\u8E2A" }
-  ];
-  function getPySamplesDict() {
-    const eng = typeof PY_ENGINE !== "undefined" ? PY_ENGINE : null;
-    return eng && eng.samples ? eng.samples : {};
-  }
-  function ensureScriptTabsForLang(lang) {
-    ensureVfsInitialized();
-    const store = SCRIPT_TABS[lang];
-    if (store.tabs.length === 0) {
-      const curLang = appState.LANG;
-      const curFileName = appState.FILE_NAME;
-      const editorSrc = uiHooks.getEditorSource();
-      const defaultTitle = lang === "python" ? curLang === "python" && curFileName ? curFileName : "quickstart.py" : curLang !== "python" && curFileName ? curFileName : "showcase.ts";
-      const defaultSrc = lang === "python" ? curLang === "python" && editorSrc ? editorSrc : getPySamplesDict().quickstart || "" : curLang !== "python" && editorSrc ? editorSrc : SAMPLES.showcase || "";
-      const tabId = nextScriptTabId();
-      store.tabs.push({
-        id: tabId,
-        title: defaultTitle,
-        lang,
-        source: defaultSrc,
-        vfsPath: "",
-        isSample: true
-      });
-      store.activeTabId = tabId;
-    }
-    const firstTab = store.tabs[0];
-    if (firstTab && !store.tabs.some((t) => t.id === store.activeTabId)) {
-      store.activeTabId = firstTab.id;
-    }
-    return store;
-  }
-  function getActiveScriptTab(lang) {
-    const targetLang = lang || (appState.LANG === "python" ? "python" : "ts");
-    const store = ensureScriptTabsForLang(targetLang);
-    const found = store.tabs.find((t) => t.id === store.activeTabId) ?? store.tabs[0];
-    if (found) return found;
-    return {
-      id: "stab_0",
-      title: targetLang === "python" ? "quickstart.py" : "showcase.ts",
-      lang: targetLang,
-      source: "",
-      vfsPath: "",
-      isSample: true
-    };
-  }
-  function syncActiveScriptTabSource(src) {
-    const lang = appState.LANG === "python" ? "python" : "ts";
-    const activeTab = getActiveScriptTab(lang);
-    if (!activeTab) return;
-    activeTab.source = src;
-    if (!activeTab.isSample && activeTab.vfsPath) {
-      const node = VFS_NODES.get(activeTab.vfsPath);
-      if (node && node.type === "file") {
-        node.content = src;
-        persistVfsToClientStorage();
-      }
-    }
-  }
-  function upsertSampleScriptTab(title, source, lang) {
-    const targetLang = lang || (appState.LANG === "python" ? "python" : "ts");
-    const store = ensureScriptTabsForLang(targetLang);
-    let tab = store.tabs.find((t) => (t.isSample || !t.vfsPath) && t.title === title);
-    if (!tab) {
-      tab = {
-        id: nextScriptTabId(),
-        title,
-        lang: targetLang,
-        source,
-        vfsPath: "",
-        isSample: true
-      };
-      store.tabs.push(tab);
-    } else {
-      tab.source = source;
-      tab.vfsPath = "";
-      tab.isSample = true;
-    }
-    store.activeTabId = tab.id;
-    return tab;
-  }
-  function upsertVfsScriptTab(path, name, content, lang) {
-    const targetLang = lang || (appState.LANG === "python" ? "python" : "ts");
-    const store = ensureScriptTabsForLang(targetLang);
-    let tab = store.tabs.find((t) => !t.isSample && t.vfsPath === path);
-    if (!tab) {
-      tab = {
-        id: nextScriptTabId(),
-        title: name,
-        lang: targetLang,
-        source: content,
-        vfsPath: path,
-        isSample: false
-      };
-      store.tabs.push(tab);
-    } else {
-      tab.source = content;
-      tab.vfsPath = path;
-      tab.isSample = false;
-    }
-    store.activeTabId = tab.id;
-    return tab;
-  }
-  function handleVfsFileDeletedInTabs(delPath) {
-    const prefix = delPath + "/";
-    ["ts", "python"].forEach((l) => {
-      const st = SCRIPT_TABS[l];
-      st.tabs.forEach((t) => {
-        if (t.vfsPath === delPath || t.vfsPath.startsWith(prefix)) {
-          t.vfsPath = "";
-        }
-      });
-    });
-  }
-  function handleVfsFileRenamedInTabs(oldPath, nextPath, nextName) {
-    const lang = appState.LANG === "python" ? "python" : "ts";
-    const store = ensureScriptTabsForLang(lang);
-    const matchingTab = store.tabs.find((t) => t.vfsPath === oldPath);
-    if (!matchingTab) return { updated: false, isActive: false };
-    matchingTab.title = nextName;
-    matchingTab.vfsPath = nextPath;
-    return {
-      updated: true,
-      isActive: store.activeTabId === matchingTab.id
-    };
-  }
-
-  // src/ui/script-tabs.ts
   function openSampleScriptTab(title, source, lang) {
     if (editor && editor.value) {
       syncActiveScriptTabSource(editor.value);
@@ -14146,8 +15557,7 @@ runAsyncDemo()
   }
   function syncActiveScriptTabFromFileName(newFileName) {
     if (isScriptTabSyncing()) return;
-    const lang = appState.LANG === "python" ? "python" : "ts";
-    const store = ensureScriptTabsForLang(lang);
+    const store = ensureScriptTabsForLang("ts");
     const activeTab = store.tabs.find((t) => t.id === store.activeTabId);
     if (!activeTab) return;
     const oldPath = activeTab.vfsPath;
@@ -14171,25 +15581,99 @@ runAsyncDemo()
   function renderScriptTabsUI() {
     const tabsEl = $("scriptTabsList");
     if (!tabsEl) return;
-    const lang = appState.LANG === "python" ? "python" : "ts";
-    const store = ensureScriptTabsForLang(lang);
-    const activeTab = getActiveScriptTab(lang);
+    const store = ensureScriptTabsForLang("ts");
+    const activeTab = getActiveScriptTab("ts");
+    const isMultiDebug = Boolean(
+      appState.DEBUG_SESSION.active && appState.TRACE.moduleSources && Object.keys(appState.TRACE.moduleSources).length > 1
+    );
     tabsEl.innerHTML = store.tabs.map((t) => {
       const isAct = t.id === activeTab.id;
-      const iconCls = lang === "python" ? "py-icon" : "ts-icon";
-      return `<div class="nb-tab${isAct ? " active" : ""}" data-script-tab-id="${esc(t.id)}" title="\u5355\u51FB\u5207\u6362\u6807\u7B7E\u9875 \xB7 \u53CC\u51FB\u6587\u4EF6\u540D\u91CD\u547D\u540D"><span class="nb-tab-icon ${iconCls}" aria-hidden="true"></span><span class="nb-tab-title">${esc(t.title)}</span>` + (store.tabs.length > 1 ? `<button type="button" class="nb-tab-close" data-close-script-tab="${esc(t.id)}" title="\u5173\u95ED\u6807\u7B7E\u9875">\xD7</button>` : "") + `</div>`;
+      const normPath = normalizeWorkspaceModulePath(t.vfsPath || t.title);
+      const isDebugEntry = isMultiDebug && appState.DEBUG_SESSION.entryFile === normPath;
+      const badge = isDebugEntry ? ` <span class="dim" title="\u5F53\u524D\u591A\u6587\u4EF6\u8C03\u8BD5\u5165\u53E3\u6A21\u5757">\u25B6</span>` : "";
+      return `<div class="nb-tab${isAct ? " active" : ""}" data-script-tab-id="${esc(t.id)}" title="\u5355\u51FB\u5207\u6362\u6807\u7B7E\u9875 \xB7 \u53CC\u51FB\u6587\u4EF6\u540D\u91CD\u547D\u540D"><span class="nb-tab-icon ts-icon" aria-hidden="true"></span><span class="nb-tab-title">${esc(t.title)}${badge}</span>` + (store.tabs.length > 1 ? `<button type="button" class="nb-tab-close" data-close-script-tab="${esc(t.id)}" title="\u5173\u95ED\u6807\u7B7E\u9875">\xD7</button>` : "") + `</div>`;
     }).join("") + `<button type="button" class="nb-tab-add" id="scriptBtnNewTab" title="\u65B0\u5EFA\u4EE3\u7801\u6587\u4EF6\u6807\u7B7E\u9875">\uFF0B</button>`;
   }
   function renderImportSampleMenu() {
     const listEl = $("importSampleList");
     if (!listEl) return;
-    const isPy = appState.LANG === "python";
-    const items = isPy ? PY_SAMPLE_METADATA : TS_SAMPLE_METADATA;
-    const folderPrefix = isPy ? "examples/python/" : "examples/ts/";
     const nbItemHtml = `<button type="button" class="import-sample-item" data-import-sample-notebook="Intro.ipynb"><span class="import-sample-name">\u{1F4D3} Intro.ipynb \xB7 \u4EA4\u4E92\u5F0F\u7B14\u8BB0\u672C\u793A\u4F8B</span><span class="import-sample-path">examples/notebooks/</span></button>`;
-    listEl.innerHTML = (appState.VIEW_MODE === "notebook" ? nbItemHtml : "") + items.map(
-      (item) => `<button type="button" class="import-sample-item" data-import-sample-key="${esc(item.key)}" title="${esc(item.desc)}"><span class="import-sample-name">${esc(item.label)}</span><span class="import-sample-path">${esc(folderPrefix + item.key + (isPy ? ".py" : ".ts"))}</span></button>`
+    const multiFileItemHtml = `<button type="button" class="import-sample-item" data-import-sample-multifile="bst-project" title="\u52A0\u8F7D\u5305\u542B bst.ts \u4E0E main.ts \u7684\u591A\u6A21\u5757 TypeScript \u5DE5\u7A0B\u793A\u4F8B\uFF0C\u652F\u6301\u8DE8\u6587\u4EF6\u6B65\u8FDB\u4E0E\u7C7B\u578B\u68C0\u67E5"><span class="import-sample-name">\u{1F4E6} \u591A\u6587\u4EF6\u6A21\u5757\u5316\u5DE5\u7A0B \xB7 \u4E8C\u53C9\u641C\u7D22\u6811 (bst.ts + main.ts)</span><span class="import-sample-path">workspace/bst.ts + main.ts</span></button>`;
+    listEl.innerHTML = (appState.VIEW_MODE === "notebook" ? nbItemHtml : multiFileItemHtml) + TS_SAMPLE_METADATA.map(
+      (item) => `<button type="button" class="import-sample-item" data-import-sample-key="${esc(item.key)}" title="${esc(item.desc)}"><span class="import-sample-name">${esc(item.label)}</span><span class="import-sample-path">${esc("examples/ts/" + item.key + ".ts")}</span></button>`
     ).join("") + (appState.VIEW_MODE !== "notebook" ? nbItemHtml : "");
+  }
+  function loadMultiFileSampleProject() {
+    ensureVfsInitialized();
+    const bstSource = [
+      "// \u4E8C\u53C9\u641C\u7D22\u6811\u8282\u70B9\u6A21\u5757 (bst.ts)",
+      "export interface BstNode {",
+      "  val: number;",
+      "  left: BstNode | null;",
+      "  right: BstNode | null;",
+      "}",
+      "",
+      "export function createNode(val: number): BstNode {",
+      "  return { val, left: null, right: null };",
+      "}",
+      "",
+      "export function insertBst(root: BstNode | null, val: number): BstNode {",
+      "  if (root === null) {",
+      "    return createNode(val);",
+      "  }",
+      "  if (val < root.val) {",
+      "    root.left = insertBst(root.left, val);",
+      "  } else if (val > root.val) {",
+      "    root.right = insertBst(root.right, val);",
+      "  }",
+      "  return root;",
+      "}"
+    ].join("\n");
+    const mainSource = [
+      "// \u591A\u6587\u4EF6\u5165\u53E3\u6A21\u5757 (main.ts) \u2014\u2014 \u5BFC\u5165 ./bst \u5E76\u8DE8\u6A21\u5757\u6B65\u8FDB\u8C03\u8BD5",
+      "import { BstNode, insertBst } from './bst';",
+      "",
+      "function buildSearchTree(nums: number[]): number {",
+      "  let tree: BstNode | null = null;",
+      "  for (let i = 0; i < nums.length; i++) {",
+      "    const x = nums[i];",
+      "    tree = insertBst(tree, x);",
+      '    checkpoint(x < 8, "\u63D2\u5165\u5DE6\u5B50\u6811\u8282\u70B9");',
+      "  }",
+      "  if (tree !== null) {",
+      "    return tree.val;",
+      "  }",
+      "  return -1;",
+      "}",
+      "",
+      "// \u8C03\u7528\uFF1AbuildSearchTree([8, 4, 12, 2, 6])"
+    ].join("\n");
+    VFS_NODES.set("bst.ts", {
+      path: "bst.ts",
+      name: "bst.ts",
+      type: "file",
+      parentPath: "",
+      content: bstSource
+    });
+    VFS_NODES.set("main.ts", {
+      path: "main.ts",
+      name: "main.ts",
+      type: "file",
+      parentPath: "",
+      content: mainSource
+    });
+    persistVfsToClientStorage();
+    upsertVfsScriptTab("bst.ts", "bst.ts", bstSource, "ts");
+    const mainTab = upsertVfsScriptTab("main.ts", "main.ts", mainSource, "ts");
+    setScriptTabSyncing(true);
+    if (editor) editor.value = mainTab.source;
+    setFileName("main.ts");
+    setScriptTabSyncing(false);
+    renderScriptTabsUI();
+    renderVfsTreeUI();
+    uiHooks.setViewMode("script");
+    resetTraceState();
+    startDebug(0);
   }
   function initScriptTabsAndImportEvents() {
     const importMenuWrap = $("importMenuWrap");
@@ -14231,6 +15715,11 @@ runAsyncDemo()
         const btn = closestElement(e, ".import-sample-item");
         if (!btn) return;
         if (importMenuWrap && importMenuWrap.classList) importMenuWrap.classList.remove("open");
+        const multiFile = btn.getAttribute("data-import-sample-multifile");
+        if (multiFile) {
+          loadMultiFileSampleProject();
+          return;
+        }
         const nbFile = btn.getAttribute("data-import-sample-notebook");
         if (nbFile) {
           uiHooks.setViewMode("notebook");
@@ -14240,7 +15729,7 @@ runAsyncDemo()
         const sampleKey = btn.getAttribute("data-import-sample-key");
         if (sampleKey) {
           if (appState.VIEW_MODE === "notebook") {
-            const code = appState.LANG === "python" ? getPySamplesDict()[sampleKey] || "" : SAMPLES[sampleKey] || "";
+            const code = SAMPLES[sampleKey] || "";
             if (code) {
               uiHooks.importSampleIntoNotebook(code, sampleKey);
             }
@@ -14255,8 +15744,7 @@ runAsyncDemo()
       scriptTabsEl.addEventListener("click", (e) => {
         const target = eventTargetElement(e);
         if (!target) return;
-        const lang = appState.LANG === "python" ? "python" : "ts";
-        const store = ensureScriptTabsForLang(lang);
+        const store = ensureScriptTabsForLang("ts");
         const closeBtn = closestElement(target, "[data-close-script-tab]");
         if (closeBtn) {
           e.stopPropagation();
@@ -14268,7 +15756,7 @@ runAsyncDemo()
             if (store.activeTabId === closeId) {
               const fallbackTab = store.tabs[Math.max(0, idx - 1)];
               if (fallbackTab) store.activeTabId = fallbackTab.id;
-              const nextTab = getActiveScriptTab(lang);
+              const nextTab = getActiveScriptTab("ts");
               setScriptTabSyncing(true);
               editor.value = nextTab.source;
               setFileName(nextTab.title);
@@ -14284,13 +15772,12 @@ runAsyncDemo()
         const newBtn = closestElement(target, "#scriptBtnNewTab");
         if (newBtn) {
           syncActiveScriptTabSource(editor ? editor.value : "");
-          const ext = lang === "python" ? ".py" : ".ts";
-          const newTitle = `untitled-${store.tabs.length + 1}${ext}`;
+          const newTitle = `untitled-${store.tabs.length + 1}.ts`;
           const newTab = {
             id: nextScriptTabId(),
             title: newTitle,
-            lang,
-            source: lang === "python" ? "# \u65B0\u5EFA Python \u811A\u672C\n" : "// \u65B0\u5EFA TypeScript \u811A\u672C\n",
+            lang: "ts",
+            source: "// \u65B0\u5EFA TypeScript \u811A\u672C\n",
             vfsPath: "",
             isSample: false
           };
@@ -14313,12 +15800,20 @@ runAsyncDemo()
           if (tabId && store.activeTabId !== tabId) {
             syncActiveScriptTabSource(editor ? editor.value : "");
             store.activeTabId = tabId;
-            const nextTab = getActiveScriptTab(lang);
+            const nextTab = getActiveScriptTab("ts");
+            const normNext = normalizeWorkspaceModulePath(nextTab.vfsPath || nextTab.title);
+            const inActiveMultiSession = Boolean(
+              appState.DEBUG_SESSION.active && appState.TRACE.moduleSources && Object.keys(appState.TRACE.moduleSources).length > 1 && appState.TRACE.moduleSources[normNext]
+            );
             setScriptTabSyncing(true);
             editor.value = nextTab.source;
-            setFileName(nextTab.title);
+            setFileName(nextTab.vfsPath || nextTab.title);
             setScriptTabSyncing(false);
-            resetTraceState();
+            if (inActiveMultiSession) {
+              appState.ACTIVE_DEBUG_FILE = normNext;
+            } else {
+              resetTraceState();
+            }
             updateEditorChrome();
             renderScriptTabsUI();
             renderVfsTreeUI();
@@ -14329,8 +15824,7 @@ runAsyncDemo()
         const tabEl = closestElement(e, "[data-script-tab-id]");
         if (!tabEl) return;
         const tabId = tabEl.getAttribute("data-script-tab-id");
-        const lang = appState.LANG === "python" ? "python" : "ts";
-        const store = ensureScriptTabsForLang(lang);
+        const store = ensureScriptTabsForLang("ts");
         const targetTab = store.tabs.find((t) => t.id === tabId);
         if (!targetTab) return;
         const titleSpan = tabEl.querySelector ? tabEl.querySelector(".nb-tab-title") : null;
@@ -14348,8 +15842,7 @@ runAsyncDemo()
           committed = true;
           const rawVal = input.value.trim();
           if (rawVal) {
-            const ext = lang === "python" ? ".py" : ".ts";
-            const nextName = /\.[A-Za-z0-9]{1,12}$/.test(rawVal) ? rawVal : rawVal + ext;
+            const nextName = /\.[A-Za-z0-9]{1,12}$/.test(rawVal) ? rawVal : rawVal + ".ts";
             const oldPath = targetTab.vfsPath;
             targetTab.title = nextName;
             if (!targetTab.isSample && oldPath && VFS_NODES.has(oldPath)) {
@@ -14393,18 +15886,67 @@ runAsyncDemo()
     }
   }
   function openVfsScriptFile(path, name, content) {
-    const lang = appState.LANG === "python" ? "python" : "ts";
     if (editor && editor.value) {
       syncActiveScriptTabSource(editor.value);
     }
-    const tab = upsertVfsScriptTab(path, name, content, lang);
+    const tab = upsertVfsScriptTab(path, name, content, "ts");
     setScriptTabSyncing(true);
     editor.value = tab.source;
-    setFileName(tab.title);
+    setFileName(tab.vfsPath || tab.title);
     setScriptTabSyncing(false);
     resetTraceState();
     updateEditorChrome();
     renderScriptTabsUI();
+  }
+  function switchToScriptFile(targetPath) {
+    const normPath = normalizeWorkspaceModulePath(targetPath);
+    if (!normPath) return;
+    const store = ensureScriptTabsForLang("ts");
+    const currentActive = getActiveScriptTab("ts");
+    const currentNorm = normalizeWorkspaceModulePath(currentActive.vfsPath || currentActive.title);
+    if (currentNorm === normPath && normalizeWorkspaceModulePath(appState.FILE_NAME) === normPath) {
+      return;
+    }
+    if (editor && editor.value) {
+      syncActiveScriptTabSource(editor.value);
+    }
+    let targetTab = store.tabs.find(
+      (t) => normalizeWorkspaceModulePath(t.vfsPath || t.title) === normPath
+    );
+    if (!targetTab) {
+      ensureVfsInitialized();
+      const vfsNode = VFS_NODES.get(normPath);
+      if (vfsNode && vfsNode.type === "file") {
+        targetTab = upsertVfsScriptTab(normPath, vfsNode.name, vfsNode.content ?? "", "ts");
+      }
+    }
+    if (!targetTab) return;
+    store.activeTabId = targetTab.id;
+    appState.ACTIVE_DEBUG_FILE = normPath;
+    setScriptTabSyncing(true);
+    if (editor) editor.value = targetTab.source;
+    setFileName(targetTab.vfsPath || targetTab.title);
+    setScriptTabSyncing(false);
+    renderScriptTabsUI();
+    renderVfsTreeUI();
+  }
+  function collectWorkspaceFileMap() {
+    const map = /* @__PURE__ */ new Map();
+    ensureVfsInitialized();
+    VFS_NODES.forEach((node, path) => {
+      if (node.type === "file" && typeof node.content === "string") {
+        const norm = normalizeWorkspaceModulePath(path);
+        if (norm) map.set(norm, node.content.replace(/\r/g, ""));
+      }
+    });
+    const store = ensureScriptTabsForLang("ts");
+    store.tabs.forEach((tab) => {
+      const key = normalizeWorkspaceModulePath(tab.vfsPath || tab.title);
+      if (key) {
+        map.set(key, (tab.source || "").replace(/\r/g, ""));
+      }
+    });
+    return map;
   }
   function onVfsFileDeleted(delPath) {
     handleVfsFileDeletedInTabs(delPath);
@@ -14423,7 +15965,9 @@ runAsyncDemo()
   }
   registerUiHooks({
     getActiveWorkspacePath: () => getActiveScriptTab().vfsPath,
+    collectWorkspaceFileMap,
     openVfsScriptFile,
+    switchToScriptFile,
     onVfsFileDeleted,
     onVfsFileRenamed
   });
@@ -14440,7 +15984,6 @@ runAsyncDemo()
     createTutorialNotebookDocument: () => createTutorialNotebookDocument,
     cutNotebookCell: () => cutNotebookCell,
     debugNotebookCell: () => debugNotebookCell,
-    debugPythonNotebookCell: () => debugPythonNotebookCell,
     debugTsNotebookCell: () => debugTsNotebookCell,
     deleteCellInModel: () => deleteCellInModel,
     deleteNotebookCell: () => deleteNotebookCell,
@@ -14476,7 +16019,6 @@ runAsyncDemo()
     restartNotebookKernel: () => restartNotebookKernel,
     runAllNotebookCells: () => runAllNotebookCells,
     runNotebookCell: () => runNotebookCell,
-    runPythonNotebookCell: () => runPythonNotebookCell,
     runTsNotebookCell: () => runTsNotebookCell,
     serializeNotebookToIpynbJson: () => serializeNotebookToIpynbJson,
     serializeTutorialToIpynbJson: () => serializeTutorialToIpynbJson,
@@ -14502,56 +16044,13 @@ runAsyncDemo()
   function setClipboardCell(cell) {
     nbClipboardCell = cell;
   }
-  function createDefaultNotebooks(lang) {
-    const isPy = lang === "python";
+  function createDefaultNotebooks(_lang = "ts") {
     const c1Id = nextCellId();
     const c2Id = nextCellId();
     const c3Id = nextCellId();
     const c4Id = nextCellId();
     const c5Id = nextCellId();
-    const introCells = isPy ? [
-      {
-        id: c1Id,
-        type: "markdown",
-        source: "### \u{1F4D3} \u4EA4\u4E92\u5F0F\u7B97\u6CD5\u7B14\u8BB0\u672C (Python Kernel)\n\u652F\u6301**\u8DE8\u5355\u5143\u683C\u5171\u4EAB\u53D8\u91CF\u4E0A\u4E0B\u6587**\u3001\u5185\u8054\u8F93\u51FA\u4EE5\u53CA\u9488\u5BF9\u4EFB\u610F\u5355\u5143\u683C\u7684 **\u{1F41E} \u5355\u6B65\u53EF\u89C6\u5316\u8C03\u8BD5**\uFF08\u53F3\u4FA7\u5B9E\u65F6\u8054\u52A8 `LOCALS` \u4E0E `WATCH` \u6570\u636E\u7ED3\u6784\u753B\u5E03\uFF09\u3002",
-        executionCount: null,
-        status: "idle",
-        output: null,
-        markdownRendered: true
-      },
-      {
-        id: c2Id,
-        type: "code",
-        source: "a = 1",
-        executionCount: 3,
-        status: "success",
-        output: { logs: [], returnValue: null, error: null }
-      },
-      {
-        id: c3Id,
-        type: "code",
-        source: "print(a)",
-        executionCount: 4,
-        status: "success",
-        output: { logs: ["1"], returnValue: null, error: null }
-      },
-      {
-        id: c4Id,
-        type: "code",
-        source: '# \u8DE8\u5355\u5143\u683C\u4F7F\u7528\u4E0A\u65B9\u5B9A\u4E49\u7684\u53D8\u91CF a\uFF0C\u6784\u5EFA\u6570\u7EC4\u5E76\u5728\u53F3\u4FA7 WATCH \u9762\u677F\u89C2\u5BDF\nnums = [a, a + 2, a + 4, 9, 13, 18]\nnums.append(25)\nprint("\u5F53\u524D\u6570\u7EC4:", nums)',
-        executionCount: null,
-        status: "idle",
-        output: null
-      },
-      {
-        id: c5Id,
-        type: "code",
-        source: '# \u70B9\u51FB\u6B64\u5355\u5143\u683C\u53F3\u4E0A\u89D2 \u{1F41E} \u53EF\u57FA\u4E8E\u4E0A\u65B9\u5DF2\u751F\u6210\u7684 nums \u5355\u6B65\u8C03\u8BD5\u4E8C\u5206\u67E5\u627E\nl, r = 0, len(nums) - 1\ntarget = 13\nwhile l <= r:\n    mid = (l + r) // 2\n    checkpoint("mid", mid, nums[mid])\n    if nums[mid] == target:\n        print("\u627E\u5230\u76EE\u6807\u7D22\u5F15:", mid)\n        break\n    elif nums[mid] < target:\n        l = mid + 1\n    else:\n        r = mid - 1',
-        executionCount: null,
-        status: "idle",
-        output: null
-      }
-    ] : [
+    const introCells = [
       {
         id: c1Id,
         type: "markdown",
@@ -14588,7 +16087,7 @@ runAsyncDemo()
       {
         id: c5Id,
         type: "code",
-        source: "// \u70B9\u51FB\u6B64\u5355\u5143\u683C\u53F3\u4E0A\u89D2 \u{1F41E} \u53EF\u57FA\u4E8E\u4E0A\u65B9\u5DF2\u751F\u6210\u7684 nums \u5355\u6B65\u8C03\u8BD5\u4E8C\u5206\u67E5\u627E\nlet l: number = 0, r: number = nums.length - 1;\nconst target: number = 13;\nwhile (l <= r) {\n  const mid: number = (l + r) >> 1;\n  checkpoint(l, mid, r);\n  if (nums[mid] === target) {\n    console.log('\u627E\u5230\u76EE\u6807\u7D22\u5F15:', mid);\n    break;\n  }\n  if (nums[mid] < target) l = mid + 1;\n  else r = mid - 1;\n}",
+        source: "// \u70B9\u51FB\u6B64\u5355\u5143\u683C\u53F3\u4E0A\u89D2 \u{1F41E} \u53EF\u57FA\u4E8E\u4E0A\u65B9\u5DF2\u751F\u6210\u7684 nums \u5355\u6B65\u8C03\u8BD5\u4E8C\u5206\u67E5\u627E\nlet l: number = 0, r: number = nums.length - 1;\nconst target: number = 13;\nwhile (l <= r) {\n  const mid: number = (l + r) >> 1;\n  checkpoint(nums[mid] === target, '\u627E\u5230\u76EE\u6807\u503C');\n  if (nums[mid] === target) {\n    console.log('\u627E\u5230\u76EE\u6807\u7D22\u5F15:', mid);\n    break;\n  }\n  if (nums[mid] < target) l = mid + 1;\n  else r = mid - 1;\n}",
         executionCount: null,
         status: "idle",
         output: null
@@ -14600,7 +16099,7 @@ runAsyncDemo()
       {
         id: u1Id,
         type: "code",
-        source: isPy ? "x = 10\ny = 20\nx + y" : "const x: number = 10;\nconst y: number = 20;\nx + y",
+        source: "const x: number = 10;\nconst y: number = 20;\nx + y",
         executionCount: null,
         status: "idle",
         output: null
@@ -14618,15 +16117,12 @@ runAsyncDemo()
       {
         id: "nb_intro",
         title: "Intro.ipynb",
-        lang,
+        lang: "ts",
         execCounter: 4,
         activeCellId: c2Id,
         debuggingCellId: null,
         cells: introCells,
-        executedHistory: isPy ? [
-          { cellId: c2Id, execCount: 3, source: "a = 1" },
-          { cellId: c3Id, execCount: 4, source: "print(a)" }
-        ] : [
+        executedHistory: [
           { cellId: c2Id, execCount: 3, source: "let a: number = 1;" },
           { cellId: c3Id, execCount: 4, source: "console.log(a);" }
         ],
@@ -14636,7 +16132,7 @@ runAsyncDemo()
       {
         id: "nb_untitled",
         title: "Untitled.ipynb",
-        lang,
+        lang: "ts",
         execCounter: 0,
         activeCellId: u1Id,
         debuggingCellId: null,
@@ -14648,24 +16144,21 @@ runAsyncDemo()
     ];
   }
   var notebooksByLang = {
-    ts: { docs: [], activeDocId: "nb_intro" },
-    python: { docs: [], activeDocId: "nb_intro" }
+    ts: { docs: [], activeDocId: "nb_intro" }
   };
-  function ensureLangNotebooks(lang) {
-    const key = lang === "python" ? "python" : "ts";
-    if (!notebooksByLang[key].docs.length) {
-      const docs = createDefaultNotebooks(key);
-      notebooksByLang[key].docs = docs;
-      notebooksByLang[key].activeDocId = docs[0].id;
+  function ensureLangNotebooks(_lang = "ts") {
+    if (!notebooksByLang.ts.docs.length) {
+      const docs = createDefaultNotebooks("ts");
+      notebooksByLang.ts.docs = docs;
+      notebooksByLang.ts.activeDocId = docs[0].id;
     }
-    return notebooksByLang[key];
+    return notebooksByLang.ts;
   }
   function getActiveNotebook() {
-    const lang = appState.LANG === "python" ? "python" : "ts";
-    const store = ensureLangNotebooks(lang);
+    const store = ensureLangNotebooks("ts");
     let doc = store.docs.find((d) => d.id === store.activeDocId) ?? store.docs[0];
     if (!doc) {
-      doc = createDefaultNotebooks(lang)[0];
+      doc = createDefaultNotebooks("ts")[0];
       store.docs.push(doc);
     }
     store.activeDocId = doc.id;
@@ -14858,9 +16351,9 @@ runAsyncDemo()
       nbformat_minor: 5,
       metadata: {
         kernelspec: {
-          display_name: doc.lang === "python" ? "Python 3 (Pyodide)" : "TypeScript (Playground Visual)",
-          language: doc.lang === "python" ? "python" : "typescript",
-          name: doc.lang
+          display_name: "TypeScript (Playground Visual)",
+          language: "typescript",
+          name: "ts"
         }
       },
       cells: doc.cells.map((c) => ({
@@ -14886,7 +16379,7 @@ runAsyncDemo()
     };
     return JSON.stringify(ipynb, null, 2);
   }
-  function parseIpynbJsonToDocument(jsonText, fileName, lang) {
+  function parseIpynbJsonToDocument(jsonText, fileName, lang = "ts") {
     try {
       const data = JSON.parse(jsonText);
       if (!data || !Array.isArray(data.cells)) return null;
@@ -14974,7 +16467,7 @@ runAsyncDemo()
         },
         {
           type: "code",
-          source: '// 3. \u70B9\u51FB\u53F3\u4E0A\u89D2 \u{1F41E} \u5355\u6B65\u8C03\u8BD5\uFF1A\u7B5B\u9009\u4F4E\u5EF6\u8FDF\u5065\u5EB7\u8282\u70B9\u5E76\u89C2\u5BDF\u53F3\u4FA7 WATCH \u9762\u677F\nconst fastHosts: string[] = [];\nlet totalLatency: number = 0;\n\nfor (let i: number = 0; i < cluster.length; i++) {\n  const item: ServiceNode = cluster[i];\n  checkpoint(i, item.id, item.latencyMs);\n  if (item.healthy && item.latencyMs < 100) {\n    fastHosts.push(item.host);\n    totalLatency = totalLatency + item.latencyMs;\n  }\n}\n\nconsole.log("\u4F18\u9009\u4F4E\u5EF6\u8FDF\u8282\u70B9:", fastHosts, "\u603B\u5EF6\u8FDF(ms):", totalLatency);'
+          source: '// 3. \u70B9\u51FB\u53F3\u4E0A\u89D2 \u{1F41E} \u5355\u6B65\u8C03\u8BD5\uFF1A\u7B5B\u9009\u4F4E\u5EF6\u8FDF\u5065\u5EB7\u8282\u70B9\u5E76\u89C2\u5BDF\u53F3\u4FA7 WATCH \u9762\u677F\nconst fastHosts: string[] = [];\nlet totalLatency: number = 0;\n\nfor (let i: number = 0; i < cluster.length; i++) {\n  const item: ServiceNode = cluster[i];\n  checkpoint(item.healthy && item.latencyMs < 100, "\u53D1\u73B0\u4F4E\u5EF6\u8FDF\u5065\u5EB7\u8282\u70B9");\n  if (item.healthy && item.latencyMs < 100) {\n    fastHosts.push(item.host);\n    totalLatency = totalLatency + item.latencyMs;\n  }\n}\n\nconsole.log("\u4F18\u9009\u4F4E\u5EF6\u8FDF\u8282\u70B9:", fastHosts, "\u603B\u5EF6\u8FDF(ms):", totalLatency);'
         }
       ]
     },
@@ -15007,7 +16500,7 @@ runAsyncDemo()
         },
         {
           type: "code",
-          source: '// 3. \u70B9\u51FB\u53F3\u4E0A\u89D2 \u{1F41E} \u5355\u6B65\u8C03\u8BD5\uFF1A\u6279\u91CF\u9A71\u52A8\u72B6\u6001\u673A\u5E76\u5728\u53F3\u4FA7 WATCH \u89C2\u5BDF Map \u54C8\u5E0C\u7EDF\u8BA1\u6876\nconst signals: boolean[] = [true, false, true, true, false];\nconst stats = new Map<string, number>();\nstats.set("Completed", 0);\nstats.set("Failed", 0);\n\nfor (let i: number = 0; i < signals.length; i++) {\n  let st: JobStatus = JobStatus.Queued;\n  st = stepStatus(st, true);\n  st = stepStatus(st, signals[i]);\n  const key: string = st === JobStatus.Completed ? "Completed" : "Failed";\n  const prev: number = stats.get(key) || 0;\n  stats.set(key, prev + 1);\n  checkpoint(i, key, stats.get(key));\n}\n\nconsole.log("\u6210\u529F\u4EFB\u52A1\u6570:", stats.get("Completed"), "\u5931\u8D25\u4EFB\u52A1\u6570:", stats.get("Failed"));'
+          source: '// 3. \u70B9\u51FB\u53F3\u4E0A\u89D2 \u{1F41E} \u5355\u6B65\u8C03\u8BD5\uFF1A\u6279\u91CF\u9A71\u52A8\u72B6\u6001\u673A\u5E76\u5728\u53F3\u4FA7 WATCH \u89C2\u5BDF Map \u54C8\u5E0C\u7EDF\u8BA1\u6876\nconst signals: boolean[] = [true, false, true, true, false];\nconst stats = new Map<string, number>();\nstats.set("Completed", 0);\nstats.set("Failed", 0);\n\nfor (let i: number = 0; i < signals.length; i++) {\n  let st: JobStatus = JobStatus.Queued;\n  st = stepStatus(st, true);\n  st = stepStatus(st, signals[i]);\n  const key: string = st === JobStatus.Completed ? "Completed" : "Failed";\n  const prev: number = stats.get(key) || 0;\n  stats.set(key, prev + 1);\n  checkpoint(st === JobStatus.Failed, "\u68C0\u6D4B\u5230\u5931\u8D25\u4EFB\u52A1");\n}\n\nconsole.log("\u6210\u529F\u4EFB\u52A1\u6570:", stats.get("Completed"), "\u5931\u8D25\u4EFB\u52A1\u6570:", stats.get("Failed"));'
         }
       ]
     },
@@ -15040,7 +16533,7 @@ runAsyncDemo()
         },
         {
           type: "code",
-          source: '// 3. \u70B9\u51FB\u53F3\u4E0A\u89D2 \u{1F41E} \u5355\u6B65\u8C03\u8BD5\uFF1A\u6A21\u62DF\u6D41\u91CF\u6D2A\u5CF0\u5E76\u5728\u53F3\u4FA7\u89C2\u5BDF\u5806\u5B9E\u4F8B\u5C5E\u6027\u53D8\u5316\nconst requests: number[] = [4, 5, 4, 3, 2];\nconst verdicts: string[] = [];\n\nfor (let i: number = 0; i < requests.length; i++) {\n  const cost: number = requests[i];\n  const res: string = gatewayLimiter.requestToken(cost);\n  verdicts.push(res);\n  checkpoint(cost, res, gatewayLimiter.remaining());\n}\n\nconsole.log("\u6D41\u91CF\u88C1\u51B3\u5E8F\u5217:", verdicts.join(" -> "));'
+          source: '// 3. \u70B9\u51FB\u53F3\u4E0A\u89D2 \u{1F41E} \u5355\u6B65\u8C03\u8BD5\uFF1A\u6A21\u62DF\u6D41\u91CF\u6D2A\u5CF0\u5E76\u5728\u53F3\u4FA7\u89C2\u5BDF\u5806\u5B9E\u4F8B\u5C5E\u6027\u53D8\u5316\nconst requests: number[] = [4, 5, 4, 3, 2];\nconst verdicts: string[] = [];\n\nfor (let i: number = 0; i < requests.length; i++) {\n  const cost: number = requests[i];\n  const res: string = gatewayLimiter.requestToken(cost);\n  verdicts.push(res);\n  checkpoint(res !== "NORMAL_OK", "\u89E6\u53D1\u7A81\u53D1\u6C60\u6216\u9650\u6D41");\n}\n\nconsole.log("\u6D41\u91CF\u88C1\u51B3\u5E8F\u5217:", verdicts.join(" -> "));'
         }
       ]
     },
@@ -15073,7 +16566,7 @@ runAsyncDemo()
         },
         {
           type: "code",
-          source: '// 3. \u70B9\u51FB\u53F3\u4E0A\u89D2 \u{1F41E} \u5355\u6B65\u8C03\u8BD5\uFF1A\u7ED3\u5408\u6808\u4E0E\u96C6\u5408\u7EDF\u8BA1\u6811\u7279\u5F81\u503C\nconst levelValues: number[] = [tree.val, tree.left.val, tree.right.val, tree.left.left.val, tree.right.right.val];\nconst visited = new Set<number>();\nconst stack: number[] = [];\nlet treeSum: number = 0;\n\nfor (let i: number = 0; i < levelValues.length; i++) {\n  const v: number = levelValues[i];\n  visited.add(v);\n  stack.push(v);\n  treeSum = treeSum + v;\n  checkpoint(i, v, treeSum);\n}\n\nconsole.log("\u91C7\u6837\u8282\u70B9\u7D2F\u8BA1\u548C:", treeSum, "\u53BB\u91CD\u96C6\u5408\u5927\u5C0F:", visited.size);'
+          source: '// 3. \u70B9\u51FB\u53F3\u4E0A\u89D2 \u{1F41E} \u5355\u6B65\u8C03\u8BD5\uFF1A\u7ED3\u5408\u6808\u4E0E\u96C6\u5408\u7EDF\u8BA1\u6811\u7279\u5F81\u503C\nconst levelValues: number[] = [tree.val, tree.left.val, tree.right.val, tree.left.left.val, tree.right.right.val];\nconst visited = new Set<number>();\nconst stack: number[] = [];\nlet treeSum: number = 0;\n\nfor (let i: number = 0; i < levelValues.length; i++) {\n  const v: number = levelValues[i];\n  visited.add(v);\n  stack.push(v);\n  treeSum = treeSum + v;\n  checkpoint(treeSum > 100, "\u8282\u70B9\u7D2F\u8BA1\u548C\u8D85\u767E");\n}\n\nconsole.log("\u91C7\u6837\u8282\u70B9\u7D2F\u8BA1\u548C:", treeSum, "\u53BB\u91CD\u96C6\u5408\u5927\u5C0F:", visited.size);'
         }
       ]
     },
@@ -15106,7 +16599,7 @@ runAsyncDemo()
         },
         {
           type: "code",
-          source: '// 3. \u70B9\u51FB\u53F3\u4E0A\u89D2 \u{1F41E} \u5355\u6B65\u8C03\u8BD5\uFF1A\u89C2\u5BDF\u53F3\u4FA7 Event Loop \u9762\u677F\u4E2D\u534F\u7A0B\u3001\u5FAE\u4EFB\u52A1\u4E0E\u5B9A\u65F6\u5668\u7684\u6D41\u8F6C\nasync function computeStage(uid: number): Promise<number> {\n  const base: number = await Promise.resolve(uid * 100);\n  return base + 25;\n}\n\nasync function runAsyncPipeline(): Promise<string> {\n  const timeline: string[] = ["1:pipeline-start"];\n\n  setTimeout(() => {\n    timeline.push("5:timer-10ms");\n  }, 10);\n\n  Promise.resolve("fast").then((x: string) => {\n    timeline.push("3:micro-" + x);\n  });\n\n  timeline.push("2:before-await");\n  const quota: number = await computeStage(2);\n  timeline.push("4:after-await-" + quota);\n  checkpoint(timeline, quota);\n  return timeline.join(" -> ");\n}\n\nrunAsyncPipeline()'
+          source: '// 3. \u70B9\u51FB\u53F3\u4E0A\u89D2 \u{1F41E} \u5355\u6B65\u8C03\u8BD5\uFF1A\u89C2\u5BDF\u53F3\u4FA7 Event Loop \u9762\u677F\u4E2D\u534F\u7A0B\u3001\u5FAE\u4EFB\u52A1\u4E0E\u5B9A\u65F6\u5668\u7684\u6D41\u8F6C\nasync function computeStage(uid: number): Promise<number> {\n  const base: number = await Promise.resolve(uid * 100);\n  return base + 25;\n}\n\nasync function runAsyncPipeline(): Promise<string> {\n  const timeline: string[] = ["1:pipeline-start"];\n\n  setTimeout(() => {\n    timeline.push("5:timer-10ms");\n  }, 10);\n\n  Promise.resolve("fast").then((x: string) => {\n    timeline.push("3:micro-" + x);\n  });\n\n  timeline.push("2:before-await");\n  const quota: number = await computeStage(2);\n  timeline.push("4:after-await-" + quota);\n  checkpoint(quota > 200, "\u5F02\u6B65\u6D41\u6C34\u7EBF\u6062\u590D");\n  return timeline.join(" -> ");\n}\n\nrunAsyncPipeline()'
         }
       ]
     },
@@ -15135,11 +16628,11 @@ runAsyncDemo()
         },
         {
           type: "code",
-          source: '// 2. \u70B9\u51FB\u53F3\u4E0A\u89D2 \u{1F41E} \u5355\u6B65\u8C03\u8BD5\uFF1A\u89C2\u5BDF\u4E00\u7EF4\u6570\u7EC4\u4E0B\u65B9\u81EA\u52A8\u60AC\u6302\u7684 [l, r] \u53CC\u6307\u9488\u6807\u7B7E\nconst nums: number[] = [4, 9, 2, 11, 6, 8, 5];\nlet l: number = 0;\nlet r: number = nums.length - 1;\nlet windowBest: number = 0;\n\nwhile (l < r) {\n  const pairVal: number = nums[l] + nums[r];\n  if (pairVal > windowBest) {\n    windowBest = pairVal;\n  }\n  checkpoint(l, r, pairVal, windowBest);\n  l = l + 1;\n  r = r - 1;\n}\nconsole.log("\u53CC\u6307\u9488\u6700\u5927\u914D\u5BF9\u548C:", windowBest);'
+          source: '// 2. \u70B9\u51FB\u53F3\u4E0A\u89D2 \u{1F41E} \u5355\u6B65\u8C03\u8BD5\uFF1A\u89C2\u5BDF\u4E00\u7EF4\u6570\u7EC4\u4E0B\u65B9\u81EA\u52A8\u60AC\u6302\u7684 [l, r] \u53CC\u6307\u9488\u6807\u7B7E\nconst nums: number[] = [4, 9, 2, 11, 6, 8, 5];\nlet l: number = 0;\nlet r: number = nums.length - 1;\nlet windowBest: number = 0;\n\nwhile (l < r) {\n  const pairVal: number = nums[l] + nums[r];\n  if (pairVal > windowBest) {\n    windowBest = pairVal;\n  }\n  checkpoint(pairVal >= 15, "\u53CC\u6307\u9488\u914D\u5BF9\u548C\u8FBE\u6807");\n  l = l + 1;\n  r = r - 1;\n}\nconsole.log("\u53CC\u6307\u9488\u6700\u5927\u914D\u5BF9\u548C:", windowBest);'
         },
         {
           type: "code",
-          source: '// 3. \u70B9\u51FB\u53F3\u4E0A\u89D2 \u{1F41E} \u5355\u6B65\u8C03\u8BD5\uFF1A\u5728\u53F3\u4FA7 WATCH \u9762\u677F\u89C2\u5BDF\u4E8C\u7EF4\u77E9\u9635 dp: number[][] \u7684\u9010\u683C\u586B\u5145\nconst rows: number = 3;\nconst cols: number = 4;\nconst dp: number[][] = [\n  [1, 1, 1, 1],\n  [1, 0, 0, 0],\n  [1, 0, 0, 0]\n];\n\nfor (let i: number = 1; i < rows; i++) {\n  for (let j: number = 1; j < cols; j++) {\n    dp[i][j] = dp[i - 1][j] + dp[i][j - 1];\n    checkpoint(i, j, dp[i][j]);\n  }\n}\n\nconsole.log("\u7F51\u683C\u53F3\u4E0B\u89D2\u4E0D\u540C\u8DEF\u5F84\u603B\u6570:", dp[rows - 1][cols - 1]);'
+          source: '// 3. \u70B9\u51FB\u53F3\u4E0A\u89D2 \u{1F41E} \u5355\u6B65\u8C03\u8BD5\uFF1A\u5728\u53F3\u4FA7 WATCH \u9762\u677F\u89C2\u5BDF\u4E8C\u7EF4\u77E9\u9635 dp: number[][] \u7684\u9010\u683C\u586B\u5145\nconst rows: number = 3;\nconst cols: number = 4;\nconst dp: number[][] = [\n  [1, 1, 1, 1],\n  [1, 0, 0, 0],\n  [1, 0, 0, 0]\n];\n\nfor (let i: number = 1; i < rows; i++) {\n  for (let j: number = 1; j < cols; j++) {\n    dp[i][j] = dp[i - 1][j] + dp[i][j - 1];\n    checkpoint(dp[i][j] >= 6, "\u7F51\u683C\u8DEF\u5F84\u6570\u8FC7\u534A");\n  }\n}\n\nconsole.log("\u7F51\u683C\u53F3\u4E0B\u89D2\u4E0D\u540C\u8DEF\u5F84\u603B\u6570:", dp[rows - 1][cols - 1]);'
         }
       ]
     }
@@ -15220,7 +16713,7 @@ runAsyncDemo()
     return { preambleTs, preambleLines, combinedTs };
   }
   function typecheckNotebookCellTS(doc, cell) {
-    if (appState.LANG === "python" || cell.type !== "code") return [];
+    if (cell.type !== "code") return [];
     const rawCell = String(cell.source || "").replace(/\r\n?/g, "\n");
     if (!rawCell.trim()) return [];
     const { preambleLines, combinedTs } = buildTsTypecheckContext(doc, cell);
@@ -15284,77 +16777,6 @@ runAsyncDemo()
       doc.execCounter > 0 ? `Notebook [${doc.execCounter}] \xB7 \u5168\u5C40\u4E0A\u4E0B\u6587` : "Notebook \u5C31\u7EEA",
       ""
     );
-  }
-  async function runPythonNotebookCell(doc, cell, rawSrc, advanceToNext) {
-    try {
-      const payload = await PY_ENGINE.run(rawSrc, {
-        trace: false,
-        useNotebookKernel: true,
-        timeLimit: 6
-      });
-      if (payload.syntaxError) {
-        const err = payload.syntaxError;
-        const msg = `SyntaxError (\u7B2C ${err.line || 1} \u884C): ${err.msg || "\u8BED\u6CD5\u9519\u8BEF"}`;
-        cell.status = "error";
-        cell.output = { logs: [], returnValue: null, error: msg, errorLine: err.line || 1 };
-        say(`\u2717 [${doc.title}] ${msg}`, "err");
-        uiHooks.renderNotebookUI();
-        return false;
-      }
-      doc.execCounter += 1;
-      cell.executionCount = doc.execCounter;
-      const logs = payload.stdout ? String(payload.stdout).replace(/\n$/, "").split("\n") : [];
-      const rvHydrated = PY_ENGINE.hydrate(payload.returnValue);
-      const hasReturn = rvHydrated !== void 0 && rvHydrated !== null && payload.entryExpr;
-      const rvStr = hasReturn ? PY_ENGINE.fmtReturn(rvHydrated) : null;
-      if (payload.meta) {
-        PY_ENGINE.applyMeta(payload.meta);
-      }
-      const vRaw = PY_ENGINE.hydrateVars(payload.finalVars || {});
-      const v = PY_ENGINE.cloneVars(vRaw);
-      const ds = {};
-      Object.keys(vRaw).forEach((name) => {
-        const d = classifyValue(name, vRaw[name]);
-        if (d) ds[name] = d;
-      });
-      populateInterfaceSchemas(ds);
-      doc.lastGlobalVars = v;
-      doc.lastGlobalDs = ds;
-      if (payload.error) {
-        cell.status = "error";
-        cell.output = {
-          logs,
-          returnValue: null,
-          error: payload.error,
-          errorLine: payload.errorLine || 1
-        };
-        say(`\u2717 [Cell ${cell.executionCount}] \u7B2C ${payload.errorLine || 1} \u884C\u62A5\u9519: ${payload.error}`, "err");
-      } else {
-        cell.status = "success";
-        cell.output = {
-          logs,
-          returnValue: rvStr,
-          error: null
-        };
-        doc.executedHistory = doc.executedHistory.filter((h) => h.cellId !== cell.id);
-        doc.executedHistory.push({ cellId: cell.id, execCount: cell.executionCount, source: rawSrc });
-        say(
-          `\u2713 [Cell ${cell.executionCount}] \u6267\u884C\u5B8C\u6210` + (logs.length ? ` \xB7 \u8F93\u51FA: ${logs.join(" | ")}` : "") + (rvStr ? `  \u2192  ${rvStr}` : ""),
-          "ok"
-        );
-      }
-      syncNotebookGlobalsToSidePanel(doc);
-      if (advanceToNext && !payload.error) {
-        moveFocusToNextCell(doc, cell.id, true);
-      }
-      uiHooks.renderNotebookUI();
-      return !payload.error;
-    } catch (err) {
-      cell.status = "error";
-      cell.output = { logs: [], returnValue: null, error: err instanceof Error && err.message || String(err) };
-      uiHooks.renderNotebookUI();
-      return false;
-    }
   }
   function runTsNotebookCell(doc, cell, rawSrc, advanceToNext) {
     const t0 = Date.now();
@@ -15549,90 +16971,7 @@ runAsyncDemo()
     }
     cell.status = "running";
     uiHooks.renderNotebookUI();
-    if (appState.LANG === "python") {
-      return runPythonNotebookCell(doc, cell, rawSrc, advanceToNext);
-    }
     return runTsNotebookCell(doc, cell, rawSrc, advanceToNext);
-  }
-  async function debugPythonNotebookCell(doc, cell, rawSrc) {
-    cell.status = "debugging";
-    doc.debuggingCellId = cell.id;
-    uiHooks.renderNotebookUI();
-    try {
-      say(`\u2026 \u6B63\u5728\u5F55\u5236\u5355\u5143\u683C [${cell.executionCount || " "}] \u7684 Python \u5355\u6B65\u8F68\u8FF9\u2026`, "dim");
-      const payload = await PY_ENGINE.run(rawSrc, {
-        trace: true,
-        useNotebookKernel: true,
-        maxSteps: 2e3,
-        timeLimit: 6
-      });
-      if (payload.syntaxError) {
-        const err = payload.syntaxError;
-        cell.status = "error";
-        doc.debuggingCellId = null;
-        cell.output = {
-          logs: [],
-          returnValue: null,
-          error: `SyntaxError (\u7B2C ${err.line || 1} \u884C): ${err.msg || "\u8BED\u6CD5\u9519\u8BEF"}`,
-          errorLine: err.line || 1
-        };
-        uiHooks.renderNotebookUI();
-        return false;
-      }
-      doc.execCounter += 1;
-      cell.executionCount = doc.execCounter;
-      const sourceLines = rawSrc.split("\n");
-      PY_ENGINE.applyMeta(payload.meta || {});
-      payload.__returnValueHydrated = PY_ENGINE.hydrate(payload.returnValue);
-      payload.__callExpr = payload.entryExpr || "";
-      const steps = PY_ENGINE.buildSteps(payload, sourceLines);
-      resetTraceState();
-      appState.TRACE = { title: `${doc.title} \xB7 Cell [${cell.executionCount}]`, code: sourceLines, steps };
-      appState.DEBUG_SESSION = {
-        active: true,
-        finished: true,
-        crashed: Boolean(payload.error),
-        error: payload.error || null,
-        errorLine: payload.errorLine || -1,
-        returnValue: payload.__returnValueHydrated,
-        compiledFn: null,
-        originalLines: sourceLines,
-        callExpr: payload.entryExpr || "undefined"
-      };
-      const vRaw = PY_ENGINE.hydrateVars(payload.finalVars || {});
-      const v = PY_ENGINE.cloneVars(vRaw);
-      const ds = {};
-      Object.keys(vRaw).forEach((name) => {
-        const d = classifyValue(name, vRaw[name]);
-        if (d) ds[name] = d;
-      });
-      populateInterfaceSchemas(ds);
-      doc.lastGlobalVars = v;
-      doc.lastGlobalDs = ds;
-      const logs = payload.stdout ? String(payload.stdout).replace(/\n$/, "").split("\n") : [];
-      cell.output = {
-        logs,
-        returnValue: payload.__returnValueHydrated !== void 0 && payload.__returnValueHydrated !== null && payload.entryExpr ? PY_ENGINE.fmtReturn(payload.__returnValueHydrated) : null,
-        error: payload.error || null,
-        errorLine: payload.errorLine || null
-      };
-      appState.cur = 0;
-      appState.SELECTED_FRAME_IDX = null;
-      appState.watched = /* @__PURE__ */ new Set();
-      appState.SEEN_VARS_EVER = /* @__PURE__ */ new Set();
-      appState.layoutSpan = /* @__PURE__ */ Object.create(null);
-      initWatchedVars();
-      uiHooks.renderPicker();
-      uiHooks.renderStatic(appState.cur, false);
-      uiHooks.renderNotebookUI();
-      say(`\u2713 [Cell ${cell.executionCount}] \u5DF2\u8FDB\u5165\u5355\u6B65\u8C03\u8BD5\u6A21\u5F0F\uFF08\u5171 ${steps.length} \u6B65\uFF0C\u53EF\u4F7F\u7528\u5E95\u90E8\u63A7\u5236\u680F\u9010\u6B65\u89C2\u5BDF\uFF09`, "ok");
-      return true;
-    } catch (_err) {
-      cell.status = "error";
-      doc.debuggingCellId = null;
-      uiHooks.renderNotebookUI();
-      return false;
-    }
   }
   function debugTsNotebookCell(doc, cell, rawSrc) {
     const { combinedTs } = buildTsTypecheckContext(doc, cell);
@@ -15745,9 +17084,6 @@ runAsyncDemo()
     }
     uiHooks.stopAuto();
     uiHooks.clearFlyLayer();
-    if (appState.LANG === "python") {
-      return debugPythonNotebookCell(doc, cell, rawSrc);
-    }
     return debugTsNotebookCell(doc, cell, rawSrc);
   }
   async function restartNotebookKernel(silent = false) {
@@ -15764,12 +17100,6 @@ runAsyncDemo()
       c.status = "idle";
       c.output = null;
     });
-    if (appState.LANG === "python" && typeof PY_ENGINE !== "undefined") {
-      try {
-        await PY_ENGINE.run("", { resetKernel: true, trace: false });
-      } catch (_) {
-      }
-    }
     resetTraceState();
     syncNotebookGlobalsToSidePanel(doc);
     uiHooks.renderNotebookUI();
@@ -15873,10 +17203,9 @@ runAsyncDemo()
     say(`\u{1F4BE} \u5DF2\u5BFC\u51FA\u7B14\u8BB0\u672C\u6587\u4EF6 ${a.download}`, "ok");
   }
   function importNotebookFromJson(jsonText, fileName) {
-    const lang = appState.LANG === "python" ? "python" : "ts";
-    const newDoc = parseIpynbJsonToDocument(jsonText, fileName, lang);
+    const newDoc = parseIpynbJsonToDocument(jsonText, fileName, "ts");
     if (!newDoc) return false;
-    const store = ensureLangNotebooks(lang);
+    const store = ensureLangNotebooks("ts");
     store.docs.push(newDoc);
     store.activeDocId = newDoc.id;
     setViewMode("notebook");
@@ -15933,13 +17262,10 @@ runAsyncDemo()
   function renderCellCodeHighlight(cell, isDebuggingThisCell) {
     const doc = getActiveNotebook();
     const lines = cell.source.replace(/\r\n?/g, "\n").split("\n");
-    const { combinedTs } = appState.LANG === "python" ? { combinedTs: cell.source } : buildTsTypecheckContext(doc, cell);
+    const { combinedTs } = buildTsTypecheckContext(doc, cell);
     const declared = collectDeclaredNames(combinedTs);
-    if (appState.LANG === "python" && doc.lastGlobalVars) {
-      Object.keys(doc.lastGlobalVars).forEach((k) => declared.add(k));
-    }
     const liveByLine = /* @__PURE__ */ new Map();
-    if (appState.LANG !== "python" && cell.type === "code") {
+    if (cell.type === "code") {
       const cellDiags = typecheckNotebookCellTS(doc, cell);
       cellDiags.forEach((d) => {
         if (d && d.line >= 1 && !liveByLine.has(d.line)) {
@@ -15963,7 +17289,7 @@ runAsyncDemo()
       const isCur = isDebuggingThisCell && ln === curLine;
       const isErr = liveByLine.has(ln) || cell.status === "error" && cell.output && cell.output.errorLine === ln || Boolean(isCur && st && st.error);
       const hasCkpt = /^\s*(?:checkpoint|断点)\s*\(/.test(t);
-      return `<div class="nb-gline${isCur ? " cur" : ""}${isErr ? " err" : ""}${hasCkpt ? " ckpt" : ""}" data-line="${ln}" title="\u70B9\u51FB\u5728\u7B2C ${ln} \u884C\u63D2\u5165/\u79FB\u9664 checkpoint()">${ln}</div>`;
+      return `<div class="nb-gline${isCur ? " cur" : ""}${isErr ? " err" : ""}${hasCkpt ? " ckpt" : ""}" data-line="${ln}">${ln}</div>`;
     }).join("");
     let stepVizHtml = "";
     if (isDebuggingThisCell && st && (st.anim || st.error) && curLine >= 1 && curLine <= lines.length) {
@@ -15974,8 +17300,7 @@ runAsyncDemo()
   function renderNotebookUI(focusActiveEditor = false) {
     const wrap = $("notebookWrap");
     if (!wrap || appState.VIEW_MODE !== "notebook") return;
-    const lang = appState.LANG === "python" ? "python" : "ts";
-    const store = ensureLangNotebooks(lang);
+    const store = ensureLangNotebooks("ts");
     const doc = getActiveNotebook();
     const activeCell = getActiveCell(doc);
     const tabsEl = $("nbTabsList");
@@ -16017,7 +17342,7 @@ runAsyncDemo()
         const errPart = out.error ? `<div class="nb-out-err">\u2717 ${esc(out.error)}</div>` : "";
         outputHtml = `<div class="nb-cell-output">${logsPart}${retPart}${errPart}</div>`;
       }
-      return `<div class="nb-cell nb-cell-code${isFocused ? " active" : ""}${isDebugging ? " debugging" : ""}${cell.status === "error" ? " has-error" : ""}" data-cell-id="${esc(cell.id)}"><div class="nb-cell-bar"></div><div class="nb-cell-prompt" data-cell-act="run" data-cell-id="${esc(cell.id)}" title="\u70B9\u51FB\u8FD0\u884C\u6B64\u5355\u5143\u683C (Shift+Enter)">${esc(promptTxt)}</div><div class="nb-cell-main"><div class="nb-cell-input"><div class="nb-cell-gutter">${gutterHtml}</div><div class="nb-cell-code-box" style="height:${editorHeight}px"><pre class="nb-cell-hl" aria-hidden="true">${hlHtml}</pre><textarea class="nb-cell-textarea" data-cell-id="${esc(cell.id)}" style="height:${editorHeight}px" spellcheck="false" autocomplete="off" placeholder="${lang === "python" ? "# \u8F93\u5165 Python \u4EE3\u7801\uFF0CShift+Enter \u8FD0\u884C\uFF0C\u70B9\u53F3\u4E0A \u{1F41E} \u5355\u6B65\u8C03\u8BD5" : "// \u8F93\u5165 TypeScript \u4EE3\u7801\uFF0CShift+Enter \u8FD0\u884C\uFF0C\u70B9\u53F3\u4E0A \u{1F41E} \u5355\u6B65\u8C03\u8BD5"}">${esc(cell.source)}</textarea></div><div class="nb-cell-actions"><button type="button" class="nb-act-btn run-act" data-cell-act="run" data-cell-id="${esc(cell.id)}" title="\u8FD0\u884C\u6B64\u5355\u5143\u683C (Shift+Enter)">\u25B6</button><button type="button" class="nb-act-btn debug-act${isDebugging ? " active" : ""}" data-cell-act="debug" data-cell-id="${esc(cell.id)}" title="\u5355\u6B65\u53EF\u89C6\u5316\u8C03\u8BD5\u6B64\u5355\u5143\u683C (Ctrl+Shift+Enter)">\u{1F41E}</button><button type="button" class="nb-act-btn" data-cell-act="dup" data-cell-id="${esc(cell.id)}" title="\u590D\u5236\u5E76\u5411\u4E0B\u514B\u9686\u5355\u5143\u683C">\u29C9</button><button type="button" class="nb-act-btn" data-cell-act="up" data-cell-id="${esc(cell.id)}" ${idx === 0 ? "disabled" : ""} title="\u4E0A\u79FB\u5355\u5143\u683C">\u2191</button><button type="button" class="nb-act-btn" data-cell-act="down" data-cell-id="${esc(cell.id)}" ${idx === doc.cells.length - 1 ? "disabled" : ""} title="\u4E0B\u79FB\u5355\u5143\u683C">\u2193</button><button type="button" class="nb-act-btn" data-cell-act="ins-above" data-cell-id="${esc(cell.id)}" title="\u5728\u4E0A\u65B9\u63D2\u5165\u5355\u5143\u683C">\u2912</button><button type="button" class="nb-act-btn" data-cell-act="ins-below" data-cell-id="${esc(cell.id)}" title="\u5728\u4E0B\u65B9\u63D2\u5165\u5355\u5143\u683C">\u2913</button><button type="button" class="nb-act-btn danger" data-cell-act="del" data-cell-id="${esc(cell.id)}" title="\u5220\u9664\u5355\u5143\u683C">\u{1F5D1}</button></div></div>` + (stepVizHtml ? `<div class="nb-cell-stepviz">${stepVizHtml}</div>` : "") + outputHtml + `</div></div>`;
+      return `<div class="nb-cell nb-cell-code${isFocused ? " active" : ""}${isDebugging ? " debugging" : ""}${cell.status === "error" ? " has-error" : ""}" data-cell-id="${esc(cell.id)}"><div class="nb-cell-bar"></div><div class="nb-cell-prompt" data-cell-act="run" data-cell-id="${esc(cell.id)}" title="\u70B9\u51FB\u8FD0\u884C\u6B64\u5355\u5143\u683C (Shift+Enter)">${esc(promptTxt)}</div><div class="nb-cell-main"><div class="nb-cell-input"><div class="nb-cell-gutter">${gutterHtml}</div><div class="nb-cell-code-box" style="height:${editorHeight}px"><pre class="nb-cell-hl" aria-hidden="true">${hlHtml}</pre><textarea class="nb-cell-textarea" data-cell-id="${esc(cell.id)}" style="height:${editorHeight}px" spellcheck="false" autocomplete="off" placeholder="// \u8F93\u5165 TypeScript \u4EE3\u7801\uFF0CShift+Enter \u8FD0\u884C\uFF0C\u70B9\u53F3\u4E0A \u{1F41E} \u5355\u6B65\u8C03\u8BD5">${esc(cell.source)}</textarea></div><div class="nb-cell-actions"><button type="button" class="nb-act-btn run-act" data-cell-act="run" data-cell-id="${esc(cell.id)}" title="\u8FD0\u884C\u6B64\u5355\u5143\u683C (Shift+Enter)">\u25B6</button><button type="button" class="nb-act-btn debug-act${isDebugging ? " active" : ""}" data-cell-act="debug" data-cell-id="${esc(cell.id)}" title="\u5355\u6B65\u53EF\u89C6\u5316\u8C03\u8BD5\u6B64\u5355\u5143\u683C (Ctrl+Shift+Enter)">\u{1F41E}</button><button type="button" class="nb-act-btn" data-cell-act="dup" data-cell-id="${esc(cell.id)}" title="\u590D\u5236\u5E76\u5411\u4E0B\u514B\u9686\u5355\u5143\u683C">\u29C9</button><button type="button" class="nb-act-btn" data-cell-act="up" data-cell-id="${esc(cell.id)}" ${idx === 0 ? "disabled" : ""} title="\u4E0A\u79FB\u5355\u5143\u683C">\u2191</button><button type="button" class="nb-act-btn" data-cell-act="down" data-cell-id="${esc(cell.id)}" ${idx === doc.cells.length - 1 ? "disabled" : ""} title="\u4E0B\u79FB\u5355\u5143\u683C">\u2193</button><button type="button" class="nb-act-btn" data-cell-act="ins-above" data-cell-id="${esc(cell.id)}" title="\u5728\u4E0A\u65B9\u63D2\u5165\u5355\u5143\u683C">\u2912</button><button type="button" class="nb-act-btn" data-cell-act="ins-below" data-cell-id="${esc(cell.id)}" title="\u5728\u4E0B\u65B9\u63D2\u5165\u5355\u5143\u683C">\u2913</button><button type="button" class="nb-act-btn danger" data-cell-act="del" data-cell-id="${esc(cell.id)}" title="\u5220\u9664\u5355\u5143\u683C">\u{1F5D1}</button></div></div>` + (stepVizHtml ? `<div class="nb-cell-stepviz">${stepVizHtml}</div>` : "") + outputHtml + `</div></div>`;
     }).join("") + `<div class="nb-bottom-add-bar"><button type="button" class="nb-add-chip" id="nbBottomAddCode">\uFF0B \u4EE3\u7801\u5355\u5143\u683C (Code)</button><button type="button" class="nb-add-chip" id="nbBottomAddMd">\uFF0B \u6587\u6863\u5355\u5143\u683C (Markdown)</button></div>`;
     if (cellsContainer.querySelectorAll) {
       cellsContainer.querySelectorAll(".nb-cell-textarea.md-textarea").forEach((el) => {
@@ -16044,8 +17369,7 @@ runAsyncDemo()
       lines.splice(lineNum - 1, 1);
     } else {
       const indent = (targetLine.match(/^\s*/) || [""])[0];
-      const stmt = appState.LANG === "python" ? "checkpoint()" : "checkpoint();";
-      lines.splice(lineNum - 1, 0, indent + stmt);
+      lines.splice(lineNum - 1, 0, indent + "checkpoint();");
     }
     cell.source = lines.join("\n");
     renderNotebookUI();
@@ -16060,8 +17384,7 @@ runAsyncDemo()
       const target = eventTargetElement(e);
       if (!target) return;
       const closeBtn = closestElement(target, "[data-close-doc]");
-      const lang = appState.LANG === "python" ? "python" : "ts";
-      const store = ensureLangNotebooks(lang);
+      const store = ensureLangNotebooks("ts");
       if (closeBtn) {
         e.stopPropagation();
         const closeId = closeBtn.getAttribute("data-close-doc");
@@ -16085,7 +17408,7 @@ runAsyncDemo()
         const newDoc = {
           id: nextDocId(),
           title: `Untitled-${store.docs.length + 1}.ipynb`,
-          lang,
+          lang: "ts",
           execCounter: 0,
           activeCellId: cId,
           debuggingCellId: null,
@@ -16123,8 +17446,7 @@ runAsyncDemo()
     tabsEl.addEventListener("dblclick", (e) => {
       const tab = closestElement(e, ".nb-tab");
       if (!tab || !tab.dataset.docId) return;
-      const lang = appState.LANG === "python" ? "python" : "ts";
-      const store = ensureLangNotebooks(lang);
+      const store = ensureLangNotebooks("ts");
       const targetDoc = store.docs.find((d) => d.id === tab.dataset.docId) || getActiveNotebook();
       const titleSpan = tab.querySelector ? tab.querySelector(".nb-tab-title") : null;
       if (!titleSpan) return;
@@ -16193,14 +17515,6 @@ runAsyncDemo()
         const last = doc.cells[doc.cells.length - 1];
         insertNotebookCell("below", last ? last.id : void 0, "markdown");
         return;
-      }
-      const gline = closestElement(target, ".nb-gline");
-      if (gline && gline.dataset.line) {
-        const cellEl = closestElement(gline, ".nb-cell");
-        if (cellEl && cellEl.dataset.cellId) {
-          toggleNotebookCellCheckpoint(cellEl.dataset.cellId, parseInt(gline.dataset.line, 10));
-          return;
-        }
       }
       const actEl = closestElement(target, "[data-cell-act]");
       if (actEl) {
@@ -16318,7 +17632,7 @@ runAsyncDemo()
         e.preventDefault();
         const s = ta.selectionStart || 0;
         const t = ta.selectionEnd || 0;
-        const indent = appState.LANG === "python" ? "    " : "  ";
+        const indent = "  ";
         ta.value = ta.value.slice(0, s) + indent + ta.value.slice(t);
         ta.selectionStart = ta.selectionEnd = s + indent.length;
         ta.dispatchEvent(new Event("input", { bubbles: true }));
@@ -16333,6 +17647,15 @@ runAsyncDemo()
         e.preventDefault();
         debugNotebookCell(cid);
         return;
+      }
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "c") {
+        if ((ta.selectionStart || 0) === (ta.selectionEnd || 0) && cid) {
+          e.preventDefault();
+          const pos = ta.selectionStart || 0;
+          const curLine = ta.value.slice(0, pos).split("\n").length;
+          toggleNotebookCellCheckpoint(cid, curLine);
+          return;
+        }
       }
       if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
         e.preventDefault();
@@ -16382,29 +17705,10 @@ runAsyncDemo()
     bindBtn("nbBtnRestart", () => restartNotebookKernel(false));
     bindBtn("nbBtnRunAll", () => runAllNotebookCells());
     initNotebookCellsEvents();
-    if (typeof window !== "undefined") {
-      window.onNotebookLangChanged = (_nextLang) => {
-        renderImportSampleMenu();
-        renderScriptTabsUI();
-        renderVfsTreeUI();
-        if (appState.VIEW_MODE === "notebook") {
-          const doc = getActiveNotebook();
-          syncNotebookGlobalsToSidePanel(doc);
-          renderNotebookUI();
-        }
-      };
-    }
   }
   var selectedTutorialId = TS_NOTEBOOK_TUTORIALS[0]?.id ?? "ts-adv-01-interfaces-structural";
   function ensureTsLanguageActive() {
-    if (appState.LANG !== "ts") {
-      appState.LANG = "ts";
-      const langSel = $("langSel");
-      if (langSel) langSel.value = "ts";
-      if (typeof PY_ENGINE !== "undefined" && PY_ENGINE.setLang) {
-        PY_ENGINE.setLang("ts");
-      }
-    }
+    appState.LANG = "ts";
   }
   function syncTutorialDocToVfs(doc) {
     ensureVfsInitialized();
@@ -16568,8 +17872,7 @@ runAsyncDemo()
     }
   }
   function openVfsNotebookFile(name, content) {
-    const lang = appState.LANG === "python" ? "python" : "ts";
-    const store = ensureLangNotebooks(lang);
+    const store = ensureLangNotebooks("ts");
     const existing = store.docs.find((d) => d.title === name);
     if (existing) {
       store.activeDocId = existing.id;
@@ -16617,7 +17920,6 @@ runAsyncDemo()
     ...state_exports,
     ...dom_exports,
     ...ts_samples_exports,
-    ...py_samples_exports,
     ...comments_exports,
     ...transpile_exports,
     ...instrumenter_exports,

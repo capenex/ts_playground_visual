@@ -71,11 +71,11 @@ export function extractBindingNames(lhs: string, names: Set<string>): void {
   }
 
   const m = s.match(/^([A-Za-z_$][\w$]*)$/);
-  if (m && m[1] && !RESERVED_WORDS.has(m[1])) names.add(m[1]);
+  if (m && m[1] && !RESERVED_WORDS.has(m[1]) && !m[1].startsWith('__')) names.add(m[1]);
 }
 
 export function collectNames(js: string): string[] {
-  const clean = blankStrings(js.replace(/\/\*__import__\*\/[^\n]*/g, ''));
+  const clean = blankStrings(js);
   const names = new Set<string>();
   let m: RegExpExecArray | null;
 
@@ -334,13 +334,14 @@ function classKeywordIndex(raw: string): number {
   return -1;
 }
 
-export function instrument(js: string, originalLines: string[], names: string[]): string {
+export function instrument(js: string, originalLines: string[], names: string[], filePath?: string): string {
   const lines = js.split('\n');
   const out: string[] = [];
   let parenDepth = 0;
   const braceStack: Array<string | FnHeaderStackInfo> = [];
   let prevContinued = false;
   let prevUnbracedControl = false;
+  const fileArgSuffix = filePath ? ', ' + JSON.stringify(filePath) : '';
 
   for (let i = 0; i < lines.length; i++) {
     const raw = lines[i] ?? '';
@@ -366,7 +367,9 @@ export function instrument(js: string, originalLines: string[], names: string[])
     const note = srcLine.length > 72 ? srcLine.slice(0, 69) + '…' : srcLine;
     const insideClass = braceStack.some(k => k === 'classbody');
     const withThis = insideClass && !inClassBody && !/\bsuper\s*\(/.test(t);
-    const callExpr = '__t(' + (i + 1) + ', ' + JSON.stringify(note) + ', ' + snapFnExpr(names) + (withThis ? ', this' : '') + ')';
+    const callExpr = filePath
+      ? '__t(' + (i + 1) + ', ' + JSON.stringify(note) + ', ' + snapFnExpr(names) + ', ' + (withThis ? 'this' : 'undefined') + fileArgSuffix + ')'
+      : '__t(' + (i + 1) + ', ' + JSON.stringify(note) + ', ' + snapFnExpr(names) + (withThis ? ', this' : '') + ')';
 
     const canInjectHeader =
       parenDepth === 0 &&
@@ -447,8 +450,8 @@ export function instrument(js: string, originalLines: string[], names: string[])
         ? raw.slice(0, openFnBraceIdx + 1).replace(/\basync\s+/, '')
         : raw.slice(0, openFnBraceIdx + 1);
       const enterHook = fnHeader.isAsync
-        ? ` return (__t && __t.__async ? __t.__async(function* () { var ${fnHeader.fidVar} = (typeof __t === "function" && __t.__enter) ? __t.__enter(${JSON.stringify(fnHeader.name)}, ${JSON.stringify(fnHeader.params)}, [${fnHeader.params.join(', ')}], ${fnHeader.line}, ${snapFnExpr(names)}) : 0; try {`
-        : ` var ${fnHeader.fidVar} = (typeof __t === "function" && __t.__enter) ? __t.__enter(${JSON.stringify(fnHeader.name)}, ${JSON.stringify(fnHeader.params)}, [${fnHeader.params.join(', ')}], ${fnHeader.line}, ${snapFnExpr(names)}) : 0; try {`;
+        ? ` return (__t && __t.__async ? __t.__async(function* () { var ${fnHeader.fidVar} = (typeof __t === "function" && __t.__enter) ? __t.__enter(${JSON.stringify(fnHeader.name)}, ${JSON.stringify(fnHeader.params)}, [${fnHeader.params.join(', ')}], ${fnHeader.line}, ${snapFnExpr(names)}${fileArgSuffix}) : 0; try {`
+        : ` var ${fnHeader.fidVar} = (typeof __t === "function" && __t.__enter) ? __t.__enter(${JSON.stringify(fnHeader.name)}, ${JSON.stringify(fnHeader.params)}, [${fnHeader.params.join(', ')}], ${fnHeader.line}, ${snapFnExpr(names)}${fileArgSuffix}) : 0; try {`;
       transformedRaw = headPrefix + enterHook + raw.slice(openFnBraceIdx + 1);
     } else if (closeFnSplices.length > 0) {
       let rebuilt = transformedRaw;

@@ -6,7 +6,6 @@ import {
   EditorState, StateField, StateEffect, Compartment, Prec, CharCategory,
 } from '@codemirror/state';
 import { javascript } from '@codemirror/lang-javascript';
-import { python } from '@codemirror/lang-python';
 import { HighlightStyle, syntaxHighlighting, indentUnit, syntaxTree } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
 import { search, openSearchPanel, selectNextOccurrence, SearchCursor } from '@codemirror/search';
@@ -396,8 +395,8 @@ function init() {
     { label: 'typeof', type: 'keyword', detail: '获取值或类型守卫 typeof x', boost: 82 },
     { label: 'infer', type: 'keyword', detail: '条件类型内提取类型变量 infer U', boost: 80 },
     { label: 'asserts', type: 'keyword', detail: '断言函数返回类型 asserts x is T', boost: 78 },
-    { label: 'checkpoint', type: 'function', detail: 'checkpoint(...args): void · 插入调试检查点', boost: 92 },
-    { label: '断点', type: 'function', detail: '断点(...args): void · 插入调试检查点', boost: 88 },
+    { label: 'checkpoint', type: 'function', detail: 'checkpoint(cond?: boolean, msg?: string): void · 条件检查点 (Ctrl+C)', boost: 92 },
+    { label: '断点', type: 'function', detail: '断点(cond?: boolean, msg?: string): void · 条件检查点 (Ctrl+C)', boost: 88 },
     { label: 'sleep', type: 'function', detail: 'sleep(ms: number, val?: T): Promise<T>', boost: 86 },
     { label: 'queueMicrotask', type: 'function', detail: 'queueMicrotask(cb: () => void): void', boost: 82 },
     { label: 'setTimeout', type: 'function', detail: 'setTimeout(cb: () => void, ms: number): number', boost: 82 },
@@ -492,23 +491,6 @@ function init() {
     { label: 'next', type: 'property', detail: 'ListNode | null · 链表下一节点或生成器 next()', boost: 80 },
     { label: 'left', type: 'property', detail: 'TreeNode | null · 二叉树左子节点', boost: 80 },
     { label: 'right', type: 'property', detail: 'TreeNode | null · 二叉树右子节点', boost: 80 },
-  ];
-
-  const PY_COMPLETIONS = [
-    { label: 'def', type: 'keyword', detail: '定义函数 def fn(x: int) -> int:', boost: 90 },
-    { label: 'class', type: 'keyword', detail: '定义类 class Node:', boost: 88 },
-    { label: 'checkpoint', type: 'function', detail: 'checkpoint(*args) · 插入调试检查点', boost: 92 },
-    { label: '断点', type: 'function', detail: '断点(*args) · 插入调试检查点', boost: 88 },
-    { label: 'List', type: 'type', detail: 'typing.List[T]', boost: 85 },
-    { label: 'Dict', type: 'type', detail: 'typing.Dict[K, V]', boost: 85 },
-    { label: 'Set', type: 'type', detail: 'typing.Set[T]', boost: 85 },
-    { label: 'Tuple', type: 'type', detail: 'typing.Tuple[...]', boost: 85 },
-    { label: 'Optional', type: 'type', detail: 'typing.Optional[T]', boost: 85 },
-    { label: 'deque', type: 'class', detail: 'collections.deque 双端队列', boost: 86 },
-    { label: 'defaultdict', type: 'class', detail: 'collections.defaultdict', boost: 84 },
-    { label: 'Counter', type: 'class', detail: 'collections.Counter 计数器', boost: 84 },
-    { label: 'heappush', type: 'function', detail: 'heapq.heappush(heap, item)', boost: 84 },
-    { label: 'heappop', type: 'function', detail: 'heapq.heappop(heap)', boost: 84 },
   ];
 
   function extractDocSymbols(docText) {
@@ -639,16 +621,9 @@ function init() {
     return { shapes, enums, functions, variables, typeAliases };
   }
 
-  function computeCompletionsForDoc(docText, pos, explicit, lang) {
+  function computeCompletionsForDoc(docText, pos, explicit) {
     const lineStart = docText.lastIndexOf('\n', Math.max(0, pos - 1)) + 1;
     const linePrefix = docText.slice(lineStart, pos);
-
-    if (lang === 'python') {
-      const pyWordM = linePrefix.match(/[A-Za-z_\u4e00-\u9fa5][\w\u4e00-\u9fa5]*$/);
-      if (!pyWordM && !explicit) return null;
-      const from = pyWordM ? pos - pyWordM[0].length : pos;
-      return { from, options: PY_COMPLETIONS };
-    }
 
     const syms = extractDocSymbols(docText);
 
@@ -755,18 +730,14 @@ function init() {
     return { from, options };
   }
 
-  function tsAndPyCompletionSource(context) {
+  function tsCompletionSource(context) {
     const docText = context.state.doc.toString();
-    return computeCompletionsForDoc(docText, context.pos, context.explicit, currentLang);
+    return computeCompletionsForDoc(docText, context.pos, context.explicit);
   }
 
-  const languageExt = (lang) => lang === 'python'
-    ? [python(), EditorState.languageData.of(() => [{ autocomplete: tsAndPyCompletionSource }])]
-    : [javascript({ typescript: true }), EditorState.languageData.of(() => [{ autocomplete: tsAndPyCompletionSource }])];
+  const languageExt = () => [javascript({ typescript: true }), EditorState.languageData.of(() => [{ autocomplete: tsCompletionSource }])];
 
-  const placeholderFor = (lang) => lang === 'python'
-    ? '# 写 Python，可在任意位置调用 checkpoint() 设置检查点，最后一行直接写入口调用，例如 main()'
-    : '// 写 TypeScript，可在任意位置调用 checkpoint() 设置检查点，最后一行直接写入口调用，例如 main()';
+  const placeholderFor = () => '// 写 TypeScript，可在任意位置调用 checkpoint() 设置检查点，最后一行直接写入口调用，例如 main()';
 
   let currentLang = 'ts';
   let declaredSignature = '';
@@ -813,6 +784,18 @@ function init() {
           {
             key: 'Mod-d',
             run: (v) => selectNextOccurrence(v),
+          },
+          {
+            key: 'Ctrl-c',
+            run: (v) => {
+              if (!v.state.selection.main.empty) return false;
+              const ln = v.state.doc.lineAt(v.state.selection.main.head).number;
+              if (typeof window.addCheckpointFunction === 'function') {
+                window.addCheckpointFunction(ln);
+                return true;
+              }
+              return false;
+            },
           },
         ])),
         EditorState.allowMultipleSelections.of(true),
@@ -886,20 +869,8 @@ function init() {
     });
   } catch (_) { /* fallback to boot-time sync */ }
 
-  function setLanguage(lang) {
-    const next = lang === 'python' ? 'python' : 'ts';
-    if (currentLang === next) return;
-    currentLang = next;
-    view.dispatch({
-      effects: [
-        languageCompartment.reconfigure(languageExt(next)),
-        indentCompartment.reconfigure(indentUnit.of(next === 'python' ? '    ' : '  ')),
-        placeholderCompartment.reconfigure(placeholder(placeholderFor(next))),
-      ],
-    });
-    declaredSignature = '';
-    builtinSignature = '';
-    diagSignature = '';
+  function setLanguage() {
+    currentLang = 'ts';
   }
 
   function buildNameDeco(names, className) {
@@ -1084,17 +1055,6 @@ function init() {
     if (typeof window.positionStepViz === 'function') window.positionStepViz();
     if (typeof window.hideHoverTip === 'function') window.hideHoverTip();
     if (typeof window.clearFlyLayer === 'function') window.clearFlyLayer();
-  });
-
-  view.dom.addEventListener('click', (event) => {
-    const gutter = event.target && event.target.closest ? event.target.closest('.cm-lineNumbers .cm-gutterElement') : null;
-    if (!gutter) return;
-    const line = parseInt(gutter.textContent || '', 10);
-    if (Number.isFinite(line) && typeof window.addCheckpointFunction === 'function') {
-      event.preventDefault();
-      event.stopPropagation();
-      window.addCheckpointFunction(line);
-    }
   });
 
   document.body.classList.add('cm-on');

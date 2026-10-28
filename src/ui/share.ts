@@ -1,6 +1,7 @@
 /* ================================================================
    Canvas 1080p Frame Renderer, Sample Loader & Boot Logic (src/ui/share.ts)
    ================================================================ */
+import { formatFunctionTypeSignature } from "../compiler/tc-types";
 import { SAMPLES, SAMPLE_DEFAULT_STEP } from "../samples/ts-samples";
 import { appState, registerUiHooks, VIDEO_HEIGHT, VIDEO_WIDTH } from "../state";
 import { Frame } from "../types";
@@ -351,7 +352,14 @@ export function renderVideoFrameToCanvas(ctx: CanvasRenderingContext2D, stepIdx:
   const W = VIDEO_WIDTH, H = VIDEO_HEIGHT;
   const st = appState.TRACE.steps[stepIdx] || appState.TRACE.steps[0];
   const prevSt = stepIdx > 0 ? appState.TRACE.steps[stepIdx - 1] : null;
-  const codeLines = (appState.TRACE.code && appState.TRACE.code.length) ? appState.TRACE.code : editor.value.replace(/\r/g, '').split('\n');
+  const isMultiModule = Boolean(
+    appState.TRACE.moduleSources && Object.keys(appState.TRACE.moduleSources).length > 1
+  );
+  const stepModuleLines =
+    st && st.file && appState.TRACE.moduleSources ? appState.TRACE.moduleSources[st.file] : undefined;
+  const codeLines = (stepModuleLines && stepModuleLines.length)
+    ? stepModuleLines
+    : ((appState.TRACE.code && appState.TRACE.code.length) ? appState.TRACE.code : editor.value.replace(/\r/g, '').split('\n'));
 
   ctx.fillStyle = '#07090d';
   ctx.fillRect(0, 0, W, H);
@@ -393,7 +401,8 @@ export function renderVideoFrameToCanvas(ctx: CanvasRenderingContext2D, stepIdx:
 
   ctx.font = '700 12px "Segoe UI", sans-serif';
   ctx.fillStyle = '#98a2b3';
-  ctx.fillText('SOURCE', 22, mainTop + 26);
+  const sourceHeaderLabel = isMultiModule && st && st.file ? `SOURCE · ${st.file}` : 'SOURCE';
+  ctx.fillText(sourceHeaderLabel, 22, mainTop + 26);
 
   const curLine = st ? st.line : -1;
   const lh = 26;
@@ -469,7 +478,14 @@ export function renderVideoFrameToCanvas(ctx: CanvasRenderingContext2D, stepIdx:
   const stackFrames = (st && Array.isArray(st.callStack) && st.callStack.length)
     ? st.callStack
     : [{ label: 'global' }];
-  const stackChainTxt = stackFrames.map(f => f.label).join(' ▸ ');
+  const stackChainTxt = stackFrames
+    .map(f => {
+      const shortFile = f.file ? (f.file.split('/').pop() || f.file) : '';
+      return isMultiModule && shortFile && !String(f.label || '').startsWith('<module:')
+        ? `[${shortFile}] ${f.label}`
+        : String(f.label || 'global');
+    })
+    .join(' ▸ ');
   roundRectPath(ctx, sideX + 20, mainTop + 32, sideW - 40, 26, 7);
   ctx.fillStyle = '#0b1018';
   ctx.fill();
@@ -485,8 +501,10 @@ export function renderVideoFrameToCanvas(ctx: CanvasRenderingContext2D, stepIdx:
   let locX = sideX + 20, locY = mainTop + 66;
   const primKeys = Object.keys(v).filter(k => v[k] === null || typeof v[k] !== 'object');
   primKeys.forEach(k => {
-    const valStr = String(v[k]);
-    const changed = prevSt && prevV[k] !== v[k];
+    const rawVal = v[k];
+    const isFn = typeof rawVal === 'function';
+    const valStr = isFn ? formatFunctionTypeSignature(k, rawVal) : String(rawVal);
+    const changed = prevSt && (isFn ? typeof prevV[k] !== 'function' : prevV[k] !== rawVal);
     ctx.font = '600 13px "Cascadia Code", Consolas, monospace';
     const chipW = ctx.measureText(`${k} : ${valStr}`).width + 24;
     if (locX + chipW > W - 20 && locX > sideX + 20) {
@@ -607,7 +625,6 @@ export function renderVideoFrameToCanvas(ctx: CanvasRenderingContext2D, stepIdx:
 }
 
 export function loadSample(key: string) {
-  if (appState.LANG === 'python') { PY_ENGINE.loadSample(key); return; }
   const targetKey = SAMPLES[key] ? key : 'showcase';
   if ($('sampleSel')) $<HTMLSelectElement>('sampleSel').value = targetKey;
   const src = SAMPLES[targetKey] || '';
@@ -631,12 +648,11 @@ export function boot() {
     const hash = (typeof location !== 'undefined' && location.hash) || '';
     const qs0 = (typeof location !== 'undefined' && location.search) ? new URLSearchParams(location.search) : null;
     const hasUrlChoice = Boolean(qs0 && (qs0.has('trace') || qs0.has('sample') || qs0.has('step')));
-    const wantsPython = Boolean(qs0 && qs0.get('lang') === 'python');
     let hasSaved = false;
-    if (!hasUrlChoice && !wantsPython && typeof localStorage !== 'undefined') {
+    if (!hasUrlChoice && typeof localStorage !== 'undefined') {
       try { hasSaved = Boolean(localStorage.getItem('ts-playground-session-v1')); } catch (_) {}
     }
-    if (hash.startsWith('#s=') || wantsPython || hasSaved) {
+    if (hash.startsWith('#s=') || hasSaved) {
       window.__BOOT_DEFERRED = true;
       editor.value = '';
       clearLog('正在恢复上次会话 / 分享代码…');

@@ -1,8 +1,8 @@
 # TypeScript Playground VISUAL · 用户使用指南
 
-欢迎使用 **TypeScript Playground VISUAL**！这是一款将 **TypeScript / Python 代码编写、交互式 `.ipynb` 算法笔记本（Notebook）、实时静态类型检查、按需逐行 Debug 调试、异步 Event Loop 可视化、数据结构实时可视化** 与 **1080p 60fps 演示视频导出** 融为一体的交互式工具。源码区与笔记本单元格均由 **CodeMirror 6** 驱动，支持查找替换、多光标、括号匹配、自动缩进、代码折叠与错误波浪线。
+欢迎使用 **TypeScript Playground VISUAL**！这是一款将 **TypeScript 代码编写、交互式 `.ipynb` 算法笔记本（Notebook）、实时静态类型检查、按需逐行 Debug 调试、异步 Event Loop 可视化、数据结构实时可视化** 与 **1080p 60fps 演示视频导出** 融为一体的交互式工具。源码区与笔记本单元格均由 **CodeMirror 6** 驱动，支持查找替换、多光标、括号匹配、自动缩进、代码折叠与错误波浪线。
 
-通过静态 HTTP 服务打开（`npm start` 或 `node python/serve.mjs`），即可开始可视化编程与调试。
+通过静态 HTTP 服务打开（`npm start` 或 `node server.mjs`），即可开始可视化编程与调试。
 
 ---
 
@@ -14,19 +14,20 @@
    - **`📄 Script` / `📓 Notebook` 视图模式切换**：
      - **`📄 Script`（源码模式）**：经典单文件完整算法编写与全流程逐行单步调试。
      - **`📓 Notebook`（笔记本模式）**：Jupyter 风格交互式多单元格 `.ipynb` 笔记本，支持 Code 与 Markdown 单元格混排、跨单元格变量共享与**针对任意单元格的单步可视化调试**。
-   - **`TS / PY` 语言切换**：在 TypeScript 和 Python 内核之间切换，两种语言的源码缓冲区与笔记本工作区各自独立保留。
-   - **内置样例下拉菜单**：内置 **10 个 TypeScript** + **6 个 Python** 样例（涵盖二叉搜索树、归并排序递归调用栈、报错即停、二维 DP、滑动窗口、类与实例方法、以及 `async/await` 异步 Event Loop 演示），切换样例后会自动编译并进入 Debug 调试视图。
-   - **`📂 导入` 按钮**：支持导入本地 `.ts` / `.tsx` / `.js` / `.jsx` / `.txt` / `.py` 源码文件，或直接导入标准 **`.ipynb` Jupyter 笔记本文件**（导入 `.ipynb` 时自动切换至 `📓 Notebook` 视图并新建标签页）。
+   - **`📂 导入` 下拉菜单**：
+     - **📤 上传本地文件**：支持上传本地 `.ts` / `.tsx` / `.js` / `.jsx` / `.txt` / `.json` 源码文件，或直接上传标准 **`.ipynb` Jupyter 笔记本文件**（导入 `.ipynb` 时自动切换至 `📓 Notebook` 视图并新建标签页）。
+     - **🎓 TS 进阶教学资料**：内置 **6 门 TypeScript 进阶交互式教学 Notebook 课程**（接口与结构化类型、枚举与类型收窄、OOP 与继承、泛型与树结构、异步与 Event Loop、类型诊断与 DP 实验）。
+     - **📚 导入示例 (`examples/`)**：内置 **10 个 TypeScript** 算法与可视化示例（涵盖综合美学演示、归并排序递归调用栈、报错即停、二维 DP、滑动窗口、类与实例方法、以及 `async/await` 异步 Event Loop 演示）。
    - **`▶ 运行` 按钮**（快捷键 `Ctrl/Cmd + Enter`）：校验类型后直接运行完整代码（包含异步微任务与 `setTimeout` 宏任务事件循环），并在左下方日志区输出最终返回值与 `console.log` 打印内容；**同步死循环超过 2 秒会自动熔断**并报出死循环所在行。
    - **`🐞 Debug 调试` 按钮**（快捷键 `Ctrl/Cmd + Shift + Enter`）：编译并校验类型通过后，启动按需逐行计算的 Debug 调试模式（在 Notebook 模式下则对当前激活的代码单元格启动单步调试）。
    - **`⬇ 导出 / 下载 ▾` 下拉菜单**（右上角）：
-     - **📄 导出 TypeScript / Python / `.ipynb` 文件**：在 Script 模式下下载 `.ts` / `.py` 源码；在 Notebook 模式下可将当前笔记本下载为标准 `.ipynb` 文件。
+     - **📄 导出文件**：在 Script 模式下下载 `.ts` 源码；在 Notebook 模式下可将当前笔记本下载为标准 `.ipynb` 文件。
      - **🔗 复制分享链接**：生成压缩后的代码分享链接，打开后进入 `share.html` 的沙箱预览（只加载、不自动运行）。
      - **🎬 导出视频 (`1920×1080 · 60fps`)**：先选择倍速档位（`0.75x` / `1x` / `1.5x` / `2x` / `3x`），再点击「🎬 导出视频」，即可生成高清 WebM 演示视频。
 
 2. **左侧：VFS 虚拟文件系统侧边栏 · 多标签页栏 · SOURCE / NOTEBOOK 画布**
-   - **VFS 虚拟文件系统侧边栏**：支持按文件夹浏览内置与自定义 `.ts` / `.py` / `.ipynb` 文件，支持新建文件、重命名、删除、重置默认文件树以及一键导入/导出完整 VFS 工作区快照。
-   - **Script 多标签页模式**：编辑器顶部支持同时打开多个 `.ts` / `.py` 脚本标签页（点击 `＋` 新建标签页、双击标签名或标题栏里的 **`TS ␣ 文件名` 芯片可直接改名**，按 `Enter` 提交、`Esc` 撤销）。处于 Debug 模式时，**当前即将执行的代码行**会高亮显示，并在**该行正上方浮出一枚可视化胶囊**（`#stepViz`），实时展示本行的赋值流向（`⟵`）、条件真假判断（`⇒ true / false`）、函数调用参数求值、检查点状态或运行时报错详情。
+   - **VFS 虚拟文件系统侧边栏**：支持管理工作区内的 `.ts` / `.json` / `.ipynb` 文件与文件夹，支持新建文件、新建文件夹、本地上传、内联二次确认删除，并支持在 TypeScript 代码中通过 `import { promises as fs } from 'fs'` 直接异步读写 VFS 文件。
+   - **Script 多标签页模式**：编辑器顶部支持同时打开多个 `.ts` 脚本标签页（点击 `＋` 新建标签页、双击标签名可直接改名，按 `Enter` 提交、`Esc` 撤销）。处于 Debug 模式时，**当前即将执行的代码行**会高亮显示，并在**该行正上方浮出一枚可视化胶囊**（`#stepViz`），实时展示本行的赋值流向（`⟵`）、条件真假判断（`⇒ true / false`）、函数调用参数求值、检查点状态或运行时报错详情。
    - **Notebook 模式下**：上方显示多标签页栏（默认含 `Intro.ipynb` 与 `Untitled.ipynb`）和笔记本工具栏，下方排列可交互的 Markdown 与 Code 单元格。
 
 3. **中间：可拖拽分隔条**
@@ -167,7 +168,7 @@ function sleep<T>(ms: number, value: T): Promise<T> {
 | `Ctrl + D` / `Cmd + D` | CodeMirror 编辑器 | 选择下一个相同词（多光标） |
 | `Alt + 点击` | CodeMirror 编辑器 | 添加一个光标 |
 | `Ctrl + Z` / `Cmd + Z` | CodeMirror 编辑器 | 撤销；加 `Shift` 为重做 |
-| `Tab` / `Shift + Tab` | CodeMirror 编辑器 | 缩进 / 反缩进（TS 2 空格，Python 4 空格） |
+| `Tab` / `Shift + Tab` | CodeMirror 编辑器 | 缩进 / 反缩进（2 空格） |
 | 点击左侧行号 | Script | 在该行快速插入 / 移除 `checkpoint();` 检查点 |
 | 双击 Markdown 单元格 | Notebook | 进入 Markdown 源码编辑态（点击 `✓ 预览` 或运行即可渲染） |
 | 拖拽中间分隔线 / 双击分隔线 | 全局 | 调整左右面板宽度 / 恢复默认比例 |

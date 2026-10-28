@@ -19,7 +19,7 @@ const FILES = [
   'ARCHITECTURE.md',
   'DEPLOY.md',
 ];
-const DIRS = ['python', 'js', 'css', 'examples'];
+const DIRS = ['js', 'css', 'examples'];
 
 const REQUIRED = [
   'index.html',
@@ -29,10 +29,6 @@ const REQUIRED = [
   'editor/cm.bundle.js',
   'editor/ts-worker.bundle.js',
   'DEPLOY.md',
-  'python/py_engine.js',
-  'python/py_worker.js',
-  'python/py_bridge.py',
-  'python/serve.mjs',
   'css/app.css',
   'js/app.bundle.js',
 ];
@@ -50,7 +46,6 @@ function copyDir(rel) {
   if (!fs.existsSync(src)) throw new Error('missing build input: ' + rel);
   fs.cpSync(src, path.join(DIST, rel), {
     recursive: true,
-    filter: (item) => !item.includes(`${path.sep}__pycache__`) && !item.endsWith('__pycache__'),
   });
 }
 
@@ -82,4 +77,4 @@ walk(DIST);
 
 const kb = Math.round(totalBytes / 1024);
 console.log(`built dist/ · ${fileCount} files · ${kb} KB`);
-console.log('deploy the dist/ folder to any static host; run locally with: node dist/python/serve.mjs');
+console.log('deploy the dist/ folder to any static host; run locally with: node server.mjs');
