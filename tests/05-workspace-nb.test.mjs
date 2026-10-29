@@ -91,6 +91,20 @@ processFile()
     { len: 3, lang: 'ts' },
   );
 
+  // B04 regression: Repeated execution of an accumulator cell accumulates state across runs
+  doc.cells.push(
+    { id: 'c_cnt_init', type: 'code', source: 'let count: number = 0;', output: null, executionCount: null, status: 'idle' },
+    { id: 'c_cnt_inc', type: 'code', source: 'count += 1;\nconsole.log("count", count);', output: null, executionCount: null, status: 'idle' },
+  );
+  await sandbox.runNotebookCell('c_cnt_init', false);
+  await sandbox.runNotebookCell('c_cnt_inc', false);
+  assertEq('B04: 1st run of accumulator cell outputs "count 1"', doc.cells[4].output && doc.cells[4].output.logs, ['count 1']);
+  await sandbox.runNotebookCell('c_cnt_inc', false);
+  assertEq('B04: 2nd run of accumulator cell outputs "count 2" and updates lastGlobalVars.count = 2',
+    { logs: doc.cells[4].output && doc.cells[4].output.logs, count: doc.lastGlobalVars.count },
+    { logs: ['count 2'], count: 2 },
+  );
+
   // 5. All 6 Built-in TypeScript Advanced Interactive Tutorial Notebooks (`examples/notebooks/01..06`)
   const tutorials = sandbox.TS_NOTEBOOK_TUTORIALS || [];
   assertEq('6 TypeScript advanced tutorial notebooks registered', tutorials.length, 6);

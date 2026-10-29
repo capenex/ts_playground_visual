@@ -198,6 +198,28 @@ function tryInjectLoopOrElseIf(raw: string, callExpr: string): string | null {
       }
     }
   }
+  const casePre = raw.match(/^(\s*(?:case\b|default\b))/);
+  if (casePre && casePre[1]) {
+    let d = 0;
+    let colonIdx = -1;
+    for (let k = casePre[1].length; k < raw.length; k++) {
+      const ch = raw[k];
+      if (ch === '"' || ch === "'" || ch === '`') { k = skipString(raw, k) - 1; continue; }
+      if (ch === '/' && raw[k + 1] === '/') break;
+      if (ch === '(' || ch === '[' || ch === '{') d++;
+      else if (ch === ')' || ch === ']' || ch === '}') d = Math.max(0, d - 1);
+      else if (ch === ':' && d === 0) {
+        colonIdx = k;
+        break;
+      }
+    }
+    if (colonIdx >= 0) {
+      const afterColon = stripInlineCommentSafe(raw.slice(colonIdx + 1)).trim();
+      if (afterColon && afterColon !== '{') {
+        return raw.slice(0, colonIdx + 1) + ' ' + callExpr + '; ' + raw.slice(colonIdx + 1).trimStart();
+      }
+    }
+  }
   return null;
 }
 
@@ -530,7 +552,7 @@ export function findTrailingTopLevelCall(js: string): { index: number; expr: str
     if (!cleaned) { idx--; continue; }
     if (!/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\s*\(/.test(cleaned)) return null;
     if (!/\)\s*;?\s*$/.test(cleaned)) return null;
-    if (/^(?:return|throw|if|for|while|switch|class|function|const|let|var|import|export|await|new)\b/.test(cleaned)) return null;
+    if (/^(?:return|throw|if|for|while|switch|class|function|const|let|var|import|export|await|new|checkpoint|断点)\b/.test(cleaned)) return null;
     const body = cleaned.replace(/;\s*$/, '').trim();
     if (blankStrings(body).includes(';')) return null;
     let depth = 0;

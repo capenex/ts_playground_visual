@@ -749,7 +749,7 @@ export function deriveAnimAndNote(
   v?: StepAnim | null,
   nextV?: StepAnim | null
 ): { anim: StepAnim | null; note: string; isCheckpoint?: boolean } {
-  const clean = stripTypes(rawLine || '').trim().replace(/;$/, '');
+  const clean = stripTypes(rawLine || '').trim().replace(/^(?:case\s+[^:]+|default)\s*:\s*/, '').replace(/;$/, '');
   if (!clean) return { anim: null, note: rawLine };
 
   let condExpr: string | null = null;

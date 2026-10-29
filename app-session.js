@@ -32,21 +32,32 @@
   }
 
   function currentName() {
+    if (typeof getActiveScriptTab === 'function') {
+      const activeTab = getActiveScriptTab('ts');
+      if (activeTab && activeTab.title) return activeTab.title;
+    }
     if (typeof FILE_NAME !== 'undefined' && FILE_NAME) return FILE_NAME;
     return (fileNameEl && fileNameEl.value) || 'playground.ts';
   }
 
   function snapshot() {
     const lang = currentLang();
+    if (typeof syncActiveScriptTabSource === 'function' && editor) {
+      try { syncActiveScriptTabSource(editor.value); } catch (_) {}
+    }
     const current = { src: editor ? editor.value : '', name: currentName() };
     if (typeof LANG_BUFFERS !== 'undefined') {
       LANG_BUFFERS.ts = current;
     }
+    const tabsSession = typeof serializeScriptTabsSession === 'function'
+      ? serializeScriptTabsSession()
+      : null;
     return {
       v: 1,
       at: Date.now(),
       lang,
       ts: (typeof LANG_BUFFERS !== 'undefined' && LANG_BUFFERS.ts) ? LANG_BUFFERS.ts : current,
+      tabsSession,
     };
   }
 
@@ -71,7 +82,8 @@
       const state = JSON.parse(raw);
       if (!state || state.v !== 1) return null;
       const buf = state.ts;
-      if (!buf || typeof buf.src !== 'string') return null;
+      const hasTabs = Boolean(state.tabsSession && Array.isArray(state.tabsSession.tabs) && state.tabsSession.tabs.length > 0);
+      if ((!buf || typeof buf.src !== 'string') && !hasTabs) return null;
       return state;
     } catch (_) {
       return null;
@@ -81,14 +93,47 @@
   function applyState(state, source) {
     if (!state) return false;
     const buf = state.ts;
-    if (!buf || typeof buf.src !== 'string') return false;
+    const hasTabs = Boolean(state.tabsSession && Array.isArray(state.tabsSession.tabs) && state.tabsSession.tabs.length > 0);
+    if ((!buf || typeof buf.src !== 'string') && !hasTabs) return false;
+
+    let restoredTabs = false;
+    if (hasTabs && typeof restoreScriptTabsSession === 'function') {
+      try {
+        restoredTabs = Boolean(restoreScriptTabsSession(state.tabsSession));
+      } catch (_) {}
+    }
+
+    let targetSrc = buf && typeof buf.src === 'string' ? buf.src : '';
+    let targetName = (buf && buf.name) ? buf.name : (source === 'share' ? 'shared.ts' : 'playground.ts');
+
+    if (restoredTabs && typeof getActiveScriptTab === 'function') {
+      const activeTab = getActiveScriptTab('ts');
+      if (activeTab) {
+        targetSrc = activeTab.source;
+        targetName = activeTab.title || targetName;
+      }
+    } else if (typeof getActiveScriptTab === 'function') {
+      const activeTab = getActiveScriptTab('ts');
+      if (activeTab) {
+        activeTab.title = targetName;
+        activeTab.source = targetSrc;
+      }
+    }
 
     if (typeof LANG_BUFFERS !== 'undefined') {
-      LANG_BUFFERS.ts = state.ts || null;
+      LANG_BUFFERS.ts = { src: targetSrc, name: targetName };
     }
     if (typeof LANG !== 'undefined') LANG = 'ts';
-    if (editor) editor.value = buf.src;
-    if (fileNameEl) fileNameEl.value = buf.name || 'shared.ts';
+    if (typeof setScriptTabSyncing === 'function') setScriptTabSyncing(true);
+    if (editor) editor.value = targetSrc;
+    if (typeof setFileName === 'function') {
+      setFileName(targetName);
+    } else if (fileNameEl) {
+      fileNameEl.value = targetName;
+    }
+    if (typeof setScriptTabSyncing === 'function') setScriptTabSyncing(false);
+    if (typeof renderScriptTabsUI === 'function') renderScriptTabsUI();
+    if (typeof renderVfsTreeUI === 'function') renderVfsTreeUI();
     if (typeof updateEditorChrome === 'function') updateEditorChrome();
 
     if (source === 'share') {
@@ -163,8 +208,25 @@
   async function copyShareLink() {
     if (exportWrap) exportWrap.classList.remove('open');
     const tag = document.getElementById('shareLinkTag');
-    if (tag) tag.textContent = '暂未实现';
-    saySafe('暂未实现', 'dim');
+    try {
+      const encoded = await packState(snapshot());
+      const base = (typeof location !== 'undefined' && location.origin && location.pathname)
+        ? location.origin + location.pathname + (location.search || '')
+        : '';
+      const url = base + '#s=' + encoded;
+      if (typeof history !== 'undefined' && history && typeof history.replaceState === 'function') {
+        try { history.replaceState(null, '', '#s=' + encoded); } catch (_) {}
+      }
+      await copyText(url);
+      if (tag) {
+        tag.textContent = '✓ 已复制';
+        setTimeout(() => { tag.textContent = '含当前代码'; }, 2000);
+      }
+      saySafe('✓ 已复制分享链接（含当前代码，打开后仅加载不自动运行）', 'ok');
+    } catch (err) {
+      if (tag) tag.textContent = '复制失败';
+      saySafe('✗ 复制分享链接失败：' + ((err && err.message) || err), 'err');
+    }
   }
 
   async function restoreFromHash() {
@@ -245,12 +307,17 @@
     });
   }
   if (shareBtn) shareBtn.addEventListener('click', copyShareLink);
+  document.addEventListener('ts-session-change', () => {
+    if (!ready) return;
+    shareMode = false;
+    scheduleSave();
+  });
   window.addEventListener('pagehide', saveNow);
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') saveNow();
   });
   setTimeout(() => {
-    saySafe('ℹ 类型检查：TS 为内置子集检查器（不是完整 tsc）。点击 SOURCE 旁徽标查看边界。', 'dim');
+    saySafe('ℹ 类型检查：TS 为内置子集检查器（不是完整 tsc）。点击代码栏右上角「TS 子集检查」徽标查看边界。', 'dim');
     if (IN_SANDBOX) {
       saySafe('ℹ 沙箱预览模式：不能访问本地会话，编辑内容不会自动保存；分享代码不会自动运行。', 'dim');
     }

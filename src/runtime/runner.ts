@@ -15,6 +15,7 @@ import { appState, MAX_EXEC_MS, MAX_STEPS, PAUSE_SIGNAL, RUN_TIMEOUT_MS, uiHooks
 import { Diag, Frame, InterfaceFieldMeta, StepAnim, StepSnapshot } from "../types";
 import {
   say,
+  logRunRoundHeader,
   sourceLineFromStack,
   hasAsyncConstructs,
   createVirtualEventLoop,
@@ -278,14 +279,23 @@ export function evalCall(
   const t0 = Date.now();
   let ticks = 0;
   let lastLine = 0;
+  let lastFile = '';
   let expired = false;
   const timeoutError = () =>
     Object.assign(new Error('RUN_TIMEOUT'), {
       __timeout: true,
       __line: lastLine,
+      __file: lastFile,
     });
-  const __t: TraceHookFn = function (line?: number) {
+  const __t: TraceHookFn = function (
+    line?: number,
+    _note?: string,
+    _snap?: unknown,
+    _self?: unknown,
+    file?: string
+  ) {
     if (line) lastLine = line;
+    if (file) lastFile = file;
     if (!budgetMs) return;
     if (expired) throw timeoutError();   // keep throwing: a user try/catch must not swallow the abort
     if ((++ticks & 31) === 31 && (Date.now() - t0) > budgetMs) {
@@ -300,14 +310,16 @@ export function evalCall(
   __t.__drain = evLoop.drainEventLoop;
   __t.__initGlobal = function (snapFn: (() => Record<string, unknown>) | null) { evLoop.loop.globalSnapFn = snapFn; };
   __t.__ckpt = handleCkpt;
-  const body = stub + js + '\n;return (function(){ try { var __v = (' + expr + '); if (__t && __t.__drain) __v = __t.__drain(__v); return { ok:true, value:__v }; } catch (e) { return { ok:false, error: e && e.message ? e.message : String(e), stack: e && e.stack ? String(e.stack) : "", line: (e && e.__line) || 0, timeout: Boolean(e && e.__timeout) }; } })();';
+  const body = stub + js + '\n;return (function(){ try { var __v = (' + expr + '); if (__t && __t.__drain) __v = __t.__drain(__v); return { ok:true, value:__v }; } catch (e) { return { ok:false, error: e && e.message ? e.message : String(e), stack: e && e.stack ? String(e.stack) : "", line: (e && e.__line) || 0, file: (e && e.__file) || "", timeout: Boolean(e && e.__timeout) }; } })();';
   const f = new Function('__t', 'console', body);
-  let r: { ok: boolean; value?: unknown; error?: string; stack?: string; line?: number; timeout?: boolean };
+  let r: { ok: boolean; value?: unknown; error?: string; stack?: string; line?: number; file?: string; timeout?: boolean };
   const formatConsoleArg = (x: unknown): string => {
     if (x instanceof Error) return x.message || String(x);
     try { return typeof x === 'object' ? JSON.stringify(x) : String(x); } catch (_) { return String(x); }
   };
-  const pushLogLine = (...a: unknown[]) => logs.push(a.map(formatConsoleArg).join(' '));
+  const pushLogLine = (...a: unknown[]): void => {
+    logs.push(a.map(formatConsoleArg).join(' '));
+  };
   try {
     r = f(__t, {
       log: pushLogLine,
@@ -323,11 +335,13 @@ export function evalCall(
       error: errObj && typeof errObj.message === 'string' && errObj.message ? errObj.message : String(e),
       stack: errObj && errObj.stack ? String(errObj.stack) : '',
       line: (errObj && typeof errObj.__line === 'number' ? errObj.__line : 0) || lastLine || entryLine || 0,
+      file: (errObj && typeof errObj.__file === 'string' && errObj.__file ? errObj.__file : '') || lastFile,
       timeout: Boolean(errObj && errObj.__timeout),
     };
   }
   if (r && r.ok && !r.line) r.line = lastLine || entryLine || 0;
   if (r && !r.ok) r.line = r.line || lastLine || entryLine || 0;
+  if (r && !r.file && lastFile) r.file = lastFile;
   return { ...r, logs, elapsedMs: Date.now() - t0 };
 }
 
@@ -335,6 +349,7 @@ export function runOnce(budgetMs?: number, sourceCode?: string) {
   const budget = (typeof budgetMs === 'number' && budgetMs > 0) ? budgetMs : RUN_TIMEOUT_MS;
   const { entryFile, entrySource: src, fileMap } = collectWorkspaceFilesAndEntry(sourceCode);
   appState.ENTRY_FILE_PATH = entryFile;
+  logRunRoundHeader('▶ 运行', entryFile);
 
   const unsupported = detectUnsupportedSyntax(src);
   if (unsupported.length && unsupported[0]) {
@@ -414,16 +429,24 @@ export function runOnce(budgetMs?: number, sourceCode?: string) {
     r.logs.forEach((l: string) => say('  log: ' + l, 'dim'));
 
     if (!r.ok && r.timeout) {
+      const targetFile = r.file || entryFile;
+      if (targetFile && targetFile !== entryFile) {
+        uiHooks.switchToScriptFile(targetFile);
+      }
+      const targetLines = (targetFile && targetFile !== entryFile && fileMap.has(targetFile))
+        ? (fileMap.get(targetFile) || '').replace(/\r/g, '').split('\n')
+        : originalLines;
       const line = r.line || 0;
-      const snippet = line ? (originalLines[line - 1] || '').trim().slice(0, 90) : '';
+      const snippet = line ? (targetLines[line - 1] || '').trim().slice(0, 90) : '';
       if (line) {
         appState.RUNTIME_ERROR_LINES.add(line);
         uiHooks.updateEditorChrome();
         uiHooks.revealErrorLine(line);
       }
+      const fileTag = (targetFile && targetFile !== entryFile) ? targetFile + ' · ' : '';
       say(
         '✗ 运行超过 ' + (budget / 1000) + 's 仍未结束，已强制终止（疑似死循环 / 计算量过大）' +
-          (line ? ' · 位置：第 ' + line + ' 行' + (snippet ? ' · ' + snippet : '') : ' · 未能定位到具体行'),
+          (line ? ' · 位置：' + fileTag + '第 ' + line + ' 行' + (snippet ? ' · ' + snippet : '') : ' · 未能定位到具体行'),
         'err',
         line || undefined
       );
@@ -431,11 +454,19 @@ export function runOnce(budgetMs?: number, sourceCode?: string) {
     }
 
     if (!r.ok) {
-      const line = r.line || sourceLineFromStack(r.stack, originalLines.length);
+      const targetFile = r.file || entryFile;
+      if (targetFile && targetFile !== entryFile) {
+        uiHooks.switchToScriptFile(targetFile);
+      }
+      const targetLines = (targetFile && targetFile !== entryFile && fileMap.has(targetFile))
+        ? (fileMap.get(targetFile) || '').replace(/\r/g, '').split('\n')
+        : originalLines;
+      const line = r.line || sourceLineFromStack(r.stack, targetLines.length);
       if (line) {
         appState.RUNTIME_ERROR_LINES.add(line);
         uiHooks.updateEditorChrome();
-        say('✗ 第 ' + line + ' 行运行时报错: ' + r.error, 'err', line);
+        const filePrefix = (targetFile && targetFile !== entryFile) ? '[' + targetFile + '] ' : '';
+        say('✗ ' + filePrefix + '第 ' + line + ' 行运行时报错: ' + r.error, 'err', line);
         uiHooks.revealErrorLine(line);
       } else {
         say('✗ 调用失败: ' + r.error, 'err');
@@ -910,6 +941,9 @@ export function startDebug(initialStep = 0, sourceCode?: string) {
   appState.SELECTED_FRAME_IDX = null;
   const { entryFile, entrySource: src, fileMap } = collectWorkspaceFilesAndEntry(sourceCode);
   appState.ENTRY_FILE_PATH = entryFile;
+  if (initialStep === 0) {
+    logRunRoundHeader('🐞 Debug 调试', entryFile);
+  }
   const unsupported = detectUnsupportedSyntax(src);
   if (unsupported.length && unsupported[0]) {
     resetTraceState();

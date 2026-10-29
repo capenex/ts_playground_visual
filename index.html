@@ -114,7 +114,7 @@
         <span class="file-edit" aria-hidden="true">✎</span>
       </span>
       <div class="script-header-actions">
-        <span id="checkerBadge" class="checker-badge" role="button" tabindex="0" title="内置类型检查器只覆盖常用 TypeScript 语法，不是完整 tsc；点击查看已知限制" hidden>TS 子集检查</span>
+        <span id="checkerBadge" class="checker-badge" role="button" tabindex="0" title="内置类型检查器只覆盖常用 TypeScript 语法，不是完整 tsc；点击查看已知限制">TS 子集检查</span>
         <button type="button" id="btnToggleVfs" class="vfs-toggle-btn" title="展开/收起右侧虚拟文件目录系统 (VFS)">📁 文件目录</button>
       </div>
     </div>
@@ -133,6 +133,7 @@
           <div class="nb-top-bar">
             <div class="nb-tabs-bar" id="nbTabsList" role="tablist" aria-label="Notebook 文件标签页"></div>
             <div class="nb-top-actions">
+              <button type="button" id="nbBtnExportIpynb" class="vfs-toggle-btn" title="将当前 Notebook 导出为标准 Jupyter .ipynb 文件">⬇ 导出 .ipynb</button>
               <button type="button" id="nbBtnToggleVfs" class="vfs-toggle-btn" title="展开/收起右侧虚拟文件目录系统 (VFS)">📁 文件目录</button>
             </div>
           </div>
@@ -178,7 +179,7 @@
   <div id="sidePanel">
     <div class="pane-title">
       <span>LOCALS</span>
-      <span class="sub-hint" id="callStackHint">点击栈帧可切换作用域</span>
+      <span class="sub-hint" id="callStackHint" title="显示本行执行前快照（带 → 为本行赋值后新值），点击栈帧可切换作用域">执行前快照 (→ 本步新值) · 点击栈帧切换作用域</span>
     </div>
     <div class="call-stack-bar" id="callStackBar" role="navigation" aria-label="调用栈面包屑"></div>
     <div class="vars" id="vars"></div>
@@ -194,10 +195,10 @@
   <div id="cnt">未在调试</div>
   <button id="next" title="当场计算并执行下一步 (→ / Space)">下一步 ›</button>
   <button id="nextCheckpoint" class="ckpt-btn" title="连续当场计算，直到遇到下一个触发的 checkpoint(cond?, msg?) 检查点或运行时报错为止">⏭ 运行到下一个检查点</button>
-  <button id="btnAddCheckpoint" class="add-ckpt-btn" title="在代码当前行添加或删除 checkpoint() 检查点函数 (Ctrl+C)">＋ 添加检查点函数</button>
+  <button id="btnAddCheckpoint" class="add-ckpt-btn" title="在代码当前行添加或删除 checkpoint() 检查点函数 (Alt+C)">＋ 添加检查点函数</button>
   <button id="auto">▶ 自动</button>
   <div class="spacer"></div>
-  <div class="hint" id="ctlHint">Debug 模式：每步当场计算 · 悬停查看变量 · 报错红色定位 · ▶ 运行超 2s 自动熔断并报出死循环行号</div>
+  <div class="hint" id="ctlHint" title="Debug 模式：每步当场计算 · 悬停查看变量 · 报错红色定位 · ▶ 运行超 2s 自动熔断并报出死循环行号">每步当场计算 · 悬停看变量 · 报错标红 · ▶ 运行超 2s 自动熔断定位死循环行号</div>
 </div>
 
 <div id="flyLayer" aria-hidden="true"></div>

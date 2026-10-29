@@ -810,6 +810,9 @@ export function checkPass2Statements(
       }
       const closeBraceIdx = trimmed.lastIndexOf('}');
       const bodyAfterOpenBrace = openBraceIdx >= 0 ? trimmed.slice(openBraceIdx + 1) : '';
+      if (/\bthrow\b/.test(bodyAfterOpenBrace)) {
+        activeFn.hasValueReturn = true;
+      }
       const rm = bodyAfterOpenBrace.match(/\breturn\b([^;}\n]*)/);
       if (rm && rm[1]?.trim()) {
         activeFn.hasValueReturn = true;
@@ -858,7 +861,7 @@ export function checkPass2Statements(
         }
         if (currentFn && braceDepth <= fnStartBraceDepth) {
           const isGenRet = /^Generator<|^AsyncGenerator<|^IterableIterator<|^Iterator</.test(currentFn.returnType);
-          if (currentFn.returnType !== 'any' && currentFn.returnType !== 'void' && currentFn.returnType !== 'Promise<void>' && currentFn.returnType !== 'unknown' && !isGenRet && !currentFn.hasValueReturn) {
+          if (currentFn.returnType !== 'any' && currentFn.returnType !== 'void' && currentFn.returnType !== 'Promise<void>' && currentFn.returnType !== 'never' && currentFn.returnType !== 'Promise<never>' && currentFn.returnType !== 'unknown' && !isGenRet && !currentFn.hasValueReturn) {
             addDiag(currentFn.line, 'TS2355', `函数 "${currentFn.name}" 声明返回类型为 "${currentFn.returnType}"，但缺少 return 返回值语句`);
           }
           const prev = fnScopeStack.pop();
@@ -1140,6 +1143,7 @@ export function checkPass2Statements(
 
     const throwM = trimmed.match(/^throw\s+([\s\S]+?);?$/);
     if (throwM && throwM[1]) {
+      if (currentFn) currentFn.hasValueReturn = true;
       inferType(throwM[1].trim(), lineNum);
       continue;
     }
@@ -1174,6 +1178,9 @@ export function checkPass2Statements(
       }
       const caseRest = (caseM[2] || '').trim();
       if (caseRest) {
+        if (/^throw\b/.test(caseRest) && currentFn) {
+          currentFn.hasValueReturn = true;
+        }
         const inlineRet = caseRest.match(/^return(?:\s+([\s\S]+?))?;?$/);
         if (inlineRet) {
           const rExpr = inlineRet[1] ? inlineRet[1].trim() : '';
@@ -1197,6 +1204,10 @@ export function checkPass2Statements(
         if (env.has(sw.expr)) {
           env.set(sw.expr, { ...sw.origInfo, type: remT });
         }
+      }
+      const defRest = (defaultM[1] || '').trim();
+      if (/^(?:return\s+\S|throw\b)/.test(defRest) && currentFn) {
+        currentFn.hasValueReturn = true;
       }
       continue;
     }
@@ -1237,6 +1248,14 @@ export function checkPass2Statements(
         }
       }
     };
+
+    const inlineIfThrow = trimmed.match(/^if\s*\((.+?)\)\s*throw\s+([\s\S]+?);?$/);
+    if (inlineIfThrow && inlineIfThrow[1] && inlineIfThrow[2]) {
+      if (currentFn) currentFn.hasValueReturn = true;
+      inferType(inlineIfThrow[1].trim(), lineNum);
+      inferType(inlineIfThrow[2].trim(), lineNum);
+      continue;
+    }
 
     const inlineIfRet = trimmed.match(/^if\s*\((.+?)\)\s*(return(?:\s+([\s\S]+?))?|break|continue);?$/);
     if (inlineIfRet && inlineIfRet[1] && inlineIfRet[2]) {
@@ -1290,6 +1309,9 @@ export function checkPass2Statements(
         const tail = trimmed.slice(closeIdx + 1).trim();
         if (tail && tail !== '{') {
           const bodyInner = (tail.startsWith('{') && tail.endsWith('}')) ? tail.slice(1, -1).trim() : tail;
+          if (/\b(?:return\s+[^;}\s]|throw\b)/.test(bodyInner) && currentFn) {
+            currentFn.hasValueReturn = true;
+          }
           bodyInner.split(';').map(s => s.trim()).filter(Boolean).forEach(stmt => {
             const inlineAssign = stmt.match(/^([A-Za-z_$][\w$!]*(?:\.[A-Za-z_$][\w$!]*|\s*\[[^\]]+\])*)\s*(\+=|-=|\*=|\/=|=(?!=))\s*([\s\S]+)$/);
             if (inlineAssign && inlineAssign[1] && inlineAssign[3]) {

@@ -1,10 +1,12 @@
 "use strict";
 (() => {
   var __defProp = Object.defineProperty;
+  var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
   var __export = (target, all) => {
     for (var name in all)
       __defProp(target, name, { get: all[name], enumerable: true });
   };
+  var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
 
   // src/state.ts
   var state_exports = {};
@@ -48,7 +50,7 @@
     CONSOLE_LOGS: [],
     VIDEO_EXPORT_SPEED: 1,
     IS_EXPORTING_VIDEO: false,
-    TRACE: { title: "TypeScript Playground \xB7 Debug", code: [], steps: [] },
+    TRACE: { title: "TypeScript Playground · Debug", code: [], steps: [] },
     cur: 0,
     timer: null,
     watched: /* @__PURE__ */ new Set(),
@@ -334,7 +336,7 @@
       d.className = (entry.cls ? entry.cls + " " : "") + "diag";
       if (d.setAttribute) {
         d.setAttribute("data-line", String(entry.line));
-        d.setAttribute("title", "\u70B9\u51FB\u5B9A\u4F4D\u5230\u7B2C " + entry.line + " \u884C");
+        d.setAttribute("title", "点击定位到第 " + entry.line + " 行");
       }
     }
     d.textContent = entry.msg;
@@ -414,7 +416,7 @@
     }
     if (sum >= target) {
       best = Math.max(best, sum);
-      checkpoint(sum >= target, "\u7A97\u53E3\u8FBE\u6807");
+      checkpoint(sum >= target, "窗口达标");
     }
   }
   return best + tree.val + graph.nodes.length;
@@ -466,9 +468,9 @@ mergeSort(0, 7)
     const x = nums[i];
     acc = acc + x;
     history.push(acc);
-    checkpoint(acc > 10, "\u68C0\u67E5\u7D2F\u52A0\u503C");
+    checkpoint(acc > 10, "检查累加值");
     if (acc > limit) {
-      throw new Error("\u8FD0\u884C\u65F6\u5F02\u5E38: \u7D2F\u52A0\u503C acc(" + acc + ") \u8D85\u8FC7\u5B89\u5168\u9608\u503C " + limit);
+      throw new Error("运行时异常: 累加值 acc(" + acc + ") 超过安全阈值 " + limit);
     }
   }
   return acc;
@@ -631,7 +633,7 @@ async function runAsyncDemo(): Promise<string> {
   timeline.push("2:before-await");
   const score: number = await fetchScore(3, 20);
   timeline.push("6:after-await-" + score);
-  checkpoint(score > 0, "\u5F02\u6B65\u7B49\u5F85\u5B8C\u6210");
+  checkpoint(score > 0, "异步等待完成");
   return timeline.join(" -> ");
 }
 
@@ -986,7 +988,7 @@ runAsyncDemo()
     if (!t) return false;
     if (/^\{/.test(t)) {
       if (/\b(return|const|let|var|if|for|while|switch|break|continue|throw|try|catch|finally)\b/.test(t)) return false;
-      if (new RegExp("(?<![=!<>:])=(?![=>])").test(t)) return false;
+      if (/(?<![=!<>:])=(?![=>])/.test(t)) return false;
       return true;
     }
     if (/^(number|string|boolean|void|any|unknown|never|object|symbol|bigint|undefined|null|true|false)\b/.test(t)) return true;
@@ -1332,7 +1334,7 @@ runAsyncDemo()
       if (!part) continue;
       const m = part.match(/^([A-Za-z_$][\w$]*)\s*(?:=\s*([\s\S]+))?$/);
       if (!m || !m[1]) {
-        return { error: { line, message: "enum \u6210\u5458\u6682\u4E0D\u652F\u6301\u8FD9\u79CD\u5199\u6CD5\uFF1A" + part.slice(0, 40) } };
+        return { error: { line, message: "enum 成员暂不支持这种写法：" + part.slice(0, 40) } };
       }
       const key = m[1];
       const init = m[2] === void 0 ? null : m[2].trim();
@@ -1350,7 +1352,7 @@ runAsyncDemo()
           val = void 0;
         }
         if (typeof val !== "string") {
-          return { error: { line, message: 'enum \u6210\u5458 "' + key + '" \u7684\u503C\u65E0\u6CD5\u9759\u6001\u6C42\u503C' } };
+          return { error: { line, message: 'enum 成员 "' + key + '" 的值无法静态求值' } };
         }
         stmts.push(name + "[" + JSON.stringify(key) + "] = " + JSON.stringify(val) + ";");
         known[key] = val;
@@ -1364,7 +1366,7 @@ runAsyncDemo()
         value = void 0;
       }
       if (typeof value !== "number" || !isFinite(value)) {
-        return { error: { line, message: 'enum \u6210\u5458 "' + key + '" \u7684\u503C\u65E0\u6CD5\u9759\u6001\u6C42\u503C\uFF08\u6682\u4E0D\u652F\u6301\u5F15\u7528\u5176\u4ED6\u6210\u5458\u6216\u590D\u6742\u8868\u8FBE\u5F0F\uFF09' } };
+        return { error: { line, message: 'enum 成员 "' + key + '" 的值无法静态求值（暂不支持引用其他成员或复杂表达式）' } };
       }
       stmts.push(name + "[" + name + "[" + JSON.stringify(key) + "] = " + value + "] = " + JSON.stringify(key) + ";");
       known[key] = value;
@@ -2422,15 +2424,15 @@ runAsyncDemo()
       if (/^with\s*\(/.test(line)) {
         results.push({
           line: lineNo,
-          feature: "with \u8BED\u53E5",
-          hint: "\u4E25\u683C\u6A21\u5F0F\u4E0B\u4E0D\u652F\u6301 `with (...)` \u8BED\u53E5\uFF0C\u8BF7\u76F4\u63A5\u8BBF\u95EE\u5BF9\u8C61\u5C5E\u6027\u6216\u4F7F\u7528\u89E3\u6784\u8D4B\u503C\u3002"
+          feature: "with 语句",
+          hint: "严格模式下不支持 `with (...)` 语句，请直接访问对象属性或使用解构赋值。"
         });
       }
       if (/^import\s+[A-Za-z_$][\w$]*\s*=\s*require\s*\(/.test(line)) {
         results.push({
           line: lineNo,
           feature: "import = require()",
-          hint: "\u6D4F\u89C8\u5668\u6C99\u7BB1\u4E0D\u652F\u6301 CommonJS `import x = require(...)`\uFF0C\u8BF7\u76F4\u63A5\u5B9A\u4E49\u6240\u9700\u6A21\u5757\u6216\u4F7F\u7528\u6807\u51C6 ES \u8BED\u6CD5\u3002"
+          hint: "浏览器沙箱不支持 CommonJS `import x = require(...)`，请直接定义所需模块或使用标准 ES 语法。"
         });
       }
     }
@@ -2624,6 +2626,31 @@ runAsyncDemo()
         }
       }
     }
+    const casePre = raw.match(/^(\s*(?:case\b|default\b))/);
+    if (casePre && casePre[1]) {
+      let d = 0;
+      let colonIdx = -1;
+      for (let k = casePre[1].length; k < raw.length; k++) {
+        const ch = raw[k];
+        if (ch === '"' || ch === "'" || ch === "`") {
+          k = skipString(raw, k) - 1;
+          continue;
+        }
+        if (ch === "/" && raw[k + 1] === "/") break;
+        if (ch === "(" || ch === "[" || ch === "{") d++;
+        else if (ch === ")" || ch === "]" || ch === "}") d = Math.max(0, d - 1);
+        else if (ch === ":" && d === 0) {
+          colonIdx = k;
+          break;
+        }
+      }
+      if (colonIdx >= 0) {
+        const afterColon = stripInlineCommentSafe(raw.slice(colonIdx + 1)).trim();
+        if (afterColon && afterColon !== "{") {
+          return raw.slice(0, colonIdx + 1) + " " + callExpr + "; " + raw.slice(colonIdx + 1).trimStart();
+        }
+      }
+    }
     return null;
   }
   function matchFunctionHeaderForStack(rawLine, lineNum) {
@@ -2730,7 +2757,7 @@ runAsyncDemo()
           const rawExpr = str.slice(j, k).trim();
           if (rawExpr) {
             const innerRewritten = rewriteAwaitExpressions(rawExpr, fidExpr, lineNum);
-            const label = rawExpr.length > 36 ? rawExpr.slice(0, 33) + "\u2026" : rawExpr;
+            const label = rawExpr.length > 36 ? rawExpr.slice(0, 33) + "…" : rawExpr;
             out += `(yield (__t && __t.__await ? __t.__await((${innerRewritten}), ${fidExpr}, ${lineNum}, ${JSON.stringify(label)}) : (${innerRewritten})))`;
             i = k;
             continue;
@@ -2801,7 +2828,7 @@ runAsyncDemo()
       }
       const origLine = originalLines[i];
       const srcLine = (origLine != null ? origLine : t).trim();
-      const note = srcLine.length > 72 ? srcLine.slice(0, 69) + "\u2026" : srcLine;
+      const note = srcLine.length > 72 ? srcLine.slice(0, 69) + "…" : srcLine;
       const insideClass = braceStack.some((k) => k === "classbody");
       const withThis = insideClass && !inClassBody && !/\bsuper\s*\(/.test(t);
       const callExpr = filePath ? "__t(" + (i + 1) + ", " + JSON.stringify(note) + ", " + snapFnExpr(names) + ", " + (withThis ? "this" : "undefined") + fileArgSuffix + ")" : "__t(" + (i + 1) + ", " + JSON.stringify(note) + ", " + snapFnExpr(names) + (withThis ? ", this" : "") + ")";
@@ -2918,7 +2945,7 @@ runAsyncDemo()
         prevUnbracedControl = isUnbracedControlHeader(t);
       }
     }
-    const ckptPreamble = 'var checkpoint = function(){ try { if (typeof __t === "function" && __t.__ckpt) __t.__ckpt(Array.prototype.slice.call(arguments)); } catch (_){} }, \u65AD\u70B9 = checkpoint; var Promise = (__t && __t.__env && __t.__env.Promise) || globalThis.Promise, setTimeout = (__t && __t.__env && __t.__env.setTimeout) || globalThis.setTimeout, clearTimeout = (__t && __t.__env && __t.__env.clearTimeout) || globalThis.clearTimeout, queueMicrotask = (__t && __t.__env && __t.__env.queueMicrotask) || globalThis.queueMicrotask; if (typeof sleep === "undefined") { var sleep = (__t && __t.__env && __t.__env.sleep) || function(ms, val){ return new Promise(function(r){ setTimeout(function(){ r(val); }, ms); }); }; } try { if (typeof __t === "function" && __t.__initGlobal) __t.__initGlobal(' + snapFnExpr(names) + "); } catch (_){} ";
+    const ckptPreamble = 'var checkpoint = function(){ try { if (typeof __t === "function" && __t.__ckpt) __t.__ckpt(Array.prototype.slice.call(arguments)); } catch (_){} }, 断点 = checkpoint; var Promise = (__t && __t.__env && __t.__env.Promise) || globalThis.Promise, setTimeout = (__t && __t.__env && __t.__env.setTimeout) || globalThis.setTimeout, clearTimeout = (__t && __t.__env && __t.__env.clearTimeout) || globalThis.clearTimeout, queueMicrotask = (__t && __t.__env && __t.__env.queueMicrotask) || globalThis.queueMicrotask; if (typeof sleep === "undefined") { var sleep = (__t && __t.__env && __t.__env.sleep) || function(ms, val){ return new Promise(function(r){ setTimeout(function(){ r(val); }, ms); }); }; } try { if (typeof __t === "function" && __t.__initGlobal) __t.__initGlobal(' + snapFnExpr(names) + "); } catch (_){} ";
     if (out.length > 0) out[0] = ckptPreamble + out[0];
     else out.push(ckptPreamble);
     return out.join("\n");
@@ -2938,7 +2965,7 @@ runAsyncDemo()
       }
       if (!/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\s*\(/.test(cleaned)) return null;
       if (!/\)\s*;?\s*$/.test(cleaned)) return null;
-      if (/^(?:return|throw|if|for|while|switch|class|function|const|let|var|import|export|await|new)\b/.test(cleaned)) return null;
+      if (/^(?:return|throw|if|for|while|switch|class|function|const|let|var|import|export|await|new|checkpoint|断点)\b/.test(cleaned)) return null;
       const body = cleaned.replace(/;\s*$/, "").trim();
       if (blankStrings(body).includes(";")) return null;
       let depth = 0;
@@ -3056,9 +3083,9 @@ runAsyncDemo()
   function formatShortVal(val) {
     if (val === void 0) return "undefined";
     if (val === null) return "null";
-    if (typeof val === "string") return JSON.stringify(val.length > 16 ? val.slice(0, 14) + "\u2026" : val);
+    if (typeof val === "string") return JSON.stringify(val.length > 16 ? val.slice(0, 14) + "…" : val);
     if (typeof val === "number" || typeof val === "boolean") return String(val);
-    if (Array.isArray(val)) return "[" + val.slice(0, 4).map(formatShortVal).join(", ") + (val.length > 4 ? ", \u2026" : "") + "]";
+    if (Array.isArray(val)) return "[" + val.slice(0, 4).map(formatShortVal).join(", ") + (val.length > 4 ? ", …" : "") + "]";
     if (isMapLike(val)) return "Map(" + val.size + ")";
     if (isSetLike(val)) return "Set(" + val.size + ")";
     if (isRecord(val)) {
@@ -3067,7 +3094,7 @@ runAsyncDemo()
         return "{ " + keys.map((k) => k + ": " + formatShortVal(val[k])).join(", ") + " }";
       }
     }
-    return "{\u2026}";
+    return "{…}";
   }
   function cloneDeepBounded(val, depth = 0) {
     if (!isRecord(val)) return val;
@@ -3115,7 +3142,7 @@ runAsyncDemo()
           if (Array.isArray(v) && v.length > 60) {
             return [
               ...v.slice(0, 20),
-              `\u2026 (\u5171 ${v.length} \u9879)`,
+              `… (共 ${v.length} 项)`,
               ...v.slice(v.length - 5)
             ];
           }
@@ -3217,7 +3244,7 @@ runAsyncDemo()
     "super",
     "arguments",
     "checkpoint",
-    "\u65AD\u70B9"
+    "断点"
   ]);
   function createTypeCheckContext(src) {
     const lines = src.replace(/\r\n?/g, "\n").split("\n");
@@ -5141,7 +5168,7 @@ runAsyncDemo()
       shape.forEach((propInfo, propName) => {
         if (propName === "__index__" || propName.startsWith("[")) return;
         if (!propInfo.optional && !entries.has(propName)) {
-          addDiag(lineNum, "TS2741", `\u7C7B\u578B\u4E2D\u7F3A\u5C11\u5C5E\u6027 "${propName}"\uFF0C\u4F46\u7C7B\u578B "${expectedType}" \u4E2D\u9700\u8981\u8BE5\u5C5E\u6027 (${contextDesc})`);
+          addDiag(lineNum, "TS2741", `类型中缺少属性 "${propName}"，但类型 "${expectedType}" 中需要该属性 (${contextDesc})`);
         }
       });
       entries.forEach((valExpr, propName) => {
@@ -5151,7 +5178,7 @@ runAsyncDemo()
           inferType(keyExpr, lineNum);
           const targetProp = shape.get(propName) || indexProp;
           if (targetProp && valT !== "any" && !isExpressionAssignable(valExpr, valT, targetProp.type, lineNum)) {
-            addDiag(lineNum, "TS2322", `\u5C5E\u6027 "${propName}" \u7684\u7C7B\u578B "${valT}" \u4E0D\u80FD\u5206\u914D\u7ED9\u7C7B\u578B "${targetProp.type}" (${contextDesc})`);
+            addDiag(lineNum, "TS2322", `属性 "${propName}" 的类型 "${valT}" 不能分配给类型 "${targetProp.type}" (${contextDesc})`);
           }
           return;
         }
@@ -5159,20 +5186,20 @@ runAsyncDemo()
           if (indexProp) {
             const expectedPropT = indexProp.type;
             if (valExpr.trim().startsWith("{") && getInterfaceShape(expectedPropT)) {
-              checkObjectLiteralAgainstShape(valExpr, expectedPropT, lineNum, `\u5C5E\u6027 "${propName}"`);
+              checkObjectLiteralAgainstShape(valExpr, expectedPropT, lineNum, `属性 "${propName}"`);
             } else if (valT !== "any" && !isExpressionAssignable(valExpr, valT, expectedPropT, lineNum)) {
-              addDiag(lineNum, "TS2322", `\u5C5E\u6027 "${propName}" \u7684\u7C7B\u578B "${valT}" \u4E0D\u80FD\u5206\u914D\u7ED9\u7D22\u5F15\u7B7E\u540D\u7C7B\u578B "${expectedPropT}" (${contextDesc})`);
+              addDiag(lineNum, "TS2322", `属性 "${propName}" 的类型 "${valT}" 不能分配给索引签名类型 "${expectedPropT}" (${contextDesc})`);
             }
           } else {
-            addDiag(lineNum, "TS2353", `\u5BF9\u8C61\u5B57\u9762\u91CF\u53EA\u80FD\u6307\u5B9A\u5DF2\u77E5\u5C5E\u6027\uFF0C\u5E76\u4E14 "${propName}" \u4E0D\u5B58\u5728\u4E8E\u7C7B\u578B "${expectedType}" \u4E2D (${contextDesc})`);
+            addDiag(lineNum, "TS2353", `对象字面量只能指定已知属性，并且 "${propName}" 不存在于类型 "${expectedType}" 中 (${contextDesc})`);
           }
         } else {
           const expectedPropT = (shape.get(propName) || { type: "any" }).type;
           const nonNullPropT = stripNullableFromType(stripNullableFromType(evaluateType(expectedPropT, activeTypeParams), "null"), "undefined");
           if (valExpr.trim().startsWith("{") && (getInterfaceShape(expectedPropT) || getInterfaceShape(nonNullPropT))) {
-            checkObjectLiteralAgainstShape(valExpr, nonNullPropT || expectedPropT, lineNum, `\u5C5E\u6027 "${propName}"`);
+            checkObjectLiteralAgainstShape(valExpr, nonNullPropT || expectedPropT, lineNum, `属性 "${propName}"`);
           } else if (valT !== "any" && !isExpressionAssignable(valExpr, valT, expectedPropT, lineNum)) {
-            addDiag(lineNum, "TS2322", `\u5C5E\u6027 "${propName}" \u7684\u7C7B\u578B "${valT}" \u4E0D\u80FD\u5206\u914D\u7ED9\u7C7B\u578B "${expectedPropT}" (${contextDesc})`);
+            addDiag(lineNum, "TS2322", `属性 "${propName}" 的类型 "${valT}" 不能分配给类型 "${expectedPropT}" (${contextDesc})`);
           }
         }
       });
@@ -5267,7 +5294,7 @@ runAsyncDemo()
             if (lhsExpr.startsWith("{") && getInterfaceShape(resolvedCast)) {
               checkObjectLiteralAgainstShape(lhsExpr, resolvedCast, lineNum, `satisfies "${resolvedCast}"`);
             } else if (!isExpressionAssignable(lhsExpr, lhsT, resolvedCast, lineNum)) {
-              addDiag(lineNum, "TS1360", `\u7C7B\u578B "${lhsT}" \u4E0D\u6EE1\u8DB3\u9884\u671F\u7C7B\u578B "${resolvedCast}"`);
+              addDiag(lineNum, "TS1360", `类型 "${lhsT}" 不满足预期类型 "${resolvedCast}"`);
             }
             return lhsT;
           }
@@ -5324,7 +5351,7 @@ runAsyncDemo()
         if (idInfo) {
           const clsName = idInfo.name;
           if (abstractClasses.has(clsName)) {
-            addDiag(lineNum, "TS2511", `\u65E0\u6CD5\u521B\u5EFA\u62BD\u8C61\u7C7B "${clsName}" \u7684\u5B9E\u4F8B`);
+            addDiag(lineNum, "TS2511", `无法创建抽象类 "${clsName}" 的实例`);
           }
           let pIdx = idInfo.end;
           while (pIdx < afterNew.length && isWS(afterNew[pIdx])) pIdx++;
@@ -5359,7 +5386,7 @@ runAsyncDemo()
                 ...ctorSig,
                 typeParams: ctorSig.typeParams && ctorSig.typeParams.length ? ctorSig.typeParams : clsTParams
               };
-              instantiateAndCheckCall(effectiveSig, explicitTypeArgs, args, argTypes, `\u6784\u9020\u51FD\u6570 "new ${clsName}"`, lineNum, callEnv);
+              instantiateAndCheckCall(effectiveSig, explicitTypeArgs, args, argTypes, `构造函数 "new ${clsName}"`, lineNum, callEnv);
             } else if (clsTParams.length > 0 && explicitTypeArgs.length > 0) {
               clsTParams.forEach((tp, idx) => {
                 const argVal = idx < explicitTypeArgs.length ? evaluateType(explicitTypeArgs[idx]) : tp.defaultType ? evaluateType(tp.defaultType, callEnv) : "any";
@@ -5370,7 +5397,7 @@ runAsyncDemo()
                   const cEval = evaluateType(tp.constraint, callEnv);
                   const bVal = callEnv.get(tp.name);
                   if (bVal && bVal !== "any" && !isTypeCompatible(bVal, cEval)) {
-                    addDiag(lineNum, "TS2344", `\u7C7B\u578B "${bVal}" \u4E0D\u6EE1\u8DB3\u6CDB\u578B\u7EA6\u675F "${cEval}" ("new ${clsName}" \u7684\u7C7B\u578B\u53C2\u6570 "${tp.name}")`);
+                    addDiag(lineNum, "TS2344", `类型 "${bVal}" 不满足泛型约束 "${cEval}" ("new ${clsName}" 的类型参数 "${tp.name}")`);
                   }
                 }
               });
@@ -5393,7 +5420,7 @@ runAsyncDemo()
         const closeIdx = findBalancedParen(s, openIdx);
         if (closeIdx === s.length - 1) {
           if (abstractClasses.has(newClassPrefixM[1])) {
-            addDiag(lineNum, "TS2511", `\u65E0\u6CD5\u521B\u5EFA\u62BD\u8C61\u7C7B "${newClassPrefixM[1]}" \u7684\u5B9E\u4F8B`);
+            addDiag(lineNum, "TS2511", `无法创建抽象类 "${newClassPrefixM[1]}" 的实例`);
           }
           return resolveAlias(newClassPrefixM[1]);
         }
@@ -5572,7 +5599,7 @@ runAsyncDemo()
                 const rt = inferType(rhs, lineNum);
                 const prims = ["number", "string", "boolean"];
                 if (prims.includes(lt) && prims.includes(rt) && lt !== rt) {
-                  addDiag(lineNum, "TS2367", `\u6B64\u6BD4\u8F83\u8868\u8FBE\u5F0F\u7C7B\u578B\u4E0D\u5339\u914D\uFF1A\u65E0\u6CD5\u6BD4\u8F83\u7C7B\u578B "${lt}" \u4E0E "${rt}"`);
+                  addDiag(lineNum, "TS2367", `此比较表达式类型不匹配：无法比较类型 "${lt}" 与 "${rt}"`);
                 }
                 return "boolean";
               }
@@ -5604,20 +5631,20 @@ runAsyncDemo()
             const lt = inferType(lhs, lineNum);
             const rt = inferType(rhs, lineNum);
             if (lt === "unknown" || rt === "unknown") {
-              addDiag(lineNum, "TS18046", `\u5BF9\u8C61\u7684\u7C7B\u578B\u4E3A "unknown"`);
+              addDiag(lineNum, "TS18046", `对象的类型为 "unknown"`);
             }
             if (ch === "+") {
               if (lt === "string" || rt === "string") return "string";
               if (lt === "number" && rt === "number") return "number";
               if (lt === "number" && rt === "boolean" || lt === "boolean" && rt === "number" || lt.endsWith("[]") || rt.endsWith("[]")) {
-                addDiag(lineNum, "TS2365", `\u8FD0\u7B97\u7B26 "+" \u4E0D\u80FD\u5E94\u7528\u4E8E\u7C7B\u578B "${lt}" \u548C "${rt}"`);
+                addDiag(lineNum, "TS2365", `运算符 "+" 不能应用于类型 "${lt}" 和 "${rt}"`);
               }
               return lt === "number" || rt === "number" ? "number" : "any";
             } else {
               const badL = lt === "string" || lt === "boolean" || lt.endsWith("[]");
               const badR = rt === "string" || rt === "boolean" || rt.endsWith("[]");
               if (badL || badR) {
-                addDiag(lineNum, "TS2362", `\u7B97\u672F\u8FD0\u7B97\u7B26 "${ch}" \u7684\u64CD\u4F5C\u6570\u7C7B\u578B\u5FC5\u987B\u4E3A "number"\uFF0C\u4E0D\u80FD\u4E3A "${badL ? lt : rt}"`);
+                addDiag(lineNum, "TS2362", `算术运算符 "${ch}" 的操作数类型必须为 "number"，不能为 "${badL ? lt : rt}"`);
               }
               return "number";
             }
@@ -5628,7 +5655,7 @@ runAsyncDemo()
       if ((s.startsWith("-") || s.startsWith("+")) && s.length > 1) {
         const ut = inferType(s.slice(1), lineNum);
         if (ut === "string" || ut === "boolean") {
-          addDiag(lineNum, "TS2362", `\u4E00\u5143\u7B97\u672F\u8FD0\u7B97\u7B26\u4E0D\u80FD\u5E94\u7528\u4E8E\u7C7B\u578B "${ut}"`);
+          addDiag(lineNum, "TS2362", `一元算术运算符不能应用于类型 "${ut}"`);
         }
         return "number";
       }
@@ -5641,7 +5668,7 @@ runAsyncDemo()
         const argTypes = args.map((a) => inferType(a, lineNum));
         const mSig = getClassMethodSig(objType, method);
         if (mSig) {
-          return instantiateAndCheckCall(mSig, [], args, argTypes, `\u65B9\u6CD5 "${objType}.${method}"`, lineNum);
+          return instantiateAndCheckCall(mSig, [], args, argTypes, `方法 "${objType}.${method}"`, lineNum);
         }
         return "any";
       }
@@ -5673,22 +5700,22 @@ runAsyncDemo()
           const argsRaw = s.slice(scanPos + 1, -1).trim();
           const args = argsRaw ? splitTopLevel(argsRaw).map((a) => a.trim()) : [];
           const argTypes = args.map((a) => inferType(a, lineNum));
-          if (callee === "checkpoint" || callee === "\u65AD\u70B9") {
+          if (callee === "checkpoint" || callee === "断点") {
             if (args.length > 2) {
-              addDiag(lineNum, "TS2554", `"${callee}" \u6700\u591A\u63A5\u6536 2 \u4E2A\u53C2\u6570 (cond?: boolean, msg?: string)\uFF0C\u4F46\u4F20\u5165\u4E86 ${args.length} \u4E2A`);
+              addDiag(lineNum, "TS2554", `"${callee}" 最多接收 2 个参数 (cond?: boolean, msg?: string)，但传入了 ${args.length} 个`);
             }
             if (argTypes[0] && argTypes[0] !== "any" && !isTsAssignable(argTypes[0], "boolean")) {
-              addDiag(lineNum, "TS2345", `"${callee}" \u7684\u7B2C 1 \u4E2A\u53C2\u6570\uFF08\u89E6\u53D1\u6761\u4EF6\uFF09\u7C7B\u578B "${argTypes[0]}" \u4E0D\u80FD\u8D4B\u7ED9\u7C7B\u578B "boolean"`);
+              addDiag(lineNum, "TS2345", `"${callee}" 的第 1 个参数（触发条件）类型 "${argTypes[0]}" 不能赋给类型 "boolean"`);
             }
             if (argTypes[1] && argTypes[1] !== "any" && !isTsAssignable(argTypes[1], "string")) {
-              addDiag(lineNum, "TS2345", `"${callee}" \u7684\u7B2C 2 \u4E2A\u53C2\u6570\uFF08\u6253\u5370\u6D88\u606F\uFF09\u7C7B\u578B "${argTypes[1]}" \u4E0D\u80FD\u8D4B\u7ED9\u7C7B\u578B "string"`);
+              addDiag(lineNum, "TS2345", `"${callee}" 的第 2 个参数（打印消息）类型 "${argTypes[1]}" 不能赋给类型 "string"`);
             }
             return "void";
           }
           if (/^Math\.(max|min|abs|floor|ceil|round|pow|sqrt|trunc|sign)$/.test(callee)) {
             argTypes.forEach((at, idx) => {
               if (at !== "any" && !isTsAssignable(at, "number")) {
-                addDiag(lineNum, "TS2345", `\u8C03\u7528 "${callee}" \u7684\u7B2C ${idx + 1} \u4E2A\u53C2\u6570\u7C7B\u578B "${at}" \u4E0D\u80FD\u8D4B\u7ED9\u7C7B\u578B "number"`);
+                addDiag(lineNum, "TS2345", `调用 "${callee}" 的第 ${idx + 1} 个参数类型 "${at}" 不能赋给类型 "number"`);
               }
             });
             return "number";
@@ -5717,15 +5744,15 @@ runAsyncDemo()
             const method = callee.slice(dotIdx + 1).replace(/!+$/, "");
             const rawObjType = inferType(objName, lineNum);
             if (rawObjType === "unknown") {
-              addDiag(lineNum, "TS18046", `"${objName}" \u7684\u7C7B\u578B\u4E3A "unknown"`);
+              addDiag(lineNum, "TS18046", `"${objName}" 的类型为 "unknown"`);
               return "any";
             }
             if (!isOptChain && !objName.endsWith("!")) {
               const uParts = splitTopLevelUnion(rawObjType);
               if (uParts.includes("undefined")) {
-                addDiag(lineNum, "TS18048", `"${objName}" \u53EF\u80FD\u4E3A "undefined"`);
+                addDiag(lineNum, "TS18048", `"${objName}" 可能为 "undefined"`);
               } else if (uParts.includes("null")) {
-                addDiag(lineNum, "TS18047", `"${objName}" \u53EF\u80FD\u4E3A "null"`);
+                addDiag(lineNum, "TS18047", `"${objName}" 可能为 "null"`);
               }
             }
             const objType = stripNullableFromType(stripNullableFromType(rawObjType, "null"), "undefined");
@@ -5734,16 +5761,16 @@ runAsyncDemo()
               const kt = mapM[1], vt = mapM[2];
               if (method === "get" || method === "has" || method === "delete") {
                 if (argTypes[0] && !isExpressionAssignable(args[0], argTypes[0], kt, lineNum)) {
-                  addDiag(lineNum, "TS2345", `"${objName}.${method}" \u7684\u952E\u53C2\u6570\u7C7B\u578B "${argTypes[0]}" \u4E0D\u80FD\u8D4B\u7ED9\u7C7B\u578B "${kt}"`);
+                  addDiag(lineNum, "TS2345", `"${objName}.${method}" 的键参数类型 "${argTypes[0]}" 不能赋给类型 "${kt}"`);
                 }
                 return method === "get" ? `${vt}|undefined` : "boolean";
               }
               if (method === "set") {
                 if (argTypes[0] && !isExpressionAssignable(args[0], argTypes[0], kt, lineNum)) {
-                  addDiag(lineNum, "TS2345", `"${objName}.set" \u7684\u952E\u53C2\u6570\u7C7B\u578B "${argTypes[0]}" \u4E0D\u80FD\u8D4B\u7ED9\u7C7B\u578B "${kt}"`);
+                  addDiag(lineNum, "TS2345", `"${objName}.set" 的键参数类型 "${argTypes[0]}" 不能赋给类型 "${kt}"`);
                 }
                 if (argTypes[1] && !isExpressionAssignable(args[1], argTypes[1], vt, lineNum)) {
-                  addDiag(lineNum, "TS2345", `"${objName}.set" \u7684\u503C\u53C2\u6570\u7C7B\u578B "${argTypes[1]}" \u4E0D\u80FD\u8D4B\u7ED9\u7C7B\u578B "${vt}"`);
+                  addDiag(lineNum, "TS2345", `"${objName}.set" 的值参数类型 "${argTypes[1]}" 不能赋给类型 "${vt}"`);
                 }
                 return objType;
               }
@@ -5753,7 +5780,7 @@ runAsyncDemo()
               const vt = setM[1];
               if (method === "add" || method === "has" || method === "delete") {
                 if (argTypes[0] && !isExpressionAssignable(args[0], argTypes[0], vt, lineNum)) {
-                  addDiag(lineNum, "TS2345", `"${objName}.${method}" \u7684\u53C2\u6570\u7C7B\u578B "${argTypes[0]}" \u4E0D\u80FD\u8D4B\u7ED9\u7C7B\u578B "${vt}"`);
+                  addDiag(lineNum, "TS2345", `"${objName}.${method}" 的参数类型 "${argTypes[0]}" 不能赋给类型 "${vt}"`);
                 }
                 return method === "add" ? objType : "boolean";
               }
@@ -5763,7 +5790,7 @@ runAsyncDemo()
               if (method === "push" || method === "unshift") {
                 argTypes.forEach((at, idx) => {
                   if (!isExpressionAssignable(args[idx], at, elemT, lineNum)) {
-                    addDiag(lineNum, "TS2345", `\u6570\u7EC4 "${objName}.${method}" \u7684\u53C2\u6570\u7C7B\u578B "${at}" \u4E0D\u80FD\u8D4B\u7ED9\u5143\u7D20\u7C7B\u578B "${elemT}"`);
+                    addDiag(lineNum, "TS2345", `数组 "${objName}.${method}" 的参数类型 "${at}" 不能赋给元素类型 "${elemT}"`);
                   }
                 });
                 return "number";
@@ -5794,7 +5821,7 @@ runAsyncDemo()
             }
             const classMethodSig = getClassMethodSig(objType, method);
             if (classMethodSig) {
-              return instantiateAndCheckCall(classMethodSig, explicitTypeArgs, args, argTypes, `\u65B9\u6CD5 "${objName}.${method}"`, lineNum);
+              return instantiateAndCheckCall(classMethodSig, explicitTypeArgs, args, argTypes, `方法 "${objName}.${method}"`, lineNum);
             }
             const objShape = getInterfaceShape(objType);
             if (objShape && objShape.has(method)) {
@@ -5807,10 +5834,10 @@ runAsyncDemo()
           }
           const sig = fns.get(callee);
           if (sig) {
-            return instantiateAndCheckCall(sig, explicitTypeArgs, args, argTypes, `\u51FD\u6570 "${callee}"`, lineNum);
+            return instantiateAndCheckCall(sig, explicitTypeArgs, args, argTypes, `函数 "${callee}"`, lineNum);
           }
           if (dotIdx < 0 && !isKnownIdentifier(callee)) {
-            addDiag(lineNum, "TS2304", `\u627E\u4E0D\u5230\u540D\u79F0 "${callee}"`);
+            addDiag(lineNum, "TS2304", `找不到名称 "${callee}"`);
           }
           return "any";
         }
@@ -5822,13 +5849,13 @@ runAsyncDemo()
         if (isOptBracket) curBase = curBase.slice(0, -2).trim();
         let curType = inferType(curBase, lineNum);
         if (curType === "unknown") {
-          addDiag(lineNum, "TS18046", `"${curBase}" \u7684\u7C7B\u578B\u4E3A "unknown"`);
+          addDiag(lineNum, "TS18046", `"${curBase}" 的类型为 "unknown"`);
           return "any";
         }
         if (!isOptBracket && !curBase.endsWith("!")) {
           const uParts = splitTopLevelUnion(curType);
-          if (uParts.includes("undefined")) addDiag(lineNum, "TS18048", `"${curBase}" \u53EF\u80FD\u4E3A "undefined"`);
-          else if (uParts.includes("null")) addDiag(lineNum, "TS18047", `"${curBase}" \u53EF\u80FD\u4E3A "null"`);
+          if (uParts.includes("undefined")) addDiag(lineNum, "TS18048", `"${curBase}" 可能为 "undefined"`);
+          else if (uParts.includes("null")) addDiag(lineNum, "TS18047", `"${curBase}" 可能为 "null"`);
         }
         curType = stripNullableFromType(stripNullableFromType(curType, "null"), "undefined");
         let pos = bracketOpen;
@@ -5840,7 +5867,7 @@ runAsyncDemo()
           const litIdx = inferLiteralType(idxExpr);
           if (idxType === "string" || idxType === "boolean") {
             if (curType.endsWith("[]") || curType === "string") {
-              addDiag(lineNum, "TS2538", `\u6570\u7EC4\u6216\u5B57\u7B26\u4E32\u7684\u7D22\u5F15\u7C7B\u578B\u5FC5\u987B\u4E3A "number"\uFF0C\u4E0D\u80FD\u4F7F\u7528\u7C7B\u578B "${idxType}"`);
+              addDiag(lineNum, "TS2538", `数组或字符串的索引类型必须为 "number"，不能使用类型 "${idxType}"`);
             }
           }
           const shape = getInterfaceShape(curType);
@@ -5881,7 +5908,7 @@ runAsyncDemo()
         if (tokens.length >= 2 && firstTok) {
           const firstBase = firstTok.name;
           if (!isKnownIdentifier(firstBase)) {
-            addDiag(lineNum, "TS2304", `\u627E\u4E0D\u5230\u540D\u79F0 "${firstBase}"\uFF08\u53D8\u91CF\u672A\u58F0\u660E\uFF0C\u8BF7\u4F7F\u7528 let \u6216 const \u58F0\u660E\uFF09`);
+            addDiag(lineNum, "TS2304", `找不到名称 "${firstBase}"（变量未声明，请使用 let 或 const 声明）`);
             return "any";
           }
           if (enumsSet.has(firstBase)) {
@@ -5889,7 +5916,7 @@ runAsyncDemo()
             const memberProp = secondTok ? secondTok.name : "";
             const memSet = enumMembers.get(firstBase);
             if (memSet && memSet.size > 0 && !memSet.has(memberProp)) {
-              addDiag(lineNum, "TS2339", `\u7C7B\u578B "typeof ${firstBase}" \u4E0A\u4E0D\u5B58\u5728\u5C5E\u6027 "${memberProp}"`);
+              addDiag(lineNum, "TS2339", `类型 "typeof ${firstBase}" 上不存在属性 "${memberProp}"`);
             }
             return firstBase;
           }
@@ -5904,7 +5931,7 @@ runAsyncDemo()
             const prop = tok.name;
             const prefixLabel = tokens.slice(0, pIdx).map((t) => t.name).join(".");
             if (curType === "unknown") {
-              addDiag(lineNum, "TS18046", `"${prefixLabel}" \u7684\u7C7B\u578B\u4E3A "unknown"`);
+              addDiag(lineNum, "TS18046", `"${prefixLabel}" 的类型为 "unknown"`);
               return "any";
             }
             if (tok.optChainBefore) {
@@ -5912,9 +5939,9 @@ runAsyncDemo()
             } else if (!tokens[pIdx - 1]?.hasBang) {
               const cParts = splitTopLevelUnion(curType);
               if (cParts.includes("undefined")) {
-                addDiag(lineNum, "TS18048", `"${prefixLabel}" \u53EF\u80FD\u4E3A "undefined"`);
+                addDiag(lineNum, "TS18048", `"${prefixLabel}" 可能为 "undefined"`);
               } else if (cParts.includes("null")) {
-                addDiag(lineNum, "TS18047", `"${prefixLabel}" \u53EF\u80FD\u4E3A "null"`);
+                addDiag(lineNum, "TS18047", `"${prefixLabel}" 可能为 "null"`);
               }
             }
             const lookupType = stripNullableFromType(stripNullableFromType(curType, "null"), "undefined");
@@ -5935,7 +5962,7 @@ runAsyncDemo()
               } else if (shape.has("__index__")) {
                 curType = (shape.get("__index__") || { type: "any" }).type;
               } else {
-                addDiag(lineNum, "TS2339", `\u7C7B\u578B "${lookupType}" \u4E0A\u4E0D\u5B58\u5728\u5C5E\u6027 "${prop}"`);
+                addDiag(lineNum, "TS2339", `类型 "${lookupType}" 上不存在属性 "${prop}"`);
                 return "any";
               }
             } else {
@@ -5962,7 +5989,7 @@ runAsyncDemo()
       if (/^[A-Za-z_$][\w$]*$/.test(s)) {
         if (env.has(s)) return (env.get(s) || { type: "any" }).type;
         if (!isKnownIdentifier(s)) {
-          addDiag(lineNum, "TS2304", `\u627E\u4E0D\u5230\u540D\u79F0 "${s}"\uFF08\u53D8\u91CF\u672A\u58F0\u660E\uFF0C\u8BF7\u4F7F\u7528 let \u6216 const \u58F0\u660E\uFF09`);
+          addDiag(lineNum, "TS2304", `找不到名称 "${s}"（变量未声明，请使用 let 或 const 声明）`);
         }
       }
       return "any";
@@ -5970,7 +5997,7 @@ runAsyncDemo()
     function instantiateAndCheckCall(sig, explicitTypeArgs, args, argTypes, calleeLabel, lineNum, outEnv = null) {
       const hasRest = sig.params.some((p) => p.isRest);
       if (args.length < sig.minArgs || !hasRest && args.length > sig.params.length) {
-        addDiag(lineNum, "TS2554", `${calleeLabel} \u5E94\u6709 ${sig.minArgs === sig.params.length ? sig.params.length : sig.minArgs + "-" + sig.params.length} \u4E2A\u53C2\u6570\uFF0C\u4F46\u83B7\u5F97 ${args.length} \u4E2A`);
+        addDiag(lineNum, "TS2554", `${calleeLabel} 应有 ${sig.minArgs === sig.params.length ? sig.params.length : sig.minArgs + "-" + sig.params.length} 个参数，但获得 ${args.length} 个`);
         return sig.returnType || "any";
       }
       const tParams = sig.typeParams || [];
@@ -6034,7 +6061,7 @@ runAsyncDemo()
             const constraintT = evaluateType(tp.constraint, callEnv);
             const boundT = callEnv.get(tp.name);
             if (boundT && boundT !== "any" && !isTypeCompatible(boundT, constraintT)) {
-              addDiag(lineNum, "TS2345", `\u7C7B\u578B "${boundT}" \u4E0D\u6EE1\u8DB3\u6CDB\u578B\u7EA6\u675F "${constraintT}" (${calleeLabel} \u7684\u7C7B\u578B\u53C2\u6570 "${tp.name}")`);
+              addDiag(lineNum, "TS2345", `类型 "${boundT}" 不满足泛型约束 "${constraintT}" (${calleeLabel} 的类型参数 "${tp.name}")`);
             }
           }
         });
@@ -6051,9 +6078,9 @@ runAsyncDemo()
         const rawArg = (args[idx] || "").trim();
         if (expectedPT && expectedPT !== "any") {
           if (rawArg.startsWith("{") && getInterfaceShape(expectedPT)) {
-            checkObjectLiteralAgainstShape(rawArg, expectedPT, lineNum, `${calleeLabel} \u7684\u53C2\u6570 "${p.name}"`);
+            checkObjectLiteralAgainstShape(rawArg, expectedPT, lineNum, `${calleeLabel} 的参数 "${p.name}"`);
           } else if (!isExpressionAssignable(rawArg, at, expectedPT, lineNum)) {
-            addDiag(lineNum, "TS2345", `\u7C7B\u578B "${at}" \u7684\u53C2\u6570\u4E0D\u80FD\u8D4B\u7ED9\u7C7B\u578B "${expectedPT}" \u7684\u53C2\u6570 (${calleeLabel} \u7684\u53C2\u6570 "${p.name}")`);
+            addDiag(lineNum, "TS2345", `类型 "${at}" 的参数不能赋给类型 "${expectedPT}" 的参数 (${calleeLabel} 的参数 "${p.name}")`);
           }
         }
       }
@@ -6071,9 +6098,9 @@ runAsyncDemo()
       elems.forEach((el, idx) => {
         const et = inferType(el, lineNum);
         if (el.trim().startsWith("{") && getInterfaceShape(expectedElemType)) {
-          checkObjectLiteralAgainstShape(el.trim(), expectedElemType, lineNum, `${contextLabel} \u7B2C ${idx + 1} \u4E2A\u5143\u7D20`);
+          checkObjectLiteralAgainstShape(el.trim(), expectedElemType, lineNum, `${contextLabel} 第 ${idx + 1} 个元素`);
         } else if (!isExpressionAssignable(el, et, expectedElemType, lineNum)) {
-          addDiag(lineNum, "TS2322", `${contextLabel} \u7B2C ${idx + 1} \u4E2A\u5143\u7D20\u7C7B\u578B "${et}" \u4E0D\u80FD\u5206\u914D\u7ED9\u5143\u7D20\u7C7B\u578B "${expectedElemType}"`);
+          addDiag(lineNum, "TS2322", `${contextLabel} 第 ${idx + 1} 个元素类型 "${et}" 不能分配给元素类型 "${expectedElemType}"`);
         }
       });
     }
@@ -6096,7 +6123,7 @@ runAsyncDemo()
           }
           if (!pType) {
             if (checkUntypedParams) {
-              addDiag(lineNum, "TS7006", `\u53C2\u6570 "${pName}" \u9690\u5F0F\u5177\u6709 "any" \u7C7B\u578B\uFF08\u4E25\u683C\u6A21\u5F0F\u4E0B\u8BF7\u663E\u5F0F\u6DFB\u52A0\u7C7B\u578B\u6CE8\u89E3\uFF0C\u5982 ${pName}: number\uFF09`);
+              addDiag(lineNum, "TS7006", `参数 "${pName}" 隐式具有 "any" 类型（严格模式下请显式添加类型注解，如 ${pName}: number）`);
             }
             pType = isRest ? "any[]" : "any";
           }
@@ -6770,7 +6797,7 @@ runAsyncDemo()
             file: filePath,
             line: imp.line,
             code: "TS2307",
-            message: `\u627E\u4E0D\u5230\u6A21\u5757 "${imp.specifier}"\uFF08\u8BF7\u786E\u8BA4\u6587\u4EF6\u5DF2\u5B58\u5728\u4E8E /workspace \u5DE5\u4F5C\u533A\u4E2D\uFF09`,
+            message: `找不到模块 "${imp.specifier}"（请确认文件已存在于 /workspace 工作区中）`,
             severity: "error"
           });
           continue;
@@ -6782,7 +6809,7 @@ runAsyncDemo()
             file: filePath,
             line: imp.line,
             code: "TS2300",
-            message: `\u68C0\u6D4B\u5230\u6A21\u5757\u5FAA\u73AF\u4F9D\u8D56: "${filePath}" -> "${depPath}"`,
+            message: `检测到模块循环依赖: "${filePath}" -> "${depPath}"`,
             severity: "error"
           });
           continue;
@@ -6825,7 +6852,7 @@ runAsyncDemo()
               file: modNode.file,
               line: imp.line,
               code: "TS2305",
-              message: `\u6A21\u5757 "${imp.specifier}" (${imp.resolvedPath}) \u6CA1\u6709\u5BFC\u51FA\u6210\u5458 "${bind.imported}"`,
+              message: `模块 "${imp.specifier}" (${imp.resolvedPath}) 没有导出成员 "${bind.imported}"`,
               severity: "error"
             });
           }
@@ -7185,11 +7212,11 @@ runAsyncDemo()
           if (propName.startsWith("__")) return;
           const hasMember = clsShape && clsShape.has(propName) || Boolean(getClassMethodSig(clsName, propName));
           if (!hasMember && !propInfo.optional) {
-            addDiag(clsLine, "TS2420", `\u7C7B "${clsName}" \u9519\u8BEF\u5B9E\u73B0\u63A5\u53E3 "${ifaceName}": \u7F3A\u5C11\u5C5E\u6027\u6216\u65B9\u6CD5 "${propName}"`);
+            addDiag(clsLine, "TS2420", `类 "${clsName}" 错误实现接口 "${ifaceName}": 缺少属性或方法 "${propName}"`);
           } else if (clsShape && clsShape.has(propName)) {
             const clsMember = clsShape.get(propName);
             if (clsMember && clsMember.type !== "any" && propInfo.type !== "any" && !isTsAssignable(clsMember.type, propInfo.type)) {
-              addDiag(clsLine, "TS2420", `\u7C7B "${clsName}" \u9519\u8BEF\u5B9E\u73B0\u63A5\u53E3 "${ifaceName}": \u5C5E\u6027 "${propName}" \u7684\u7C7B\u578B "${clsMember.type}" \u4E0D\u80FD\u5206\u914D\u7ED9\u7C7B\u578B "${propInfo.type}"`);
+              addDiag(clsLine, "TS2420", `类 "${clsName}" 错误实现接口 "${ifaceName}": 属性 "${propName}" 的类型 "${clsMember.type}" 不能分配给类型 "${propInfo.type}"`);
             }
           }
         });
@@ -7292,7 +7319,7 @@ runAsyncDemo()
             const asM = item.match(/^([A-Za-z_$][\w$]*)\s+as\s+([A-Za-z_$][\w$]*)$/);
             const local = asM && asM[1] ? asM[1] : item;
             if (/^[A-Za-z_$][\w$]*$/.test(local) && !isKnownIdentifier(local)) {
-              addDiag(lineNum, "TS2304", `\u627E\u4E0D\u5230\u8981\u5BFC\u51FA\u7684\u540D\u79F0 "${local}"`);
+              addDiag(lineNum, "TS2304", `找不到要导出的名称 "${local}"`);
             }
           });
         }
@@ -7433,7 +7460,7 @@ runAsyncDemo()
             if (declT && initExpr) {
               const initT = inferType(initExpr, lineNum);
               if (!isExpressionAssignable(initExpr, initT, declT, lineNum)) {
-                addDiag(lineNum, "TS2322", `\u4E0D\u80FD\u5C06\u7C7B\u578B "${initT}" \u5206\u914D\u7ED9\u7C7B\u578B "${declT}" (\u5C5E\u6027 "${currentClass}.${fName}")`);
+                addDiag(lineNum, "TS2322", `不能将类型 "${initT}" 分配给类型 "${declT}" (属性 "${currentClass}.${fName}")`);
               }
             }
             continue;
@@ -7584,6 +7611,9 @@ runAsyncDemo()
         }
         const closeBraceIdx = trimmed.lastIndexOf("}");
         const bodyAfterOpenBrace = openBraceIdx >= 0 ? trimmed.slice(openBraceIdx + 1) : "";
+        if (/\bthrow\b/.test(bodyAfterOpenBrace)) {
+          activeFn.hasValueReturn = true;
+        }
         const rm = bodyAfterOpenBrace.match(/\breturn\b([^;}\n]*)/);
         if (rm && rm[1]?.trim()) {
           activeFn.hasValueReturn = true;
@@ -7592,7 +7622,7 @@ runAsyncDemo()
           const expRet = activeFn.returnType;
           const unwrappedExp = expRet && expRet.startsWith("Promise<") && expRet.endsWith(">") ? expRet.slice(8, -1) : expRet;
           if (expRet && expRet !== "any" && !isExpressionAssignable(inlineRetExpr, inlineRetT, expRet, lineNum) && !isExpressionAssignable(inlineRetExpr, inlineRetT, unwrappedExp, lineNum)) {
-            addDiag(lineNum, "TS2322", `\u4E0D\u80FD\u5C06\u8FD4\u56DE\u503C\u7C7B\u578B "${inlineRetT}" \u5206\u914D\u7ED9\u51FD\u6570 "${activeFn.name}" \u58F0\u660E\u7684\u8FD4\u56DE\u7C7B\u578B "${expRet}"`);
+            addDiag(lineNum, "TS2322", `不能将返回值类型 "${inlineRetT}" 分配给函数 "${activeFn.name}" 声明的返回类型 "${expRet}"`);
           }
         }
         if (openBraceIdx >= 0 && closeBraceIdx > openBraceIdx) {
@@ -7606,10 +7636,10 @@ runAsyncDemo()
               if (lhs.includes(".") || lhs.includes("[")) {
                 const lhsT = inferType(lhs, lineNum);
                 if (lhsT !== "any" && !isExpressionAssignable(rhsExpr, rhsT, lhsT, lineNum)) {
-                  addDiag(lineNum, "TS2322", `\u4E0D\u80FD\u5C06\u7C7B\u578B "${rhsT}" \u5206\u914D\u7ED9\u7C7B\u578B "${lhsT}" ("${lhs}")`);
+                  addDiag(lineNum, "TS2322", `不能将类型 "${rhsT}" 分配给类型 "${lhsT}" ("${lhs}")`);
                 }
               } else if (/^[A-Za-z_$][\w$]*$/.test(lhs) && !isKnownIdentifier(lhs)) {
-                addDiag(lineNum, "TS2304", `\u627E\u4E0D\u5230\u540D\u79F0 "${lhs}"\uFF08\u53D8\u91CF\u672A\u58F0\u660E\uFF0C\u8BF7\u4F7F\u7528 let \u6216 const \u58F0\u660E\uFF09`);
+                addDiag(lineNum, "TS2304", `找不到名称 "${lhs}"（变量未声明，请使用 let 或 const 声明）`);
               }
             }
           });
@@ -7634,8 +7664,8 @@ runAsyncDemo()
           }
           if (currentFn && braceDepth <= fnStartBraceDepth) {
             const isGenRet = /^Generator<|^AsyncGenerator<|^IterableIterator<|^Iterator</.test(currentFn.returnType);
-            if (currentFn.returnType !== "any" && currentFn.returnType !== "void" && currentFn.returnType !== "Promise<void>" && currentFn.returnType !== "unknown" && !isGenRet && !currentFn.hasValueReturn) {
-              addDiag(currentFn.line, "TS2355", `\u51FD\u6570 "${currentFn.name}" \u58F0\u660E\u8FD4\u56DE\u7C7B\u578B\u4E3A "${currentFn.returnType}"\uFF0C\u4F46\u7F3A\u5C11 return \u8FD4\u56DE\u503C\u8BED\u53E5`);
+            if (currentFn.returnType !== "any" && currentFn.returnType !== "void" && currentFn.returnType !== "Promise<void>" && currentFn.returnType !== "never" && currentFn.returnType !== "Promise<never>" && currentFn.returnType !== "unknown" && !isGenRet && !currentFn.hasValueReturn) {
+              addDiag(currentFn.line, "TS2355", `函数 "${currentFn.name}" 声明返回类型为 "${currentFn.returnType}"，但缺少 return 返回值语句`);
             }
             const prev = fnScopeStack.pop();
             if (prev) {
@@ -7701,9 +7731,9 @@ runAsyncDemo()
           }
         } else if (/^[A-Za-z_$][\w$]*$/.test(lhsRaw)) {
           if (!isKnownIdentifier(lhsRaw)) {
-            addDiag(lineNum, "TS2304", `\u627E\u4E0D\u5230\u540D\u79F0 "${lhsRaw}"\uFF08\u53D8\u91CF\u672A\u58F0\u660E\uFF0C\u8BF7\u4F7F\u7528 let \u6216 const \u58F0\u660E\uFF09`);
+            addDiag(lineNum, "TS2304", `找不到名称 "${lhsRaw}"（变量未声明，请使用 let 或 const 声明）`);
           } else if (env.has(lhsRaw) && env.get(lhsRaw)?.isConst) {
-            addDiag(lineNum, "TS2588", `\u65E0\u6CD5\u5206\u914D\u5230 "${lhsRaw}"\uFF0C\u56E0\u4E3A\u5B83\u662F\u5E38\u6570 (const)`);
+            addDiag(lineNum, "TS2588", `无法分配到 "${lhsRaw}"，因为它是常数 (const)`);
           }
         }
         continue;
@@ -7721,7 +7751,7 @@ runAsyncDemo()
               const declT = dm[2] ? resolveAlias(dm[2].trim()) : null;
               const initT = inferType(dm[3].trim(), lineNum);
               if (declT && !isTsAssignable(initT, declT)) {
-                addDiag(lineNum, "TS2322", `\u4E0D\u80FD\u5C06\u7C7B\u578B "${initT}" \u5206\u914D\u7ED9\u7C7B\u578B "${declT}" (\u5FAA\u73AF\u53D8\u91CF "${vName}")`);
+                addDiag(lineNum, "TS2322", `不能将类型 "${initT}" 分配给类型 "${declT}" (循环变量 "${vName}")`);
               }
               env.set(vName, { type: declT || initT, isConst: kind === "const", line: lineNum });
             }
@@ -7732,9 +7762,9 @@ runAsyncDemo()
             if (am && am[1] && am[2]) {
               inferType(am[2].trim(), lineNum);
               if (!isKnownIdentifier(am[1])) {
-                addDiag(lineNum, "TS2304", `\u627E\u4E0D\u5230\u540D\u79F0 "${am[1]}"\uFF08\u53D8\u91CF\u672A\u58F0\u660E\uFF0C\u8BF7\u4F7F\u7528 let \u6216 const \u58F0\u660E\uFF09`);
+                addDiag(lineNum, "TS2304", `找不到名称 "${am[1]}"（变量未声明，请使用 let 或 const 声明）`);
               } else if (env.has(am[1]) && env.get(am[1])?.isConst) {
-                addDiag(lineNum, "TS2588", `\u65E0\u6CD5\u5206\u914D\u5230 "${am[1]}"\uFF0C\u56E0\u4E3A\u5B83\u662F\u5E38\u6570 (const)`);
+                addDiag(lineNum, "TS2588", `无法分配到 "${am[1]}"，因为它是常数 (const)`);
               }
             } else {
               inferType(d.trim(), lineNum);
@@ -7746,9 +7776,9 @@ runAsyncDemo()
           const updVar = forM[4].trim().match(/^([A-Za-z_$][\w$]*)\s*(?:\+\+|--|\+=|-=|=)/);
           if (updVar && updVar[1]) {
             if (!isKnownIdentifier(updVar[1])) {
-              addDiag(lineNum, "TS2304", `\u627E\u4E0D\u5230\u540D\u79F0 "${updVar[1]}"\uFF08\u53D8\u91CF\u672A\u58F0\u660E\uFF0C\u8BF7\u4F7F\u7528 let \u6216 const \u58F0\u660E\uFF09`);
+              addDiag(lineNum, "TS2304", `找不到名称 "${updVar[1]}"（变量未声明，请使用 let 或 const 声明）`);
             } else if (env.has(updVar[1]) && env.get(updVar[1])?.isConst) {
-              addDiag(lineNum, "TS2588", `\u65E0\u6CD5\u5206\u914D\u5230 "${updVar[1]}"\uFF0C\u56E0\u4E3A\u5B83\u662F\u5E38\u6570 (const)`);
+              addDiag(lineNum, "TS2588", `无法分配到 "${updVar[1]}"，因为它是常数 (const)`);
             }
           }
         }
@@ -7828,11 +7858,11 @@ runAsyncDemo()
               }
               if (declT && initExpr) {
                 if (initExpr.startsWith("{") && getInterfaceShape(declT)) {
-                  checkObjectLiteralAgainstShape(initExpr, declT, lineNum, `\u53D8\u91CF "${vName}"`);
+                  checkObjectLiteralAgainstShape(initExpr, declT, lineNum, `变量 "${vName}"`);
                 } else if (declT.endsWith("[]") && splitTopLevelUnion(declT).length <= 1 && initExpr.startsWith("[")) {
-                  checkArrayElementsAgainst(initExpr, declT.slice(0, -2), lineNum, `\u53D8\u91CF "${vName}" \u7684\u6570\u7EC4\u5B57\u9762\u91CF\u4E2D`);
+                  checkArrayElementsAgainst(initExpr, declT.slice(0, -2), lineNum, `变量 "${vName}" 的数组字面量中`);
                 } else if (!isExpressionAssignable(initExpr, initT, declT, lineNum)) {
-                  addDiag(lineNum, "TS2322", `\u4E0D\u80FD\u5C06\u7C7B\u578B "${initT}" \u5206\u914D\u7ED9\u7C7B\u578B "${declT}" (\u53D8\u91CF "${vName}")`);
+                  addDiag(lineNum, "TS2322", `不能将类型 "${initT}" 分配给类型 "${declT}" (变量 "${vName}")`);
                 }
               }
               const litVal = isConst && initExpr ? inferLiteralType(initExpr) : null;
@@ -7869,9 +7899,9 @@ runAsyncDemo()
                   const declT = resolveAlias(pTrim.slice(colonIdx + 1, eqIdx).trim());
                   if (declT && declT !== "any") {
                     if (rhsExpr.startsWith("{") && getInterfaceShape(declT)) {
-                      checkObjectLiteralAgainstShape(rhsExpr, declT, lineNum, "\u89E3\u6784\u58F0\u660E");
+                      checkObjectLiteralAgainstShape(rhsExpr, declT, lineNum, "解构声明");
                     } else if (!isExpressionAssignable(rhsExpr, rhsT, declT, lineNum)) {
-                      addDiag(lineNum, "TS2322", `\u4E0D\u80FD\u5C06\u7C7B\u578B "${rhsT}" \u5206\u914D\u7ED9\u7C7B\u578B "${declT}" (\u89E3\u6784\u58F0\u660E)`);
+                      addDiag(lineNum, "TS2322", `不能将类型 "${rhsT}" 分配给类型 "${declT}" (解构声明)`);
                     }
                   }
                 }
@@ -7904,11 +7934,11 @@ runAsyncDemo()
             }
             if (unwrappedExpected !== "any") {
               if (retExpr.startsWith("{") && getInterfaceShape(unwrappedExpected)) {
-                checkObjectLiteralAgainstShape(retExpr, unwrappedExpected, lineNum, `\u51FD\u6570 "${currentFn.name}" \u8FD4\u56DE\u503C`);
+                checkObjectLiteralAgainstShape(retExpr, unwrappedExpected, lineNum, `函数 "${currentFn.name}" 返回值`);
               } else if (unwrappedExpected.endsWith("[]") && splitTopLevelUnion(unwrappedExpected).length <= 1 && retExpr.startsWith("[")) {
-                checkArrayElementsAgainst(retExpr, unwrappedExpected.slice(0, -2), lineNum, `\u51FD\u6570 "${currentFn.name}" \u8FD4\u56DE\u6570\u7EC4\u4E2D`);
+                checkArrayElementsAgainst(retExpr, unwrappedExpected.slice(0, -2), lineNum, `函数 "${currentFn.name}" 返回数组中`);
               } else if (!isExpressionAssignable(retExpr, retT, expectedRet, lineNum) && !isExpressionAssignable(retExpr, retT, unwrappedExpected, lineNum)) {
-                addDiag(lineNum, "TS2322", `\u4E0D\u80FD\u5C06\u8FD4\u56DE\u503C\u7C7B\u578B "${retT}" \u5206\u914D\u7ED9\u51FD\u6570 "${currentFn.name}" \u58F0\u660E\u7684\u8FD4\u56DE\u7C7B\u578B "${expectedRet}"`);
+                addDiag(lineNum, "TS2322", `不能将返回值类型 "${retT}" 分配给函数 "${currentFn.name}" 声明的返回类型 "${expectedRet}"`);
               }
             }
           }
@@ -7917,6 +7947,7 @@ runAsyncDemo()
       }
       const throwM = trimmed.match(/^throw\s+([\s\S]+?);?$/);
       if (throwM && throwM[1]) {
+        if (currentFn) currentFn.hasValueReturn = true;
         inferType(throwM[1].trim(), lineNum);
         continue;
       }
@@ -7950,6 +7981,9 @@ runAsyncDemo()
         }
         const caseRest = (caseM[2] || "").trim();
         if (caseRest) {
+          if (/^throw\b/.test(caseRest) && currentFn) {
+            currentFn.hasValueReturn = true;
+          }
           const inlineRet = caseRest.match(/^return(?:\s+([\s\S]+?))?;?$/);
           if (inlineRet) {
             const rExpr = inlineRet[1] ? inlineRet[1].trim() : "";
@@ -7958,7 +7992,7 @@ runAsyncDemo()
               if (rExpr) currentFn.hasValueReturn = true;
               const expectedRet = currentFn.returnType;
               if (expectedRet && expectedRet !== "any" && !isExpressionAssignable(rExpr, rT, expectedRet, lineNum)) {
-                addDiag(lineNum, "TS2322", `\u4E0D\u80FD\u5C06\u8FD4\u56DE\u503C\u7C7B\u578B "${rT}" \u5206\u914D\u7ED9\u51FD\u6570 "${currentFn.name}" \u58F0\u660E\u7684\u8FD4\u56DE\u7C7B\u578B "${expectedRet}"`);
+                addDiag(lineNum, "TS2322", `不能将返回值类型 "${rT}" 分配给函数 "${currentFn.name}" 声明的返回类型 "${expectedRet}"`);
               }
             }
           }
@@ -7973,6 +8007,10 @@ runAsyncDemo()
           if (env.has(sw.expr)) {
             env.set(sw.expr, { ...sw.origInfo, type: remT });
           }
+        }
+        const defRest = (defaultM[1] || "").trim();
+        if (/^(?:return\s+\S|throw\b)/.test(defRest) && currentFn) {
+          currentFn.hasValueReturn = true;
         }
         continue;
       }
@@ -8012,6 +8050,13 @@ runAsyncDemo()
           }
         }
       };
+      const inlineIfThrow = trimmed.match(/^if\s*\((.+?)\)\s*throw\s+([\s\S]+?);?$/);
+      if (inlineIfThrow && inlineIfThrow[1] && inlineIfThrow[2]) {
+        if (currentFn) currentFn.hasValueReturn = true;
+        inferType(inlineIfThrow[1].trim(), lineNum);
+        inferType(inlineIfThrow[2].trim(), lineNum);
+        continue;
+      }
       const inlineIfRet = trimmed.match(/^if\s*\((.+?)\)\s*(return(?:\s+([\s\S]+?))?|break|continue);?$/);
       if (inlineIfRet && inlineIfRet[1] && inlineIfRet[2]) {
         const condStr = inlineIfRet[1].trim();
@@ -8034,7 +8079,7 @@ runAsyncDemo()
             if (retExpr) currentFn.hasValueReturn = true;
             const expectedRet = currentFn.returnType;
             if (expectedRet && expectedRet !== "any" && !isExpressionAssignable(retExpr, retT, expectedRet, lineNum)) {
-              addDiag(lineNum, "TS2322", `\u4E0D\u80FD\u5C06\u8FD4\u56DE\u503C\u7C7B\u578B "${retT}" \u5206\u914D\u7ED9\u51FD\u6570 "${currentFn.name}" \u58F0\u660E\u7684\u8FD4\u56DE\u7C7B\u578B "${expectedRet}"`);
+              addDiag(lineNum, "TS2322", `不能将返回值类型 "${retT}" 分配给函数 "${currentFn.name}" 声明的返回类型 "${expectedRet}"`);
             }
           }
         }
@@ -8063,6 +8108,9 @@ runAsyncDemo()
           const tail = trimmed.slice(closeIdx + 1).trim();
           if (tail && tail !== "{") {
             const bodyInner = tail.startsWith("{") && tail.endsWith("}") ? tail.slice(1, -1).trim() : tail;
+            if (/\b(?:return\s+[^;}\s]|throw\b)/.test(bodyInner) && currentFn) {
+              currentFn.hasValueReturn = true;
+            }
             bodyInner.split(";").map((s) => s.trim()).filter(Boolean).forEach((stmt) => {
               const inlineAssign = stmt.match(/^([A-Za-z_$][\w$!]*(?:\.[A-Za-z_$][\w$!]*|\s*\[[^\]]+\])*)\s*(\+=|-=|\*=|\/=|=(?!=))\s*([\s\S]+)$/);
               if (inlineAssign && inlineAssign[1] && inlineAssign[3]) {
@@ -8070,11 +8118,11 @@ runAsyncDemo()
                 const rhsExpr = inlineAssign[3].trim();
                 const rhsT = inferType(rhsExpr, lineNum);
                 if (/^[A-Za-z_$][\w$]*$/.test(lhs) && !isKnownIdentifier(lhs)) {
-                  addDiag(lineNum, "TS2304", `\u627E\u4E0D\u5230\u540D\u79F0 "${lhs}"\uFF08\u53D8\u91CF\u672A\u58F0\u660E\uFF0C\u8BF7\u4F7F\u7528 let \u6216 const \u58F0\u660E\uFF09`);
+                  addDiag(lineNum, "TS2304", `找不到名称 "${lhs}"（变量未声明，请使用 let 或 const 声明）`);
                 } else if (lhs.includes(".") || lhs.includes("[")) {
                   const lhsT = inferType(lhs, lineNum);
                   if (lhsT !== "any" && !isExpressionAssignable(rhsExpr, rhsT, lhsT, lineNum)) {
-                    addDiag(lineNum, "TS2322", `\u4E0D\u80FD\u5C06\u7C7B\u578B "${rhsT}" \u5206\u914D\u7ED9\u7C7B\u578B "${lhsT}" ("${lhs}")`);
+                    addDiag(lineNum, "TS2322", `不能将类型 "${rhsT}" 分配给类型 "${lhsT}" ("${lhs}")`);
                   }
                 }
               }
@@ -8117,17 +8165,17 @@ runAsyncDemo()
         if (vName.includes(".")) {
           const propT = inferType(vName, lineNum);
           if (propT !== "any" && !isTsAssignable("number", propT)) {
-            addDiag(lineNum, "TS2322", `\u4E0D\u80FD\u5BF9\u7C7B\u578B "${propT}" \u7684\u5C5E\u6027 "${vName}" \u6267\u884C\u81EA\u589E/\u81EA\u51CF\u8FD0\u7B97`);
+            addDiag(lineNum, "TS2322", `不能对类型 "${propT}" 的属性 "${vName}" 执行自增/自减运算`);
           }
         } else if (env.has(vName)) {
           const info = env.get(vName) || { type: "any" };
           if (info.isConst) {
-            addDiag(lineNum, "TS2588", `\u65E0\u6CD5\u5206\u914D\u5230 "${vName}"\uFF0C\u56E0\u4E3A\u5B83\u662F\u5E38\u6570 (const)`);
+            addDiag(lineNum, "TS2588", `无法分配到 "${vName}"，因为它是常数 (const)`);
           } else if (info.type !== "any" && !isTsAssignable("number", info.type)) {
-            addDiag(lineNum, "TS2322", `\u4E0D\u80FD\u5BF9\u7C7B\u578B "${info.type}" \u7684\u53D8\u91CF "${vName}" \u6267\u884C\u81EA\u589E/\u81EA\u51CF\u8FD0\u7B97`);
+            addDiag(lineNum, "TS2322", `不能对类型 "${info.type}" 的变量 "${vName}" 执行自增/自减运算`);
           }
         } else if (!isKnownIdentifier(vName)) {
-          addDiag(lineNum, "TS2304", `\u627E\u4E0D\u5230\u540D\u79F0 "${vName}"\uFF08\u53D8\u91CF\u672A\u58F0\u660E\uFF0C\u8BF7\u4F7F\u7528 let \u6216 const \u58F0\u660E\uFF09`);
+          addDiag(lineNum, "TS2304", `找不到名称 "${vName}"（变量未声明，请使用 let 或 const 声明）`);
         }
         continue;
       }
@@ -8140,9 +8188,9 @@ runAsyncDemo()
         extractBindingNames(lhsPart, bound);
         bound.forEach((vName) => {
           if (!isKnownIdentifier(vName)) {
-            addDiag(lineNum, "TS2304", `\u627E\u4E0D\u5230\u540D\u79F0 "${vName}"\uFF08\u53D8\u91CF\u672A\u58F0\u660E\uFF0C\u8BF7\u4F7F\u7528 let \u6216 const \u58F0\u660E\uFF09`);
+            addDiag(lineNum, "TS2304", `找不到名称 "${vName}"（变量未声明，请使用 let 或 const 声明）`);
           } else if (env.has(vName) && env.get(vName)?.isConst) {
-            addDiag(lineNum, "TS2588", `\u65E0\u6CD5\u5206\u914D\u5230 "${vName}"\uFF0C\u56E0\u4E3A\u5B83\u662F\u5E38\u6570 (const)`);
+            addDiag(lineNum, "TS2588", `无法分配到 "${vName}"，因为它是常数 (const)`);
           }
         });
         continue;
@@ -8158,24 +8206,24 @@ runAsyncDemo()
             const info = env.get(lhs) || { type: "any" };
             const checkTargetT = info.declaredType || info.type;
             if (info.isConst) {
-              addDiag(lineNum, "TS2588", `\u65E0\u6CD5\u5206\u914D\u5230 "${lhs}"\uFF0C\u56E0\u4E3A\u5B83\u662F\u5E38\u6570 (const)`);
+              addDiag(lineNum, "TS2588", `无法分配到 "${lhs}"，因为它是常数 (const)`);
             } else if (checkTargetT !== "any") {
               if (op === "=" && rhs.startsWith("{") && getInterfaceShape(checkTargetT)) {
-                checkObjectLiteralAgainstShape(rhs, checkTargetT, lineNum, `\u53D8\u91CF "${lhs}"`);
+                checkObjectLiteralAgainstShape(rhs, checkTargetT, lineNum, `变量 "${lhs}"`);
               } else {
                 const effectiveT = op === "=" ? rhsT : inferType(`${lhs} ${op[0]} (${rhs})`, lineNum);
                 if (!isExpressionAssignable(op === "=" ? rhs : "", effectiveT, checkTargetT, lineNum)) {
-                  addDiag(lineNum, "TS2322", `\u4E0D\u80FD\u5C06\u7C7B\u578B "${effectiveT}" \u5206\u914D\u7ED9\u7C7B\u578B "${checkTargetT}" (\u53D8\u91CF "${lhs}")`);
+                  addDiag(lineNum, "TS2322", `不能将类型 "${effectiveT}" 分配给类型 "${checkTargetT}" (变量 "${lhs}")`);
                 }
               }
             }
           } else if (!isKnownIdentifier(lhs)) {
-            addDiag(lineNum, "TS2304", `\u627E\u4E0D\u5230\u540D\u79F0 "${lhs}"\uFF08\u53D8\u91CF\u672A\u58F0\u660E\uFF0C\u8BF7\u4F7F\u7528 let \u6216 const \u58F0\u660E\uFF09`);
+            addDiag(lineNum, "TS2304", `找不到名称 "${lhs}"（变量未声明，请使用 let 或 const 声明）`);
           }
         } else if (lhs.includes(".") || lhs.includes("[")) {
           const lhsT = inferType(lhs, lineNum);
           if (lhsT !== "any" && !isExpressionAssignable(rhs, rhsT, lhsT, lineNum)) {
-            addDiag(lineNum, "TS2322", `\u4E0D\u80FD\u5C06\u7C7B\u578B "${rhsT}" \u5206\u914D\u7ED9\u7C7B\u578B "${lhsT}" ("${lhs}")`);
+            addDiag(lineNum, "TS2322", `不能将类型 "${rhsT}" 分配给类型 "${lhsT}" ("${lhs}")`);
           }
         }
         continue;
@@ -8525,6 +8573,7 @@ runAsyncDemo()
     getOrCreateVfsApi: () => getOrCreateVfsApi,
     hasAsyncConstructs: () => hasAsyncConstructs,
     isThenableLike: () => isThenableLike,
+    logRunRoundHeader: () => logRunRoundHeader,
     resetTraceState: () => resetTraceState,
     rethrowIfControlSignal: () => rethrowIfControlSignal,
     safeJSONStringify: () => safeJSONStringify,
@@ -8695,17 +8744,17 @@ runAsyncDemo()
   function createVirtualPromiseAndFsEnv(opts) {
     const { loop, getCurLine, nextPromiseId, enqueueMicrotask, __t } = opts;
     class VirtualPromise {
-      __isVirtualPromise;
-      id;
-      label;
-      state;
-      value;
-      reason;
-      line;
-      _handlers;
-      _internal;
-      reactions;
       constructor(executor, label) {
+        __publicField(this, "__isVirtualPromise");
+        __publicField(this, "id");
+        __publicField(this, "label");
+        __publicField(this, "state");
+        __publicField(this, "value");
+        __publicField(this, "reason");
+        __publicField(this, "line");
+        __publicField(this, "_handlers");
+        __publicField(this, "_internal");
+        __publicField(this, "reactions");
         loop.used = true;
         this.__isVirtualPromise = true;
         this.id = nextPromiseId();
@@ -8773,7 +8822,7 @@ runAsyncDemo()
             try {
               const cbSrc = Function.prototype.toString.call(cb);
               if (!h.isInternalAwait && !cbSrc.includes("__t(") && typeof __t === "function") {
-                __t(h.line || 1, "\u26A1 [\u5FAE\u4EFB\u52A1 Microtask] " + (h.label || "Promise.then"), loop.globalSnapFn);
+                __t(h.line || 1, "⚡ [微任务 Microtask] " + (h.label || "Promise.then"), loop.globalSnapFn);
               }
               const res = cb(arg);
               h.child._resolve(res);
@@ -9051,6 +9100,7 @@ runAsyncDemo()
   function isAwaitYieldDescriptor(val) {
     return isRecord(val) && Boolean(val.__isAwait);
   }
+  var logRunSeq = 0;
   function say(msg, cls, line) {
     const entry = { msg };
     if (cls !== void 0) entry.cls = cls;
@@ -9059,7 +9109,15 @@ runAsyncDemo()
     notifyConsoleLog("append", entry);
     uiHooks.appendConsoleLog(entry);
   }
+  function logRunRoundHeader(actionLabel, targetName) {
+    logRunSeq++;
+    if (appState.CONSOLE_LOGS.length > 0) {
+      const suffix = targetName ? ` · ${targetName}` : "";
+      say(`── #${logRunSeq} ${actionLabel}${suffix} ──`, "log-divider");
+    }
+  }
   function clearLog(msg) {
+    logRunSeq = 0;
     appState.CONSOLE_LOGS.length = 0;
     notifyConsoleLog("clear");
     uiHooks.clearConsoleDom();
@@ -9105,7 +9163,7 @@ runAsyncDemo()
       used: false,
       virtualTime: 0,
       phase: "sync",
-      activeTaskLabel: "\u4E3B\u7EBF\u7A0B\u540C\u6B65\u6808 (Sync)",
+      activeTaskLabel: "主线程同步栈 (Sync)",
       coroutines: [],
       microtasks: [],
       macrotasks: [],
@@ -9147,7 +9205,7 @@ runAsyncDemo()
             if (typeof cb !== "function") return;
             const cbSrc = Function.prototype.toString.call(cb);
             if (!cbSrc.includes("__t(") && typeof __t === "function") {
-              __t(line, "\u26A1 [\u5FAE\u4EFB\u52A1] queueMicrotask", loop.globalSnapFn);
+              __t(line, "⚡ [微任务] queueMicrotask", loop.globalSnapFn);
             }
             cb();
           }
@@ -9247,7 +9305,7 @@ runAsyncDemo()
             }
             drive("throw", rejectedReason);
           },
-          `await \u6062\u590D: ${coro.name} (L${awaitLine})`,
+          `await 恢复: ${coro.name} (L${awaitLine})`,
           true
         );
       }
@@ -9287,7 +9345,7 @@ runAsyncDemo()
             if (typeof bestMacro.cb === "function") {
               const cbSrc = Function.prototype.toString.call(bestMacro.cb);
               if (!cbSrc.includes("__t(") && typeof __t === "function") {
-                __t(bestMacro.line || 1, `\u26A1 [\u5B8F\u4EFB\u52A1 @ ${loop.virtualTime}ms] ${bestMacro.label}`, loop.globalSnapFn);
+                __t(bestMacro.line || 1, `⚡ [宏任务 @ ${loop.virtualTime}ms] ${bestMacro.label}`, loop.globalSnapFn);
               }
               bestMacro.cb(...bestMacro.args || []);
             }
@@ -9302,7 +9360,7 @@ runAsyncDemo()
         break;
       }
       loop.phase = "idle";
-      loop.activeTaskLabel = "\u4E8B\u4EF6\u5FAA\u73AF\u5DF2\u6E05\u7A7A (Idle)";
+      loop.activeTaskLabel = "事件循环已清空 (Idle)";
       if (isRecord(entryVal) && entryVal.__isVirtualPromise) {
         if (entryVal.state === "rejected") {
           throw entryVal.reason instanceof Error ? entryVal.reason : new Error(String(entryVal.reason));
@@ -9372,20 +9430,20 @@ runAsyncDemo()
     if (val === null) return "null";
     if (typeof val === "number" || typeof val === "boolean") return String(val);
     if (typeof val === "string") {
-      return val.length > 10 ? JSON.stringify(val.slice(0, 8) + "\u2026") : JSON.stringify(val);
+      return val.length > 10 ? JSON.stringify(val.slice(0, 8) + "…") : JSON.stringify(val);
     }
     if (Array.isArray(val)) {
       if (val.length === 0) return "[]";
-      if (Array.isArray(val[0])) return `[${val.length}\xD7${val[0].length}]`;
+      if (Array.isArray(val[0])) return `[${val.length}×${val[0].length}]`;
       if (val.length <= 4) return "[" + val.map((x) => formatCallArgItem(x)).join(", ") + "]";
-      return "[" + val.slice(0, 3).map((x) => formatCallArgItem(x)).join(", ") + ", \u2026]";
+      return "[" + val.slice(0, 3).map((x) => formatCallArgItem(x)).join(", ") + ", …]";
     }
     if (isMapLike(val)) return `Map(${val.size})`;
     if (isSetLike(val)) return `Set(${val.size})`;
     if (typeof val === "object") {
       if ("val" in val && ("left" in val || "right" in val)) return `Tree(${val.val})`;
       if ("val" in val && "next" in val) return `List(${val.val})`;
-      return "{\u2026}";
+      return "{…}";
     }
     return String(val);
   }
@@ -9403,7 +9461,7 @@ runAsyncDemo()
   function resetTraceState() {
     uiHooks.stopAuto();
     uiHooks.clearFlyLayer();
-    appState.TRACE = { title: "TypeScript Playground \xB7 Debug", code: [], steps: [] };
+    appState.TRACE = { title: "TypeScript Playground · Debug", code: [], steps: [] };
     appState.DEBUG_SESSION = {
       active: false,
       finished: false,
@@ -9852,16 +9910,16 @@ runAsyncDemo()
     ts: { activeTabId: "", tabs: [] }
   };
   var TS_SAMPLE_METADATA = [
-    { key: "showcase", label: "showcase.ts \xB7 \u7EFC\u5408\u6F14\u793A", desc: "\u6ED1\u52A8\u7A97\u53E3 + \u5355\u8C03\u6808 + Map + \u6811\u4E0E\u56FE" },
-    { key: "mergesort", label: "mergesort.ts \xB7 \u5F52\u5E76\u6392\u5E8F", desc: "\u5206\u6CBB\u9012\u5F52\u4E0E\u5DE6\u53F3\u5B50\u6570\u7EC4\u5F52\u5E76" },
-    { key: "debug_crash", label: "debug_crash.ts \xB7 \u8D8A\u754C\u6392\u9519", desc: "\u4E8C\u5206\u67E5\u627E <= \u8D8A\u754C Bug \u73B0\u573A\u5B9A\u4F4D" },
-    { key: "lcs", label: "lcs.ts \xB7 \u6700\u957F\u516C\u5171\u5B50\u5E8F\u5217", desc: "\u4E8C\u7EF4 DP \u7F51\u683C\u89C4\u5212" },
-    { key: "analyze", label: "analyze.ts \xB7 \u9891\u7387\u7EDF\u8BA1", desc: "\u6570\u7EC4\u4E0E Map \u54C8\u5E0C\u7EDF\u8BA1" },
-    { key: "window", label: "window.ts \xB7 \u6ED1\u52A8\u7A97\u53E3", desc: "\u53CC\u6307\u9488\u5B9A\u957F\u6ED1\u52A8\u7A97\u53E3" },
-    { key: "structures", label: "structures.ts \xB7 \u6570\u636E\u7ED3\u6784\u5168\u5BB6\u6876", desc: "\u6808 / \u961F\u5217 / \u5806 / \u5E76\u67E5\u96C6 / \u6811 / \u56FE" },
-    { key: "counter", label: "counter.ts \xB7 \u95ED\u5305\u8BA1\u6570\u5668", desc: "\u9AD8\u9636\u51FD\u6570\u4E0E\u8BCD\u6CD5\u4F5C\u7528\u57DF\u95ED\u5305" },
-    { key: "classes", label: "classes.ts \xB7 \u7C7B\u4E0E\u7EE7\u627F", desc: "class / extends / super \u5B9E\u4F8B\u65B9\u6CD5" },
-    { key: "async_loop", label: "async_loop.ts \xB7 \u4E8B\u4EF6\u5FAA\u73AF", desc: "async / await \u4E0E\u5FAE\u4EFB\u52A1\u961F\u5217" }
+    { key: "showcase", label: "showcase.ts · 综合演示", desc: "滑动窗口 + 单调栈 + Map + 树与图" },
+    { key: "mergesort", label: "mergesort.ts · 归并排序", desc: "分治递归与左右子数组归并" },
+    { key: "debug_crash", label: "debug_crash.ts · 越界排错", desc: "二分查找 <= 越界 Bug 现场定位" },
+    { key: "lcs", label: "lcs.ts · 最长公共子序列", desc: "二维 DP 网格规划" },
+    { key: "analyze", label: "analyze.ts · 频率统计", desc: "数组与 Map 哈希统计" },
+    { key: "window", label: "window.ts · 滑动窗口", desc: "双指针定长滑动窗口" },
+    { key: "structures", label: "structures.ts · 数据结构全家桶", desc: "栈 / 队列 / 堆 / 并查集 / 树 / 图" },
+    { key: "counter", label: "counter.ts · 闭包计数器", desc: "高阶函数与词法作用域闭包" },
+    { key: "classes", label: "classes.ts · 类与继承", desc: "class / extends / super 实例方法" },
+    { key: "async_loop", label: "async_loop.ts · 事件循环", desc: "async / await 与微任务队列" }
   ];
   function ensureScriptTabsForLang(_lang = "ts") {
     ensureVfsInitialized();
@@ -9973,6 +10031,48 @@ runAsyncDemo()
       updated: true,
       isActive: store.activeTabId === matchingTab.id
     };
+  }
+  function serializeScriptTabsSession() {
+    const store = ensureScriptTabsForLang("ts");
+    return {
+      activeTabId: store.activeTabId,
+      tabs: store.tabs.map((t) => ({
+        id: t.id,
+        title: t.title,
+        source: t.source,
+        vfsPath: t.vfsPath || "",
+        isSample: Boolean(t.isSample)
+      }))
+    };
+  }
+  function restoreScriptTabsSession(raw) {
+    if (!isRecord(raw) || !Array.isArray(raw.tabs) || raw.tabs.length === 0) return false;
+    const restored = [];
+    for (const item of raw.tabs) {
+      if (!isRecord(item) || typeof item.title !== "string" || typeof item.source !== "string") continue;
+      const id = typeof item.id === "string" && item.id ? item.id : nextScriptTabId();
+      const numM = id.match(/^stab_(\d+)$/);
+      if (numM && numM[1]) {
+        const seqNum = Number(numM[1]);
+        if (seqNum >= scriptTabSeq) scriptTabSeq = seqNum + 1;
+      }
+      restored.push({
+        id,
+        title: item.title,
+        lang: "ts",
+        source: item.source,
+        vfsPath: typeof item.vfsPath === "string" ? item.vfsPath : "",
+        isSample: Boolean(item.isSample)
+      });
+    }
+    if (restored.length === 0) return false;
+    SCRIPT_TABS.ts.tabs = restored;
+    const reqActive = typeof raw.activeTabId === "string" ? raw.activeTabId : "";
+    const activeDoc = restored.find((t) => t.id === reqActive) ?? restored[0];
+    if (activeDoc) {
+      SCRIPT_TABS.ts.activeTabId = activeDoc.id;
+    }
+    return true;
   }
 
   // src/viz/memory-normalizers.ts
@@ -10574,7 +10674,7 @@ runAsyncDemo()
               if (typeof raw === "string") return raw[idx] ?? "";
               if (Array.isArray(raw) && idx < raw.length) return cloneDeepBounded(raw[idx], 1);
               if (d.items && idx < d.items.length) return d.items[idx];
-              return "\u2026";
+              return "…";
             };
             d.windowed = build1DFocalSlice(total, getAt, focal);
           }
@@ -10640,7 +10740,7 @@ runAsyncDemo()
     if (/\.\s*(push|pop|shift|unshift|splice|set|add|delete|clear|fill|sort|reverse)\s*\(/.test(clean)) {
       return void 0;
     }
-    if (new RegExp("(?:\\+\\+|--|(?<![=!<>])=(?!=))").test(clean)) return void 0;
+    if (/(?:\+\+|--|(?<![=!<>])=(?!=))/.test(clean)) return void 0;
     try {
       const keys = Object.keys(v).filter((k) => /^[A-Za-z_$][\w$]*$/.test(k) && !RESERVED_WORDS.has(k));
       const vals = keys.map((k) => v[k]);
@@ -10672,7 +10772,7 @@ runAsyncDemo()
     return clauses.filter((c) => c.expr);
   }
   function deriveAnimAndNote(rawLine, v, nextV) {
-    const clean = stripTypes(rawLine || "").trim().replace(/;$/, "");
+    const clean = stripTypes(rawLine || "").trim().replace(/^(?:case\s+[^:]+|default)\s*:\s*/, "").replace(/;$/, "");
     if (!clean) return { anim: null, note: rawLine };
     let condExpr = null;
     const condMatch = clean.match(/^(?:}\s*)?(?:if|while|else\s+if)\s*\(([\s\S]+)\)\s*\{?$/);
@@ -10724,7 +10824,7 @@ runAsyncDemo()
             rhsVal: formatShortVal(rhsVal),
             result: resVal
           };
-          const note = `${rawLine.trim()}  \u2192  ${anim.lhsVal} ${op} ${anim.rhsVal} (${resVal})`;
+          const note = `${rawLine.trim()}  →  ${anim.lhsVal} ${op} ${anim.rhsVal} (${resVal})`;
           return { anim, note };
         }
       }
@@ -10738,12 +10838,12 @@ runAsyncDemo()
           rhsVal: "",
           result: overallResult
         };
-        return { anim, note: `${rawLine.trim()}  \u2192  ${overallResult}` };
+        return { anim, note: `${rawLine.trim()}  →  ${overallResult}` };
       }
     }
     const ckptCall = clean.match(/^(?:checkpoint|断点)\s*\(([\s\S]*)\)$/);
     if (ckptCall && ckptCall[1] !== void 0) {
-      const fnName = clean.startsWith("\u65AD\u70B9") ? "\u65AD\u70B9" : "checkpoint";
+      const fnName = clean.startsWith("断点") ? "断点" : "checkpoint";
       const args = splitTopLevel(ckptCall[1]).map((s) => s.trim()).filter(Boolean);
       const hasRuntimeTrigger = Boolean(nextV && "__ckptTriggered" in nextV);
       const triggered = hasRuntimeTrigger && nextV ? Boolean(nextV.__ckptTriggered) : args.length === 0 ? true : Boolean(safeEvalExpr(args[0] || "", v));
@@ -10758,7 +10858,7 @@ runAsyncDemo()
           rhsVal: "",
           result: false
         };
-        return { anim: anim2, note: `\u25CB ${fnName}(${condExpr2})  \u2192  false\uFF08\u6761\u4EF6\u672A\u6EE1\u8DB3\uFF0C\u8DF3\u8FC7\u68C0\u67E5\u70B9\uFF09`, isCheckpoint: false };
+        return { anim: anim2, note: `○ ${fnName}(${condExpr2})  →  false（条件未满足，跳过检查点）`, isCheckpoint: false };
       }
       const ckptVals = nextV && Array.isArray(nextV.__ckptVals) ? nextV.__ckptVals.map(String) : null;
       let msgStr = "";
@@ -10774,8 +10874,8 @@ runAsyncDemo()
         args: msgStr ? [msgStr] : [],
         argVals: msgStr ? [msgStr] : []
       };
-      const detail = msgStr ? msgStr : "\u5DF2\u547D\u4E2D\u65AD\u70B9";
-      return { anim, note: `\u25C9 ${fnName}(${detail})`, isCheckpoint: true };
+      const detail = msgStr ? msgStr : "已命中断点";
+      return { anim, note: `◉ ${fnName}(${detail})`, isCheckpoint: true };
     }
     const callOnly = clean.match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\((.*)\)$/);
     if (callOnly && callOnly[1] && callOnly[2] !== void 0) {
@@ -10795,7 +10895,7 @@ runAsyncDemo()
       if (val === void 0 && nextV) val = safeEvalExpr(to, nextV);
       if (val !== void 0) {
         const valStr = formatShortVal(val);
-        return { anim: { type: "assign", to, from: rhs, val: valStr }, note: `${to} \u2190 ${valStr}   (${rawLine.trim()})` };
+        return { anim: { type: "assign", to, from: rhs, val: valStr }, note: `${to} ← ${valStr}   (${rawLine.trim()})` };
       }
     }
     const assignMatch = clean.match(/^(?:(?:const|let|var)\s+)?([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\s*\[[^\]]+\])*)\s*=\s*(?!=)(.+)$/);
@@ -10815,11 +10915,11 @@ runAsyncDemo()
           const args = splitTopLevel(rhsCall[2]).map((s) => s.trim()).filter(Boolean);
           const argVals = args.map((a) => formatShortVal(safeEvalExpr(a, v)));
           const anim = { type: "call", fn: fnName, args, argVals, result: valStr, to };
-          return { anim, note: `${to} = ${fnName}(${argVals.join(", ")})  \u2192  ${valStr}` };
+          return { anim, note: `${to} = ${fnName}(${argVals.join(", ")})  →  ${valStr}` };
         }
         if (valStr !== null) {
           const anim = { type: "assign", to, from, val: valStr };
-          return { anim, note: `${to} \u2190 ${valStr}   (${rawLine.trim()})` };
+          return { anim, note: `${to} ← ${valStr}   (${rawLine.trim()})` };
         }
       }
     }
@@ -10830,7 +10930,7 @@ runAsyncDemo()
       if (val !== void 0) {
         const valStr = formatShortVal(val);
         const anim = { type: "assign", to: "return", from: expr, val: valStr };
-        return { anim, note: `return ${expr}  \u2192  ${valStr}` };
+        return { anim, note: `return ${expr}  →  ${valStr}` };
       }
     }
     return { anim: null, note: rawLine.trim() };
@@ -10978,10 +11078,10 @@ runAsyncDemo()
       diags.filter((d) => !d.file || d.file === activeFile).map((d) => d.line)
     );
     uiHooks.updateEditorChrome();
-    say(`\u2717 TypeScript \u4E25\u683C\u7C7B\u578B\u68C0\u67E5\u672A\u901A\u8FC7 (\u5171 ${diags.length} \u5904\u9519\u8BEF)\uFF1A`, "err");
+    say(`✗ TypeScript 严格类型检查未通过 (共 ${diags.length} 处错误)：`, "err");
     diags.forEach((d) => {
-      const filePrefix = d.file && d.file !== activeFile ? `${d.file} \xB7 ` : "";
-      say(`  \u2022 ${d.code} [${filePrefix}\u7B2C ${d.line} \u884C]: ${d.message || d.msg || ""}`, "err", d.line);
+      const filePrefix = d.file && d.file !== activeFile ? `${d.file} · ` : "";
+      say(`  • ${d.code} [${filePrefix}第 ${d.line} 行]: ${d.message || d.msg || ""}`, "err", d.line);
     });
     const firstDiag = diags[0];
     if (firstDiag) {
@@ -11097,9 +11197,9 @@ ${moduleFactories.join(",\n")}
 };
 function __require(modId) {
   if (__modCache[modId]) return __modCache[modId];
-  if (__modLoading[modId]) throw new Error("\u68C0\u6D4B\u5230\u6A21\u5757\u5FAA\u73AF\u4F9D\u8D56: " + modId);
+  if (__modLoading[modId]) throw new Error("检测到模块循环依赖: " + modId);
   var factory = __modules[modId];
-  if (typeof factory !== "function") throw new Error("\u627E\u4E0D\u5230\u6A21\u5757: " + modId);
+  if (typeof factory !== "function") throw new Error("找不到模块: " + modId);
   __modLoading[modId] = true;
   var exp = Object.create(null);
   var modFid = (typeof __t === "function" && __t.__enter) ? __t.__enter("<module:" + modId + ">", [], [], 1, null, modId) : 0;
@@ -11145,17 +11245,20 @@ function __require(modId) {
         logs.push(String(arr[1]));
       }
     };
-    const stub = o.instrumented ? "" : 'var checkpoint = function(){ if (typeof __t === "function" && __t.__ckpt) __t.__ckpt([].slice.call(arguments)); }, \u65AD\u70B9 = checkpoint;\n';
+    const stub = o.instrumented ? "" : 'var checkpoint = function(){ if (typeof __t === "function" && __t.__ckpt) __t.__ckpt([].slice.call(arguments)); }, 断点 = checkpoint;\n';
     const t0 = Date.now();
     let ticks = 0;
     let lastLine = 0;
+    let lastFile = "";
     let expired = false;
     const timeoutError = () => Object.assign(new Error("RUN_TIMEOUT"), {
       __timeout: true,
-      __line: lastLine
+      __line: lastLine,
+      __file: lastFile
     });
-    const __t = function(line) {
+    const __t = function(line, _note, _snap, _self, file) {
       if (line) lastLine = line;
+      if (file) lastFile = file;
       if (!budgetMs) return;
       if (expired) throw timeoutError();
       if ((++ticks & 31) === 31 && Date.now() - t0 > budgetMs) {
@@ -11172,7 +11275,7 @@ function __require(modId) {
       evLoop.loop.globalSnapFn = snapFn;
     };
     __t.__ckpt = handleCkpt;
-    const body = stub + js + "\n;return (function(){ try { var __v = (" + expr + '); if (__t && __t.__drain) __v = __t.__drain(__v); return { ok:true, value:__v }; } catch (e) { return { ok:false, error: e && e.message ? e.message : String(e), stack: e && e.stack ? String(e.stack) : "", line: (e && e.__line) || 0, timeout: Boolean(e && e.__timeout) }; } })();';
+    const body = stub + js + "\n;return (function(){ try { var __v = (" + expr + '); if (__t && __t.__drain) __v = __t.__drain(__v); return { ok:true, value:__v }; } catch (e) { return { ok:false, error: e && e.message ? e.message : String(e), stack: e && e.stack ? String(e.stack) : "", line: (e && e.__line) || 0, file: (e && e.__file) || "", timeout: Boolean(e && e.__timeout) }; } })();';
     const f = new Function("__t", "console", body);
     let r;
     const formatConsoleArg = (x) => {
@@ -11183,7 +11286,9 @@ function __require(modId) {
         return String(x);
       }
     };
-    const pushLogLine = (...a) => logs.push(a.map(formatConsoleArg).join(" "));
+    const pushLogLine = (...a) => {
+      logs.push(a.map(formatConsoleArg).join(" "));
+    };
     try {
       r = f(__t, {
         log: pushLogLine,
@@ -11198,20 +11303,23 @@ function __require(modId) {
         error: errObj && typeof errObj.message === "string" && errObj.message ? errObj.message : String(e),
         stack: errObj && errObj.stack ? String(errObj.stack) : "",
         line: (errObj && typeof errObj.__line === "number" ? errObj.__line : 0) || lastLine || entryLine || 0,
+        file: (errObj && typeof errObj.__file === "string" && errObj.__file ? errObj.__file : "") || lastFile,
         timeout: Boolean(errObj && errObj.__timeout)
       };
     }
     if (r && r.ok && !r.line) r.line = lastLine || entryLine || 0;
     if (r && !r.ok) r.line = r.line || lastLine || entryLine || 0;
+    if (r && !r.file && lastFile) r.file = lastFile;
     return { ...r, logs, elapsedMs: Date.now() - t0 };
   }
   function runOnce(budgetMs, sourceCode) {
     const budget = typeof budgetMs === "number" && budgetMs > 0 ? budgetMs : RUN_TIMEOUT_MS;
     const { entryFile, entrySource: src, fileMap } = collectWorkspaceFilesAndEntry(sourceCode);
     appState.ENTRY_FILE_PATH = entryFile;
+    logRunRoundHeader("▶ 运行", entryFile);
     const unsupported = detectUnsupportedSyntax2(src);
     if (unsupported.length && unsupported[0]) {
-      unsupported.forEach((x) => say("\u2717 \u7B2C " + x.line + " \u884C\uFF1A\u6682\u4E0D\u652F\u6301 " + x.feature + " \u2014\u2014 " + x.hint, "err", x.line));
+      unsupported.forEach((x) => say("✗ 第 " + x.line + " 行：暂不支持 " + x.feature + " —— " + x.hint, "err", x.line));
       uiHooks.revealErrorLine(unsupported[0].line);
       return;
     }
@@ -11237,7 +11345,7 @@ function __require(modId) {
           uiHooks.switchToScriptFile(bundled.errorFile);
         }
         const errLine = bundled.errorLine || 1;
-        say("\u2717 " + (bundled.errorFile ? bundled.errorFile + " \xB7 " : "") + "\u7B2C " + errLine + " \u884C\uFF1A" + (bundled.errorMessage || "\u7F16\u8BD1\u9519\u8BEF"), "err", errLine);
+        say("✗ " + (bundled.errorFile ? bundled.errorFile + " · " : "") + "第 " + errLine + " 行：" + (bundled.errorMessage || "编译错误"), "err", errLine);
         uiHooks.revealErrorLine(errLine);
         return;
       }
@@ -11255,7 +11363,7 @@ function __require(modId) {
     } else {
       const enums = transpileEnums(src);
       if (enums.error) {
-        say("\u2717 \u7B2C " + enums.error.line + " \u884C\uFF1A" + enums.error.message, "err", enums.error.line);
+        say("✗ 第 " + enums.error.line + " 行：" + enums.error.message, "err", enums.error.line);
         uiHooks.revealErrorLine(enums.error.line);
         return;
       }
@@ -11276,41 +11384,53 @@ function __require(modId) {
         instrumented = false;
       }
     }
-    if (!instrumented) say("\u26A0 \u672C\u6B21\u8FD0\u884C\u672A\u80FD\u542F\u7528\u6B7B\u5FAA\u73AF\u7194\u65AD\uFF08\u63D2\u6869/\u7F16\u8BD1\u56DE\u9000\uFF09\uFF0C\u8BF7\u7559\u610F\u53EF\u80FD\u7684\u6B7B\u5FAA\u73AF", "dim");
+    if (!instrumented) say("⚠ 本次运行未能启用死循环熔断（插桩/编译回退），请留意可能的死循环", "dim");
     try {
       const r = evalCall(code, call, { budgetMs: budget, instrumented, entryLine });
       r.logs.forEach((l) => say("  log: " + l, "dim"));
       if (!r.ok && r.timeout) {
+        const targetFile = r.file || entryFile;
+        if (targetFile && targetFile !== entryFile) {
+          uiHooks.switchToScriptFile(targetFile);
+        }
+        const targetLines = targetFile && targetFile !== entryFile && fileMap.has(targetFile) ? (fileMap.get(targetFile) || "").replace(/\r/g, "").split("\n") : originalLines;
         const line = r.line || 0;
-        const snippet = line ? (originalLines[line - 1] || "").trim().slice(0, 90) : "";
+        const snippet = line ? (targetLines[line - 1] || "").trim().slice(0, 90) : "";
         if (line) {
           appState.RUNTIME_ERROR_LINES.add(line);
           uiHooks.updateEditorChrome();
           uiHooks.revealErrorLine(line);
         }
+        const fileTag = targetFile && targetFile !== entryFile ? targetFile + " · " : "";
         say(
-          "\u2717 \u8FD0\u884C\u8D85\u8FC7 " + budget / 1e3 + "s \u4ECD\u672A\u7ED3\u675F\uFF0C\u5DF2\u5F3A\u5236\u7EC8\u6B62\uFF08\u7591\u4F3C\u6B7B\u5FAA\u73AF / \u8BA1\u7B97\u91CF\u8FC7\u5927\uFF09" + (line ? " \xB7 \u4F4D\u7F6E\uFF1A\u7B2C " + line + " \u884C" + (snippet ? " \xB7 " + snippet : "") : " \xB7 \u672A\u80FD\u5B9A\u4F4D\u5230\u5177\u4F53\u884C"),
+          "✗ 运行超过 " + budget / 1e3 + "s 仍未结束，已强制终止（疑似死循环 / 计算量过大）" + (line ? " · 位置：" + fileTag + "第 " + line + " 行" + (snippet ? " · " + snippet : "") : " · 未能定位到具体行"),
           "err",
           line || void 0
         );
         return;
       }
       if (!r.ok) {
-        const line = r.line || sourceLineFromStack(r.stack, originalLines.length);
+        const targetFile = r.file || entryFile;
+        if (targetFile && targetFile !== entryFile) {
+          uiHooks.switchToScriptFile(targetFile);
+        }
+        const targetLines = targetFile && targetFile !== entryFile && fileMap.has(targetFile) ? (fileMap.get(targetFile) || "").replace(/\r/g, "").split("\n") : originalLines;
+        const line = r.line || sourceLineFromStack(r.stack, targetLines.length);
         if (line) {
           appState.RUNTIME_ERROR_LINES.add(line);
           uiHooks.updateEditorChrome();
-          say("\u2717 \u7B2C " + line + " \u884C\u8FD0\u884C\u65F6\u62A5\u9519: " + r.error, "err", line);
+          const filePrefix = targetFile && targetFile !== entryFile ? "[" + targetFile + "] " : "";
+          say("✗ " + filePrefix + "第 " + line + " 行运行时报错: " + r.error, "err", line);
           uiHooks.revealErrorLine(line);
         } else {
-          say("\u2717 \u8C03\u7528\u5931\u8D25: " + r.error, "err");
+          say("✗ 调用失败: " + r.error, "err");
         }
         return;
       }
       const elapsed = " (" + r.elapsedMs + "ms)";
-      say("\u2713 \u8FD0\u884C\u5B8C\u6210  \u2192  " + safeJSONStringify(r.value) + elapsed, "ok");
+      say("✓ 运行完成  →  " + safeJSONStringify(r.value) + elapsed, "ok");
     } catch (e) {
-      say("\u2717 " + (e instanceof Error && e.message ? e.message : e), "err");
+      say("✗ " + (e instanceof Error && e.message ? e.message : e), "err");
     }
   }
   function buildFrameSnapshotFromClosure(frame, fallbackLine, noteForEnrich) {
@@ -11362,8 +11482,8 @@ function __require(modId) {
     if (targetIdx >= MAX_STEPS) {
       appState.DEBUG_SESSION.finished = true;
       appState.DEBUG_SESSION.crashed = true;
-      appState.DEBUG_SESSION.error = "\u5DF2\u8FBE\u5355\u6B21\u8C03\u8BD5\u4E0A\u9650\uFF0C\u81EA\u52A8\u7194\u65AD\u4EE5\u9632\u6B7B\u5FAA\u73AF";
-      say("\u2717 " + appState.DEBUG_SESSION.error, "err");
+      appState.DEBUG_SESSION.error = "已达单次调试上限，自动熔断以防死循环";
+      say("✗ " + appState.DEBUG_SESSION.error, "err");
       return false;
     }
     const originalLines = appState.DEBUG_SESSION.originalLines;
@@ -11425,7 +11545,7 @@ function __require(modId) {
       if (line) curLineTracker = line;
       const idx = count++;
       if ((idx & 63) === 63 && Date.now() - t0 > MAX_EXEC_MS) {
-        throw new Error("\u6267\u884C\u8D85\u65F6 (>" + MAX_EXEC_MS + "ms)\uFF0C\u81EA\u52A8\u7194\u65AD\u4EE5\u9632\u9875\u9762\u5361\u6B7B");
+        throw new Error("执行超时 (>" + MAX_EXEC_MS + "ms)，自动熔断以防页面卡死");
       }
       const topFrame = liveCallStack[liveCallStack.length - 1];
       const stepFile = file || topFrame && topFrame.file || entryFile;
@@ -11610,7 +11730,7 @@ function __require(modId) {
         const errStep = {
           file: entryFile,
           line: callLine,
-          note: "\u2717 \u8FD0\u884C\u65F6\u9519\u8BEF: " + errMsg,
+          note: "✗ 运行时错误: " + errMsg,
           v: {},
           ds: {},
           callStack: [{ id: 0, file: entryFile, fn: "global", label: "global", line: callLine, v: {}, ds: {} }],
@@ -11626,7 +11746,7 @@ function __require(modId) {
         appState.DEBUG_SESSION.error = errMsg;
         appState.DEBUG_SESSION.errorLine = callLine;
         appState.DEBUG_SESSION.errorFile = entryFile;
-        say("\u2717 \u8FD0\u884C\u65F6\u9519\u8BEF [\u7B2C " + callLine + " \u884C]: " + errMsg + "\uFF08\u5DF2\u505C\u6B62\u5728\u62A5\u9519\u5904\uFF09", "err");
+        say("✗ 运行时错误 [第 " + callLine + " 行]: " + errMsg + "（已停止在报错处）", "err");
         return true;
       }
       if (targetIdx === 0 && appState.CURRENT_TS_META.interfaces && appState.CURRENT_TS_META.interfaces.size > 0) {
@@ -11710,7 +11830,7 @@ function __require(modId) {
     if (runtimeErr) {
       const errMsg = runtimeErr instanceof Error && runtimeErr.message ? runtimeErr.message : runtimeErr && typeof runtimeErr === "object" && "message" in runtimeErr && typeof runtimeErr.message === "string" ? runtimeErr.message : String(runtimeErr);
       stepObj.error = errMsg;
-      stepObj.note = `${rawLine.trim()}  \u2192  \u2717 \u8FD0\u884C\u65F6\u9519\u8BEF: ${errMsg}`;
+      stepObj.note = `${rawLine.trim()}  →  ✗ 运行时错误: ${errMsg}`;
       appState.RUNTIME_ERROR_LINES.add(stepObj.line);
       appState.DEBUG_SESSION.finished = true;
       appState.DEBUG_SESSION.crashed = true;
@@ -11733,10 +11853,10 @@ function __require(modId) {
       }
     });
     if (runtimeErr) {
-      const fileLabel = stepObj.file && stepObj.file !== entryFile ? `${stepObj.file} \xB7 ` : "";
-      say("\u2717 \u8FD0\u884C\u65F6\u9519\u8BEF [" + fileLabel + "\u7B2C " + stepObj.line + " \u884C]: " + stepObj.error + "\uFF08\u5DF2\u8FD0\u884C\u5230\u62A5\u9519\u4E3A\u6B62\uFF09", "err");
+      const fileLabel = stepObj.file && stepObj.file !== entryFile ? `${stepObj.file} · ` : "";
+      say("✗ 运行时错误 [" + fileLabel + "第 " + stepObj.line + " 行]: " + stepObj.error + "（已运行到报错为止）", "err");
     } else if (!paused && !opts.silent) {
-      say("\u2713 \u8C03\u8BD5\u8FD0\u884C\u5B8C\u6210  \u2192  " + safeJSONStringify(retVal), "ok");
+      say("✓ 调试运行完成  →  " + safeJSONStringify(retVal), "ok");
     }
     return true;
   }
@@ -11747,10 +11867,13 @@ function __require(modId) {
     appState.SELECTED_FRAME_IDX = null;
     const { entryFile, entrySource: src, fileMap } = collectWorkspaceFilesAndEntry(sourceCode);
     appState.ENTRY_FILE_PATH = entryFile;
+    if (initialStep === 0) {
+      logRunRoundHeader("🐞 Debug 调试", entryFile);
+    }
     const unsupported = detectUnsupportedSyntax2(src);
     if (unsupported.length && unsupported[0]) {
       resetTraceState();
-      unsupported.forEach((x) => say("\u2717 \u7B2C " + x.line + " \u884C\uFF1A\u6682\u4E0D\u652F\u6301 " + x.feature + " \u2014\u2014 " + x.hint, "err", x.line));
+      unsupported.forEach((x) => say("✗ 第 " + x.line + " 行：暂不支持 " + x.feature + " —— " + x.hint, "err", x.line));
       uiHooks.revealErrorLine(unsupported[0].line);
       return false;
     }
@@ -11776,7 +11899,7 @@ function __require(modId) {
         if (bundle.errorFile && bundle.errorFile !== entryFile) {
           uiHooks.switchToScriptFile(bundle.errorFile);
         }
-        say("\u2717 \u7B2C " + (bundle.errorLine || 1) + " \u884C\uFF1A" + (bundle.errorMessage || "\u7F16\u8BD1\u5931\u8D25"), "err", bundle.errorLine || 1);
+        say("✗ 第 " + (bundle.errorLine || 1) + " 行：" + (bundle.errorMessage || "编译失败"), "err", bundle.errorLine || 1);
         if (bundle.errorLine) uiHooks.revealErrorLine(bundle.errorLine);
         return false;
       }
@@ -11792,7 +11915,7 @@ function __require(modId) {
         compiledFn = new Function("__t", "console", body);
       } catch (e) {
         resetTraceState();
-        say("\u2717 \u7F16\u8BD1\u5931\u8D25: " + (e instanceof Error && e.message ? e.message : e), "err");
+        say("✗ 编译失败: " + (e instanceof Error && e.message ? e.message : e), "err");
         return false;
       }
     } else {
@@ -11800,7 +11923,7 @@ function __require(modId) {
       const enums = transpileEnums(src);
       if (enums.error) {
         resetTraceState();
-        say("\u2717 \u7B2C " + enums.error.line + " \u884C\uFF1A" + enums.error.message, "err", enums.error.line);
+        say("✗ 第 " + enums.error.line + " 行：" + enums.error.message, "err", enums.error.line);
         uiHooks.revealErrorLine(enums.error.line);
         return false;
       }
@@ -11817,14 +11940,14 @@ function __require(modId) {
         compiledFn = new Function("__t", "console", body);
       } catch (e) {
         resetTraceState();
-        say("\u2717 \u7F16\u8BD1\u5931\u8D25: " + (e instanceof Error && e.message ? e.message : e), "err");
+        say("✗ 编译失败: " + (e instanceof Error && e.message ? e.message : e), "err");
         return false;
       }
     }
     uiHooks.stopAuto();
     uiHooks.clearFlyLayer();
     appState.TRACE = {
-      title: graph.isMultiFile ? `TypeScript Multi-Module \xB7 ${entryFile}` : "TypeScript Playground \xB7 Debug",
+      title: graph.isMultiFile ? `TypeScript Multi-Module · ${entryFile}` : "TypeScript Playground · Debug",
       code: originalLines,
       steps: [],
       entryFile,
@@ -11859,8 +11982,8 @@ function __require(modId) {
     uiHooks.renderPicker();
     uiHooks.renderStatic(appState.cur, false);
     if (!appState.DEBUG_SESSION.crashed) {
-      const multiBadge = graph.isMultiFile ? `\uFF08\u5171\u52A0\u8F7D ${graph.order.length} \u4E2A\u6A21\u5757\uFF09` : "";
-      say("\u2713 \u7F16\u8BD1\u901A\u8FC7" + multiBadge + " \xB7 \u5DF2\u8FDB\u5165 Debug \u6A21\u5F0F\uFF08\u6BCF\u8D70\u4E00\u6B65\u5F53\u573A\u8BA1\u7B97\uFF0C\u53EF\u968F\u65F6\u6B65\u8FDB\u6216\u8FD0\u884C\u5230\u4E0B\u4E00\u4E2A\u68C0\u67E5\u70B9\uFF09", "ok");
+      const multiBadge = graph.isMultiFile ? `（共加载 ${graph.order.length} 个模块）` : "";
+      say("✓ 编译通过" + multiBadge + " · 已进入 Debug 模式（每走一步当场计算，可随时步进或运行到下一个检查点）", "ok");
     }
     return true;
   }
@@ -11944,13 +12067,13 @@ function __require(modId) {
     return ast.children.map((n) => `<div class="ast-node" data-line="${n.line}"><span class="ast-kind">${esc(n.kind)}</span> <span class="ast-txt">${esc(n.text)}</span></div>`).join("");
   }
   function buildStepVizRow(_rawLine, anim, stError, isBelow = false) {
-    const guideChar = isBelow ? "\u2570\u2500" : "\u256D\u2500";
+    const guideChar = isBelow ? "╰─" : "╭─";
     if (stError) {
-      return `<div class="step-viz-row"><span class="sv-guide err">${guideChar}</span><div class="sv-box sv-err-box"><span class="sv-err-tag">\u2717 RUNTIME ERROR</span><span class="sv-err-msg">${esc(stError)}</span></div></div>`;
+      return `<div class="step-viz-row"><span class="sv-guide err">${guideChar}</span><div class="sv-box sv-err-box"><span class="sv-err-tag">✗ RUNTIME ERROR</span><span class="sv-err-msg">${esc(stError)}</span></div></div>`;
     }
     if (!anim) return "";
     if (anim.type === "error" && anim.message) {
-      return `<div class="step-viz-row"><span class="sv-guide err">${guideChar}</span><div class="sv-box sv-err-box"><span class="sv-err-tag">\u2717 RUNTIME ERROR</span><span class="sv-err-msg">${esc(anim.message)}</span></div></div>`;
+      return `<div class="step-viz-row"><span class="sv-guide err">${guideChar}</span><div class="sv-box sv-err-box"><span class="sv-err-tag">✗ RUNTIME ERROR</span><span class="sv-err-msg">${esc(anim.message)}</span></div></div>`;
     }
     if (anim.type === "checkpoint") {
       const args = anim.args || [];
@@ -11959,13 +12082,13 @@ function __require(modId) {
         const av = argVals[idx];
         const showEq = av !== void 0 && av !== a;
         return `<span class="sv-arg">${esc(a)}${showEq ? ` <span class="sv-eval">= ${esc(av)}</span>` : ""}</span>`;
-      }).join('<span class="sv-dim">,</span>') : `<span class="sv-dim">\u5DF2\u6682\u505C\u4E8E\u68C0\u67E5\u70B9\u51FD\u6570 ${esc(anim.fn || "checkpoint")}()</span>`;
-      return `<div class="step-viz-row"><span class="sv-guide ckpt">${guideChar}</span><div class="sv-box sv-ckpt-box"><span class="sv-ckpt-tag">\u25C9 CHECKPOINT</span>` + chips + `</div></div>`;
+      }).join('<span class="sv-dim">,</span>') : `<span class="sv-dim">已暂停于检查点函数 ${esc(anim.fn || "checkpoint")}()</span>`;
+      return `<div class="step-viz-row"><span class="sv-guide ckpt">${guideChar}</span><div class="sv-box sv-ckpt-box"><span class="sv-ckpt-tag">◉ CHECKPOINT</span>` + chips + `</div></div>`;
     }
     if (anim.type === "assign") {
-      const valTxt = anim.val != null ? anim.val : "\u2026";
+      const valTxt = anim.val != null ? anim.val : "…";
       const showFrom = anim.from && anim.from !== valTxt;
-      return `<div class="step-viz-row"><span class="sv-guide">${guideChar}</span><div class="sv-box"><span class="sv-dst">${esc(anim.to)}</span><span class="sv-arrow">\u27F5</span><span class="sv-val">${esc(valTxt)}</span>` + (showFrom ? `<span class="sv-dim">from</span><span class="sv-src">${esc(anim.from)}</span>` : "") + `</div></div>`;
+      return `<div class="step-viz-row"><span class="sv-guide">${guideChar}</span><div class="sv-box"><span class="sv-dst">${esc(anim.to)}</span><span class="sv-arrow">⟵</span><span class="sv-val">${esc(valTxt)}</span>` + (showFrom ? `<span class="sv-dim">from</span><span class="sv-src">${esc(anim.from)}</span>` : "") + `</div></div>`;
     }
     if (anim.type === "compare") {
       const vCls = anim.result ? "ok" : "no";
@@ -11973,7 +12096,7 @@ function __require(modId) {
       const rhsShowVal = anim.rhs && anim.rhsVal !== void 0 && anim.rhsVal !== anim.rhs;
       const lhsHtml = `<span class="sv-cmp"><span>${esc(anim.lhs)}</span>${lhsShowVal ? `<span class="sv-eval">= ${esc(anim.lhsVal)}</span>` : ""}</span>`;
       const rhsHtml = anim.rhs ? `<span class="sv-op">${esc(anim.op)}</span><span class="sv-cmp"><span>${esc(anim.rhs)}</span>${rhsShowVal ? `<span class="sv-eval">= ${esc(anim.rhsVal)}</span>` : ""}</span>` : "";
-      return `<div class="step-viz-row"><span class="sv-guide">${guideChar}</span><div class="sv-box">` + lhsHtml + rhsHtml + `<span class="sv-verdict ${vCls}">\u21D2 ${anim.result ? "true" : "false"}</span></div></div>`;
+      return `<div class="step-viz-row"><span class="sv-guide">${guideChar}</span><div class="sv-box">` + lhsHtml + rhsHtml + `<span class="sv-verdict ${vCls}">⇒ ${anim.result ? "true" : "false"}</span></div></div>`;
     }
     if (anim.type === "call") {
       const args = anim.args || [];
@@ -11983,7 +12106,7 @@ function __require(modId) {
         const showEq = av !== void 0 && av !== a;
         return `<span class="sv-arg">${esc(a)}${showEq ? ` <span class="sv-eval">= ${esc(av)}</span>` : ""}</span>`;
       }).join('<span class="sv-dim">,</span>');
-      const prefix = anim.to && anim.result != null ? `<span class="sv-dst">${esc(anim.to)}</span><span class="sv-arrow">\u27F5</span><span class="sv-val">${esc(anim.result)}</span><span class="sv-dim">from</span>` : anim.result != null ? `<span class="sv-val">${esc(anim.result)}</span><span class="sv-arrow">\u27F5</span>` : "";
+      const prefix = anim.to && anim.result != null ? `<span class="sv-dst">${esc(anim.to)}</span><span class="sv-arrow">⟵</span><span class="sv-val">${esc(anim.result)}</span><span class="sv-dim">from</span>` : anim.result != null ? `<span class="sv-val">${esc(anim.result)}</span><span class="sv-arrow">⟵</span>` : "";
       return `<div class="step-viz-row"><span class="sv-guide">${guideChar}</span><div class="sv-box">` + prefix + `<span class="sv-fn">${esc(anim.fn)}</span><span class="sv-dim">(</span>${argChips}<span class="sv-dim">)</span></div></div>`;
     }
     return "";
@@ -12059,7 +12182,7 @@ function __require(modId) {
       stepVizEl.classList.toggle("below-line", placedBelow);
     }
     if (typeof stepVizEl.innerHTML === "string" && stepVizEl.innerHTML) {
-      const targetGuide = placedBelow ? "\u2570\u2500" : "\u256D\u2500";
+      const targetGuide = placedBelow ? "╰─" : "╭─";
       const nextHtml = stepVizEl.innerHTML.replace(
         /(<span class="sv-guide(?:\s+[^"]*)?">)(?:╭─|╰─)(<\/span>)/,
         `$1${targetGuide}$2`
@@ -12139,7 +12262,7 @@ function __require(modId) {
   });
   var HIGHLIGHT_BUILTINS = /* @__PURE__ */ new Set([
     "checkpoint",
-    "\u65AD\u70B9",
+    "断点",
     "this",
     "console",
     "window",
@@ -12221,7 +12344,7 @@ function __require(modId) {
     return out;
   }
   function hl(t, declared) {
-    const re = new RegExp("(\\/\\/.*$)|(\"(?:[^\"\\\\]|\\\\.)*\"|'(?:[^'\\\\]|\\\\.)*'|`(?:[^`\\\\]|\\\\.)*`)|\\b(function|const|let|var|new|class|extends|typeof|instanceof|import|export|from|async|await|interface|type|as|satisfies)\\b|\\b(for|if|else|return|while|do|switch|case|break|continue|try|catch|finally|throw|yield)\\b|\\b(number|string|boolean|void|any|unknown|never|Math|Map|Set|Array|Object|JSON|Number|String|Boolean|Promise|Record|Error)\\b|\\b(true|false|null|undefined|\\d+(?:\\.\\d+)?)\\b|(\\b[A-Za-z_$][\\w$]*)(?=\\s*\\()|(?<=\\.)([A-Za-z_$][\\w$]*)\\b|([{,][ \\t]*)([A-Za-z_$][\\w$]*)(?=[ \\t]*:)|(^[ \\t]*)([A-Za-z_$][\\w$]*)(?=[ \\t]*:)|\\b([A-Za-z_$][\\w$]*)\\b|(===|!==|>=|<=|=>|&&|\\|\\||\\+\\+|--)", "g");
+    const re = /(\/\/.*$)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)|\b(function|const|let|var|new|class|extends|typeof|instanceof|import|export|from|async|await|interface|type|as|satisfies)\b|\b(for|if|else|return|while|do|switch|case|break|continue|try|catch|finally|throw|yield)\b|\b(number|string|boolean|void|any|unknown|never|Math|Map|Set|Array|Object|JSON|Number|String|Boolean|Promise|Record|Error)\b|\b(true|false|null|undefined|\d+(?:\.\d+)?)\b|(\b[A-Za-z_$][\w$]*)(?=\s*\()|(?<=\.)([A-Za-z_$][\w$]*)\b|([{,][ \t]*)([A-Za-z_$][\w$]*)(?=[ \t]*:)|(^[ \t]*)([A-Za-z_$][\w$]*)(?=[ \t]*:)|\b([A-Za-z_$][\w$]*)\b|(===|!==|>=|<=|=>|&&|\|\||\+\+|--)/g;
     let out = "", last = 0, m;
     while (m = re.exec(t)) {
       out += esc(t.slice(last, m.index));
@@ -12371,7 +12494,7 @@ function __require(modId) {
       const d = liveByLine.get(lineNum);
       if (!d) return "";
       const tip = (d.code ? d.code + ": " : "") + (d.message || "");
-      return '<span class="ln-err-badge" title="' + esc(tip) + '">\u2717 ' + esc(d.code || "TS") + "</span>";
+      return '<span class="ln-err-badge" title="' + esc(tip) + '">✗ ' + esc(d.code || "TS") + "</span>";
     };
     if (window.PlaygroundCM) {
       const errorLines = /* @__PURE__ */ new Set([...liveByLine.keys(), ...appState.TYPE_ERROR_LINES, ...appState.RUNTIME_ERROR_LINES]);
@@ -12528,7 +12651,7 @@ function __require(modId) {
     if (!hasVal && !d) return null;
     const val = hasVal ? v[lookupKey] : void 0;
     const declaredType = (appState.CURRENT_TS_META && appState.CURRENT_TS_META.varTypes ? appState.CURRENT_TS_META.varTypes.get(lookupKey) : null) || (d && d.interfaceName && d.interfaceName !== "object" ? d.interfaceName : null);
-    const kindStr = d ? d.kind === "interface" && d.isClass ? d.interfaceName ? "class \xB7 " + d.interfaceName : "class" : d.kind : typeof val === "function" ? formatFunctionTypeSignature(lookupKey, val) : declaredType || inferRuntimeTsType(val);
+    const kindStr = d ? d.kind === "interface" && d.isClass ? d.interfaceName ? "class · " + d.interfaceName : "class" : d.kind : typeof val === "function" ? formatFunctionTypeSignature(lookupKey, val) : declaredType || inferRuntimeTsType(val);
     return {
       name,
       val,
@@ -12542,18 +12665,18 @@ function __require(modId) {
     if (val === void 0) return "undefined";
     if (val === null) return "null";
     if (typeof val === "function") return formatFunctionTypeSignature(varName || val.name || "", val);
-    if (typeof val === "string") return JSON.stringify(val.length > 140 ? val.slice(0, 138) + "\u2026" : val);
+    if (typeof val === "string") return JSON.stringify(val.length > 140 ? val.slice(0, 138) + "…" : val);
     if (typeof val === "number" || typeof val === "boolean") return String(val);
     if (Array.isArray(val)) {
       const head = val.slice(0, 12).map((item) => formatHoverVal(item)).join(", ");
-      return "[" + head + (val.length > 12 ? ", \u2026 (" + val.length + " \u9879)" : "") + "]";
+      return "[" + head + (val.length > 12 ? ", … (" + val.length + " 项)" : "") + "]";
     }
     if (isMapLike(val)) return "Map(" + val.size + ")";
     if (isSetLike(val)) return "Set(" + val.size + ")";
     if (isRecord(val)) {
       const keys = Object.keys(val);
       const body = keys.slice(0, 8).map((k) => k + ": " + formatHoverVal(val[k])).join(", ");
-      return "{ " + body + (keys.length > 8 ? ", \u2026" : "") + " }";
+      return "{ " + body + (keys.length > 8 ? ", …" : "") + " }";
     }
     return String(val);
   }
@@ -12565,37 +12688,37 @@ function __require(modId) {
       const total = typeof d.total === "number" ? d.total : d.items.length;
       if (d.kind === "string") {
         const s = d.items.join("");
-        const suffix = total > d.items.length ? ` (\u5171 ${total} \u5B57\u7B26)` : "";
-        return JSON.stringify(s.length > 120 ? s.slice(0, 118) + "\u2026" : s) + suffix;
+        const suffix = total > d.items.length ? ` (共 ${total} 字符)` : "";
+        return JSON.stringify(s.length > 120 ? s.slice(0, 118) + "…" : s) + suffix;
       }
       const head = d.items.slice(0, 14).map(short).join(", ");
-      return "[" + head + (total > 14 ? `, \u2026 (\u5171 ${total} \u9879)` : "") + "]";
+      return "[" + head + (total > 14 ? `, … (共 ${total} 项)` : "") + "]";
     }
     if (d.kind === "map") {
       const entries = d.entries || [];
       const total = typeof d.total === "number" ? d.total : entries.length;
-      const head = entries.slice(0, 6).map((e) => short(e.k) + " \u2192 " + short(e.v)).join(", ");
-      return "Map(" + total + " \u9879) { " + head + (total > 6 ? ", \u2026" : "") + " }";
+      const head = entries.slice(0, 6).map((e) => short(e.k) + " → " + short(e.v)).join(", ");
+      return "Map(" + total + " 项) { " + head + (total > 6 ? ", …" : "") + " }";
     }
     if (d.kind === "grid") {
       const rows = typeof d.totalRows === "number" ? d.totalRows : (d.cells || []).length;
       const cols = typeof d.totalCols === "number" ? d.totalCols : rows && Array.isArray(d.cells[0]) ? d.cells[0].length : 0;
-      return rows + " \xD7 " + cols + " \u7684\u4E8C\u7EF4\u77E9\u9635";
+      return rows + " × " + cols + " 的二维矩阵";
     }
     if (d.kind === "tree") {
       const nodes = d.nodes || [];
       const total = typeof d.total === "number" ? d.total : nodes.length;
       const root = nodes[d.root] ? nodes[d.root].val : void 0;
-      return "Tree(" + total + " \u4E2A\u8282\u70B9 \xB7 \u6839 " + short(root) + ")";
+      return "Tree(" + total + " 个节点 · 根 " + short(root) + ")";
     }
     if (d.kind === "graph") {
       const nCnt = typeof d.totalNodes === "number" ? d.totalNodes : (d.nodes || []).length;
       const eCnt = typeof d.totalEdges === "number" ? d.totalEdges : (d.edges || []).length;
-      return "Graph(" + nCnt + " \u8282\u70B9 / " + eCnt + " \u6761\u8FB9)";
+      return "Graph(" + nCnt + " 节点 / " + eCnt + " 条边)";
     }
     if (d.fields) {
       const head = d.fields.slice(0, 6).map((f) => f.k + ": " + short(f.v)).join(", ");
-      return "{ " + head + (d.fields.length > 6 ? ", \u2026" : "") + " }";
+      return "{ " + head + (d.fields.length > 6 ? ", …" : "") + " }";
     }
     return formatHoverVal(info.val);
   }
@@ -12606,9 +12729,9 @@ function __require(modId) {
     parts.push('<div class="ht-head"><span class="ht-name">' + esc(info.name) + "</span>" + (kindLabel ? '<span class="ht-kind">' + kindLabel + "</span>" : "") + "</div>");
     parts.push('<div class="ht-val">' + esc(hoverValueSummary(info)) + "</div>");
     const note = [];
-    if (info.declaredType) note.push("\u58F0\u660E\u7C7B\u578B " + info.declaredType);
-    if (info.frame) note.push("\u6808\u5E27 " + info.frame);
-    if (note.length) parts.push('<div class="ht-note">' + esc(note.join(" \xB7 ")) + "</div>");
+    if (info.declaredType) note.push("声明类型 " + info.declaredType);
+    if (info.frame) note.push("栈帧 " + info.frame);
+    if (note.length) parts.push('<div class="ht-note">' + esc(note.join(" · ")) + "</div>");
     const vizFn = info.d && typeof info.d.kind === "string" ? VIZ[info.d.kind] : null;
     if (typeof vizFn === "function") {
       let viz = "";
@@ -12764,8 +12887,8 @@ function __require(modId) {
   function renderCallStack(st) {
     if (!callStackBarEl) return;
     if (!st) {
-      callStackBarEl.innerHTML = '<span class="cs-empty">\u672A\u5728\u8C03\u8BD5</span>';
-      if (callStackHintEl) callStackHintEl.textContent = "\u70B9\u51FB\u6808\u5E27\u53EF\u5207\u6362\u4F5C\u7528\u57DF";
+      callStackBarEl.innerHTML = '<span class="cs-empty">未在调试</span>';
+      if (callStackHintEl) callStackHintEl.textContent = "点击栈帧可切换作用域";
       return;
     }
     const stack = Array.isArray(st.callStack) && st.callStack.length ? st.callStack : [{ file: st.file, fn: "global", label: "global", line: st.line, v: st.v || {}, ds: st.ds || {} }];
@@ -12780,23 +12903,23 @@ function __require(modId) {
       const isSel = fIdx === activeIdx;
       const isTop = fIdx === stack.length - 1;
       const cls = "cs-crumb" + (isSel ? " active" : "") + (isTop ? " is-top" : "") + (!isTop && isSel ? " inspecting" : "");
-      const sep = fIdx > 0 ? '<span class="cs-sep">\u25B8</span>' : "";
+      const sep = fIdx > 0 ? '<span class="cs-sep">▸</span>' : "";
       const shortFile = f.file ? f.file.split("/").pop() || f.file : "";
       const displayLabel = isMultiModule && shortFile && !String(f.label || "").startsWith("<module:") ? `[${shortFile}] ${f.label}` : String(f.label || "global");
-      const titlePrefix = f.file ? `${f.file} \xB7 ` : "";
-      return sep + `<button type="button" class="${cls}" data-frame-idx="${fIdx}" title="\u5207\u6362\u5230\u6808\u5E27 ${esc(titlePrefix + String(f.label || "global"))} (\u7B2C ${f.line || st.line} \u884C)">${esc(displayLabel)}</button>`;
+      const titlePrefix = f.file ? `${f.file} · ` : "";
+      return sep + `<button type="button" class="${cls}" data-frame-idx="${fIdx}" title="切换到栈帧 ${esc(titlePrefix + String(f.label || "global"))} (第 ${f.line || st.line} 行)">${esc(displayLabel)}</button>`;
     }).join("");
     if (callStackHintEl) {
       const activeFileTag = isMultiModule && active && active.file ? ` (${active.file}) ` : "";
-      callStackHintEl.textContent = activeIsTop ? `\u6808\u6DF1 ${stack.length}${activeFileTag} \xB7 \u70B9\u51FB\u6808\u5E27\u53EF\u5207\u6362` : `\u6B63\u5728\u67E5\u770B\u6808\u5E27 ${activeIdx + 1}/${stack.length}${activeFileTag}: ${activeLabel}`;
+      callStackHintEl.textContent = activeIsTop ? `栈深 ${stack.length}${activeFileTag} · 点击栈帧可切换` : `正在查看栈帧 ${activeIdx + 1}/${stack.length}${activeFileTag}: ${activeLabel}`;
     }
   }
   function truncMap(arr, render, d) {
     if (d && Array.isArray(d.windowed) && d.windowed.length) {
       return d.windowed.map((entry) => {
         if (entry && entry.gap) {
-          const tip = entry.from != null && entry.to != null ? ` title="\u7701\u7565\u4E0B\u6807 ${entry.from}..${entry.to}\uFF08\u5171 ${entry.count} \u9879\uFF09"` : "";
-          return '<div class="vmore"' + tip + '>\u2026<span class="vmore-cnt">+' + entry.count + "</span></div>";
+          const tip = entry.from != null && entry.to != null ? ` title="省略下标 ${entry.from}..${entry.to}（共 ${entry.count} 项）"` : "";
+          return '<div class="vmore"' + tip + '>…<span class="vmore-cnt">+' + entry.count + "</span></div>";
         }
         return render(entry.val, entry.idx ?? 0);
       }).join("");
@@ -12808,7 +12931,7 @@ function __require(modId) {
     const head = arr.slice(0, HEAD).map((x, i) => render(x, i)).join("");
     const tailStart = total - TAIL;
     const tail = arr.slice(arr.length - TAIL).map((x, i) => render(x, tailStart + i)).join("");
-    return head + '<div class="vmore" title="\u7701\u7565 ' + hidden + ' \u9879">\u2026<span class="vmore-cnt">+' + hidden + "</span></div>" + tail;
+    return head + '<div class="vmore" title="省略 ' + hidden + ' 项">…<span class="vmore-cnt">+' + hidden + "</span></div>" + tail;
   }
   function vizArray(d) {
     if (!d || !d.items || !d.items.length) return null;
@@ -12845,7 +12968,7 @@ function __require(modId) {
       const tag = k === 0 ? '<span class="sub-tag">top</span>' : "";
       return '<div class="' + cls + '">' + tag + '<span class="val">' + esc(n) + '</span><span class="idx">' + k + "</span></div>";
     }, d);
-    return '<div class="viz"><div class="viz-row varray-row">' + cells + '</div><div class="vmeta-hint">parent = (i - 1) &gt;&gt; 1 \xB7 left = 2i + 1</div></div>';
+    return '<div class="viz"><div class="viz-row varray-row">' + cells + '</div><div class="vmeta-hint">parent = (i - 1) &gt;&gt; 1 · left = 2i + 1</div></div>';
   }
   function vizUF(d) {
     if (!d || !d.items || !d.items.length) return null;
@@ -12863,7 +12986,7 @@ function __require(modId) {
     return '<div class="viz"><div class="viz-row vmap-row">' + truncMap(d.entries, (e) => {
       const k = isRecord(e) ? e.k : "";
       const v = isRecord(e) ? e.v : void 0;
-      return '<div class="vpair' + (d.hot === k ? " hot" : "") + '"><span class="vcell vk">' + esc(k) + '</span><span class="varr">\u2192</span><span class="vcell vv">' + esc(v) + "</span></div>";
+      return '<div class="vpair' + (d.hot === k ? " hot" : "") + '"><span class="vcell vk">' + esc(k) + '</span><span class="varr">→</span><span class="vcell vv">' + esc(v) + "</span></div>";
     }, d) + "</div></div>";
   }
   function vizSet(d) {
@@ -12887,7 +13010,7 @@ function __require(modId) {
       const isTop = abs === total - 1;
       return '<div class="vcell' + (d.hot === abs ? " hot" : isTop ? " mark" : "") + '"><span>' + esc(x) + "</span>" + (isTop ? '<span class="vtop">top</span>' : "") + "</div>";
     }).join("");
-    return '<div class="viz"><div class="vcol">' + rows + "</div>" + (hiddenCount ? '<div class="vmore">\u2026+' + hiddenCount + "</div>" : "") + "</div>";
+    return '<div class="viz"><div class="vcol">' + rows + "</div>" + (hiddenCount ? '<div class="vmore">…+' + hiddenCount + "</div>" : "") + "</div>";
   }
   function vizString(d) {
     if (!d || !d.items || !d.items.length) return null;
@@ -12927,7 +13050,7 @@ function __require(modId) {
       let html2 = '<div class="ghead">r\\c</div>';
       for (const ct of colTracks) {
         if (ct.gap) {
-          html2 += '<div class="ggap">\u22EF</div>';
+          html2 += '<div class="ggap">⋯</div>';
         } else {
           const isFocusCol = Array.isArray(d.mark) && d.mark[1] === ct.c;
           html2 += '<div class="ghead' + (isFocusCol ? " focus" : "") + '">' + ct.c + "</div>";
@@ -12936,9 +13059,9 @@ function __require(modId) {
       for (let ri = 0; ri < rIdxs.length; ri++) {
         const realR = rIdxs[ri];
         if (ri > 0 && realR !== void 0 && realR > (rIdxs[ri - 1] ?? 0) + 1) {
-          html2 += '<div class="ggap">\u22EE</div>';
+          html2 += '<div class="ggap">⋮</div>';
           for (let gi = 0; gi < colTracks.length; gi++) {
-            html2 += '<div class="ggap">' + (colTracks[gi]?.gap ? "\u22F1" : "\u22EE") + "</div>";
+            html2 += '<div class="ggap">' + (colTracks[gi]?.gap ? "⋱" : "⋮") + "</div>";
           }
         }
         const isFocusRow = Array.isArray(d.mark) && d.mark[0] === realR;
@@ -12946,14 +13069,14 @@ function __require(modId) {
         const rowVals = d.viewCells[ri] || [];
         for (const ct of colTracks) {
           if (ct.gap) {
-            html2 += '<div class="ggap">\u22EF</div>';
+            html2 += '<div class="ggap">⋯</div>';
           } else {
             const realC = ct.c;
             let cls = "gcell";
             if (Array.isArray(d.mark) && d.mark[0] === realR && d.mark[1] === realC) cls += " hot";
             else if (depSet.has(realR + "," + realC)) cls += " dep";
             const val = rowVals[ct.ci];
-            html2 += '<div class="' + cls + '" title="[' + realR + "][" + realC + ']">' + (val === void 0 || val === null ? "\xB7" : esc(val)) + "</div>";
+            html2 += '<div class="' + cls + '" title="[' + realR + "][" + realC + ']">' + (val === void 0 || val === null ? "·" : esc(val)) + "</div>";
           }
         }
       }
@@ -12967,7 +13090,7 @@ function __require(modId) {
         if (Array.isArray(d.mark) && d.mark[0] === r && d.mark[1] === c) cls += " hot";
         else if (depSet.has(r + "," + c)) cls += " dep";
         const val = d.cells[r]?.[c];
-        html += '<div class="' + cls + '">' + (val === void 0 || val === null ? "\xB7" : esc(val)) + "</div>";
+        html += '<div class="' + cls + '">' + (val === void 0 || val === null ? "·" : esc(val)) + "</div>";
       }
     }
     return '<div class="viz"><div class="vgrid" style="grid-template-columns:repeat(' + cols + ',auto)">' + html + "</div></div>";
@@ -12978,7 +13101,7 @@ function __require(modId) {
     const ptrs = d.pointers;
     return '<div class="viz"><div class="viz-row">' + truncMap(d.items, (val, k) => {
       const pTag = ptrs && ptrs[k] && ptrs[k].length ? '<span class="sub-tag ptr-tag">' + esc(ptrs[k].slice(0, 2).join(",")) + "</span>" : "";
-      return '<div class="vpair"><span class="vcell' + (d.hot === k ? " hot" : "") + '">' + pTag + esc(val) + "</span>" + (k < total - 1 ? '<span class="varr">\u2192</span>' : '<span class="varr">\u2192</span><span class="vempty">null</span>') + "</div>";
+      return '<div class="vpair"><span class="vcell' + (d.hot === k ? " hot" : "") + '">' + pTag + esc(val) + "</span>" + (k < total - 1 ? '<span class="varr">→</span>' : '<span class="varr">→</span><span class="vempty">null</span>') + "</div>";
     }, d) + "</div></div>";
   }
   function vizTree(d) {
@@ -13041,51 +13164,51 @@ function __require(modId) {
     if (!fields.length && !d.isClass) return null;
     const ifaceTitle = d.interfaceName && d.interfaceName !== "object" ? d.interfaceName : "Object";
     const kwTxt = d.isClass ? "class" : "interface";
-    const badgeTxt = d.isSchema ? d.instanceName ? `schema \xB7 \u7ED1\u5B9A ${d.instanceName}` : "schema" : "instance";
+    const badgeTxt = d.isSchema ? d.instanceName ? `schema · 绑定 ${d.instanceName}` : "schema" : "instance";
     const rows = fields.length ? fields.slice(0, 12).map((f) => {
       const isHot = d.hot === f.k;
       const hasVal = f.v !== void 0;
       const isStr = typeof f.v === "string";
-      const valDisplay = hasVal ? isStr ? JSON.stringify(f.v) : f.v !== null && typeof f.v === "object" ? safeJSONStringify(f.v) : String(f.v) : "\u672A\u5B9E\u4F8B\u5316";
+      const valDisplay = hasVal ? isStr ? JSON.stringify(f.v) : f.v !== null && typeof f.v === "object" ? safeJSONStringify(f.v) : String(f.v) : "未实例化";
       return '<div class="viface-row' + (isHot ? " hot" : "") + '"><span class="viface-k">' + esc(f.k) + (f.optional ? '<span class="viface-opt">?</span>' : "") + "</span>" + (f.declaredType ? '<span class="viface-t">: ' + esc(f.declaredType) + "</span>" : "") + (hasVal ? '<span class="viface-eq">=</span><span class="viface-v' + (isStr ? " str" : "") + '">' + esc(valDisplay) + "</span>" : '<span class="viface-v schema-only">' + esc(valDisplay) + "</span>") + "</div>";
-    }).join("") : '<div class="viface-row"><span class="viface-v schema-only">\uFF08\u65E0\u5B9E\u4F8B\u5C5E\u6027\uFF09</span></div>';
+    }).join("") : '<div class="viface-row"><span class="viface-v schema-only">（无实例属性）</span></div>';
     return '<div class="viz"><div class="viface"><div class="viface-head"><span class="viface-kw">' + kwTxt + '</span><span class="viface-title">' + esc(ifaceTitle) + '</span><span class="viface-badge">' + esc(badgeTxt) + '</span></div><div class="viface-body">' + rows + "</div></div></div>";
   }
   function vizEventLoop(d) {
     if (!d) return null;
     const phaseMap = {
-      sync: { label: "Sync \xB7 \u540C\u6B65\u6808\u6267\u884C", cls: "sync" },
-      await_suspend: { label: "Await \xB7 \u534F\u7A0B\u6302\u8D77", cls: "suspend" },
-      await_resume: { label: "Await \xB7 \u534F\u7A0B\u6062\u590D", cls: "resume" },
-      microtask: { label: "Microtask \xB7 \u5FAE\u4EFB\u52A1\u51FA\u961F", cls: "micro" },
-      macrotask: { label: "Macrotask \xB7 \u5B8F\u4EFB\u52A1\u89E6\u53D1", cls: "macro" }
+      sync: { label: "Sync · 同步栈执行", cls: "sync" },
+      await_suspend: { label: "Await · 协程挂起", cls: "suspend" },
+      await_resume: { label: "Await · 协程恢复", cls: "resume" },
+      microtask: { label: "Microtask · 微任务出队", cls: "micro" },
+      macrotask: { label: "Macrotask · 宏任务触发", cls: "macro" }
     };
     const ph = (d.phase ? phaseMap[d.phase] : void 0) || { label: d.phase || "Event Loop", cls: "sync" };
     const nowMs = typeof d.now === "number" ? d.now : 0;
     const coroutines = Array.isArray(d.coroutines) ? d.coroutines : [];
     const coroHtml = coroutines.length ? coroutines.map((c) => {
       const stCls = c.status === "running" ? "running" : c.status === "suspended" ? "suspended" : "completed";
-      const stLabel = c.status === "running" ? "\u25CF \u6267\u884C\u4E2D" : c.status === "suspended" ? `\u23F8 \u6302\u8D77 @L${c.line}` : "\u2713 \u5B8C\u6210";
-      const detail = c.status === "suspended" && c.awaitingExpr ? `<span class="vel-coro-expr">await ${esc(c.awaitingExpr)}</span>` : c.status === "completed" && c.returnVal !== void 0 ? `<span class="vel-coro-expr">\u21D2 ${esc(c.returnVal)}</span>` : "";
+      const stLabel = c.status === "running" ? "● 执行中" : c.status === "suspended" ? `⏸ 挂起 @L${c.line}` : "✓ 完成";
+      const detail = c.status === "suspended" && c.awaitingExpr ? `<span class="vel-coro-expr">await ${esc(c.awaitingExpr)}</span>` : c.status === "completed" && c.returnVal !== void 0 ? `<span class="vel-coro-expr">⇒ ${esc(c.returnVal)}</span>` : "";
       return `<div class="vel-chip coro-${stCls}"><span class="vel-chip-title">async ${esc(c.name)}()</span><span class="vel-chip-status">${esc(stLabel)}</span>` + detail + `</div>`;
-    }).join("") : '<span class="vel-empty">\u65E0\u6D3B\u8DC3\u534F\u7A0B</span>';
+    }).join("") : '<span class="vel-empty">无活跃协程</span>';
     const microtasks = Array.isArray(d.microtasks) ? d.microtasks : [];
     const microHtml = microtasks.length ? microtasks.map(
       (m, idx) => `<div class="vel-qitem micro${idx === 0 ? " head" : ""}"><span class="vel-qidx">#${idx + 1}</span><span class="vel-qlabel">${esc(m.label)}</span>` + ((m.line ?? 0) > 0 ? `<span class="vel-qmeta">@L${m.line}</span>` : "") + `</div>`
-    ).join("") : '<span class="vel-empty">\u961F\u5217\u4E3A\u7A7A (0)</span>';
+    ).join("") : '<span class="vel-empty">队列为空 (0)</span>';
     const macrotasks = Array.isArray(d.macrotasks) ? d.macrotasks : [];
     const macroHtml = macrotasks.length ? macrotasks.map(
       (t, idx) => `<div class="vel-qitem macro${idx === 0 ? " head" : ""}"><span class="vel-qidx">t=${t.due}ms</span><span class="vel-qlabel">${esc(t.label)}</span><span class="vel-qmeta">+${t.delay}ms</span></div>`
-    ).join("") : '<span class="vel-empty">\u65E0\u5F85\u89E6\u53D1\u5B9A\u65F6\u5668 (0)</span>';
+    ).join("") : '<span class="vel-empty">无待触发定时器 (0)</span>';
     const promises = Array.isArray(d.promises) ? d.promises : [];
     const promHtml = promises.length ? promises.map((p) => {
       const st = p.state || "pending";
-      const icon = st === "fulfilled" ? "\u2713" : st === "rejected" ? "\u2717" : "\u23F3";
+      const icon = st === "fulfilled" ? "✓" : st === "rejected" ? "✗" : "⏳";
       const reactions = p.reactions ?? 0;
       const valPart = st === "pending" ? reactions > 0 ? `<span class="vel-pval dim">${reactions} waiter${reactions > 1 ? "s" : ""}</span>` : '<span class="vel-pval dim">pending</span>' : `<span class="vel-pval">${esc(p.value)}</span>`;
-      return `<div class="vel-pcard ${esc(st)}"><span class="vel-phead"><span class="vel-picon">${icon}</span><span class="vel-pname">P#${p.id} \xB7 ${esc(p.label)}</span></span>` + valPart + `</div>`;
-    }).join("") : '<span class="vel-empty">\u6682\u65E0 Promise \u5B9E\u4F8B</span>';
-    return `<div class="viz"><div class="veventloop"><div class="vel-header"><span class="vel-phase ${ph.cls}">${esc(ph.label)}</span>` + (d.activeTask ? `<span class="vel-active">${esc(d.activeTask)}</span>` : "") + `<span class="vel-clock">\u23F1 \u865A\u62DF\u65F6\u949F ${nowMs}ms</span></div><div class="vel-grid"><div class="vel-lane"><div class="vel-lane-title">Async \u534F\u7A0B\u72B6\u6001</div><div class="vel-lane-body">` + coroHtml + '</div></div><div class="vel-lane"><div class="vel-lane-title">Microtask \u5FAE\u4EFB\u52A1\u961F\u5217 (FIFO)</div><div class="vel-lane-body">' + microHtml + '</div></div><div class="vel-lane"><div class="vel-lane-title">Macrotask \u5B8F\u4EFB\u52A1 / \u5B9A\u65F6\u5668</div><div class="vel-lane-body">' + macroHtml + '</div></div><div class="vel-lane"><div class="vel-lane-title">Promise \u72B6\u6001\u8868</div><div class="vel-lane-body vel-pgrid">' + promHtml + "</div></div></div></div></div>";
+      return `<div class="vel-pcard ${esc(st)}"><span class="vel-phead"><span class="vel-picon">${icon}</span><span class="vel-pname">P#${p.id} · ${esc(p.label)}</span></span>` + valPart + `</div>`;
+    }).join("") : '<span class="vel-empty">暂无 Promise 实例</span>';
+    return `<div class="viz"><div class="veventloop"><div class="vel-header"><span class="vel-phase ${ph.cls}">${esc(ph.label)}</span>` + (d.activeTask ? `<span class="vel-active">${esc(d.activeTask)}</span>` : "") + `<span class="vel-clock">⏱ 虚拟时钟 ${nowMs}ms</span></div><div class="vel-grid"><div class="vel-lane"><div class="vel-lane-title">Async 协程状态</div><div class="vel-lane-body">` + coroHtml + '</div></div><div class="vel-lane"><div class="vel-lane-title">Microtask 微任务队列 (FIFO)</div><div class="vel-lane-body">' + microHtml + '</div></div><div class="vel-lane"><div class="vel-lane-title">Macrotask 宏任务 / 定时器</div><div class="vel-lane-body">' + macroHtml + '</div></div><div class="vel-lane"><div class="vel-lane-title">Promise 状态表</div><div class="vel-lane-body vel-pgrid">' + promHtml + "</div></div></div></div></div>";
   }
   Object.assign(VIZ, {
     array: vizArray,
@@ -13107,7 +13230,7 @@ function __require(modId) {
   function renderPicker() {
     const vars = discoverVars();
     if (!vars.length) {
-      pickEl.innerHTML = '<span class="vempty">\u65E0\u7ED3\u6784\u53D8\u91CF</span>';
+      pickEl.innerHTML = '<span class="vempty">无结构变量</span>';
       renderSlots();
       return;
     }
@@ -13127,25 +13250,25 @@ function __require(modId) {
       slotsEl.classList.toggle("single-col", slotsEl.clientWidth > 0 && slotsEl.clientWidth < 420);
     }
     if (!vars.length) {
-      slotsEl.innerHTML = '<div class="slot" style="grid-column:1/-1"><div class="vempty">' + (appState.TRACE.steps.length ? "\u70B9\u9009\u53D8\u91CF\u4EE5\u5173\u6CE8\uFF08\u6216\u672C\u6B65\u6682\u65E0\u7ED3\u6784\uFF09" : "\u751F\u6210\u8F68\u8FF9\u540E\u663E\u793A\u7ED3\u6784\u53EF\u89C6\u5316") + "</div></div>";
+      slotsEl.innerHTML = '<div class="slot" style="grid-column:1/-1"><div class="vempty">' + (appState.TRACE.steps.length ? "点选变量以关注（或本步暂无结构）" : "生成轨迹后显示结构可视化") + "</div></div>";
       return;
     }
     const allocated = allocateSlotSpans(vars, ds);
     slotsEl.innerHTML = allocated.map(({ s, d, kind, span }) => {
       const fn = VIZ[kind];
-      const body = d ? fn ? fn(d) || '<div class="vempty">empty</div>' : '<div class="vempty">\u2026</div>' : '<div class="vempty">empty</div>';
+      const body = d ? fn ? fn(d) || '<div class="vempty">empty</div>' : '<div class="vempty">…</div>' : '<div class="vempty">empty</div>';
       const winTag = d && d.win ? `<span class="win-tag">[${d.win[0]}..${d.win[1]}]</span>` : "";
       let sizeTag = "";
       if (d) {
         if (kind === "grid" && ((d.totalRows || 0) > 10 || (d.totalCols || 0) > 10)) {
-          sizeTag = `<span class="size-tag">${d.totalRows}\xD7${d.totalCols}</span>`;
+          sizeTag = `<span class="size-tag">${d.totalRows}×${d.totalCols}</span>`;
         } else if (typeof d.total === "number" && d.total > 20) {
-          sizeTag = `<span class="size-tag">\u5171 ${d.total} \u9879</span>`;
+          sizeTag = `<span class="size-tag">共 ${d.total} 项</span>`;
         }
       }
       const isHotSlot = d && (d.hot !== void 0 || d.mark != null);
       const kindPrefix = d && d.isClass ? "class" : "interface";
-      const kindBadge = kind === "interface" && d && d.interfaceName && d.interfaceName !== "object" && !d.isSchema ? `${kindPrefix} \xB7 ${d.interfaceName}` : kind === "interface" && d && d.isClass ? "class" : kind;
+      const kindBadge = kind === "interface" && d && d.interfaceName && d.interfaceName !== "object" && !d.isSchema ? `${kindPrefix} · ${d.interfaceName}` : kind === "interface" && d && d.isClass ? "class" : kind;
       return '<div class="slot' + (span === 2 ? " span-2" : "") + (isHotSlot ? " pulse" : "") + '" data-var="' + esc(s.name) + '"><div class="name"><span>' + esc(s.name) + '</span><span class="kind">' + esc(kindBadge) + "</span>" + sizeTag + winTag + "</div>" + body + "</div>";
     }).join("");
   }
@@ -13234,8 +13357,8 @@ function __require(modId) {
     if (!st) {
       renderCallStack(null);
       varsEl.innerHTML = "";
-      consoleEl.innerHTML = '<div><span class="p">\u203A</span><span class="dim">\u5F00\u542F Debug \u6A21\u5F0F\u540E\u5F53\u573A\u8BA1\u7B97\u5E76\u663E\u793A\u6BCF\u6B65\u6267\u884C\u8BE6\u60C5</span></div>';
-      cntEl.textContent = "\u672A\u5728\u8C03\u8BD5";
+      consoleEl.innerHTML = '<div><span class="p">›</span><span class="dim">开启 Debug 模式后当场计算并显示每步执行详情</span></div>';
+      cntEl.textContent = "未在调试";
       cntEl.className = "";
       updateControlButtons();
       renderSlots();
@@ -13251,46 +13374,59 @@ function __require(modId) {
     }
     const v = activeFrame && activeFrame.v || st.v || {};
     const prevV = prevSt && prevSt.v || {};
-    const primEntries = Object.keys(v).map((k) => {
+    const isTopFrame = Boolean(!activeFrame || activeFrame.isTop);
+    const assignTarget = isTopFrame && st.anim && (st.anim.type === "assign" || st.anim.type === "call" && st.anim.to) && typeof st.anim.to === "string" && st.anim.to !== "return" ? st.anim.to.trim() : "";
+    const assignNextVal = assignTarget && st.anim ? st.anim.val !== void 0 ? st.anim.val : st.anim.result : void 0;
+    const primList = Object.keys(v).map((k) => {
       const val = v[k];
       if (val !== null && typeof val === "object") return "";
       const isFn = typeof val === "function";
       const prevVal = prevV[k];
-      const changed = Boolean(
-        activeFrame && activeFrame.isTop && prevSt && (isFn ? typeof prevVal !== "function" || formatFunctionTypeSignature(k, prevVal) !== formatFunctionTypeSignature(k, val) : prevVal !== val)
+      const isPendingAssign = Boolean(
+        assignTarget === k && assignNextVal !== void 0 && assignNextVal !== null && String(val) !== String(assignNextVal)
       );
-      const valHtml = isFn ? '<span class="v fn-type">' + formatFnTypeHtml(formatFunctionTypeSignature(k, val)) + "</span>" : '<span class="v">' + esc(val) + "</span>";
+      const changed = Boolean(
+        isPendingAssign || activeFrame && activeFrame.isTop && prevSt && (isFn ? typeof prevVal !== "function" || formatFunctionTypeSignature(k, prevVal) !== formatFunctionTypeSignature(k, val) : prevVal !== val)
+      );
+      const nextBadge = isPendingAssign ? ` <span class="v-next" title="本行执行前为 ${esc(val)}，本行赋值后变为 ${esc(assignNextVal)}">→ ${esc(assignNextVal)}</span>` : "";
+      const valHtml = isFn ? '<span class="v fn-type">' + formatFnTypeHtml(formatFunctionTypeSignature(k, val)) + "</span>" : '<span class="v">' + esc(val) + nextBadge + "</span>";
       return '<div class="pair' + (changed ? " changed" : "") + '" data-var="' + esc(k) + '"><span class="k">' + esc(k) + "</span>" + valHtml + "</div>";
-    }).join("");
+    });
+    if (assignTarget && /^[A-Za-z_$][\w$]*$/.test(assignTarget) && !(assignTarget in v) && assignNextVal !== void 0 && assignNextVal !== null) {
+      primList.push(
+        '<div class="pair changed" data-var="' + esc(assignTarget) + '" title="本行即将声明并赋值的变量"><span class="k">' + esc(assignTarget) + '</span><span class="v"><span class="v-next">→ ' + esc(assignNextVal) + "</span></span></div>"
+      );
+    }
+    const primEntries = primList.join("");
     if (primEntries) {
       varsEl.innerHTML = primEntries;
     } else if (activeFrame && activeFrame.fn === "global") {
       varsEl.innerHTML = '<div class="pair"><span class="k">scope</span><span class="v">global</span></div>' + (appState.DEBUG_SESSION.callExpr && appState.DEBUG_SESSION.callExpr !== "undefined" ? '<div class="pair"><span class="k">entry</span><span class="v">' + esc(appState.DEBUG_SESSION.callExpr) + "</span></div>" : "");
     } else {
-      varsEl.innerHTML = '<div class="vempty">\uFF08\u672C\u5E27\u65E0\u539F\u59CB\u7C7B\u578B\u5C40\u90E8\u53D8\u91CF\uFF09</div>';
+      varsEl.innerHTML = '<div class="vempty">（本帧无原始类型局部变量）</div>';
     }
     let animDesc = "";
-    const fileTag = st.file && appState.TRACE.moduleSources && Object.keys(appState.TRACE.moduleSources).length > 1 ? `${st.file} \xB7 ` : "";
+    const fileTag = st.file && appState.TRACE.moduleSources && Object.keys(appState.TRACE.moduleSources).length > 1 ? `${st.file} · ` : "";
     if (st.error) {
-      animDesc = `<div class="anim-desc" style="color:var(--red)">runtime error \xB7 \u5DF2\u505C\u6B62\u5728\u62A5\u9519\u884C (${esc(fileTag)}\u7B2C ${st.line} \u884C)</div>`;
+      animDesc = `<div class="anim-desc" style="color:var(--red)">runtime error · 已停止在报错行 (${esc(fileTag)}第 ${st.line} 行)</div>`;
     } else if (st.anim) {
-      if (st.anim.type === "assign") animDesc = `<div class="anim-desc">${esc(fileTag)}assign \xB7 ${esc(st.anim.from)} \u2192 ${esc(st.anim.to)} = ${esc(st.anim.val)}</div>`;
-      else if (st.anim.type === "compare") animDesc = `<div class="anim-desc">${esc(fileTag)}compare \xB7 ${esc(st.anim.lhs)} ${esc(st.anim.op)} ${esc(st.anim.rhs)} \u21D2 ${esc(st.anim.result)}</div>`;
-      else if (st.anim.type === "call") animDesc = `<div class="anim-desc">${esc(fileTag)}call \xB7 ${esc(st.anim.fn)}(${esc((st.anim.argVals || []).join(", "))})</div>`;
-      else if (st.anim.type === "checkpoint") animDesc = `<div class="anim-desc" style="color:var(--cyan)">${esc(fileTag)}checkpoint \xB7 ${esc(st.anim.argVals && st.anim.argVals[0] ? st.anim.argVals[0] : "\u68C0\u67E5\u70B9\u5DF2\u547D\u4E2D")}</div>`;
+      if (st.anim.type === "assign") animDesc = `<div class="anim-desc">${esc(fileTag)}assign · ${esc(st.anim.from)} → ${esc(st.anim.to)} = ${esc(st.anim.val)}</div>`;
+      else if (st.anim.type === "compare") animDesc = `<div class="anim-desc">${esc(fileTag)}compare · ${esc(st.anim.lhs)} ${esc(st.anim.op)} ${esc(st.anim.rhs)} ⇒ ${esc(st.anim.result)}</div>`;
+      else if (st.anim.type === "call") animDesc = `<div class="anim-desc">${esc(fileTag)}call · ${esc(st.anim.fn)}(${esc((st.anim.argVals || []).join(", "))})</div>`;
+      else if (st.anim.type === "checkpoint") animDesc = `<div class="anim-desc" style="color:var(--cyan)">${esc(fileTag)}checkpoint · ${esc(st.anim.argVals && st.anim.argVals[0] ? st.anim.argVals[0] : "检查点已命中")}</div>`;
     }
-    consoleEl.innerHTML = '<div><span class="p">\u203A</span>' + (fileTag ? '<span class="dim">[' + esc(st.file || "") + "] </span>" : "") + esc(st.note || "") + "</div>" + animDesc;
+    consoleEl.innerHTML = '<div><span class="p">›</span>' + (fileTag ? '<span class="dim">[' + esc(st.file || "") + "] </span>" : "") + esc(st.note || "") + "</div>" + animDesc;
     if (st.error) {
-      cntEl.textContent = "\u2717 \u8FD0\u884C\u65F6\u62A5\u9519";
+      cntEl.textContent = "✗ 运行时报错";
       cntEl.className = "err";
     } else if (st.isCheckpoint) {
-      cntEl.textContent = "\u25C9 \u547D\u4E2D\u68C0\u67E5\u70B9";
+      cntEl.textContent = "◉ 命中检查点";
       cntEl.className = "ckpt";
     } else if (appState.DEBUG_SESSION.finished && i === appState.TRACE.steps.length - 1) {
-      cntEl.textContent = "\u2713 \u6267\u884C\u5B8C\u6BD5";
+      cntEl.textContent = "✓ 执行完毕";
       cntEl.className = "done";
     } else {
-      cntEl.textContent = "\u25CF \u8C03\u8BD5\u8FD0\u884C\u4E2D";
+      cntEl.textContent = "● 调试运行中";
       cntEl.className = "running";
     }
     updateControlButtons();
@@ -13392,7 +13528,7 @@ function __require(modId) {
       const firstSt = appState.TRACE.steps[0];
       if (firstSt && (firstSt.isCheckpoint || firstSt.error || appState.DEBUG_SESSION.finished)) {
         if (firstSt.isCheckpoint) {
-          say("\u25C9 \u5DF2\u5230\u8FBE\u68C0\u67E5\u70B9 [\u7B2C " + firstSt.line + " \u884C] \xB7 " + (firstSt.note || ""), "ok");
+          say("◉ 已到达检查点 [第 " + firstSt.line + " 行] · " + (firstSt.note || ""), "ok");
         }
         return;
       }
@@ -13424,16 +13560,16 @@ function __require(modId) {
     const finalSt = appState.TRACE.steps[appState.cur];
     if (finalSt && finalSt.error) {
     } else if (finalSt && finalSt.isCheckpoint) {
-      say("\u25C9 \u5DF2\u8FD0\u884C\u5230\u68C0\u67E5\u70B9 [\u7B2C " + finalSt.line + " \u884C] \xB7 " + (finalSt.note || ""), "ok");
+      say("◉ 已运行到检查点 [第 " + finalSt.line + " 行] · " + (finalSt.note || ""), "ok");
     } else if (appState.DEBUG_SESSION.finished) {
-      say("\u2713 \u5DF2\u8FD0\u884C\u81F3\u7A0B\u5E8F\u7ED3\u675F\uFF08\u540E\u7EED\u65E0\u66F4\u591A\u68C0\u67E5\u70B9\uFF09  \u2192  " + safeJSONStringify(appState.DEBUG_SESSION.returnValue), "ok");
+      say("✓ 已运行至程序结束（后续无更多检查点）  →  " + safeJSONStringify(appState.DEBUG_SESSION.returnValue), "ok");
     }
   }
   function rebuildDebugAtPosition(newTargetLine, targetVisits, fallbackStepIdx) {
     const src = editor.value.replace(/\r/g, "");
     const unsupported = detectUnsupportedSyntax(src);
     if (unsupported.length) {
-      unsupported.forEach((x) => say("\u2717 \u7B2C " + x.line + " \u884C\uFF1A\u6682\u4E0D\u652F\u6301 " + x.feature + " \u2014\u2014 " + x.hint, "err", x.line));
+      unsupported.forEach((x) => say("✗ 第 " + x.line + " 行：暂不支持 " + x.feature + " —— " + x.hint, "err", x.line));
       return false;
     }
     extractTsInterfaceMetadata(src);
@@ -13449,7 +13585,7 @@ function __require(modId) {
     const originalLines = src.split("\n");
     const enums = transpileEnums(src);
     if (enums.error) {
-      say("\u2717 \u7B2C " + enums.error.line + " \u884C\uFF1A" + enums.error.message, "err", enums.error.line);
+      say("✗ 第 " + enums.error.line + " 行：" + enums.error.message, "err", enums.error.line);
       return false;
     }
     const js0 = stripTypes(enums.code);
@@ -13465,14 +13601,14 @@ function __require(modId) {
       const body = js + finHook + ";return (" + expr + ");";
       compiledFn = new Function("__t", "console", body);
     } catch (e) {
-      say("\u2717 \u7F16\u8BD1\u5931\u8D25: " + (e instanceof Error && e.message ? e.message : e), "err");
+      say("✗ 编译失败: " + (e instanceof Error && e.message ? e.message : e), "err");
       return false;
     }
     stopAuto();
     clearFlyLayer();
     const prevWatched = new Set(appState.watched);
     appState.TRACE = {
-      title: "TypeScript Playground \xB7 Debug",
+      title: "TypeScript Playground · Debug",
       code: originalLines,
       steps: []
     };
@@ -13594,7 +13730,7 @@ function __require(modId) {
       const keepLine = Math.max(1, Math.min(lines.length, Math.min(removedLine, lines.length)));
       appState.lastEditorCursorLine = keepLine;
       scrollCodeTo(keepLine);
-      say("\xB7 \u5DF2\u79FB\u9664\u7B2C " + removedLine + " \u884C\u7684 checkpoint() \u68C0\u67E5\u70B9\u51FD\u6570 (Ctrl+C)", "dim");
+      say("· 已移除第 " + removedLine + " 行的 checkpoint() 检查点函数 (Alt+C)", "dim");
       return;
     }
     let insertIdx = targetIdx;
@@ -13620,7 +13756,7 @@ function __require(modId) {
       startDebug(0);
     }
     scrollCodeTo(insertedLineNum);
-    say("\u2713 \u5DF2\u5728\u7B2C " + insertedLineNum + " \u884C\u6DFB\u52A0\u68C0\u67E5\u70B9\u51FD\u6570 checkpoint()\uFF08\u53EF\u6309 Ctrl+C \u968F\u65F6\u589E\u5220\u8BE5\u884C\u68C0\u67E5\u70B9\uFF09", "ok");
+    say("✓ 已在第 " + insertedLineNum + " 行添加检查点函数 checkpoint()（可按 Alt+C 随时增删该行检查点）", "ok");
   }
   function go(i) {
     if (i > appState.cur) stepNext();
@@ -13630,7 +13766,7 @@ function __require(modId) {
     if (appState.timer) {
       clearInterval(appState.timer);
       appState.timer = null;
-      $("auto").textContent = "\u25B6 \u81EA\u52A8";
+      $("auto").textContent = "▶ 自动";
     }
   }
   $("prev").onclick = () => stepPrev();
@@ -13651,7 +13787,7 @@ function __require(modId) {
       if (!ok) return;
     }
     if (appState.cur >= appState.TRACE.steps.length - 1 && appState.DEBUG_SESSION.finished) return;
-    $("auto").textContent = "\u23F8 \u6682\u505C";
+    $("auto").textContent = "⏸ 暂停";
     appState.timer = setInterval(() => {
       if (appState.cur >= appState.TRACE.steps.length - 1 && appState.DEBUG_SESSION.finished) {
         stopAuto();
@@ -13699,7 +13835,7 @@ function __require(modId) {
       });
     }
     if (videoSpeedBadge) {
-      videoSpeedBadge.textContent = num + "x \xB7 60fps";
+      videoSpeedBadge.textContent = num + "x · 60fps";
     }
     return appState.VIDEO_EXPORT_SPEED;
   }
@@ -13761,7 +13897,7 @@ function __require(modId) {
     appState.lastEditorCursorLine = -1;
     resetTraceState();
     updateEditorChrome();
-    clearLog("\u2713 \u5DF2\u5BFC\u5165 " + appState.FILE_NAME + " \xB7 " + src.split("\n").length + " \u884C \xB7 \u70B9\u300C\u{1F41E} Debug \u8C03\u8BD5\u300D\u6216\u300C\u25B6 \u8FD0\u884C\u300D\u5F00\u59CB");
+    clearLog("✓ 已导入 " + appState.FILE_NAME + " · " + src.split("\n").length + " 行 · 点「🐞 Debug 调试」或「▶ 运行」开始");
   }
   if (btnImportEl && fileInputEl) {
     if (!$("importMenuWrap")) {
@@ -13771,8 +13907,8 @@ function __require(modId) {
       const file = fileInputEl.files && fileInputEl.files[0];
       fileInputEl.value = "";
       if (!file) return;
-      const read = typeof file.text === "function" ? file.text() : Promise.reject(new Error("\u5F53\u524D\u6D4F\u89C8\u5668\u4E0D\u652F\u6301\u8BFB\u53D6\u8BE5\u6587\u4EF6"));
-      Promise.resolve(read).then((text) => loadImportedSource(text, file.name)).catch((e) => say("\u2717 \u5BFC\u5165\u5931\u8D25: " + (e && e.message ? e.message : e), "err"));
+      const read = typeof file.text === "function" ? file.text() : Promise.reject(new Error("当前浏览器不支持读取该文件"));
+      Promise.resolve(read).then((text) => loadImportedSource(text, file.name)).catch((e) => say("✗ 导入失败: " + (e && e.message ? e.message : e), "err"));
     });
   }
   if (fileNameEl) {
@@ -13805,18 +13941,10 @@ function __require(modId) {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-        say("\u2713 \u5DF2\u5BFC\u51FA\u6587\u4EF6 " + name + "\uFF08" + editor.value.split("\n").length + " \u884C\uFF09", "ok");
+        say("✓ 已导出文件 " + name + "（" + editor.value.split("\n").length + " 行）", "ok");
       } catch (e) {
-        say("\u2717 \u5BFC\u51FA\u5931\u8D25: " + (e instanceof Error && e.message ? e.message : e), "err");
+        say("✗ 导出失败: " + (e instanceof Error && e.message ? e.message : e), "err");
       }
-    };
-  }
-  if ($("btnShareLink")) {
-    $("btnShareLink").onclick = () => {
-      if (exportMenuWrap && exportMenuWrap.classList) exportMenuWrap.classList.remove("open");
-      const tag = $("shareLinkTag");
-      if (tag) tag.textContent = "\u6682\u672A\u5B9E\u73B0";
-      say("\u6682\u672A\u5B9E\u73B0", "dim");
     };
   }
   $("sampleSel").onchange = () => uiHooks.loadSample($("sampleSel").value);
@@ -13930,13 +14058,11 @@ function __require(modId) {
       editor.selectionStart = editor.selectionEnd = s + indent.length;
       onSourceChanged();
     }
-    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "c") {
-      if ((editor.selectionStart || 0) === (editor.selectionEnd || 0)) {
-        e.preventDefault();
-        recordEditorCursorLine();
-        addCheckpointFunction(appState.lastEditorCursorLine);
-        return;
-      }
+    if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.key.toLowerCase() === "c") {
+      e.preventDefault();
+      recordEditorCursorLine();
+      addCheckpointFunction(appState.lastEditorCursorLine);
+      return;
     }
     if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
       e.preventDefault();
@@ -13961,7 +14087,7 @@ function __require(modId) {
       if (staleTimer) clearTimeout(staleTimer);
       staleTimer = setTimeout(() => {
         resetTraceState();
-        clearLog("\u6E90\u7801\u5DF2\u4FEE\u6539\uFF0C\u5F53\u524D\u8C03\u8BD5\u4F1A\u8BDD\u5DF2\u91CD\u7F6E \xB7 \u53EF\u70B9\u51FB\u300C\u{1F41E} Debug \u8C03\u8BD5\u300D\u6216\u5DE6\u4E0B\u300C\u8FD0\u884C\u5230\u4E0B\u4E00\u4E2A\u68C0\u67E5\u70B9\u300D\u91CD\u65B0\u5F00\u59CB");
+        clearLog("源码已修改，当前调试会话已重置 · 可点击「🐞 Debug 调试」或左下「运行到下一个检查点」重新开始");
       }, 300);
     }
   }
@@ -14003,15 +14129,6 @@ function __require(modId) {
   addEventListener("keydown", (e) => {
     if (isEditorFocused()) return;
     const target = eventTargetElement(e);
-    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "c") {
-      if (target && target.closest && target.closest("input,textarea")) return;
-      const sel = typeof window !== "undefined" && typeof window.getSelection === "function" ? String(window.getSelection() || "") : "";
-      if (!sel && appState.VIEW_MODE !== "notebook") {
-        e.preventDefault();
-        addCheckpointFunction();
-        return;
-      }
-    }
     if (e.key === "ArrowRight" || e.key === " ") {
       if (target && target.closest && target.closest("button,select,input,textarea")) return;
       e.preventDefault();
@@ -14092,7 +14209,7 @@ function __require(modId) {
     ctx.closePath();
   }
   function tokenizeCodeForCanvas(line) {
-    const re = new RegExp("(\\/\\/.*$)|(\"(?:[^\"\\\\]|\\\\.)*\"|'(?:[^'\\\\]|\\\\.)*'|`(?:[^`\\\\]|\\\\.)*`)|\\b(function|const|let|var|new|class|extends|typeof|instanceof|import|export|from|async|await|interface|type|as|satisfies)\\b|\\b(for|if|else|return|while|do|switch|case|break|continue|try|catch|finally|throw|yield)\\b|\\b(number|string|boolean|void|any|unknown|never|Math|Map|Set|Array|Object|JSON|Number|String|Boolean|Promise|Record|Error)\\b|\\b(true|false|null|undefined|\\d+(?:\\.\\d+)?)\\b|(\\b[A-Za-z_$][\\w$]*)(?=\\s*\\()|(?<=\\.)([A-Za-z_$][\\w$]*)\\b|(\\b[A-Za-z_$][\\w$]*)\\b|(===|!==|>=|<=|=>|&&|\\|\\||\\+\\+|--)", "g");
+    const re = /(\/\/.*$)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)|\b(function|const|let|var|new|class|extends|typeof|instanceof|import|export|from|async|await|interface|type|as|satisfies)\b|\b(for|if|else|return|while|do|switch|case|break|continue|try|catch|finally|throw|yield)\b|\b(number|string|boolean|void|any|unknown|never|Math|Map|Set|Array|Object|JSON|Number|String|Boolean|Promise|Record|Error)\b|\b(true|false|null|undefined|\d+(?:\.\d+)?)\b|(\b[A-Za-z_$][\w$]*)(?=\s*\()|(?<=\.)([A-Za-z_$][\w$]*)\b|(\b[A-Za-z_$][\w$]*)\b|(===|!==|>=|<=|=>|&&|\|\||\+\+|--)/g;
     const tokens = [];
     let last = 0, m;
     while (m = re.exec(line)) {
@@ -14204,7 +14321,7 @@ function __require(modId) {
       const entries = d.entries || [];
       let curX = bx, curY = by + 4;
       entries.slice(0, 8).forEach((e) => {
-        const pairTxt = `${e.k} \u2192 ${e.v}`;
+        const pairTxt = `${e.k} → ${e.v}`;
         ctx.font = '600 12px "Cascadia Code", Consolas, monospace';
         const pw = ctx.measureText(pairTxt).width + 18;
         if (curX + pw > bx + bw && curX > bx) {
@@ -14330,7 +14447,7 @@ function __require(modId) {
           ctx.stroke();
           ctx.font = '600 11px "Cascadia Code", Consolas, monospace';
           ctx.fillStyle = isCellHot ? "#ffb454" : "#cbd5e1";
-          const vStr = String(d.cells[r]?.[c] ?? "\xB7");
+          const vStr = String(d.cells[r]?.[c] ?? "·");
           ctx.fillText(vStr, gx + (cellS - ctx.measureText(vStr).width) / 2, gy + cellS / 2 + 4);
         }
       }
@@ -14406,8 +14523,8 @@ function __require(modId) {
     ctx.stroke();
     ctx.font = '700 20px "Segoe UI", "PingFang SC", sans-serif';
     ctx.fillStyle = "#f7f9fc";
-    ctx.fillText("TypeScript Playground \xB7 Debug Trace", 24, 35);
-    const badgeText = `${speedMult}x Speed \xB7 1920\xD71080 \xB7 60fps`;
+    ctx.fillText("TypeScript Playground · Debug Trace", 24, 35);
+    const badgeText = `${speedMult}x Speed · 1920×1080 · 60fps`;
     ctx.font = '600 13px "Cascadia Code", Consolas, monospace';
     const bw = ctx.measureText(badgeText).width + 28;
     roundRectPath(ctx, W - bw - 24, 13, bw, 30, 15);
@@ -14428,7 +14545,7 @@ function __require(modId) {
     ctx.stroke();
     ctx.font = '700 12px "Segoe UI", sans-serif';
     ctx.fillStyle = "#98a2b3";
-    const sourceHeaderLabel = isMultiModule && st && st.file ? `SOURCE \xB7 ${st.file}` : "SOURCE";
+    const sourceHeaderLabel = isMultiModule && st && st.file ? `SOURCE · ${st.file}` : "SOURCE";
     ctx.fillText(sourceHeaderLabel, 22, mainTop + 26);
     const curLine = st ? st.line : -1;
     const lh = 26;
@@ -14471,7 +14588,7 @@ function __require(modId) {
       });
     }
     if (st && (st.anim || st.error)) {
-      const hudText = st.error ? `\u2717 RUNTIME ERROR: ${st.error}` : st.note || "";
+      const hudText = st.error ? `✗ RUNTIME ERROR: ${st.error}` : st.note || "";
       ctx.font = '600 13px "Cascadia Code", Consolas, monospace';
       const hudW = Math.min(splitX - 60, ctx.measureText(hudText).width + 32);
       const hudX = 36, hudY = mainBottom - 54;
@@ -14494,7 +14611,7 @@ function __require(modId) {
     const stackChainTxt = stackFrames.map((f) => {
       const shortFile = f.file ? f.file.split("/").pop() || f.file : "";
       return isMultiModule && shortFile && !String(f.label || "").startsWith("<module:") ? `[${shortFile}] ${f.label}` : String(f.label || "global");
-    }).join(" \u25B8 ");
+    }).join(" ▸ ");
     roundRectPath(ctx, sideX + 20, mainTop + 32, sideW - 40, 26, 7);
     ctx.fillStyle = "#0b1018";
     ctx.fill();
@@ -14535,7 +14652,7 @@ function __require(modId) {
     const watchHeaderY = Math.max(mainTop + 124, locY + 46);
     ctx.font = '700 12px "Segoe UI", sans-serif';
     ctx.fillStyle = "#98a2b3";
-    ctx.fillText("WATCH \xB7 \u6570\u636E\u7ED3\u6784\u53EF\u89C6\u5316", sideX + 20, watchHeaderY);
+    ctx.fillText("WATCH · 数据结构可视化", sideX + 20, watchHeaderY);
     const ds = st && st.ds || {};
     const vars = discoverVars().filter((s) => appState.watched.has(s.id) && ds[s.id] !== void 0);
     const allocated = allocateSlotSpans(vars, ds);
@@ -14587,7 +14704,7 @@ function __require(modId) {
     ctx.stroke();
     ctx.font = '600 13px "Cascadia Code", Consolas, monospace';
     ctx.fillStyle = "#ffb454";
-    ctx.fillText("\u203A", sideX + 20, consoleTop + 30);
+    ctx.fillText("›", sideX + 20, consoleTop + 30);
     ctx.fillStyle = st && st.error ? "#f87171" : "#cbd5e1";
     ctx.fillText(String(st && st.note || "").slice(0, 76), sideX + 36, consoleTop + 30);
     ctx.fillStyle = "#0a0e14";
@@ -14597,16 +14714,16 @@ function __require(modId) {
     ctx.moveTo(0, mainBottom);
     ctx.lineTo(W, mainBottom);
     ctx.stroke();
-    let statusLabel = "\u25CF \u8C03\u8BD5\u8FD0\u884C\u4E2D";
+    let statusLabel = "● 调试运行中";
     let statusColor = "#4ade80";
     if (st && st.error) {
-      statusLabel = "\u2717 \u8FD0\u884C\u65F6\u62A5\u9519";
+      statusLabel = "✗ 运行时报错";
       statusColor = "#f87171";
     } else if (st && st.isCheckpoint) {
-      statusLabel = "\u25C9 \u547D\u4E2D\u68C0\u67E5\u70B9";
+      statusLabel = "◉ 命中检查点";
       statusColor = "#38bdf8";
     } else if (appState.DEBUG_SESSION.finished && stepIdx === appState.TRACE.steps.length - 1) {
-      statusLabel = "\u2713 \u6267\u884C\u5B8C\u6BD5";
+      statusLabel = "✓ 执行完毕";
       statusColor = "#ffb454";
     }
     roundRectPath(ctx, 24, mainBottom + 12, 136, 32, 16);
@@ -14619,7 +14736,7 @@ function __require(modId) {
     ctx.fillText(statusLabel, 42, mainBottom + 33);
     ctx.font = '500 13px "Segoe UI", sans-serif';
     ctx.fillStyle = "#64748b";
-    ctx.fillText(`TypeScript Playground \xB7 1920\xD71080 60fps \u89C6\u9891\u5BFC\u51FA (${speedMult}x \u500D\u901F)`, 184, mainBottom + 33);
+    ctx.fillText(`TypeScript Playground · 1920×1080 60fps 视频导出 (${speedMult}x 倍速)`, 184, mainBottom + 33);
   }
   function loadSample(key) {
     const targetKey = SAMPLES[key] ? key : "showcase";
@@ -14632,7 +14749,7 @@ function __require(modId) {
       setFileName(targetKey + ".ts");
     }
     appState.lastEditorCursorLine = -1;
-    clearLog("\u5DF2\u52A0\u8F7D\u6837\u4F8B \xB7 \u81EA\u52A8\u5F00\u542F Debug \u8C03\u8BD5\u6A21\u5F0F\uFF08\u53EF\u6309 \u2190 / \u2192 \u9010\u6B65\u5F53\u573A\u8BA1\u7B97\uFF0C\u6216\u70B9\u51FB\u5DE6\u4E0B\u300C\u8FD0\u884C\u5230\u4E0B\u4E00\u4E2A\u68C0\u67E5\u70B9\u300D\uFF09");
+    clearLog("已加载样例 · 自动开启 Debug 调试模式（可按 ← / → 逐步当场计算，或点击左下「运行到下一个检查点」）");
     resetTraceState();
     const defaultStep = SAMPLE_DEFAULT_STEP[targetKey] || 0;
     startDebug(defaultStep);
@@ -14653,7 +14770,7 @@ function __require(modId) {
       if (hash.startsWith("#s=") || hasSaved) {
         window.__BOOT_DEFERRED = true;
         editor.value = "";
-        clearLog("\u6B63\u5728\u6062\u590D\u4E0A\u6B21\u4F1A\u8BDD / \u5206\u4EAB\u4EE3\u7801\u2026");
+        clearLog("正在恢复上次会话 / 分享代码…");
         updateEditorChrome();
         return;
       }
@@ -15045,7 +15162,7 @@ function __require(modId) {
       if (encoderError) throw encoderError;
       if (videoExportStatus2 && (s % 2 === 0 || s === totalSteps - 1)) {
         const pct = Math.round((s + 1) / totalSteps * 100);
-        videoExportStatus2.textContent = `\u6B63\u5728\u6781\u901F\u7F16\u7801 1920\xD71080 60fps (${mult}x) \xB7 ${pct}%`;
+        videoExportStatus2.textContent = `正在极速编码 1920×1080 60fps (${mult}x) · ${pct}%`;
         await new Promise((r) => setTimeout(r, 0));
       }
       const stepStartMs = s * stepDurationMs;
@@ -15092,7 +15209,7 @@ function __require(modId) {
     stopAuto();
     const savedCur = appState.cur;
     if (!startDebug(0)) {
-      say("\u2717 \u4EE3\u7801\u7F16\u8BD1\u672A\u901A\u8FC7\uFF0C\u65E0\u6CD5\u5BFC\u51FA\u89C6\u9891", "err");
+      say("✗ 代码编译未通过，无法导出视频", "err");
       return false;
     }
     while (!appState.DEBUG_SESSION.finished && appState.TRACE.steps.length < MAX_STEPS) {
@@ -15100,17 +15217,17 @@ function __require(modId) {
     }
     initWatchedVars();
     if (!appState.TRACE.steps.length) {
-      say("\u2717 \u5F53\u524D\u4EE3\u7801\u672A\u4EA7\u751F\u53EF\u5F55\u5236\u7684\u8C03\u8BD5\u6B65\u9AA4", "err");
+      say("✗ 当前代码未产生可录制的调试步骤", "err");
       return false;
     }
     appState.IS_EXPORTING_VIDEO = true;
     if (btnExportVideo2) btnExportVideo2.disabled = true;
-    if (btnExportVideoLabel2) btnExportVideoLabel2.textContent = "\u23FA \u6B63\u5728\u6781\u901F\u5BFC\u51FA...";
+    if (btnExportVideoLabel2) btnExportVideoLabel2.textContent = "⏺ 正在极速导出...";
     if (videoExportStatus2) {
       videoExportStatus2.classList.add("active");
-      videoExportStatus2.textContent = `\u51C6\u5907\u6781\u901F\u5BFC\u51FA 1920\xD71080 @ ${VIDEO_FPS}fps (${mult}x \u500D\u901F)...`;
+      videoExportStatus2.textContent = `准备极速导出 1920×1080 @ ${VIDEO_FPS}fps (${mult}x 倍速)...`;
     }
-    say(`\u{1F3AC} \u5F00\u59CB\u6781\u901F\u5BFC\u51FA\u89C6\u9891\uFF1A\u5206\u8FA8\u7387 ${VIDEO_WIDTH}\xD7${VIDEO_HEIGHT} \xB7 ${VIDEO_FPS}fps \xB7 \u500D\u901F ${mult}x`, "ok");
+    say(`🎬 开始极速导出视频：分辨率 ${VIDEO_WIDTH}×${VIDEO_HEIGHT} · ${VIDEO_FPS}fps · 倍速 ${mult}x`, "ok");
     try {
       const canvas = document.createElement("canvas");
       canvas.width = VIDEO_WIDTH;
@@ -15134,9 +15251,9 @@ function __require(modId) {
         URL.revokeObjectURL(url2);
         const secTxt2 = (fastRes.durationMs / 1e3).toFixed(1) + "s";
         if (videoExportStatus2) {
-          videoExportStatus2.textContent = `\u2713 \u5DF2\u6781\u901F\u5BFC\u51FA (${secTxt2}) ts-playground-1080p-60fps-${mult}x.webm`;
+          videoExportStatus2.textContent = `✓ 已极速导出 (${secTxt2}) ts-playground-1080p-60fps-${mult}x.webm`;
         }
-        say(`\u2713 \u89C6\u9891\u6781\u901F\u5BFC\u51FA\u5B8C\u6210\uFF1Ats-playground-1080p-60fps-${mult}x.webm (1920\xD71080 \xB7 60fps \xB7 ${mult}x \u500D\u901F \xB7 \u7CBE\u786E\u65F6\u957F ${secTxt2})`, "ok");
+        say(`✓ 视频极速导出完成：ts-playground-1080p-60fps-${mult}x.webm (1920×1080 · 60fps · ${mult}x 倍速 · 精确时长 ${secTxt2})`, "ok");
         return true;
       }
       if (typeof canvas.captureStream !== "function" || typeof MediaRecorder === "undefined") {
@@ -15175,7 +15292,7 @@ function __require(modId) {
       for (let s = 0; s < totalSteps; s++) {
         if (videoExportStatus2 && (s % 2 === 0 || s === totalSteps - 1)) {
           const pct = Math.round((s + 1) / totalSteps * 100);
-          videoExportStatus2.textContent = `\u6B63\u5728\u5408\u6210 1920\xD71080 60fps (${mult}x) \xB7 ${pct}%`;
+          videoExportStatus2.textContent = `正在合成 1920×1080 60fps (${mult}x) · ${pct}%`;
         }
         const stepStart = performance.now();
         if (ctx) renderVideoFrameToCanvas(ctx, s, 0.5, mult);
@@ -15212,19 +15329,19 @@ function __require(modId) {
       URL.revokeObjectURL(url);
       const secTxt = (actualDurationMs / 1e3).toFixed(1) + "s";
       if (videoExportStatus2) {
-        videoExportStatus2.textContent = `\u2713 \u5DF2\u5BFC\u51FA (${secTxt}) ts-playground-1080p-60fps-${mult}x.webm`;
+        videoExportStatus2.textContent = `✓ 已导出 (${secTxt}) ts-playground-1080p-60fps-${mult}x.webm`;
       }
-      say(`\u2713 \u89C6\u9891\u5BFC\u51FA\u5B8C\u6210\uFF1Ats-playground-1080p-60fps-${mult}x.webm (1920\xD71080 \xB7 60fps \xB7 ${mult}x \u500D\u901F \xB7 \u65F6\u957F ${secTxt})`, "ok");
+      say(`✓ 视频导出完成：ts-playground-1080p-60fps-${mult}x.webm (1920×1080 · 60fps · ${mult}x 倍速 · 时长 ${secTxt})`, "ok");
       return true;
     } catch (err) {
       const msg = err instanceof Error && err.message ? err.message : String(err);
-      if (videoExportStatus2) videoExportStatus2.textContent = "\u2717 \u5BFC\u51FA\u5931\u8D25: " + msg;
-      say("\u2717 \u89C6\u9891\u5BFC\u51FA\u5931\u8D25: " + msg, "err");
+      if (videoExportStatus2) videoExportStatus2.textContent = "✗ 导出失败: " + msg;
+      say("✗ 视频导出失败: " + msg, "err");
       return false;
     } finally {
       appState.IS_EXPORTING_VIDEO = false;
       if (btnExportVideo2) btnExportVideo2.disabled = false;
-      if (btnExportVideoLabel2) btnExportVideoLabel2.textContent = "\u{1F3AC} \u5BFC\u51FA\u89C6\u9891";
+      if (btnExportVideoLabel2) btnExportVideoLabel2.textContent = "🎬 导出视频";
     }
   }
   if (btnExportVideo2) {
@@ -15283,25 +15400,25 @@ function __require(modId) {
     };
     const buildConfirmHtml = (node) => {
       if (pendingVfsDeletePath !== node.path) return "";
-      return `<div class="vfs-del-confirm" data-vfs-confirm-box="${esc(node.path)}"><span class="vfs-del-confirm-text">\u786E\u8BA4\u5220\u9664 ${esc(node.name)}\uFF1F</span><span class="vfs-del-confirm-actions"><button type="button" class="vfs-confirm-btn danger" data-vfs-confirm-del="${esc(node.path)}">\u786E\u8BA4</button><button type="button" class="vfs-confirm-btn" data-vfs-cancel-del="${esc(node.path)}">\u53D6\u6D88</button></span></div>`;
+      return `<div class="vfs-del-confirm" data-vfs-confirm-box="${esc(node.path)}"><span class="vfs-del-confirm-text">确认删除 ${esc(node.name)}？</span><span class="vfs-del-confirm-actions"><button type="button" class="vfs-confirm-btn danger" data-vfs-confirm-del="${esc(node.path)}">确认</button><button type="button" class="vfs-confirm-btn" data-vfs-cancel-del="${esc(node.path)}">取消</button></span></div>`;
     };
     const renderNode = (node, depth) => {
       const padLeft = 8 + depth * 14;
       const canDel = !node.readonly;
-      const delBtnHtml = canDel ? `<span class="vfs-row-actions"><button type="button" class="vfs-del-btn" data-vfs-del="${esc(node.path)}" title="\u5220\u9664">\u274C</button></span>` : "";
+      const delBtnHtml = canDel ? `<span class="vfs-row-actions"><button type="button" class="vfs-del-btn" data-vfs-del="${esc(node.path)}" title="删除">❌</button></span>` : "";
       if (node.type === "folder") {
         const isOpen = VFS_EXPANDED_FOLDERS.has(node.path);
         const kids = childrenOf(node.path);
-        return `<div class="vfs-folder-row" data-vfs-folder="${esc(node.path)}" style="padding-left:${padLeft}px" title="\u5355\u51FB\u5C55\u5F00/\u6298\u53E0\u76EE\u5F55 \xB7 \u53CC\u51FB\u91CD\u547D\u540D\u76EE\u5F55"><span class="vfs-caret">${isOpen ? "\u25BE" : "\u25B8"}</span><span class="vfs-icon">\u{1F4C1}</span><span class="vfs-name">${esc(node.name)}/</span>` + delBtnHtml + `</div>` + buildConfirmHtml(node) + (isOpen ? `<div class="vfs-folder-children">${kids.map((k) => renderNode(k, depth + 1)).join("")}</div>` : "");
+        return `<div class="vfs-folder-row" data-vfs-folder="${esc(node.path)}" style="padding-left:${padLeft}px" title="单击展开/折叠目录 · 双击重命名目录"><span class="vfs-caret">${isOpen ? "▾" : "▸"}</span><span class="vfs-icon">📁</span><span class="vfs-name">${esc(node.name)}/</span>` + delBtnHtml + `</div>` + buildConfirmHtml(node) + (isOpen ? `<div class="vfs-folder-children">${kids.map((k) => renderNode(k, depth + 1)).join("")}</div>` : "");
       }
       const isAct = Boolean(activePath && node.path === activePath);
       const ext = (node.name.split(".").pop() || "").toLowerCase();
-      const icon = ext === "ipynb" ? "\u{1F4D3}" : ext === "ts" ? "\u{1F4D8}" : ext === "json" ? "\u{1F5C2}" : "\u{1F4C4}";
-      return `<div class="vfs-file-row${isAct ? " active" : ""}" data-vfs-file="${esc(node.path)}" style="padding-left:${padLeft}px" title="${esc(node.path)}\uFF08\u5355\u51FB\u6253\u5F00 \xB7 \u53CC\u51FB\u91CD\u547D\u540D\uFF09"><span class="vfs-icon">${icon}</span><span class="vfs-name">${esc(node.name)}</span>` + delBtnHtml + `</div>` + buildConfirmHtml(node);
+      const icon = ext === "ipynb" ? "📓" : ext === "ts" ? "📘" : ext === "json" ? "🗂" : "📄";
+      return `<div class="vfs-file-row${isAct ? " active" : ""}" data-vfs-file="${esc(node.path)}" style="padding-left:${padLeft}px" title="${esc(node.path)}（单击打开 · 双击重命名）"><span class="vfs-icon">${icon}</span><span class="vfs-name">${esc(node.name)}</span>` + delBtnHtml + `</div>` + buildConfirmHtml(node);
     };
     const roots = childrenOf("");
     if (roots.length === 0) {
-      treeEl.innerHTML = `<div class="vfs-empty-hint" style="padding:14px 10px;color:#64748b;font-size:11.5px;text-align:center;">\u7A7A\u76EE\u5F55</div>`;
+      treeEl.innerHTML = `<div class="vfs-empty-hint" style="padding:14px 10px;color:#64748b;font-size:11.5px;text-align:center;">空目录</div>`;
     } else {
       treeEl.innerHTML = roots.map((r) => renderNode(r, 0)).join("");
     }
@@ -15316,7 +15433,7 @@ function __require(modId) {
         }
       });
       const kb = (totalBytes / 1024).toFixed(1);
-      footEl.textContent = `${fileCount} \u4E2A\u6587\u4EF6 (${kb} KB)`;
+      footEl.textContent = `${fileCount} 个文件 (${kb} KB)`;
     }
   }
   subscribeVfsStore(() => {
@@ -15328,7 +15445,7 @@ function __require(modId) {
     try {
       path = resolveWorkspacePath(rawPath, false);
     } catch (err) {
-      say(`\u2717 ${err instanceof Error ? err.message : String(err)}`, "err");
+      say(`✗ ${err instanceof Error ? err.message : String(err)}`, "err");
       return;
     }
     const node = VFS_NODES.get(path);
@@ -15340,7 +15457,7 @@ function __require(modId) {
     uiHooks.setViewMode("script");
     uiHooks.openVfsScriptFile(node.path, node.name, node.content || "");
     renderVfsTreeUI();
-    say(`\u{1F4C2} \u5DF2\u6253\u5F00 ${node.path}`, "ok");
+    say(`📂 已打开 ${node.path}`, "ok");
   }
   function initVfsSidebarEvents() {
     const fileInput = $("fileInput");
@@ -15399,7 +15516,7 @@ function __require(modId) {
         VFS_EXPANDED_FOLDERS.add(path);
         persistVfsToClientStorage();
         renderVfsTreeUI();
-        say(`\u{1F4C1} \u5DF2\u521B\u5EFA\u6587\u4EF6\u5939 ${path}/\uFF08\u53CC\u51FB\u53EF\u91CD\u547D\u540D\uFF09`, "ok");
+        say(`📁 已创建文件夹 ${path}/（双击可重命名）`, "ok");
       };
     }
     const btnUpload = $("vfsBtnUpload");
@@ -15426,7 +15543,7 @@ function __require(modId) {
           persistVfsToClientStorage();
           uiHooks.onVfsFileDeleted(delPath);
           renderVfsTreeUI();
-          say(`\u{1F5D1} \u5DF2\u4ECE\u6587\u4EF6\u76EE\u5F55\u79FB\u9664 ${delPath}`, "dim");
+          say(`🗑 已从文件目录移除 ${delPath}`, "dim");
         } else {
           renderVfsTreeUI();
         }
@@ -15499,7 +15616,7 @@ function __require(modId) {
           VFS_NODES.set(nextPath, node);
           persistVfsToClientStorage();
           uiHooks.onVfsFileRenamed(oldPath, nextPath, nextName);
-          say(`\u2713 \u5DF2\u91CD\u547D\u540D\u4E3A ${nextPath}`, "ok");
+          say(`✓ 已重命名为 ${nextPath}`, "ok");
         }
         renderVfsTreeUI();
       };
@@ -15536,6 +15653,8 @@ function __require(modId) {
     openVfsScriptFile: () => openVfsScriptFile,
     renderImportSampleMenu: () => renderImportSampleMenu,
     renderScriptTabsUI: () => renderScriptTabsUI,
+    restoreScriptTabsSession: () => restoreScriptTabsSession,
+    serializeScriptTabsSession: () => serializeScriptTabsSession,
     setScriptTabSyncing: () => setScriptTabSyncing,
     switchToScriptFile: () => switchToScriptFile,
     syncActiveScriptTabFromFileName: () => syncActiveScriptTabFromFileName,
@@ -15579,6 +15698,12 @@ function __require(modId) {
     renderVfsTreeUI();
   }
   function renderScriptTabsUI() {
+    if (typeof document !== "undefined" && typeof document.dispatchEvent === "function") {
+      try {
+        document.dispatchEvent(new Event("ts-session-change"));
+      } catch (_) {
+      }
+    }
     const tabsEl = $("scriptTabsList");
     if (!tabsEl) return;
     const store = ensureScriptTabsForLang("ts");
@@ -15590,15 +15715,15 @@ function __require(modId) {
       const isAct = t.id === activeTab.id;
       const normPath = normalizeWorkspaceModulePath(t.vfsPath || t.title);
       const isDebugEntry = isMultiDebug && appState.DEBUG_SESSION.entryFile === normPath;
-      const badge = isDebugEntry ? ` <span class="dim" title="\u5F53\u524D\u591A\u6587\u4EF6\u8C03\u8BD5\u5165\u53E3\u6A21\u5757">\u25B6</span>` : "";
-      return `<div class="nb-tab${isAct ? " active" : ""}" data-script-tab-id="${esc(t.id)}" title="\u5355\u51FB\u5207\u6362\u6807\u7B7E\u9875 \xB7 \u53CC\u51FB\u6587\u4EF6\u540D\u91CD\u547D\u540D"><span class="nb-tab-icon ts-icon" aria-hidden="true"></span><span class="nb-tab-title">${esc(t.title)}${badge}</span>` + (store.tabs.length > 1 ? `<button type="button" class="nb-tab-close" data-close-script-tab="${esc(t.id)}" title="\u5173\u95ED\u6807\u7B7E\u9875">\xD7</button>` : "") + `</div>`;
-    }).join("") + `<button type="button" class="nb-tab-add" id="scriptBtnNewTab" title="\u65B0\u5EFA\u4EE3\u7801\u6587\u4EF6\u6807\u7B7E\u9875">\uFF0B</button>`;
+      const badge = isDebugEntry ? ` <span class="dim" title="当前多文件调试入口模块">▶</span>` : "";
+      return `<div class="nb-tab${isAct ? " active" : ""}" role="tab" tabindex="0" aria-selected="${isAct ? "true" : "false"}" data-script-tab-id="${esc(t.id)}" title="单击或按 Enter/Space 切换标签页 · 双击文件名重命名"><span class="nb-tab-icon ts-icon" aria-hidden="true"></span><span class="nb-tab-title">${esc(t.title)}${badge}</span>` + (store.tabs.length > 1 ? `<button type="button" class="nb-tab-close" data-close-script-tab="${esc(t.id)}" title="关闭标签页">×</button>` : "") + `</div>`;
+    }).join("") + `<button type="button" class="nb-tab-add" id="scriptBtnNewTab" title="新建代码文件标签页">＋</button>`;
   }
   function renderImportSampleMenu() {
     const listEl = $("importSampleList");
     if (!listEl) return;
-    const nbItemHtml = `<button type="button" class="import-sample-item" data-import-sample-notebook="Intro.ipynb"><span class="import-sample-name">\u{1F4D3} Intro.ipynb \xB7 \u4EA4\u4E92\u5F0F\u7B14\u8BB0\u672C\u793A\u4F8B</span><span class="import-sample-path">examples/notebooks/</span></button>`;
-    const multiFileItemHtml = `<button type="button" class="import-sample-item" data-import-sample-multifile="bst-project" title="\u52A0\u8F7D\u5305\u542B bst.ts \u4E0E main.ts \u7684\u591A\u6A21\u5757 TypeScript \u5DE5\u7A0B\u793A\u4F8B\uFF0C\u652F\u6301\u8DE8\u6587\u4EF6\u6B65\u8FDB\u4E0E\u7C7B\u578B\u68C0\u67E5"><span class="import-sample-name">\u{1F4E6} \u591A\u6587\u4EF6\u6A21\u5757\u5316\u5DE5\u7A0B \xB7 \u4E8C\u53C9\u641C\u7D22\u6811 (bst.ts + main.ts)</span><span class="import-sample-path">workspace/bst.ts + main.ts</span></button>`;
+    const nbItemHtml = `<button type="button" class="import-sample-item" data-import-sample-notebook="Intro.ipynb"><span class="import-sample-name">📓 Intro.ipynb · 交互式笔记本示例</span><span class="import-sample-path">examples/notebooks/</span></button>`;
+    const multiFileItemHtml = `<button type="button" class="import-sample-item" data-import-sample-multifile="bst-project" title="加载包含 bst.ts 与 main.ts 的多模块 TypeScript 工程示例，支持跨文件步进与类型检查"><span class="import-sample-name">📦 多文件模块化工程 · 二叉搜索树 (bst.ts + main.ts)</span><span class="import-sample-path">workspace/bst.ts + main.ts</span></button>`;
     listEl.innerHTML = (appState.VIEW_MODE === "notebook" ? nbItemHtml : multiFileItemHtml) + TS_SAMPLE_METADATA.map(
       (item) => `<button type="button" class="import-sample-item" data-import-sample-key="${esc(item.key)}" title="${esc(item.desc)}"><span class="import-sample-name">${esc(item.label)}</span><span class="import-sample-path">${esc("examples/ts/" + item.key + ".ts")}</span></button>`
     ).join("") + (appState.VIEW_MODE !== "notebook" ? nbItemHtml : "");
@@ -15606,7 +15731,7 @@ function __require(modId) {
   function loadMultiFileSampleProject() {
     ensureVfsInitialized();
     const bstSource = [
-      "// \u4E8C\u53C9\u641C\u7D22\u6811\u8282\u70B9\u6A21\u5757 (bst.ts)",
+      "// 二叉搜索树节点模块 (bst.ts)",
       "export interface BstNode {",
       "  val: number;",
       "  left: BstNode | null;",
@@ -15630,7 +15755,7 @@ function __require(modId) {
       "}"
     ].join("\n");
     const mainSource = [
-      "// \u591A\u6587\u4EF6\u5165\u53E3\u6A21\u5757 (main.ts) \u2014\u2014 \u5BFC\u5165 ./bst \u5E76\u8DE8\u6A21\u5757\u6B65\u8FDB\u8C03\u8BD5",
+      "// 多文件入口模块 (main.ts) —— 导入 ./bst 并跨模块步进调试",
       "import { BstNode, insertBst } from './bst';",
       "",
       "function buildSearchTree(nums: number[]): number {",
@@ -15638,7 +15763,7 @@ function __require(modId) {
       "  for (let i = 0; i < nums.length; i++) {",
       "    const x = nums[i];",
       "    tree = insertBst(tree, x);",
-      '    checkpoint(x < 8, "\u63D2\u5165\u5DE6\u5B50\u6811\u8282\u70B9");',
+      '    checkpoint(x < 8, "插入左子树节点");',
       "  }",
       "  if (tree !== null) {",
       "    return tree.val;",
@@ -15646,7 +15771,7 @@ function __require(modId) {
       "  return -1;",
       "}",
       "",
-      "// \u8C03\u7528\uFF1AbuildSearchTree([8, 4, 12, 2, 6])"
+      "// 调用：buildSearchTree([8, 4, 12, 2, 6])"
     ].join("\n");
     VFS_NODES.set("bst.ts", {
       path: "bst.ts",
@@ -15723,7 +15848,7 @@ function __require(modId) {
         const nbFile = btn.getAttribute("data-import-sample-notebook");
         if (nbFile) {
           uiHooks.setViewMode("notebook");
-          say(`\u2713 \u5DF2\u52A0\u8F7D\u5185\u7F6E\u793A\u4F8B\u7B14\u8BB0\u672C ${nbFile}`, "ok");
+          say(`✓ 已加载内置示例笔记本 ${nbFile}`, "ok");
           return;
         }
         const sampleKey = btn.getAttribute("data-import-sample-key");
@@ -15777,7 +15902,7 @@ function __require(modId) {
             id: nextScriptTabId(),
             title: newTitle,
             lang: "ts",
-            source: "// \u65B0\u5EFA TypeScript \u811A\u672C\n",
+            source: "// 新建 TypeScript 脚本\n",
             vfsPath: "",
             isSample: false
           };
@@ -15817,6 +15942,31 @@ function __require(modId) {
             updateEditorChrome();
             renderScriptTabsUI();
             renderVfsTreeUI();
+          }
+        }
+      });
+      scriptTabsEl.addEventListener("keydown", (e) => {
+        const target = eventTargetElement(e);
+        if (!target || target.classList && (target.classList.contains("nb-tab-close") || target.classList.contains("nb-tab-rename-input"))) return;
+        const tabEl = closestElement(target, "[data-script-tab-id]");
+        if (!tabEl) return;
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          tabEl.click();
+          return;
+        }
+        if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+          e.preventDefault();
+          const allTabs = scriptTabsEl.querySelectorAll ? Array.from(scriptTabsEl.querySelectorAll("[data-script-tab-id]")) : [];
+          const curIdx = allTabs.indexOf(tabEl);
+          if (curIdx >= 0 && allTabs.length > 1) {
+            const nextIdx = (curIdx + (e.key === "ArrowRight" ? 1 : allTabs.length - 1)) % allTabs.length;
+            const nextEl = allTabs[nextIdx];
+            if (nextEl) {
+              nextEl.click();
+              const refreshed = scriptTabsEl.querySelectorAll ? scriptTabsEl.querySelectorAll("[data-script-tab-id]")[nextIdx] : null;
+              if (refreshed && typeof refreshed.focus === "function") refreshed.focus();
+            }
           }
         }
       });
@@ -15862,7 +16012,7 @@ function __require(modId) {
               setFileName(nextName);
               setScriptTabSyncing(false);
             }
-            say(`\u2713 \u6587\u4EF6\u5DF2\u91CD\u547D\u540D\u4E3A ${nextName}`, "ok");
+            say(`✓ 文件已重命名为 ${nextName}`, "ok");
           }
           renderScriptTabsUI();
           renderVfsTreeUI();
@@ -15975,6 +16125,7 @@ function __require(modId) {
   // src/ui/notebook.ts
   var notebook_exports = {};
   __export(notebook_exports, {
+    NOTEBOOK_STORAGE_KEY: () => NOTEBOOK_STORAGE_KEY,
     TS_NOTEBOOK_TUTORIALS: () => TS_NOTEBOOK_TUTORIALS,
     buildTsPreambleFromHistory: () => buildTsPreambleFromHistory,
     buildTsTypecheckContext: () => buildTsTypecheckContext,
@@ -16013,10 +16164,13 @@ function __require(modId) {
     openVfsNotebookFile: () => openVfsNotebookFile,
     parseIpynbJsonToDocument: () => parseIpynbJsonToDocument,
     pasteNotebookCell: () => pasteNotebookCell,
+    persistNotebooksToStorage: () => persistNotebooksToStorage,
+    registerNotebookStorageAdapter: () => registerNotebookStorageAdapter,
     renderMarkdownHtml: () => renderMarkdownHtml,
     renderNotebookUI: () => renderNotebookUI,
     renderTutorialModalUI: () => renderTutorialModalUI,
     restartNotebookKernel: () => restartNotebookKernel,
+    restoreNotebooksFromStorage: () => restoreNotebooksFromStorage,
     runAllNotebookCells: () => runAllNotebookCells,
     runNotebookCell: () => runNotebookCell,
     runTsNotebookCell: () => runTsNotebookCell,
@@ -16029,6 +16183,12 @@ function __require(modId) {
   });
 
   // src/notebook/notebook-model.ts
+  var NOTEBOOK_STORAGE_KEY = "ts-visual-notebooks-v1";
+  var nbStorageAdapter = null;
+  var nbStorageRestored = false;
+  function registerNotebookStorageAdapter(adapter) {
+    nbStorageAdapter = adapter;
+  }
   var nbClipboardCell = null;
   var nbCellSeq = 100;
   var nbDocSeq = 10;
@@ -16054,7 +16214,7 @@ function __require(modId) {
       {
         id: c1Id,
         type: "markdown",
-        source: "### \u{1F4D3} \u4EA4\u4E92\u5F0F\u7B97\u6CD5\u7B14\u8BB0\u672C (TypeScript Kernel)\n\u652F\u6301**\u8DE8\u5355\u5143\u683C\u5171\u4EAB\u53D8\u91CF\u4E0A\u4E0B\u6587**\u3001\u5185\u8054\u8F93\u51FA\u4EE5\u53CA\u9488\u5BF9\u4EFB\u610F\u5355\u5143\u683C\u7684 **\u{1F41E} \u5355\u6B65\u53EF\u89C6\u5316\u8C03\u8BD5**\uFF08\u53F3\u4FA7\u5B9E\u65F6\u8054\u52A8 `LOCALS` \u4E0E `WATCH` \u6570\u636E\u7ED3\u6784\u753B\u5E03\uFF09\u3002",
+        source: "### 📓 交互式算法笔记本 (TypeScript Kernel)\n支持**跨单元格共享变量上下文**、内联输出以及针对任意单元格的 **🐞 单步可视化调试**（右侧实时联动 `LOCALS` 与 `WATCH` 数据结构画布）。",
         executionCount: null,
         status: "idle",
         output: null,
@@ -16079,7 +16239,7 @@ function __require(modId) {
       {
         id: c4Id,
         type: "code",
-        source: "// \u8DE8\u5355\u5143\u683C\u4F7F\u7528\u4E0A\u65B9\u5B9A\u4E49\u7684\u53D8\u91CF a\uFF0C\u6784\u5EFA\u6570\u7EC4\u5E76\u5728\u53F3\u4FA7 WATCH \u9762\u677F\u89C2\u5BDF\nconst nums: number[] = [a, a + 2, a + 4, 9, 13, 18];\nnums.push(25);\nconsole.log('\u5F53\u524D\u6570\u7EC4:', nums);",
+        source: "// 跨单元格使用上方定义的变量 a，构建数组并在右侧 WATCH 面板观察\nconst nums: number[] = [a, a + 2, a + 4, 9, 13, 18];\nnums.push(25);\nconsole.log('当前数组:', nums);",
         executionCount: null,
         status: "idle",
         output: null
@@ -16087,7 +16247,7 @@ function __require(modId) {
       {
         id: c5Id,
         type: "code",
-        source: "// \u70B9\u51FB\u6B64\u5355\u5143\u683C\u53F3\u4E0A\u89D2 \u{1F41E} \u53EF\u57FA\u4E8E\u4E0A\u65B9\u5DF2\u751F\u6210\u7684 nums \u5355\u6B65\u8C03\u8BD5\u4E8C\u5206\u67E5\u627E\nlet l: number = 0, r: number = nums.length - 1;\nconst target: number = 13;\nwhile (l <= r) {\n  const mid: number = (l + r) >> 1;\n  checkpoint(nums[mid] === target, '\u627E\u5230\u76EE\u6807\u503C');\n  if (nums[mid] === target) {\n    console.log('\u627E\u5230\u76EE\u6807\u7D22\u5F15:', mid);\n    break;\n  }\n  if (nums[mid] < target) l = mid + 1;\n  else r = mid - 1;\n}",
+        source: "// 点击此单元格右上角 🐞 可基于上方已生成的 nums 单步调试二分查找\nlet l: number = 0, r: number = nums.length - 1;\nconst target: number = 13;\nwhile (l <= r) {\n  const mid: number = (l + r) >> 1;\n  checkpoint(nums[mid] === target, '找到目标值');\n  if (nums[mid] === target) {\n    console.log('找到目标索引:', mid);\n    break;\n  }\n  if (nums[mid] < target) l = mid + 1;\n  else r = mid - 1;\n}",
         executionCount: null,
         status: "idle",
         output: null
@@ -16146,8 +16306,128 @@ function __require(modId) {
   var notebooksByLang = {
     ts: { docs: [], activeDocId: "nb_intro" }
   };
+  function persistNotebooksToStorage() {
+    if (!nbStorageAdapter || !notebooksByLang.ts.docs.length) return;
+    try {
+      const payload = {
+        v: 1,
+        activeDocId: notebooksByLang.ts.activeDocId,
+        docs: notebooksByLang.ts.docs.map((d) => ({
+          id: d.id,
+          title: d.title,
+          lang: "ts",
+          execCounter: d.execCounter,
+          activeCellId: d.activeCellId,
+          cells: d.cells.map((c) => ({
+            id: c.id,
+            type: c.type,
+            source: c.source,
+            executionCount: c.executionCount,
+            status: c.status === "running" ? "idle" : c.status,
+            output: c.output,
+            markdownRendered: Boolean(c.markdownRendered)
+          })),
+          executedHistory: d.executedHistory,
+          lastGlobalVars: d.lastGlobalVars
+        }))
+      };
+      nbStorageAdapter.save(JSON.stringify(payload));
+    } catch (_) {
+    }
+  }
+  function restoreNotebooksFromStorage() {
+    if (!nbStorageAdapter) return false;
+    try {
+      const raw = nbStorageAdapter.load();
+      if (!raw) return false;
+      const parsed = JSON.parse(raw);
+      if (!isRecord(parsed) || !Array.isArray(parsed.docs) || parsed.docs.length === 0) return false;
+      const docs = [];
+      for (const rawDoc of parsed.docs) {
+        if (!isRecord(rawDoc) || typeof rawDoc.title !== "string" || !Array.isArray(rawDoc.cells)) continue;
+        const docId = typeof rawDoc.id === "string" && rawDoc.id ? rawDoc.id : nextDocId();
+        const docNumM = docId.match(/^nb_(\d+)$/);
+        if (docNumM && docNumM[1]) {
+          const n = Number(docNumM[1]);
+          if (n >= nbDocSeq) nbDocSeq = n + 1;
+        }
+        const cells = [];
+        for (const rc of rawDoc.cells) {
+          if (!isRecord(rc) || typeof rc.source !== "string") continue;
+          const cid = typeof rc.id === "string" && rc.id ? rc.id : nextCellId();
+          const cNumM = cid.match(/^cell_(\d+)_/);
+          if (cNumM && cNumM[1]) {
+            const cn = Number(cNumM[1]);
+            if (cn >= nbCellSeq) nbCellSeq = cn + 1;
+          }
+          let outVal = null;
+          if (isRecord(rc.output)) {
+            outVal = {
+              logs: Array.isArray(rc.output.logs) ? rc.output.logs.map(String) : [],
+              returnValue: typeof rc.output.returnValue === "string" ? rc.output.returnValue : null,
+              error: typeof rc.output.error === "string" ? rc.output.error : null,
+              errorLine: typeof rc.output.errorLine === "number" ? rc.output.errorLine : void 0,
+              elapsedMs: typeof rc.output.elapsedMs === "number" ? rc.output.elapsedMs : void 0
+            };
+          }
+          cells.push({
+            id: cid,
+            type: rc.type === "markdown" ? "markdown" : "code",
+            source: rc.source,
+            executionCount: typeof rc.executionCount === "number" ? rc.executionCount : null,
+            status: rc.status === "success" || rc.status === "error" ? rc.status : "idle",
+            output: outVal,
+            markdownRendered: Boolean(rc.markdownRendered)
+          });
+        }
+        if (cells.length === 0) continue;
+        const firstCell = cells[0];
+        const actCellId = typeof rawDoc.activeCellId === "string" && cells.some((c) => c.id === rawDoc.activeCellId) ? rawDoc.activeCellId : firstCell ? firstCell.id : "";
+        const hist = [];
+        if (Array.isArray(rawDoc.executedHistory)) {
+          for (const h of rawDoc.executedHistory) {
+            if (isRecord(h) && typeof h.cellId === "string" && typeof h.source === "string") {
+              hist.push({
+                cellId: h.cellId,
+                execCount: typeof h.execCount === "number" ? h.execCount : 0,
+                source: h.source
+              });
+            }
+          }
+        }
+        docs.push({
+          id: docId,
+          title: rawDoc.title,
+          lang: "ts",
+          execCounter: typeof rawDoc.execCounter === "number" ? rawDoc.execCounter : 0,
+          activeCellId: actCellId,
+          debuggingCellId: null,
+          cells,
+          executedHistory: hist,
+          lastGlobalVars: isRecord(rawDoc.lastGlobalVars) ? rawDoc.lastGlobalVars : {},
+          lastGlobalDs: {}
+        });
+      }
+      if (docs.length === 0) return false;
+      notebooksByLang.ts.docs = docs;
+      const reqActive = typeof parsed.activeDocId === "string" ? parsed.activeDocId : "";
+      const activeDoc = docs.find((d) => d.id === reqActive) ?? docs[0];
+      if (activeDoc) {
+        notebooksByLang.ts.activeDocId = activeDoc.id;
+      }
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
   function ensureLangNotebooks(_lang = "ts") {
     if (!notebooksByLang.ts.docs.length) {
+      if (!nbStorageRestored) {
+        nbStorageRestored = true;
+        if (restoreNotebooksFromStorage() && notebooksByLang.ts.docs.length > 0) {
+          return notebooksByLang.ts;
+        }
+      }
       const docs = createDefaultNotebooks("ts");
       notebooksByLang.ts.docs = docs;
       notebooksByLang.ts.activeDocId = docs[0].id;
@@ -16174,7 +16454,7 @@ function __require(modId) {
   function renderMarkdownHtml(md) {
     const raw = String(md || "").trim();
     if (!raw) {
-      return '<span class="nb-md-empty">\u53CC\u51FB\u6B64\u5904\u8F93\u5165 Markdown \u7B14\u8BB0\u5185\u5BB9\u2026</span>';
+      return '<span class="nb-md-empty">双击此处输入 Markdown 笔记内容…</span>';
     }
     const lines = raw.replace(/\r\n?/g, "\n").split("\n");
     const out = [];
@@ -16442,32 +16722,32 @@ function __require(modId) {
       id: "ts-adv-01-interfaces-structural",
       codeBadge: "01",
       fileName: "01-Interfaces-Structural.ipynb",
-      title: "01 \xB7 \u63A5\u53E3\u5951\u7EA6\u4E0E\u7ED3\u6784\u5316\u7C7B\u578B\u7CFB\u7EDF (interface / readonly)",
-      category: "\u7C7B\u578B\u7CFB\u7EDF\u8FDB\u9636",
-      level: "\u8FDB\u9636 \xB7 \u6838\u5FC3\u5FC5\u5B66",
-      summary: "\u6DF1\u5165\u7406\u89E3 TypeScript \u7684\u7ED3\u6784\u5316\u5B50\u7C7B\u578B\uFF08Duck Typing\uFF09\u3001interface \u5951\u7EA6\u8BBE\u8BA1\u3001readonly \u53EA\u8BFB\u4E0D\u53EF\u53D8\u5C5E\u6027\u4E0E\u53EF\u9009\u5B57\u6BB5 ? \u7684\u63A7\u5236\u6D41\u5B89\u5168\u6536\u7A84\u3002",
+      title: "01 · 接口契约与结构化类型系统 (interface / readonly)",
+      category: "类型系统进阶",
+      level: "进阶 · 核心必学",
+      summary: "深入理解 TypeScript 的结构化子类型（Duck Typing）、interface 契约设计、readonly 只读不可变属性与可选字段 ? 的控制流安全收窄。",
       highlights: [
-        "interface \u7ED3\u6784\u5316\u5951\u7EA6\u5EFA\u6A21",
-        "readonly \u53EA\u8BFB\u5C5E\u6027\u9632\u7BE1\u6539",
-        "\u53EF\u9009\u5C5E\u6027 ? \u4E0E\u9ED8\u8BA4\u503C\u6536\u7A84",
-        "\u8DE8\u5355\u5143\u683C\u5BF9\u8C61\u6570\u7EC4\u4E0E\u5065\u5EB7\u7B5B\u67E5\u8C03\u8BD5"
+        "interface 结构化契约建模",
+        "readonly 只读属性防篡改",
+        "可选属性 ? 与默认值收窄",
+        "跨单元格对象数组与健康筛查调试"
       ],
       cells: [
         {
           type: "markdown",
-          source: "### \u{1F393} 01 \xB7 \u63A5\u53E3\u5951\u7EA6\u4E0E\u7ED3\u6784\u5316\u7C7B\u578B\u7CFB\u7EDF (`interface` / `readonly`)\nTypeScript \u91C7\u7528**\u7ED3\u6784\u5316\u7C7B\u578B\u7CFB\u7EDF\uFF08Structural Subtyping\uFF09**\uFF1A\u53EA\u8981\u5BF9\u8C61\u7684\u5C5E\u6027\u5F62\u72B6\u6EE1\u8DB3 `interface` \u58F0\u660E\u7684\u5951\u7EA6\uFF0C\u5373\u88AB\u5224\u5B9A\u4E3A\u7C7B\u578B\u517C\u5BB9\u3002\n- **`readonly` \u53EA\u8BFB\u4FEE\u9970\u7B26**\uFF1A\u5728\u7F16\u8BD1\u671F\u9501\u5B9A\u5173\u952E\u6807\u8BC6\u5B57\u6BB5\uFF0C\u9632\u6B62\u4E1A\u52A1\u4EE3\u7801\u610F\u5916\u8986\u5199\u3002\n- **\u53EF\u9009\u5C5E\u6027 `?`**\uFF1A\u663E\u5F0F\u58F0\u660E\u53EF\u80FD\u7F3A\u7701\u7684\u914D\u7F6E\u9879\uFF0C\u914D\u5408\u6761\u4EF6\u5206\u652F\u5B9E\u73B0\u5B89\u5168\u7684\u7C7B\u578B\u6536\u7A84\u3002"
+          source: "### 🎓 01 · 接口契约与结构化类型系统 (`interface` / `readonly`)\nTypeScript 采用**结构化类型系统（Structural Subtyping）**：只要对象的属性形状满足 `interface` 声明的契约，即被判定为类型兼容。\n- **`readonly` 只读修饰符**：在编译期锁定关键标识字段，防止业务代码意外覆写。\n- **可选属性 `?`**：显式声明可能缺省的配置项，配合条件分支实现安全的类型收窄。"
         },
         {
           type: "code",
-          source: '// 1. \u5B9A\u4E49\u5FAE\u670D\u52A1\u8282\u70B9\u5951\u7EA6\uFF1A\u5305\u542B readonly \u53EA\u8BFB\u4E3B\u952E\u4E0E\u53EF\u9009 tag \u6807\u7B7E\ninterface ServiceNode {\n  readonly id: string;\n  host: string;\n  latencyMs: number;\n  healthy: boolean;\n  tag?: string;\n}\n\nconst cluster: ServiceNode[] = [\n  { id: "gw-01", host: "10.0.1.11", latencyMs: 18, healthy: true, tag: "edge" },\n  { id: "db-01", host: "10.0.2.20", latencyMs: 145, healthy: true, tag: "primary" },\n  { id: "cache-01", host: "10.0.3.15", latencyMs: 6, healthy: false }\n];\n\nconsole.log("\u5DF2\u6CE8\u518C\u96C6\u7FA4\u8282\u70B9\u6570:", cluster.length);'
+          source: '// 1. 定义微服务节点契约：包含 readonly 只读主键与可选 tag 标签\ninterface ServiceNode {\n  readonly id: string;\n  host: string;\n  latencyMs: number;\n  healthy: boolean;\n  tag?: string;\n}\n\nconst cluster: ServiceNode[] = [\n  { id: "gw-01", host: "10.0.1.11", latencyMs: 18, healthy: true, tag: "edge" },\n  { id: "db-01", host: "10.0.2.20", latencyMs: 145, healthy: true, tag: "primary" },\n  { id: "cache-01", host: "10.0.3.15", latencyMs: 6, healthy: false }\n];\n\nconsole.log("已注册集群节点数:", cluster.length);'
         },
         {
           type: "code",
-          source: '// 2. \u8DE8\u5355\u5143\u683C\u590D\u7528 ServiceNode \u5951\u7EA6\uFF0C\u7F16\u5199\u5E26\u53EF\u9009\u5C5E\u6027\u6536\u7A84\u7684\u683C\u5F0F\u5316\u51FD\u6570\nfunction formatNodeBadge(node: ServiceNode): string {\n  const role: string = node.tag ? node.tag : "general";\n  const state: string = node.healthy ? "UP" : "DOWN";\n  return "[" + state + "] " + node.id + " (" + role + ") - " + node.latencyMs + "ms";\n}\n\nconst badges: string[] = [];\nfor (let i: number = 0; i < cluster.length; i++) {\n  badges.push(formatNodeBadge(cluster[i]));\n}\nconsole.log("\u96C6\u7FA4\u72B6\u6001\u5FEB\u7167:", badges.join(" | "));'
+          source: '// 2. 跨单元格复用 ServiceNode 契约，编写带可选属性收窄的格式化函数\nfunction formatNodeBadge(node: ServiceNode): string {\n  const role: string = node.tag ? node.tag : "general";\n  const state: string = node.healthy ? "UP" : "DOWN";\n  return "[" + state + "] " + node.id + " (" + role + ") - " + node.latencyMs + "ms";\n}\n\nconst badges: string[] = [];\nfor (let i: number = 0; i < cluster.length; i++) {\n  badges.push(formatNodeBadge(cluster[i]));\n}\nconsole.log("集群状态快照:", badges.join(" | "));'
         },
         {
           type: "code",
-          source: '// 3. \u70B9\u51FB\u53F3\u4E0A\u89D2 \u{1F41E} \u5355\u6B65\u8C03\u8BD5\uFF1A\u7B5B\u9009\u4F4E\u5EF6\u8FDF\u5065\u5EB7\u8282\u70B9\u5E76\u89C2\u5BDF\u53F3\u4FA7 WATCH \u9762\u677F\nconst fastHosts: string[] = [];\nlet totalLatency: number = 0;\n\nfor (let i: number = 0; i < cluster.length; i++) {\n  const item: ServiceNode = cluster[i];\n  checkpoint(item.healthy && item.latencyMs < 100, "\u53D1\u73B0\u4F4E\u5EF6\u8FDF\u5065\u5EB7\u8282\u70B9");\n  if (item.healthy && item.latencyMs < 100) {\n    fastHosts.push(item.host);\n    totalLatency = totalLatency + item.latencyMs;\n  }\n}\n\nconsole.log("\u4F18\u9009\u4F4E\u5EF6\u8FDF\u8282\u70B9:", fastHosts, "\u603B\u5EF6\u8FDF(ms):", totalLatency);'
+          source: '// 3. 点击右上角 🐞 单步调试：筛选低延迟健康节点并观察右侧 WATCH 面板\nconst fastHosts: string[] = [];\nlet totalLatency: number = 0;\n\nfor (let i: number = 0; i < cluster.length; i++) {\n  const item: ServiceNode = cluster[i];\n  checkpoint(item.healthy && item.latencyMs < 100, "发现低延迟健康节点");\n  if (item.healthy && item.latencyMs < 100) {\n    fastHosts.push(item.host);\n    totalLatency = totalLatency + item.latencyMs;\n  }\n}\n\nconsole.log("优选低延迟节点:", fastHosts, "总延迟(ms):", totalLatency);'
         }
       ]
     },
@@ -16475,32 +16755,32 @@ function __require(modId) {
       id: "ts-adv-02-enums-unions-narrowing",
       codeBadge: "02",
       fileName: "02-Enums-Unions-Narrowing.ipynb",
-      title: "02 \xB7 \u679A\u4E3E\u3001\u8054\u5408\u7C7B\u578B\u4E0E\u63A7\u5236\u6D41\u6536\u7A84 (enum / Union)",
-      category: "\u7C7B\u578B\u6536\u7A84\u4E0E\u72B6\u6001\u673A",
-      level: "\u8FDB\u9636 \xB7 \u72B6\u6001\u5EFA\u6A21",
-      summary: "\u638C\u63E1 enum \u7F16\u8BD1\u671F\u53CC\u5411\u6620\u5C04\u5C55\u5F00\u3001type \u8054\u5408\u7C7B\u578B\u522B\u540D\uFF08Union Types\uFF09\u4E0E typeof \u63A7\u5236\u6D41\u7C7B\u578B\u6536\u7A84\uFF0C\u6784\u5EFA\u96F6\u9B54\u672F\u5E38\u91CF\u7684\u6709\u9650\u72B6\u6001\u673A\u3002",
+      title: "02 · 枚举、联合类型与控制流收窄 (enum / Union)",
+      category: "类型收窄与状态机",
+      level: "进阶 · 状态建模",
+      summary: "掌握 enum 编译期双向映射展开、type 联合类型别名（Union Types）与 typeof 控制流类型收窄，构建零魔术常量的有限状态机。",
       highlights: [
-        "enum \u53CC\u5411\u6620\u5C04\u4E0E\u72B6\u6001\u5E38\u91CF",
-        "type \u8054\u5408\u7C7B\u578B\u522B\u540D (number | string)",
-        "typeof \u63A7\u5236\u6D41\u7A84\u5316 (Narrowing)",
-        "Map<string, number> \u72B6\u6001\u6876\u5B9E\u65F6\u53EF\u89C6\u5316"
+        "enum 双向映射与状态常量",
+        "type 联合类型别名 (number | string)",
+        "typeof 控制流窄化 (Narrowing)",
+        "Map<string, number> 状态桶实时可视化"
       ],
       cells: [
         {
           type: "markdown",
-          source: "### \u{1F393} 02 \xB7 \u679A\u4E3E\u3001\u8054\u5408\u7C7B\u578B\u4E0E\u63A7\u5236\u6D41\u6536\u7A84 (`enum` / `Union`)\n\u5728\u590D\u6742\u72B6\u6001\u673A\u4E0E\u591A\u6001\u8F93\u5165\u5904\u7406\u4E2D\uFF0C\u907F\u514D\u786C\u7F16\u7801\u9B54\u672F\u6570\u5B57\u662F\u9AD8\u8D28\u91CF TypeScript \u5DE5\u7A0B\u7684\u6838\u5FC3\uFF1A\n- **`enum` \u679A\u4E3E**\uFF1A\u7F16\u8BD1\u671F\u63D0\u4F9B\u5177\u540D\u7C7B\u578B\u7EA6\u675F\uFF0C\u8FD0\u884C\u671F\u81EA\u52A8\u5C55\u5F00\u4E3A\u53CC\u5411\u6620\u5C04\u5B57\u5178\u5BF9\u8C61\u3002\n- **\u8054\u5408\u7C7B\u578B (`number | string`)**\uFF1A\u914D\u5408 `typeof` \u6761\u4EF6\u5B88\u536B\uFF0C\u8BA9\u7F16\u8BD1\u5668\u5728\u5404\u5206\u652F\u5185\u81EA\u52A8\u6536\u7A84\u5177\u4F53\u7C7B\u578B\u3002"
+          source: "### 🎓 02 · 枚举、联合类型与控制流收窄 (`enum` / `Union`)\n在复杂状态机与多态输入处理中，避免硬编码魔术数字是高质量 TypeScript 工程的核心：\n- **`enum` 枚举**：编译期提供具名类型约束，运行期自动展开为双向映射字典对象。\n- **联合类型 (`number | string`)**：配合 `typeof` 条件守卫，让编译器在各分支内自动收窄具体类型。"
         },
         {
           type: "code",
-          source: '// 1. \u5B9A\u4E49\u4EFB\u52A1\u72B6\u6001\u679A\u4E3E\u4E0E\u8054\u5408\u7C7B\u578B\u8F93\u5165\u89E3\u6790\u51FD\u6570\nenum JobStatus {\n  Queued = 0,\n  Running = 1,\n  Completed = 2,\n  Failed = 3\n}\n\ntype MetricInput = number | string;\n\nfunction normalizeWeight(raw: MetricInput): number {\n  if (typeof raw === "number") {\n    return raw;\n  }\n  return raw.length * 10;\n}\n\nconst combinedWeight: number = normalizeWeight(60) + normalizeWeight("high");\nconsole.log("\u6536\u7A84\u8BA1\u7B97\u6743\u91CD:", combinedWeight, "\u521D\u59CB\u679A\u4E3E\u503C:", JobStatus.Queued);'
+          source: '// 1. 定义任务状态枚举与联合类型输入解析函数\nenum JobStatus {\n  Queued = 0,\n  Running = 1,\n  Completed = 2,\n  Failed = 3\n}\n\ntype MetricInput = number | string;\n\nfunction normalizeWeight(raw: MetricInput): number {\n  if (typeof raw === "number") {\n    return raw;\n  }\n  return raw.length * 10;\n}\n\nconst combinedWeight: number = normalizeWeight(60) + normalizeWeight("high");\nconsole.log("收窄计算权重:", combinedWeight, "初始枚举值:", JobStatus.Queued);'
         },
         {
           type: "code",
-          source: '// 2. \u7F16\u5199\u786E\u5B9A\u6027\u72B6\u6001\u8F6C\u79FB\u51FD\u6570 stepStatus\nfunction stepStatus(cur: JobStatus, ok: boolean): JobStatus {\n  if (cur === JobStatus.Queued) {\n    return JobStatus.Running;\n  }\n  if (cur === JobStatus.Running) {\n    return ok ? JobStatus.Completed : JobStatus.Failed;\n  }\n  return cur;\n}\n\nlet stDemo: JobStatus = JobStatus.Queued;\nstDemo = stepStatus(stDemo, true);\nstDemo = stepStatus(stDemo, true);\nconsole.log("\u72B6\u6001\u6D41\u8F6C\u7EC8\u70B9:", stDemo, "\u540D\u79F0:", JobStatus[stDemo]);'
+          source: '// 2. 编写确定性状态转移函数 stepStatus\nfunction stepStatus(cur: JobStatus, ok: boolean): JobStatus {\n  if (cur === JobStatus.Queued) {\n    return JobStatus.Running;\n  }\n  if (cur === JobStatus.Running) {\n    return ok ? JobStatus.Completed : JobStatus.Failed;\n  }\n  return cur;\n}\n\nlet stDemo: JobStatus = JobStatus.Queued;\nstDemo = stepStatus(stDemo, true);\nstDemo = stepStatus(stDemo, true);\nconsole.log("状态流转终点:", stDemo, "名称:", JobStatus[stDemo]);'
         },
         {
           type: "code",
-          source: '// 3. \u70B9\u51FB\u53F3\u4E0A\u89D2 \u{1F41E} \u5355\u6B65\u8C03\u8BD5\uFF1A\u6279\u91CF\u9A71\u52A8\u72B6\u6001\u673A\u5E76\u5728\u53F3\u4FA7 WATCH \u89C2\u5BDF Map \u54C8\u5E0C\u7EDF\u8BA1\u6876\nconst signals: boolean[] = [true, false, true, true, false];\nconst stats = new Map<string, number>();\nstats.set("Completed", 0);\nstats.set("Failed", 0);\n\nfor (let i: number = 0; i < signals.length; i++) {\n  let st: JobStatus = JobStatus.Queued;\n  st = stepStatus(st, true);\n  st = stepStatus(st, signals[i]);\n  const key: string = st === JobStatus.Completed ? "Completed" : "Failed";\n  const prev: number = stats.get(key) || 0;\n  stats.set(key, prev + 1);\n  checkpoint(st === JobStatus.Failed, "\u68C0\u6D4B\u5230\u5931\u8D25\u4EFB\u52A1");\n}\n\nconsole.log("\u6210\u529F\u4EFB\u52A1\u6570:", stats.get("Completed"), "\u5931\u8D25\u4EFB\u52A1\u6570:", stats.get("Failed"));'
+          source: '// 3. 点击右上角 🐞 单步调试：批量驱动状态机并在右侧 WATCH 观察 Map 哈希统计桶\nconst signals: boolean[] = [true, false, true, true, false];\nconst stats = new Map<string, number>();\nstats.set("Completed", 0);\nstats.set("Failed", 0);\n\nfor (let i: number = 0; i < signals.length; i++) {\n  let st: JobStatus = JobStatus.Queued;\n  st = stepStatus(st, true);\n  st = stepStatus(st, signals[i]);\n  const key: string = st === JobStatus.Completed ? "Completed" : "Failed";\n  const prev: number = stats.get(key) || 0;\n  stats.set(key, prev + 1);\n  checkpoint(st === JobStatus.Failed, "检测到失败任务");\n}\n\nconsole.log("成功任务数:", stats.get("Completed"), "失败任务数:", stats.get("Failed"));'
         }
       ]
     },
@@ -16508,32 +16788,32 @@ function __require(modId) {
       id: "ts-adv-03-classes-oop-inheritance",
       codeBadge: "03",
       fileName: "03-Classes-OOP-Inheritance.ipynb",
-      title: "03 \xB7 \u9762\u5411\u5BF9\u8C61\u8FDB\u9636\uFF1A\u8BBF\u95EE\u63A7\u5236\u3001\u53C2\u6570\u5C5E\u6027\u4E0E\u7EE7\u627F (class / extends)",
-      category: "\u9762\u5411\u5BF9\u8C61\u4E0E\u5185\u5B58\u6A21\u578B",
-      level: "\u8FDB\u9636 \xB7 OOP \u67B6\u6784",
-      summary: "\u638C\u63E1\u6784\u9020\u51FD\u6570\u53C2\u6570\u5C5E\u6027\u8BED\u6CD5\u7CD6\u3001public / protected / private / readonly \u5C01\u88C5\u8FB9\u754C\u68C0\u67E5\uFF0C\u4EE5\u53CA extends \u6D3E\u751F\u7C7B\u7EE7\u627F\u4E0E super() \u534F\u540C\u3002",
+      title: "03 · 面向对象进阶：访问控制、参数属性与继承 (class / extends)",
+      category: "面向对象与内存模型",
+      level: "进阶 · OOP 架构",
+      summary: "掌握构造函数参数属性语法糖、public / protected / private / readonly 封装边界检查，以及 extends 派生类继承与 super() 协同。",
       highlights: [
-        "constructor \u53C2\u6570\u5C5E\u6027\u8BED\u6CD5\u7CD6",
-        "private / protected / readonly \u5C01\u88C5",
-        "extends \u7EE7\u627F\u94FE\u4E0E super() \u8C03\u7528",
-        "\u5806\u5185\u5B58\u5B9E\u4F8B\u5361\u7247\u4E0E\u5F15\u7528\u5B9E\u65F6\u8FFD\u8E2A"
+        "constructor 参数属性语法糖",
+        "private / protected / readonly 封装",
+        "extends 继承链与 super() 调用",
+        "堆内存实例卡片与引用实时追踪"
       ],
       cells: [
         {
           type: "markdown",
-          source: "### \u{1F393} 03 \xB7 \u9762\u5411\u5BF9\u8C61\u8FDB\u9636\uFF1A\u8BBF\u95EE\u63A7\u5236\u3001\u53C2\u6570\u5C5E\u6027\u4E0E\u7EE7\u627F (`class` / `extends`)\nTypeScript \u6269\u5C55\u4E86\u6807\u51C6\u7C7B\u7684\u5C01\u88C5\u4E0E\u591A\u6001\u80FD\u529B\uFF1A\n- **\u8BBF\u95EE\u4FEE\u9970\u7B26**\uFF1A`private`\uFF08\u4EC5\u672C\u7C7B\u53EF\u89C1\uFF09\u3001`protected`\uFF08\u672C\u7C7B\u4E0E\u5B50\u7C7B\u53EF\u89C1\uFF09\u3001`public`\uFF08\u516C\u5F00\uFF09\u4E0E `readonly`\uFF08\u53EA\u8BFB\uFF09\u3002\n- **\u53C2\u6570\u5C5E\u6027**\uFF1A\u5728 `constructor(public readonly name: string, protected quota: number)` \u4E2D\u4E00\u952E\u5B8C\u6210\u5B57\u6BB5\u58F0\u660E\u4E0E\u8D4B\u503C\u3002"
+          source: "### 🎓 03 · 面向对象进阶：访问控制、参数属性与继承 (`class` / `extends`)\nTypeScript 扩展了标准类的封装与多态能力：\n- **访问修饰符**：`private`（仅本类可见）、`protected`（本类与子类可见）、`public`（公开）与 `readonly`（只读）。\n- **参数属性**：在 `constructor(public readonly name: string, protected quota: number)` 中一键完成字段声明与赋值。"
         },
         {
           type: "code",
-          source: '// 1. \u5B9A\u4E49\u5E26\u53C2\u6570\u5C5E\u6027\u4E0E\u8BBF\u95EE\u4FEE\u9970\u7B26\u7684\u914D\u989D\u9650\u6D41\u5668\u57FA\u7C7B RateLimiter\nclass RateLimiter {\n  private used: number = 0;\n\n  constructor(public readonly service: string, protected quota: number) {}\n\n  public acquire(cost: number): boolean {\n    if (this.used + cost > this.quota) {\n      return false;\n    }\n    this.used = this.used + cost;\n    return true;\n  }\n\n  public remaining(): number {\n    return this.quota - this.used;\n  }\n}\n\nconst baseLimiter = new RateLimiter("auth-svc", 10);\nconsole.log("\u7533\u8BF7 4 \u5355\u4F4D\u914D\u989D:", baseLimiter.acquire(4), "\u5269\u4F59:", baseLimiter.remaining());'
+          source: '// 1. 定义带参数属性与访问修饰符的配额限流器基类 RateLimiter\nclass RateLimiter {\n  private used: number = 0;\n\n  constructor(public readonly service: string, protected quota: number) {}\n\n  public acquire(cost: number): boolean {\n    if (this.used + cost > this.quota) {\n      return false;\n    }\n    this.used = this.used + cost;\n    return true;\n  }\n\n  public remaining(): number {\n    return this.quota - this.used;\n  }\n}\n\nconst baseLimiter = new RateLimiter("auth-svc", 10);\nconsole.log("申请 4 单位配额:", baseLimiter.acquire(4), "剩余:", baseLimiter.remaining());'
         },
         {
           type: "code",
-          source: '// 2. \u901A\u8FC7 extends \u7EE7\u627F RateLimiter\uFF0C\u6269\u5C55\u652F\u6301\u7A81\u53D1\u6D41\u91CF\u6C60\u7684 BurstLimiter\nclass BurstLimiter extends RateLimiter {\n  private burstUsed: number = 0;\n\n  constructor(service: string, quota: number, public readonly burstMax: number) {\n    super(service, quota);\n  }\n\n  public requestToken(cost: number): string {\n    if (this.acquire(cost)) {\n      return "NORMAL_OK";\n    }\n    if (this.burstUsed + cost <= this.burstMax) {\n      this.burstUsed = this.burstUsed + cost;\n      return "BURST_OK";\n    }\n    return "REJECTED";\n  }\n}\n\nconst gatewayLimiter = new BurstLimiter("edge-gateway", 10, 5);\nconsole.log("\u7F51\u5173\u9650\u6D41\u5668\u521D\u59CB\u5316\u5B8C\u6210:", gatewayLimiter.service, "\u7A81\u53D1\u4E0A\u9650:", gatewayLimiter.burstMax);'
+          source: '// 2. 通过 extends 继承 RateLimiter，扩展支持突发流量池的 BurstLimiter\nclass BurstLimiter extends RateLimiter {\n  private burstUsed: number = 0;\n\n  constructor(service: string, quota: number, public readonly burstMax: number) {\n    super(service, quota);\n  }\n\n  public requestToken(cost: number): string {\n    if (this.acquire(cost)) {\n      return "NORMAL_OK";\n    }\n    if (this.burstUsed + cost <= this.burstMax) {\n      this.burstUsed = this.burstUsed + cost;\n      return "BURST_OK";\n    }\n    return "REJECTED";\n  }\n}\n\nconst gatewayLimiter = new BurstLimiter("edge-gateway", 10, 5);\nconsole.log("网关限流器初始化完成:", gatewayLimiter.service, "突发上限:", gatewayLimiter.burstMax);'
         },
         {
           type: "code",
-          source: '// 3. \u70B9\u51FB\u53F3\u4E0A\u89D2 \u{1F41E} \u5355\u6B65\u8C03\u8BD5\uFF1A\u6A21\u62DF\u6D41\u91CF\u6D2A\u5CF0\u5E76\u5728\u53F3\u4FA7\u89C2\u5BDF\u5806\u5B9E\u4F8B\u5C5E\u6027\u53D8\u5316\nconst requests: number[] = [4, 5, 4, 3, 2];\nconst verdicts: string[] = [];\n\nfor (let i: number = 0; i < requests.length; i++) {\n  const cost: number = requests[i];\n  const res: string = gatewayLimiter.requestToken(cost);\n  verdicts.push(res);\n  checkpoint(res !== "NORMAL_OK", "\u89E6\u53D1\u7A81\u53D1\u6C60\u6216\u9650\u6D41");\n}\n\nconsole.log("\u6D41\u91CF\u88C1\u51B3\u5E8F\u5217:", verdicts.join(" -> "));'
+          source: '// 3. 点击右上角 🐞 单步调试：模拟流量洪峰并在右侧观察堆实例属性变化\nconst requests: number[] = [4, 5, 4, 3, 2];\nconst verdicts: string[] = [];\n\nfor (let i: number = 0; i < requests.length; i++) {\n  const cost: number = requests[i];\n  const res: string = gatewayLimiter.requestToken(cost);\n  verdicts.push(res);\n  checkpoint(res !== "NORMAL_OK", "触发突发池或限流");\n}\n\nconsole.log("流量裁决序列:", verdicts.join(" -> "));'
         }
       ]
     },
@@ -16541,32 +16821,32 @@ function __require(modId) {
       id: "ts-adv-04-generics-collections",
       codeBadge: "04",
       fileName: "04-Generics-Collections-Trees.ipynb",
-      title: "04 \xB7 \u6CDB\u578B\u7F16\u7A0B\u4E0E\u5F3A\u7C7B\u578B\u6811/\u94FE\u8868\u53EF\u89C6\u5316 (<T> / Tree / List)",
-      category: "\u6CDB\u578B\u4E0E\u6570\u636E\u7ED3\u6784",
-      level: "\u9AD8\u9636 \xB7 \u7B97\u6CD5\u5DE5\u7A0B",
-      summary: "\u638C\u63E1\u6CDB\u578B\u7C7B class ValueBox<T>\u3001\u6CDB\u578B\u51FD\u6570\u4E0E\u81EA\u5F15\u7528\u6811/\u94FE\u8868\u7ED3\u6784\u5B9A\u4E49\uFF0C\u5728\u53F3\u4FA7 WATCH \u9762\u677F\u5B9E\u65F6\u8054\u52A8 SVG \u4E8C\u53C9\u6811\u4E0E\u94FE\u8868\u89C6\u56FE\u3002",
+      title: "04 · 泛型编程与强类型树/链表可视化 (<T> / Tree / List)",
+      category: "泛型与数据结构",
+      level: "高阶 · 算法工程",
+      summary: "掌握泛型类 class ValueBox<T>、泛型函数与自引用树/链表结构定义，在右侧 WATCH 面板实时联动 SVG 二叉树与链表视图。",
       highlights: [
-        "\u6CDB\u578B\u5BB9\u5668\u7C7B class ValueBox<T>",
-        "\u6CDB\u578B\u51FD\u6570 <T> \u7C7B\u578B\u53C2\u6570\u63A8\u5BFC",
-        "SVG \u4E8C\u53C9\u6811\u4E0E\u94FE\u8868\u81EA\u52A8\u8BC6\u522B\u6E32\u67D3",
-        "\u5355\u6B65\u8FFD\u8E2A\u6811\u7ED3\u6784\u4E0E\u6808\u8F68\u8FF9"
+        "泛型容器类 class ValueBox<T>",
+        "泛型函数 <T> 类型参数推导",
+        "SVG 二叉树与链表自动识别渲染",
+        "单步追踪树结构与栈轨迹"
       ],
       cells: [
         {
           type: "markdown",
-          source: "### \u{1F393} 04 \xB7 \u6CDB\u578B\u7F16\u7A0B\u4E0E\u5F3A\u7C7B\u578B\u6570\u636E\u7ED3\u6784 (`<T>` / `Tree` / `LinkedList`)\n\u6CDB\u578B\uFF08Generics\uFF09\u5C06\u7C7B\u578B\u53C2\u6570\u5316\uFF0C\u4F7F\u5BB9\u5668\u4E0E\u7B97\u6CD5\u517C\u5177\u590D\u7528\u6027\u4E0E\u4E25\u683C\u7C7B\u578B\u6821\u9A8C\uFF1A\n- **\u6CDB\u578B\u7C7B\u4E0E\u6CDB\u578B\u51FD\u6570**\uFF1A\u901A\u8FC7 `<T>` \u5C06\u5143\u7D20\u7C7B\u578B\u7ED1\u5B9A\u5230\u5B9E\u4F8B\u4E0E\u8FD4\u56DE\u503C\u3002\n- **\u6811\u4E0E\u94FE\u8868\u81EA\u52A8\u53EF\u89C6\u5316**\uFF1A\u5305\u542B `val` + `left` / `right` \u7684\u5BF9\u8C61\u81EA\u52A8\u6E32\u67D3\u4E3A **SVG \u5C42\u6B21\u4E8C\u53C9\u6811**\uFF1B\u5305\u542B `val` + `next` \u7684\u5BF9\u8C61\u81EA\u52A8\u6E32\u67D3\u4E3A **\u6C34\u5E73\u94FE\u8868**\u3002"
+          source: "### 🎓 04 · 泛型编程与强类型数据结构 (`<T>` / `Tree` / `LinkedList`)\n泛型（Generics）将类型参数化，使容器与算法兼具复用性与严格类型校验：\n- **泛型类与泛型函数**：通过 `<T>` 将元素类型绑定到实例与返回值。\n- **树与链表自动可视化**：包含 `val` + `left` / `right` 的对象自动渲染为 **SVG 层次二叉树**；包含 `val` + `next` 的对象自动渲染为 **水平链表**。"
         },
         {
           type: "code",
-          source: '// 1. \u5B9A\u4E49\u6CDB\u578B\u5386\u53F2\u8BB0\u5F55\u5BB9\u5668\u7C7B ValueBox<T>\nclass ValueBox<T> {\n  history: T[] = [];\n\n  constructor(public current: T) {\n    this.history.push(current);\n  }\n\n  update(nextVal: T): T {\n    this.current = nextVal;\n    this.history.push(nextVal);\n    return this.current;\n  }\n}\n\nconst scoreBox = new ValueBox<number>(100);\nscoreBox.update(180);\nscoreBox.update(260);\nconsole.log("\u5F53\u524D\u6CDB\u578B\u76D2\u503C:", scoreBox.current, "\u5386\u53F2\u8BB0\u5F55:", scoreBox.history);'
+          source: '// 1. 定义泛型历史记录容器类 ValueBox<T>\nclass ValueBox<T> {\n  history: T[] = [];\n\n  constructor(public current: T) {\n    this.history.push(current);\n  }\n\n  update(nextVal: T): T {\n    this.current = nextVal;\n    this.history.push(nextVal);\n    return this.current;\n  }\n}\n\nconst scoreBox = new ValueBox<number>(100);\nscoreBox.update(180);\nscoreBox.update(260);\nconsole.log("当前泛型盒值:", scoreBox.current, "历史记录:", scoreBox.history);'
         },
         {
           type: "code",
-          source: '// 2. \u6784\u5EFA\u5F3A\u7C7B\u578B\u4E8C\u53C9\u6811 tree \u4E0E\u5355\u94FE\u8868 list\uFF08\u8FD0\u884C\u540E\u53F3\u4FA7 WATCH \u81EA\u52A8\u6E32\u67D3\u56FE\u5F62\uFF09\nconst list = {\n  val: 10,\n  next: { val: 20, next: { val: 30, next: null } }\n};\n\nconst tree = {\n  val: 50,\n  left: {\n    val: 30,\n    left: { val: 20, left: null, right: null },\n    right: { val: 40, left: null, right: null }\n  },\n  right: {\n    val: 70,\n    left: { val: 60, left: null, right: null },\n    right: { val: 85, left: null, right: null }\n  }\n};\n\nconsole.log("\u6811\u6839:", tree.val, "\u94FE\u8868\u5934:", list.val);'
+          source: '// 2. 构建强类型二叉树 tree 与单链表 list（运行后右侧 WATCH 自动渲染图形）\nconst list = {\n  val: 10,\n  next: { val: 20, next: { val: 30, next: null } }\n};\n\nconst tree = {\n  val: 50,\n  left: {\n    val: 30,\n    left: { val: 20, left: null, right: null },\n    right: { val: 40, left: null, right: null }\n  },\n  right: {\n    val: 70,\n    left: { val: 60, left: null, right: null },\n    right: { val: 85, left: null, right: null }\n  }\n};\n\nconsole.log("树根:", tree.val, "链表头:", list.val);'
         },
         {
           type: "code",
-          source: '// 3. \u70B9\u51FB\u53F3\u4E0A\u89D2 \u{1F41E} \u5355\u6B65\u8C03\u8BD5\uFF1A\u7ED3\u5408\u6808\u4E0E\u96C6\u5408\u7EDF\u8BA1\u6811\u7279\u5F81\u503C\nconst levelValues: number[] = [tree.val, tree.left.val, tree.right.val, tree.left.left.val, tree.right.right.val];\nconst visited = new Set<number>();\nconst stack: number[] = [];\nlet treeSum: number = 0;\n\nfor (let i: number = 0; i < levelValues.length; i++) {\n  const v: number = levelValues[i];\n  visited.add(v);\n  stack.push(v);\n  treeSum = treeSum + v;\n  checkpoint(treeSum > 100, "\u8282\u70B9\u7D2F\u8BA1\u548C\u8D85\u767E");\n}\n\nconsole.log("\u91C7\u6837\u8282\u70B9\u7D2F\u8BA1\u548C:", treeSum, "\u53BB\u91CD\u96C6\u5408\u5927\u5C0F:", visited.size);'
+          source: '// 3. 点击右上角 🐞 单步调试：结合栈与集合统计树特征值\nconst levelValues: number[] = [tree.val, tree.left.val, tree.right.val, tree.left.left.val, tree.right.right.val];\nconst visited = new Set<number>();\nconst stack: number[] = [];\nlet treeSum: number = 0;\n\nfor (let i: number = 0; i < levelValues.length; i++) {\n  const v: number = levelValues[i];\n  visited.add(v);\n  stack.push(v);\n  treeSum = treeSum + v;\n  checkpoint(treeSum > 100, "节点累计和超百");\n}\n\nconsole.log("采样节点累计和:", treeSum, "去重集合大小:", visited.size);'
         }
       ]
     },
@@ -16574,32 +16854,32 @@ function __require(modId) {
       id: "ts-adv-05-async-event-loop",
       codeBadge: "05",
       fileName: "05-Async-Await-EventLoop.ipynb",
-      title: "05 \xB7 \u5F02\u6B65\u7F16\u7A0B\u3001Promise \u4E0E\u786E\u5B9A\u6027\u4E8B\u4EF6\u5FAA\u73AF (async / await)",
-      category: "\u5F02\u6B65\u5E76\u53D1\u4E0E\u8C03\u5EA6",
-      level: "\u9AD8\u9636 \xB7 \u8FD0\u884C\u65F6\u673A\u5236",
-      summary: "\u6DF1\u5165\u5256\u6790 async / await \u534F\u7A0B\u6302\u8D77\u6062\u590D\u3001Promise.then / queueMicrotask \u5FAE\u4EFB\u52A1\u961F\u5217\u4E0E setTimeout \u5B8F\u4EFB\u52A1\u961F\u5217\u7684\u786E\u5B9A\u6027\u6267\u884C\u65F6\u5E8F\u3002",
+      title: "05 · 异步编程、Promise 与确定性事件循环 (async / await)",
+      category: "异步并发与调度",
+      level: "高阶 · 运行时机制",
+      summary: "深入剖析 async / await 协程挂起恢复、Promise.then / queueMicrotask 微任务队列与 setTimeout 宏任务队列的确定性执行时序。",
       highlights: [
-        "\u540C\u6B65\u8C03\u7528\u6808 vs \u5FAE\u4EFB\u52A1 vs \u5B8F\u4EFB\u52A1",
-        "async / await \u534F\u7A0B\u6302\u8D77\u4E0E\u6062\u590D",
-        "queueMicrotask \u4E0E Promise.then \u4F18\u5148\u7EA7",
-        "\u786E\u5B9A\u6027\u865A\u62DF\u4E8B\u4EF6\u5FAA\u73AF\u5355\u6B65\u53EF\u89C6\u5316"
+        "同步调用栈 vs 微任务 vs 宏任务",
+        "async / await 协程挂起与恢复",
+        "queueMicrotask 与 Promise.then 优先级",
+        "确定性虚拟事件循环单步可视化"
       ],
       cells: [
         {
           type: "markdown",
-          source: "### \u{1F393} 05 \xB7 \u5F02\u6B65\u7F16\u7A0B\u4E0E\u786E\u5B9A\u6027\u4E8B\u4EF6\u5FAA\u73AF (`async / await` / `Microtask` / `Macrotask`)\n\u672C\u5F15\u64CE\u5185\u7F6E\u4E86**\u786E\u5B9A\u6027\u865A\u62DF\u4E8B\u4EF6\u5FAA\u73AF\u6C99\u7BB1**\uFF0C\u65E0\u9700\u771F\u5B9E\u7B49\u5F85\u5B9A\u65F6\u5668\u5373\u53EF\u7CBE\u786E\u91CD\u73B0\u6807\u51C6\u5E76\u53D1\u8C03\u5EA6\u89C4\u5219\uFF1A\n1. **\u540C\u6B65\u4EE3\u7801\uFF08Call Stack\uFF09** \u6700\u5148\u6267\u884C\u5B8C\u6BD5\uFF1B\n2. **\u5FAE\u4EFB\u52A1\u961F\u5217\uFF08Microtasks\uFF09**\uFF1A\u5982 `Promise.resolve().then(...)`\u3001`queueMicrotask(...)`\u3001`await` \u540E\u7EED\u4EE3\u7801\uFF0C\u5728\u5F53\u524D\u5B8F\u4EFB\u52A1\u672B\u5C3E**\u4E00\u6B21\u6027\u5168\u90E8\u6E05\u7A7A**\uFF1B\n3. **\u5B8F\u4EFB\u52A1\u961F\u5217\uFF08Macrotasks\uFF09**\uFF1A\u5982 `setTimeout(fn, delay)`\uFF0C\u6309\u865A\u62DF\u65F6\u95F4\u987A\u5E8F\u4F9D\u6B21\u89E6\u53D1\u3002"
+          source: "### 🎓 05 · 异步编程与确定性事件循环 (`async / await` / `Microtask` / `Macrotask`)\n本引擎内置了**确定性虚拟事件循环沙箱**，无需真实等待定时器即可精确重现标准并发调度规则：\n1. **同步代码（Call Stack）** 最先执行完毕；\n2. **微任务队列（Microtasks）**：如 `Promise.resolve().then(...)`、`queueMicrotask(...)`、`await` 后续代码，在当前宏任务末尾**一次性全部清空**；\n3. **宏任务队列（Macrotasks）**：如 `setTimeout(fn, delay)`，按虚拟时间顺序依次触发。"
         },
         {
           type: "code",
-          source: '// 1. \u7ECF\u5178\u9762\u8BD5\u9898\u5B9E\u8BC1\uFF1A\u540C\u6B65\u6808\u3001\u5FAE\u4EFB\u52A1\u4E0E\u5B8F\u4EFB\u52A1\u7684\u7CBE\u786E\u51FA\u961F\u987A\u5E8F\nconst orderLog: string[] = [];\n\norderLog.push("1:sync-start");\n\nsetTimeout(() => {\n  orderLog.push("5:timeout-0ms");\n}, 0);\n\nPromise.resolve("p1").then((tag: string) => {\n  orderLog.push("3:promise-then-" + tag);\n});\n\nqueueMicrotask(() => {\n  orderLog.push("4:queue-microtask");\n});\n\norderLog.push("2:sync-end");\nconsole.log("\u4E8B\u4EF6\u5FAA\u73AF\u5B9E\u6D4B\u65F6\u5E8F:", orderLog.join(" -> "));'
+          source: '// 1. 经典面试题实证：同步栈、微任务与宏任务的精确出队顺序\nconst orderLog: string[] = [];\n\norderLog.push("1:sync-start");\n\nsetTimeout(() => {\n  orderLog.push("5:timeout-0ms");\n}, 0);\n\nPromise.resolve("p1").then((tag: string) => {\n  orderLog.push("3:promise-then-" + tag);\n});\n\nqueueMicrotask(() => {\n  orderLog.push("4:queue-microtask");\n});\n\norderLog.push("2:sync-end");\nconsole.log("事件循环实测时序:", orderLog.join(" -> "));'
         },
         {
           type: "code",
-          source: '// 2. \u5B9A\u4E49 async \u5F02\u6B65\u51FD\u6570\uFF0C\u7406\u89E3 await \u524D\u540E\u7684\u540C\u6B65\u4E0E\u5FAE\u4EFB\u52A1\u5207\u5206\nconst traceEvents: string[] = [];\n\nasync function loadRemoteConfig(envName: string): Promise<string> {\n  traceEvents.push("2:enter-async-" + envName);\n  const tag: string = await Promise.resolve("cfg-" + envName);\n  traceEvents.push("4:after-await-" + tag);\n  return tag;\n}\n\ntraceEvents.push("1:before-call");\nloadRemoteConfig("prod");\ntraceEvents.push("3:after-call-sync");\nconsole.log("\u534F\u7A0B\u6062\u590D\u8F68\u8FF9:", traceEvents.join(" -> "));'
+          source: '// 2. 定义 async 异步函数，理解 await 前后的同步与微任务切分\nconst traceEvents: string[] = [];\n\nasync function loadRemoteConfig(envName: string): Promise<string> {\n  traceEvents.push("2:enter-async-" + envName);\n  const tag: string = await Promise.resolve("cfg-" + envName);\n  traceEvents.push("4:after-await-" + tag);\n  return tag;\n}\n\ntraceEvents.push("1:before-call");\nloadRemoteConfig("prod");\ntraceEvents.push("3:after-call-sync");\nconsole.log("协程恢复轨迹:", traceEvents.join(" -> "));'
         },
         {
           type: "code",
-          source: '// 3. \u70B9\u51FB\u53F3\u4E0A\u89D2 \u{1F41E} \u5355\u6B65\u8C03\u8BD5\uFF1A\u89C2\u5BDF\u53F3\u4FA7 Event Loop \u9762\u677F\u4E2D\u534F\u7A0B\u3001\u5FAE\u4EFB\u52A1\u4E0E\u5B9A\u65F6\u5668\u7684\u6D41\u8F6C\nasync function computeStage(uid: number): Promise<number> {\n  const base: number = await Promise.resolve(uid * 100);\n  return base + 25;\n}\n\nasync function runAsyncPipeline(): Promise<string> {\n  const timeline: string[] = ["1:pipeline-start"];\n\n  setTimeout(() => {\n    timeline.push("5:timer-10ms");\n  }, 10);\n\n  Promise.resolve("fast").then((x: string) => {\n    timeline.push("3:micro-" + x);\n  });\n\n  timeline.push("2:before-await");\n  const quota: number = await computeStage(2);\n  timeline.push("4:after-await-" + quota);\n  checkpoint(quota > 200, "\u5F02\u6B65\u6D41\u6C34\u7EBF\u6062\u590D");\n  return timeline.join(" -> ");\n}\n\nrunAsyncPipeline()'
+          source: '// 3. 点击右上角 🐞 单步调试：观察右侧 Event Loop 面板中协程、微任务与定时器的流转\nasync function computeStage(uid: number): Promise<number> {\n  const base: number = await Promise.resolve(uid * 100);\n  return base + 25;\n}\n\nasync function runAsyncPipeline(): Promise<string> {\n  const timeline: string[] = ["1:pipeline-start"];\n\n  setTimeout(() => {\n    timeline.push("5:timer-10ms");\n  }, 10);\n\n  Promise.resolve("fast").then((x: string) => {\n    timeline.push("3:micro-" + x);\n  });\n\n  timeline.push("2:before-await");\n  const quota: number = await computeStage(2);\n  timeline.push("4:after-await-" + quota);\n  checkpoint(quota > 200, "异步流水线恢复");\n  return timeline.join(" -> ");\n}\n\nrunAsyncPipeline()'
         }
       ]
     },
@@ -16607,32 +16887,32 @@ function __require(modId) {
       id: "ts-adv-06-type-diagnostics-lab",
       codeBadge: "06",
       fileName: "06-Type-Diagnostics-DP-Lab.ipynb",
-      title: "06 \xB7 \u9759\u6001\u7C7B\u578B\u8BCA\u65AD\u4E0E\u4E8C\u7EF4\u77E9\u9635\u7B97\u6CD5\u5B9E\u6218 (Type Checker & 2D DP)",
-      category: "\u7C7B\u578B\u5B89\u5168\u4E0E\u7B97\u6CD5\u53EF\u89C6\u5316",
-      level: "\u5B9E\u6218 \xB7 \u7EFC\u5408\u6F14\u7EC3",
-      summary: "\u7ED3\u5408\u5185\u7F6E\u6559\u80B2\u7EA7\u9759\u6001\u7C7B\u578B\u68C0\u67E5\u5668\u4F53\u9A8C\u5B9E\u65F6\u884C\u5C3E\u9519\u8BEF\u5FBD\u7AE0\u8BCA\u65AD\uFF0C\u5E76\u7528\u4E25\u683C\u7C7B\u578B\u5B9E\u73B0\u53CC\u6307\u9488\u6ED1\u52A8\u7A97\u53E3\u4E0E\u4E8C\u7EF4\u77E9\u9635\u52A8\u6001\u89C4\u5212\uFF082D Matrix \u53EF\u89C6\u5316\uFF09\u3002",
+      title: "06 · 静态类型诊断与二维矩阵算法实战 (Type Checker & 2D DP)",
+      category: "类型安全与算法可视化",
+      level: "实战 · 综合演练",
+      summary: "结合内置教育级静态类型检查器体验实时行尾错误徽章诊断，并用严格类型实现双指针滑动窗口与二维矩阵动态规划（2D Matrix 可视化）。",
       highlights: [
-        "\u5B9E\u65F6\u9759\u6001\u7C7B\u578B\u8BCA\u65AD\u5FBD\u7AE0\u5B9E\u9A8C\u5BA4",
-        "\u4E00\u7EF4\u6570\u7EC4\u53CC\u6307\u9488 [l..r] \u81EA\u52A8\u60AC\u6302",
-        "\u4E8C\u7EF4\u77E9\u9635 number[][] \u7F51\u683C\u52A8\u6001\u6E32\u67D3",
-        "\u7ED3\u5408 checkpoint() \u9010\u6B65\u63A8\u5BFC DP \u8F6C\u79FB\u65B9\u7A0B"
+        "实时静态类型诊断徽章实验室",
+        "一维数组双指针 [l..r] 自动悬挂",
+        "二维矩阵 number[][] 网格动态渲染",
+        "结合 checkpoint() 逐步推导 DP 转移方程"
       ],
       cells: [
         {
           type: "markdown",
-          source: "### \u{1F393} 06 \xB7 \u9759\u6001\u7C7B\u578B\u8BCA\u65AD\u4E0E\u4E8C\u7EF4\u77E9\u9635\u7B97\u6CD5\u5B9E\u6218 (`Type Checker` + `2D Matrix`)\n\u672C\u8BFE\u7A0B\u5C55\u793A\u5982\u4F55\u5C06 **\u7F16\u8BD1\u671F\u9759\u6001\u7C7B\u578B\u9632\u5FA1** \u4E0E **\u8FD0\u884C\u671F\u7B97\u6CD5\u53EF\u89C6\u5316\u8C03\u8BD5** \u7ED3\u5408\uFF1A\n- **\u5B9E\u65F6\u7C7B\u578B\u8BCA\u65AD**\uFF1A\u5F53\u4EE3\u7801\u51FA\u73B0\u7C7B\u578B\u4E0D\u5339\u914D\u65F6\uFF0C\u7F16\u8F91\u5668\u884C\u5C3E\u4F1A\u7ACB\u5373\u63D0\u793A\u7EA2\u8272 `\u2717 TS` \u8BCA\u65AD\u5FBD\u7AE0\u3002\n- **\u53CC\u6307\u9488\u4E0E\u4E8C\u7EF4\u7F51\u683C**\uFF1A\u53D8\u91CF\u540D `l` / `r` \u4F1A\u81EA\u52A8\u60AC\u6302\u5728\u4E00\u7EF4\u6570\u7EC4\u4E0B\u65B9\uFF1B`dp: number[][]` \u4F1A\u81EA\u52A8\u6E32\u67D3\u4E3A\u4E8C\u7EF4\u77E9\u9635\u8868\u683C\u3002"
+          source: "### 🎓 06 · 静态类型诊断与二维矩阵算法实战 (`Type Checker` + `2D Matrix`)\n本课程展示如何将 **编译期静态类型防御** 与 **运行期算法可视化调试** 结合：\n- **实时类型诊断**：当代码出现类型不匹配时，编辑器行尾会立即提示红色 `✗ TS` 诊断徽章。\n- **双指针与二维网格**：变量名 `l` / `r` 会自动悬挂在一维数组下方；`dp: number[][]` 会自动渲染为二维矩阵表格。"
         },
         {
           type: "code",
-          source: '// 1. \u9759\u6001\u7C7B\u578B\u9632\u9519\u5B9E\u9A8C\u5BA4\uFF08\u53EF\u5C1D\u8BD5\u53D6\u6D88\u5012\u6570\u7B2C\u4E8C\u884C\u6CE8\u91CA\uFF0C\u4F53\u9A8C\u884C\u5C3E\u5B9E\u65F6\u7EA2\u8272 TS \u8BCA\u65AD\u5FBD\u7AE0\uFF09\ninterface RiskRule {\n  readonly baseScore: number;\n  multiplier: number;\n}\n\nfunction evaluateRisk(rule: RiskRule, factor: number): number {\n  return rule.baseScore + rule.multiplier * factor;\n}\n\nconst prodRule: RiskRule = { baseScore: 50, multiplier: 9 };\nconst safeScore: number = evaluateRisk(prodRule, 4);\n// \u8BD5\u4E00\u8BD5\uFF1A\u53D6\u6D88\u4E0B\u4E00\u884C\u6CE8\u91CA\u5C06\u89E6\u53D1\u9759\u6001\u7C7B\u578B\u9519\u8BEF\uFF08string \u4E0D\u80FD\u8D4B\u7ED9 number\uFF09\n// const brokenScore: number = "type_mismatch";\nconsole.log("\u98CE\u63A7\u8BC4\u4F30\u5408\u89C4\u5F97\u5206:", safeScore);'
+          source: '// 1. 静态类型防错实验室（可尝试取消倒数第二行注释，体验行尾实时红色 TS 诊断徽章）\ninterface RiskRule {\n  readonly baseScore: number;\n  multiplier: number;\n}\n\nfunction evaluateRisk(rule: RiskRule, factor: number): number {\n  return rule.baseScore + rule.multiplier * factor;\n}\n\nconst prodRule: RiskRule = { baseScore: 50, multiplier: 9 };\nconst safeScore: number = evaluateRisk(prodRule, 4);\n// 试一试：取消下一行注释将触发静态类型错误（string 不能赋给 number）\n// const brokenScore: number = "type_mismatch";\nconsole.log("风控评估合规得分:", safeScore);'
         },
         {
           type: "code",
-          source: '// 2. \u70B9\u51FB\u53F3\u4E0A\u89D2 \u{1F41E} \u5355\u6B65\u8C03\u8BD5\uFF1A\u89C2\u5BDF\u4E00\u7EF4\u6570\u7EC4\u4E0B\u65B9\u81EA\u52A8\u60AC\u6302\u7684 [l, r] \u53CC\u6307\u9488\u6807\u7B7E\nconst nums: number[] = [4, 9, 2, 11, 6, 8, 5];\nlet l: number = 0;\nlet r: number = nums.length - 1;\nlet windowBest: number = 0;\n\nwhile (l < r) {\n  const pairVal: number = nums[l] + nums[r];\n  if (pairVal > windowBest) {\n    windowBest = pairVal;\n  }\n  checkpoint(pairVal >= 15, "\u53CC\u6307\u9488\u914D\u5BF9\u548C\u8FBE\u6807");\n  l = l + 1;\n  r = r - 1;\n}\nconsole.log("\u53CC\u6307\u9488\u6700\u5927\u914D\u5BF9\u548C:", windowBest);'
+          source: '// 2. 点击右上角 🐞 单步调试：观察一维数组下方自动悬挂的 [l, r] 双指针标签\nconst nums: number[] = [4, 9, 2, 11, 6, 8, 5];\nlet l: number = 0;\nlet r: number = nums.length - 1;\nlet windowBest: number = 0;\n\nwhile (l < r) {\n  const pairVal: number = nums[l] + nums[r];\n  if (pairVal > windowBest) {\n    windowBest = pairVal;\n  }\n  checkpoint(pairVal >= 15, "双指针配对和达标");\n  l = l + 1;\n  r = r - 1;\n}\nconsole.log("双指针最大配对和:", windowBest);'
         },
         {
           type: "code",
-          source: '// 3. \u70B9\u51FB\u53F3\u4E0A\u89D2 \u{1F41E} \u5355\u6B65\u8C03\u8BD5\uFF1A\u5728\u53F3\u4FA7 WATCH \u9762\u677F\u89C2\u5BDF\u4E8C\u7EF4\u77E9\u9635 dp: number[][] \u7684\u9010\u683C\u586B\u5145\nconst rows: number = 3;\nconst cols: number = 4;\nconst dp: number[][] = [\n  [1, 1, 1, 1],\n  [1, 0, 0, 0],\n  [1, 0, 0, 0]\n];\n\nfor (let i: number = 1; i < rows; i++) {\n  for (let j: number = 1; j < cols; j++) {\n    dp[i][j] = dp[i - 1][j] + dp[i][j - 1];\n    checkpoint(dp[i][j] >= 6, "\u7F51\u683C\u8DEF\u5F84\u6570\u8FC7\u534A");\n  }\n}\n\nconsole.log("\u7F51\u683C\u53F3\u4E0B\u89D2\u4E0D\u540C\u8DEF\u5F84\u603B\u6570:", dp[rows - 1][cols - 1]);'
+          source: '// 3. 点击右上角 🐞 单步调试：在右侧 WATCH 面板观察二维矩阵 dp: number[][] 的逐格填充\nconst rows: number = 3;\nconst cols: number = 4;\nconst dp: number[][] = [\n  [1, 1, 1, 1],\n  [1, 0, 0, 0],\n  [1, 0, 0, 0]\n];\n\nfor (let i: number = 1; i < rows; i++) {\n  for (let j: number = 1; j < cols; j++) {\n    dp[i][j] = dp[i - 1][j] + dp[i][j - 1];\n    checkpoint(dp[i][j] >= 6, "网格路径数过半");\n  }\n}\n\nconsole.log("网格右下角不同路径总数:", dp[rows - 1][cols - 1]);'
         }
       ]
     }
@@ -16689,7 +16969,10 @@ function __require(modId) {
       if (excludeCellId && item.cellId === excludeCellId) continue;
       const { normalized } = normalizeCellTsForNotebook(item.source);
       const enums = transpileEnums(normalized);
-      const js0 = stripTypes(enums.error ? normalized : enums.code);
+      const js0 = stripTypes(enums.error ? normalized : enums.code).replace(
+        /^(\s*)class\s+([A-Za-z_$][\w$]*)\b/gm,
+        "$1var $2 = class $2"
+      );
       chunks.push(js0);
     }
     const combined = chunks.join("\n");
@@ -16700,12 +16983,16 @@ function __require(modId) {
     };
   }
   function buildTsTypecheckContext(doc, cell) {
-    const historyChunks = [];
+    const latestByCell = /* @__PURE__ */ new Map();
     for (const item of doc.executedHistory) {
       if (item.cellId === cell.id) continue;
       const src = String(item.source || "").replace(/\r\n?/g, "\n");
-      if (src.trim()) historyChunks.push(src);
+      if (src.trim()) {
+        if (latestByCell.has(item.cellId)) latestByCell.delete(item.cellId);
+        latestByCell.set(item.cellId, src);
+      }
     }
+    const historyChunks = Array.from(latestByCell.values());
     const preambleTs = historyChunks.join("\n");
     const preambleLines = preambleTs ? preambleTs.split("\n").length : 0;
     const cellSrc = String(cell.source || "").replace(/\r\n?/g, "\n");
@@ -16721,7 +17008,7 @@ function __require(modId) {
     return allDiags.filter((d) => Boolean(d && typeof d.line === "number" && d.line > preambleLines)).map((d) => ({
       line: d.line - preambleLines,
       code: String(d.code || "TS"),
-      message: d.message || "\u7C7B\u578B\u9519\u8BEF"
+      message: d.message || "类型错误"
     }));
   }
   function syncNotebookGlobalsToSidePanel(doc = getActiveNotebook()) {
@@ -16735,7 +17022,7 @@ function __require(modId) {
     const ds = doc.lastGlobalDs || {};
     const step = {
       line: 1,
-      note: doc.execCounter > 0 ? `Notebook \u4F1A\u8BDD\u4E0A\u4E0B\u6587 \xB7 \u5DF2\u7D2F\u8BA1\u6267\u884C ${doc.execCounter} \u4E2A\u5355\u5143\u683C` : "Notebook \u4F1A\u8BDD\u5C31\u7EEA \xB7 \u8FD0\u884C\u4EFB\u610F\u5355\u5143\u683C\u540E\u5728\u6B64\u540C\u6B65\u663E\u793A\u5168\u5C40\u53D8\u91CF\u4E0E\u6570\u636E\u7ED3\u6784",
+      note: doc.execCounter > 0 ? `Notebook 会话上下文 · 已累计执行 ${doc.execCounter} 个单元格` : "Notebook 会话就绪 · 运行任意单元格后在此同步显示全局变量与数据结构",
       v,
       ds,
       callStack: [
@@ -16753,7 +17040,7 @@ function __require(modId) {
       error: null
     };
     appState.TRACE = {
-      title: `${doc.title} \xB7 Kernel Context`,
+      title: `${doc.title} · Kernel Context`,
       code: [""],
       steps: [step]
     };
@@ -16774,7 +17061,7 @@ function __require(modId) {
     uiHooks.renderPicker();
     uiHooks.renderStatic(0, false);
     uiHooks.setCntStatus(
-      doc.execCounter > 0 ? `Notebook [${doc.execCounter}] \xB7 \u5168\u5C40\u4E0A\u4E0B\u6587` : "Notebook \u5C31\u7EEA",
+      doc.execCounter > 0 ? `Notebook [${doc.execCounter}] · 全局上下文` : "Notebook 就绪",
       ""
     );
   }
@@ -16784,22 +17071,22 @@ function __require(modId) {
     const cellDiags = typecheckNotebookCellTS(doc, cell);
     if (cellDiags.length > 0) {
       cell.status = "error";
-      const errText = cellDiags.map((d) => `${d.code} [\u7B2C ${d.line} \u884C]: ${d.message}`).join("\n");
+      const errText = cellDiags.map((d) => `${d.code} [第 ${d.line} 行]: ${d.message}`).join("\n");
       cell.output = {
         logs: [],
         returnValue: null,
         error: errText,
         errorLine: cellDiags[0]?.line ?? 1
       };
-      say(`\u2717 [Notebook] TypeScript \u4E25\u683C\u7C7B\u578B\u68C0\u67E5\u672A\u901A\u8FC7 (\u5171 ${cellDiags.length} \u5904\u9519\u8BEF)\uFF1A`, "err");
+      say(`✗ [Notebook] TypeScript 严格类型检查未通过 (共 ${cellDiags.length} 处错误)：`, "err");
       cellDiags.forEach((d) => {
-        say(`  \u2022 ${d.code} [\u7B2C ${d.line} \u884C]: ${d.message}`, "err", d.line);
+        say(`  • ${d.code} [第 ${d.line} 行]: ${d.message}`, "err", d.line);
       });
       uiHooks.renderNotebookUI();
       return false;
     }
     extractTsInterfaceMetadata(combinedTs);
-    const { preambleJs, allNames: histNames } = buildTsPreambleFromHistory(doc, cell.id);
+    const { preambleJs, allNames: histNames } = buildTsPreambleFromHistory(doc);
     const { normalized: normCellSrc } = normalizeCellTsForNotebook(rawSrc);
     const enums = transpileEnums(normCellSrc);
     if (enums.error) {
@@ -16807,14 +17094,17 @@ function __require(modId) {
       cell.output = {
         logs: [],
         returnValue: null,
-        error: `\u7B2C ${enums.error.line} \u884C: ${enums.error.message}`,
+        error: `第 ${enums.error.line} 行: ${enums.error.message}`,
         errorLine: enums.error.line
       };
-      say(`\u2717 [Notebook] \u7B2C ${enums.error.line} \u884C: ${enums.error.message}`, "err");
+      say(`✗ [Notebook] 第 ${enums.error.line} 行: ${enums.error.message}`, "err");
       uiHooks.renderNotebookUI();
       return false;
     }
-    const jsCell = stripTypes(enums.code);
+    const jsCell = stripTypes(enums.code).replace(
+      /^(\s*)class\s+([A-Za-z_$][\w$]*)\b/gm,
+      "$1var $2 = class $2"
+    );
     const entry = resolveEntry(normCellSrc, jsCell);
     const rawEntryExpr = (entry.expr || "").trim();
     const isConsoleLogCall = /^console\.log\s*\(/.test(rawEntryExpr);
@@ -16862,7 +17152,7 @@ function __require(modId) {
       let res;
       if (hasAsyncConstructs(combinedTs)) {
         const instrumentedBody = instrument(jsCellBody, rawSrc.split("\n"), combinedNames);
-        const asyncEnvHeader = "var checkpoint = function(){}, \u65AD\u70B9 = checkpoint;\nvar Promise = (__t && __t.__env && __t.__env.Promise) || globalThis.Promise, setTimeout = (__t && __t.__env && __t.__env.setTimeout) || globalThis.setTimeout, clearTimeout = (__t && __t.__env && __t.__env.clearTimeout) || globalThis.clearTimeout, queueMicrotask = (__t && __t.__env && __t.__env.queueMicrotask) || globalThis.queueMicrotask;\n";
+        const asyncEnvHeader = "var checkpoint = function(){}, 断点 = checkpoint;\nvar Promise = (__t && __t.__env && __t.__env.Promise) || globalThis.Promise, setTimeout = (__t && __t.__env && __t.__env.setTimeout) || globalThis.setTimeout, clearTimeout = (__t && __t.__env && __t.__env.clearTimeout) || globalThis.clearTimeout, queueMicrotask = (__t && __t.__env && __t.__env.queueMicrotask) || globalThis.queueMicrotask;\n";
         const asyncFnBody = asyncEnvHeader + preambleJs + "\n;console.EnableRecording();\n" + instrumentedBody + "\n;var __ret = (" + tailExpr + ");\nif (typeof __t === 'function' && __t.__drain) { __ret = __t.__drain(__ret, " + snapExpr + "); }\nreturn { ok: true, value: __ret, vars: (" + snapExpr + ")() };";
         let lastLine = 1;
         const traceStub = function(line) {
@@ -16892,7 +17182,7 @@ function __require(modId) {
         const fn = new Function("__t", "console", asyncFnBody);
         res = fn(traceStub, customConsole);
       } else {
-        const fnBody = "var checkpoint = function(){}, \u65AD\u70B9 = checkpoint;\n" + preambleJs + "\n;console.EnableRecording();\n" + jsCellBody + "\n;var __ret = (" + tailExpr + ");\nreturn { ok: true, value: __ret, vars: (" + snapExpr + ")() };";
+        const fnBody = "var checkpoint = function(){}, 断点 = checkpoint;\n" + preambleJs + "\n;console.EnableRecording();\n" + jsCellBody + "\n;var __ret = (" + tailExpr + ");\nreturn { ok: true, value: __ret, vars: (" + snapExpr + ")() };";
         const fn = new Function("console", fnBody);
         res = fn(customConsole);
       }
@@ -16917,10 +17207,9 @@ function __require(modId) {
         error: null,
         elapsedMs
       };
-      doc.executedHistory = doc.executedHistory.filter((h) => h.cellId !== cell.id);
       doc.executedHistory.push({ cellId: cell.id, execCount: cell.executionCount, source: rawSrc });
       say(
-        `\u2713 [Cell ${cell.executionCount}] \u6267\u884C\u5B8C\u6210 (${elapsedMs}ms)` + (logs.length ? ` \xB7 \u8F93\u51FA: ${logs.join(" | ")}` : "") + (rvStr ? `  \u2192  ${rvStr}` : ""),
+        `✓ [Cell ${cell.executionCount}] 执行完成 (${elapsedMs}ms)` + (logs.length ? ` · 输出: ${logs.join(" | ")}` : "") + (rvStr ? `  →  ${rvStr}` : ""),
         "ok"
       );
       syncNotebookGlobalsToSidePanel(doc);
@@ -16937,7 +17226,7 @@ function __require(modId) {
         returnValue: null,
         error: msg
       };
-      say(`\u2717 [Cell ${cell.executionCount}] \u8FD0\u884C\u65F6\u62A5\u9519: ${msg}`, "err");
+      say(`✗ [Cell ${cell.executionCount}] 运行时报错: ${msg}`, "err");
       uiHooks.renderNotebookUI();
       return false;
     }
@@ -16979,22 +17268,22 @@ function __require(modId) {
     if (cellDiags.length > 0) {
       cell.status = "error";
       doc.debuggingCellId = null;
-      const errText = cellDiags.map((d) => `${d.code} [\u7B2C ${d.line} \u884C]: ${d.message}`).join("\n");
+      const errText = cellDiags.map((d) => `${d.code} [第 ${d.line} 行]: ${d.message}`).join("\n");
       cell.output = {
         logs: [],
         returnValue: null,
         error: errText,
         errorLine: cellDiags[0]?.line ?? 1
       };
-      say(`\u2717 [Notebook] TypeScript \u4E25\u683C\u7C7B\u578B\u68C0\u67E5\u672A\u901A\u8FC7 (\u5171 ${cellDiags.length} \u5904\u9519\u8BEF)\uFF1A`, "err");
+      say(`✗ [Notebook] TypeScript 严格类型检查未通过 (共 ${cellDiags.length} 处错误)：`, "err");
       cellDiags.forEach((d) => {
-        say(`  \u2022 ${d.code} [\u7B2C ${d.line} \u884C]: ${d.message}`, "err", d.line);
+        say(`  • ${d.code} [第 ${d.line} 行]: ${d.message}`, "err", d.line);
       });
       uiHooks.renderNotebookUI();
       return false;
     }
     extractTsInterfaceMetadata(combinedTs);
-    const { preambleJs, allNames: histNames } = buildTsPreambleFromHistory(doc, cell.id);
+    const { preambleJs, allNames: histNames } = buildTsPreambleFromHistory(doc);
     const { normalized: normCellSrc } = normalizeCellTsForNotebook(rawSrc);
     const originalLines = rawSrc.split("\n");
     const enums = transpileEnums(normCellSrc);
@@ -17003,7 +17292,7 @@ function __require(modId) {
       cell.output = {
         logs: [],
         returnValue: null,
-        error: `\u7B2C ${enums.error.line} \u884C: ${enums.error.message}`,
+        error: `第 ${enums.error.line} 行: ${enums.error.message}`,
         errorLine: enums.error.line
       };
       uiHooks.renderNotebookUI();
@@ -17032,7 +17321,7 @@ function __require(modId) {
       cell.output = {
         logs: [],
         returnValue: null,
-        error: "\u7F16\u8BD1\u5931\u8D25: " + (e instanceof Error && e.message ? e.message : String(e))
+        error: "编译失败: " + (e instanceof Error && e.message ? e.message : String(e))
       };
       uiHooks.renderNotebookUI();
       return false;
@@ -17042,7 +17331,7 @@ function __require(modId) {
     cell.status = "debugging";
     doc.debuggingCellId = cell.id;
     appState.TRACE = {
-      title: `${doc.title} \xB7 Cell [${cell.executionCount}]`,
+      title: `${doc.title} · Cell [${cell.executionCount}]`,
       code: originalLines,
       steps: []
     };
@@ -17068,7 +17357,7 @@ function __require(modId) {
     uiHooks.renderPicker();
     uiHooks.renderStatic(appState.cur, false);
     uiHooks.renderNotebookUI();
-    say(`\u2713 [Cell ${cell.executionCount}] \u5DF2\u5F00\u542F\u5355\u6B65\u8C03\u8BD5 \xB7 \u53EF\u4F7F\u7528\u5E95\u90E8\u300C\u4E0B\u4E00\u6B65 \u203A\u300D\u6216\u300C\u23ED \u8FD0\u884C\u5230\u4E0B\u4E00\u4E2A\u68C0\u67E5\u70B9\u300D\u9010\u6B65\u63A8\u5BFC`, "ok");
+    say(`✓ [Cell ${cell.executionCount}] 已开启单步调试 · 可使用底部「下一步 ›」或「⏭ 运行到下一个检查点」逐步推导`, "ok");
     return true;
   }
   async function debugNotebookCell(cellId) {
@@ -17079,7 +17368,7 @@ function __require(modId) {
     appState.ACTIVE_NB_CELL_ID = cell.id;
     const rawSrc = cell.source.replace(/\r\n?/g, "\n");
     if (!rawSrc.trim()) {
-      say("\u26A0 \u5F53\u524D\u5355\u5143\u683C\u4E3A\u7A7A\uFF0C\u8BF7\u5148\u8F93\u5165\u4EE3\u7801\u540E\u518D\u542F\u52A8\u5355\u6B65\u8C03\u8BD5", "dim");
+      say("⚠ 当前单元格为空，请先输入代码后再启动单步调试", "dim");
       return false;
     }
     uiHooks.stopAuto();
@@ -17104,13 +17393,13 @@ function __require(modId) {
     syncNotebookGlobalsToSidePanel(doc);
     uiHooks.renderNotebookUI();
     if (!silent) {
-      say(`\u21BB \u5DF2\u91CD\u542F [${doc.title}] \u5185\u6838\u5E76\u6E05\u7A7A\u6240\u6709\u8DE8\u5355\u5143\u683C\u53D8\u91CF\u4E0E\u8BA1\u6570`, "ok");
+      say(`↻ 已重启 [${doc.title}] 内核并清空所有跨单元格变量与计数`, "ok");
     }
   }
   async function runAllNotebookCells() {
     const doc = getActiveNotebook();
     await restartNotebookKernel(true);
-    say(`\u23E9 \u5F00\u59CB\u987A\u5E8F\u6267\u884C [${doc.title}] \u7684\u5168\u90E8\u5355\u5143\u683C\u2026`, "dim");
+    say(`⏩ 开始顺序执行 [${doc.title}] 的全部单元格…`, "dim");
     for (const cell of doc.cells) {
       if (cell.type === "markdown") {
         cell.markdownRendered = true;
@@ -17119,7 +17408,7 @@ function __require(modId) {
       if (!cell.source.trim()) continue;
       const ok = await runNotebookCell(cell.id, false);
       if (!ok) {
-        say(`\u26A0 \u987A\u5E8F\u6267\u884C\u5728\u5355\u5143\u683C [${cell.executionCount || " "}] \u5904\u56E0\u62A5\u9519\u4E2D\u65AD`, "err");
+        say(`⚠ 顺序执行在单元格 [${cell.executionCount || " "}] 处因报错中断`, "err");
         break;
       }
     }
@@ -17127,6 +17416,23 @@ function __require(modId) {
   }
 
   // src/ui/notebook.ts
+  registerNotebookStorageAdapter({
+    load: () => {
+      if (typeof localStorage === "undefined") return null;
+      try {
+        return localStorage.getItem(NOTEBOOK_STORAGE_KEY);
+      } catch (_) {
+        return null;
+      }
+    },
+    save: (rawJson) => {
+      if (typeof localStorage === "undefined") return;
+      try {
+        localStorage.setItem(NOTEBOOK_STORAGE_KEY, rawJson);
+      } catch (_) {
+      }
+    }
+  });
   function insertNotebookCell(pos = "below", refCellId, type = "code") {
     const doc = getActiveNotebook();
     insertCellInModel(doc, pos, refCellId, type);
@@ -17157,19 +17463,19 @@ function __require(modId) {
     if (!cell) return;
     setClipboardCell({ ...cell, output: null, executionCount: null, status: "idle" });
     deleteNotebookCell(cell.id);
-    say("\u2702 \u5DF2\u526A\u5207\u5F53\u524D\u5355\u5143\u683C", "dim");
+    say("✂ 已剪切当前单元格", "dim");
   }
   function copyNotebookCell() {
     const doc = getActiveNotebook();
     const cell = getActiveCell(doc);
     if (!cell) return;
     setClipboardCell({ ...cell, output: null, executionCount: null, status: "idle" });
-    say("\u{1F4CB} \u5DF2\u590D\u5236\u5F53\u524D\u5355\u5143\u683C", "dim");
+    say("📋 已复制当前单元格", "dim");
   }
   function pasteNotebookCell() {
     const clip = getClipboardCell();
     if (!clip) {
-      say("\u26A0 \u526A\u8D34\u677F\u4E2D\u6682\u65E0\u5DF2\u590D\u5236\u7684\u5355\u5143\u683C", "dim");
+      say("⚠ 剪贴板中暂无已复制的单元格", "dim");
       return;
     }
     const doc = getActiveNotebook();
@@ -17186,7 +17492,7 @@ function __require(modId) {
     doc.activeCellId = pasted.id;
     appState.ACTIVE_NB_CELL_ID = pasted.id;
     renderNotebookUI(true);
-    say("\u{1F4C4} \u5DF2\u5728\u4E0B\u65B9\u7C98\u8D34\u5355\u5143\u683C", "ok");
+    say("📄 已在下方粘贴单元格", "ok");
   }
   function exportActiveNotebookIpynb() {
     const doc = getActiveNotebook();
@@ -17200,7 +17506,7 @@ function __require(modId) {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    say(`\u{1F4BE} \u5DF2\u5BFC\u51FA\u7B14\u8BB0\u672C\u6587\u4EF6 ${a.download}`, "ok");
+    say(`💾 已导出笔记本文件 ${a.download}`, "ok");
   }
   function importNotebookFromJson(jsonText, fileName) {
     const newDoc = parseIpynbJsonToDocument(jsonText, fileName, "ts");
@@ -17210,7 +17516,7 @@ function __require(modId) {
     store.activeDocId = newDoc.id;
     setViewMode("notebook");
     renderNotebookUI();
-    say(`\u2713 \u5DF2\u5BFC\u5165 Jupyter \u7B14\u8BB0\u672C ${newDoc.title}\uFF08\u5171 ${newDoc.cells.length} \u4E2A\u5355\u5143\u683C\uFF09`, "ok");
+    say(`✓ 已导入 Jupyter 笔记本 ${newDoc.title}（共 ${newDoc.cells.length} 个单元格）`, "ok");
     return true;
   }
   function setViewMode(mode) {
@@ -17238,9 +17544,8 @@ function __require(modId) {
     if (nbWrap) nbWrap.hidden = next !== "notebook";
     if (edWrap) edWrap.style.display = next === "notebook" ? "none" : "flex";
     if (srcPaneTitle) srcPaneTitle.style.display = next === "notebook" ? "none" : "flex";
-    if (expMenuWrap) {
-      expMenuWrap.style.display = next === "notebook" ? "none" : "";
-      if (next === "notebook" && expMenuWrap.classList) expMenuWrap.classList.remove("open");
+    if (expMenuWrap && expMenuWrap.classList) {
+      expMenuWrap.classList.remove("open");
     }
     if (vfsSidebar) {
       vfsSidebar.hidden = true;
@@ -17253,6 +17558,8 @@ function __require(modId) {
       syncNotebookGlobalsToSidePanel(doc);
       renderNotebookUI();
     } else {
+      const exportTag = $("fileExportTag");
+      if (exportTag) exportTag.textContent = appState.FILE_NAME;
       stopAuto();
       clearFlyLayer();
       renderScriptTabsUI();
@@ -17281,7 +17588,7 @@ function __require(modId) {
       const diag = liveByLine.get(ln);
       const isErr = Boolean(diag) || cell.status === "error" && cell.output && cell.output.errorLine === ln || Boolean(isCur && st && st.error);
       const inner = isCur ? hlActiveLine(t, st && st.anim, declared) : hl(t, declared);
-      const errBadge = diag ? `<span class="ln-err-badge" title="${esc((diag.code ? diag.code + ": " : "") + (diag.message || ""))}">\u2717 ${esc(diag.code || "TS")}</span>` : "";
+      const errBadge = diag ? `<span class="ln-err-badge" title="${esc((diag.code ? diag.code + ": " : "") + (diag.message || ""))}">✗ ${esc(diag.code || "TS")}</span>` : "";
       return `<span class="ln${isCur ? " cur" : ""}${isErr ? " err" : ""}">${(inner || "&nbsp;") + errBadge}</span>`;
     }).join("");
     const gutterHtml = lines.map((t, idx) => {
@@ -17298,6 +17605,7 @@ function __require(modId) {
     return { hlHtml, gutterHtml, stepVizHtml, stepVizLine: curLine };
   }
   function renderNotebookUI(focusActiveEditor = false) {
+    persistNotebooksToStorage();
     const wrap = $("notebookWrap");
     if (!wrap || appState.VIEW_MODE !== "notebook") return;
     const store = ensureLangNotebooks("ts");
@@ -17307,8 +17615,12 @@ function __require(modId) {
     if (tabsEl) {
       tabsEl.innerHTML = store.docs.map((d) => {
         const isAct = d.id === doc.id;
-        return `<div class="nb-tab${isAct ? " active" : ""}" data-doc-id="${esc(d.id)}" title="\u53CC\u51FB\u53EF\u91CD\u547D\u540D\u7B14\u8BB0\u672C"><span class="nb-tab-icon" aria-hidden="true"></span><span class="nb-tab-title">${esc(d.title)}</span>` + (store.docs.length > 1 ? `<button type="button" class="nb-tab-close" data-close-doc="${esc(d.id)}" title="\u5173\u95ED\u6807\u7B7E\u9875">\xD7</button>` : "") + `</div>`;
-      }).join("") + `<button type="button" class="nb-tab-add" id="nbBtnNewTab" title="\u65B0\u5EFA\u7A7A\u767D Notebook \u6807\u7B7E\u9875">\uFF0B</button>`;
+        return `<div class="nb-tab${isAct ? " active" : ""}" role="tab" tabindex="0" aria-selected="${isAct ? "true" : "false"}" data-doc-id="${esc(d.id)}" title="单击或按 Enter/Space 切换 · 双击可重命名笔记本"><span class="nb-tab-icon" aria-hidden="true"></span><span class="nb-tab-title">${esc(d.title)}</span>` + (store.docs.length > 1 ? `<button type="button" class="nb-tab-close" data-close-doc="${esc(d.id)}" title="关闭标签页">×</button>` : "") + `</div>`;
+      }).join("") + `<button type="button" class="nb-tab-add" id="nbBtnNewTab" title="新建空白 Notebook 标签页">＋</button>`;
+    }
+    const exportTag = $("fileExportTag");
+    if (exportTag) {
+      exportTag.textContent = doc.title.endsWith(".ipynb") ? doc.title : doc.title + ".ipynb";
     }
     const typeSel = $("nbCellType");
     if (typeSel && activeCell) {
@@ -17317,7 +17629,7 @@ function __require(modId) {
     const kernelBadge = $("nbKernelStatus");
     if (kernelBadge) {
       const isDbg = Boolean(doc.debuggingCellId && appState.DEBUG_SESSION.active);
-      const stateTxt = isDbg ? "\u8C03\u8BD5\u4E2D" : "\u5C31\u7EEA";
+      const stateTxt = isDbg ? "调试中" : "就绪";
       kernelBadge.innerHTML = `<span class="nb-kernel-dot${isDbg ? " debug" : ""}"></span><span>${stateTxt}</span>`;
     }
     const cellsContainer = $("nbCellsList");
@@ -17331,7 +17643,7 @@ function __require(modId) {
       const mdEditorHeight = estimateMarkdownEditorHeight(cell.source);
       if (cell.type === "markdown") {
         const isRendered = Boolean(cell.markdownRendered);
-        return `<div class="nb-cell nb-cell-md${isFocused ? " active" : ""}" data-cell-id="${esc(cell.id)}"><div class="nb-cell-bar"></div><div class="nb-cell-prompt md-prompt">${isRendered ? "" : "MD"}</div><div class="nb-cell-main"><div class="nb-cell-input md-input"><div class="nb-cell-actions"><button type="button" class="nb-act-btn" data-cell-act="toggle-md" data-cell-id="${esc(cell.id)}" title="${isRendered ? "\u7F16\u8F91 Markdown" : "\u6E32\u67D3\u9884\u89C8 Markdown (Shift+Enter)"}">${isRendered ? "\u270E" : "\u2713"}</button><button type="button" class="nb-act-btn" data-cell-act="dup" data-cell-id="${esc(cell.id)}" title="\u590D\u5236\u5E76\u5411\u4E0B\u514B\u9686\u5355\u5143\u683C">\u29C9</button><button type="button" class="nb-act-btn" data-cell-act="up" data-cell-id="${esc(cell.id)}" ${idx === 0 ? "disabled" : ""} title="\u4E0A\u79FB\u5355\u5143\u683C">\u2191</button><button type="button" class="nb-act-btn" data-cell-act="down" data-cell-id="${esc(cell.id)}" ${idx === doc.cells.length - 1 ? "disabled" : ""} title="\u4E0B\u79FB\u5355\u5143\u683C">\u2193</button><button type="button" class="nb-act-btn" data-cell-act="ins-above" data-cell-id="${esc(cell.id)}" title="\u5728\u4E0A\u65B9\u63D2\u5165\u5355\u5143\u683C">\u2912</button><button type="button" class="nb-act-btn" data-cell-act="ins-below" data-cell-id="${esc(cell.id)}" title="\u5728\u4E0B\u65B9\u63D2\u5165\u5355\u5143\u683C">\u2913</button><button type="button" class="nb-act-btn danger" data-cell-act="del" data-cell-id="${esc(cell.id)}" title="\u5220\u9664\u5355\u5143\u683C">\u{1F5D1}</button></div>` + (isRendered ? `<div class="nb-md-preview" data-cell-act="edit-md" data-cell-id="${esc(cell.id)}" title="\u53CC\u51FB\u7F16\u8F91 Markdown">${renderMarkdownHtml(cell.source)}</div>` : `<textarea class="nb-cell-textarea md-textarea" data-cell-id="${esc(cell.id)}" style="height:${mdEditorHeight}px" spellcheck="false" placeholder="# \u8F93\u5165 Markdown \u6807\u9898\u6216\u7B97\u6CD5\u63A8\u5BFC\u8BF4\u660E\uFF0C\u6309 Shift+Enter \u6E32\u67D3\u9884\u89C8">${esc(cell.source)}</textarea>`) + `</div></div></div>`;
+        return `<div class="nb-cell nb-cell-md${isFocused ? " active" : ""}" data-cell-id="${esc(cell.id)}"><div class="nb-cell-bar"></div><div class="nb-cell-prompt md-prompt">${isRendered ? "" : "MD"}</div><div class="nb-cell-main"><div class="nb-cell-input md-input"><div class="nb-cell-actions"><button type="button" class="nb-act-btn" data-cell-act="toggle-md" data-cell-id="${esc(cell.id)}" title="${isRendered ? "编辑 Markdown" : "渲染预览 Markdown (Shift+Enter)"}">${isRendered ? "✎" : "✓"}</button><button type="button" class="nb-act-btn" data-cell-act="dup" data-cell-id="${esc(cell.id)}" title="复制并向下克隆单元格">⧉</button><button type="button" class="nb-act-btn" data-cell-act="up" data-cell-id="${esc(cell.id)}" ${idx === 0 ? "disabled" : ""} title="上移单元格">↑</button><button type="button" class="nb-act-btn" data-cell-act="down" data-cell-id="${esc(cell.id)}" ${idx === doc.cells.length - 1 ? "disabled" : ""} title="下移单元格">↓</button><button type="button" class="nb-act-btn" data-cell-act="ins-above" data-cell-id="${esc(cell.id)}" title="在上方插入单元格">⤒</button><button type="button" class="nb-act-btn" data-cell-act="ins-below" data-cell-id="${esc(cell.id)}" title="在下方插入单元格">⤓</button><button type="button" class="nb-act-btn danger" data-cell-act="del" data-cell-id="${esc(cell.id)}" title="删除单元格">🗑</button></div>` + (isRendered ? `<div class="nb-md-preview" data-cell-act="edit-md" data-cell-id="${esc(cell.id)}" title="双击编辑 Markdown">${renderMarkdownHtml(cell.source)}</div>` : `<textarea class="nb-cell-textarea md-textarea" data-cell-id="${esc(cell.id)}" style="height:${mdEditorHeight}px" spellcheck="false" placeholder="# 输入 Markdown 标题或算法推导说明，按 Shift+Enter 渲染预览">${esc(cell.source)}</textarea>`) + `</div></div></div>`;
       }
       const { hlHtml, gutterHtml, stepVizHtml } = renderCellCodeHighlight(cell, isDebugging);
       const out = cell.output;
@@ -17339,11 +17651,11 @@ function __require(modId) {
       if (out && (out.logs.length > 0 || out.returnValue != null || out.error)) {
         const logsPart = out.logs.map((l) => `<div class="nb-out-line">${esc(l)}</div>`).join("");
         const retPart = out.returnValue != null ? `<div class="nb-out-ret"><span class="nb-out-prompt">Out[${cell.executionCount || ""}]:</span> <span>${esc(out.returnValue)}</span></div>` : "";
-        const errPart = out.error ? `<div class="nb-out-err">\u2717 ${esc(out.error)}</div>` : "";
+        const errPart = out.error ? `<div class="nb-out-err">✗ ${esc(out.error)}</div>` : "";
         outputHtml = `<div class="nb-cell-output">${logsPart}${retPart}${errPart}</div>`;
       }
-      return `<div class="nb-cell nb-cell-code${isFocused ? " active" : ""}${isDebugging ? " debugging" : ""}${cell.status === "error" ? " has-error" : ""}" data-cell-id="${esc(cell.id)}"><div class="nb-cell-bar"></div><div class="nb-cell-prompt" data-cell-act="run" data-cell-id="${esc(cell.id)}" title="\u70B9\u51FB\u8FD0\u884C\u6B64\u5355\u5143\u683C (Shift+Enter)">${esc(promptTxt)}</div><div class="nb-cell-main"><div class="nb-cell-input"><div class="nb-cell-gutter">${gutterHtml}</div><div class="nb-cell-code-box" style="height:${editorHeight}px"><pre class="nb-cell-hl" aria-hidden="true">${hlHtml}</pre><textarea class="nb-cell-textarea" data-cell-id="${esc(cell.id)}" style="height:${editorHeight}px" spellcheck="false" autocomplete="off" placeholder="// \u8F93\u5165 TypeScript \u4EE3\u7801\uFF0CShift+Enter \u8FD0\u884C\uFF0C\u70B9\u53F3\u4E0A \u{1F41E} \u5355\u6B65\u8C03\u8BD5">${esc(cell.source)}</textarea></div><div class="nb-cell-actions"><button type="button" class="nb-act-btn run-act" data-cell-act="run" data-cell-id="${esc(cell.id)}" title="\u8FD0\u884C\u6B64\u5355\u5143\u683C (Shift+Enter)">\u25B6</button><button type="button" class="nb-act-btn debug-act${isDebugging ? " active" : ""}" data-cell-act="debug" data-cell-id="${esc(cell.id)}" title="\u5355\u6B65\u53EF\u89C6\u5316\u8C03\u8BD5\u6B64\u5355\u5143\u683C (Ctrl+Shift+Enter)">\u{1F41E}</button><button type="button" class="nb-act-btn" data-cell-act="dup" data-cell-id="${esc(cell.id)}" title="\u590D\u5236\u5E76\u5411\u4E0B\u514B\u9686\u5355\u5143\u683C">\u29C9</button><button type="button" class="nb-act-btn" data-cell-act="up" data-cell-id="${esc(cell.id)}" ${idx === 0 ? "disabled" : ""} title="\u4E0A\u79FB\u5355\u5143\u683C">\u2191</button><button type="button" class="nb-act-btn" data-cell-act="down" data-cell-id="${esc(cell.id)}" ${idx === doc.cells.length - 1 ? "disabled" : ""} title="\u4E0B\u79FB\u5355\u5143\u683C">\u2193</button><button type="button" class="nb-act-btn" data-cell-act="ins-above" data-cell-id="${esc(cell.id)}" title="\u5728\u4E0A\u65B9\u63D2\u5165\u5355\u5143\u683C">\u2912</button><button type="button" class="nb-act-btn" data-cell-act="ins-below" data-cell-id="${esc(cell.id)}" title="\u5728\u4E0B\u65B9\u63D2\u5165\u5355\u5143\u683C">\u2913</button><button type="button" class="nb-act-btn danger" data-cell-act="del" data-cell-id="${esc(cell.id)}" title="\u5220\u9664\u5355\u5143\u683C">\u{1F5D1}</button></div></div>` + (stepVizHtml ? `<div class="nb-cell-stepviz">${stepVizHtml}</div>` : "") + outputHtml + `</div></div>`;
-    }).join("") + `<div class="nb-bottom-add-bar"><button type="button" class="nb-add-chip" id="nbBottomAddCode">\uFF0B \u4EE3\u7801\u5355\u5143\u683C (Code)</button><button type="button" class="nb-add-chip" id="nbBottomAddMd">\uFF0B \u6587\u6863\u5355\u5143\u683C (Markdown)</button></div>`;
+      return `<div class="nb-cell nb-cell-code${isFocused ? " active" : ""}${isDebugging ? " debugging" : ""}${cell.status === "error" ? " has-error" : ""}" data-cell-id="${esc(cell.id)}"><div class="nb-cell-bar"></div><div class="nb-cell-prompt" data-cell-act="run" data-cell-id="${esc(cell.id)}" title="点击运行此单元格 (Shift+Enter)">${esc(promptTxt)}</div><div class="nb-cell-main"><div class="nb-cell-input"><div class="nb-cell-gutter">${gutterHtml}</div><div class="nb-cell-code-box" style="height:${editorHeight}px"><pre class="nb-cell-hl" aria-hidden="true">${hlHtml}</pre><textarea class="nb-cell-textarea" data-cell-id="${esc(cell.id)}" style="height:${editorHeight}px" spellcheck="false" autocomplete="off" placeholder="// 输入 TypeScript 代码，Shift+Enter 运行，点右上 🐞 单步调试">${esc(cell.source)}</textarea></div><div class="nb-cell-actions"><button type="button" class="nb-act-btn run-act" data-cell-act="run" data-cell-id="${esc(cell.id)}" title="运行此单元格 (Shift+Enter)">▶</button><button type="button" class="nb-act-btn debug-act${isDebugging ? " active" : ""}" data-cell-act="debug" data-cell-id="${esc(cell.id)}" title="单步可视化调试此单元格 (Ctrl+Shift+Enter)">🐞</button><button type="button" class="nb-act-btn" data-cell-act="dup" data-cell-id="${esc(cell.id)}" title="复制并向下克隆单元格">⧉</button><button type="button" class="nb-act-btn" data-cell-act="up" data-cell-id="${esc(cell.id)}" ${idx === 0 ? "disabled" : ""} title="上移单元格">↑</button><button type="button" class="nb-act-btn" data-cell-act="down" data-cell-id="${esc(cell.id)}" ${idx === doc.cells.length - 1 ? "disabled" : ""} title="下移单元格">↓</button><button type="button" class="nb-act-btn" data-cell-act="ins-above" data-cell-id="${esc(cell.id)}" title="在上方插入单元格">⤒</button><button type="button" class="nb-act-btn" data-cell-act="ins-below" data-cell-id="${esc(cell.id)}" title="在下方插入单元格">⤓</button><button type="button" class="nb-act-btn danger" data-cell-act="del" data-cell-id="${esc(cell.id)}" title="删除单元格">🗑</button></div></div>` + (stepVizHtml ? `<div class="nb-cell-stepviz">${stepVizHtml}</div>` : "") + outputHtml + `</div></div>`;
+    }).join("") + `<div class="nb-bottom-add-bar"><button type="button" class="nb-add-chip" id="nbBottomAddCode">＋ 代码单元格 (Code)</button><button type="button" class="nb-add-chip" id="nbBottomAddMd">＋ 文档单元格 (Markdown)</button></div>`;
     if (cellsContainer.querySelectorAll) {
       cellsContainer.querySelectorAll(".nb-cell-textarea.md-textarea").forEach((el) => {
         if (el && el.scrollHeight && el.scrollHeight > el.clientHeight) {
@@ -17443,6 +17755,31 @@ function __require(modId) {
         }
       }
     });
+    tabsEl.addEventListener("keydown", (e) => {
+      const target = eventTargetElement(e);
+      if (!target || target.classList && (target.classList.contains("nb-tab-close") || target.classList.contains("nb-tab-rename-input"))) return;
+      const tab = closestElement(target, ".nb-tab");
+      if (!tab || !tab.dataset.docId) return;
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        tab.click();
+        return;
+      }
+      if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+        e.preventDefault();
+        const allTabs = tabsEl.querySelectorAll ? Array.from(tabsEl.querySelectorAll(".nb-tab[data-doc-id]")) : [];
+        const curIdx = allTabs.indexOf(tab);
+        if (curIdx >= 0 && allTabs.length > 1) {
+          const nextIdx = (curIdx + (e.key === "ArrowRight" ? 1 : allTabs.length - 1)) % allTabs.length;
+          const nextEl = allTabs[nextIdx];
+          if (nextEl) {
+            nextEl.click();
+            const refreshed = tabsEl.querySelectorAll ? tabsEl.querySelectorAll(".nb-tab[data-doc-id]")[nextIdx] : null;
+            if (refreshed && typeof refreshed.focus === "function") refreshed.focus();
+          }
+        }
+      }
+    });
     tabsEl.addEventListener("dblclick", (e) => {
       const tab = closestElement(e, ".nb-tab");
       if (!tab || !tab.dataset.docId) return;
@@ -17468,7 +17805,7 @@ function __require(modId) {
           if (oldPath !== `notebooks/${targetDoc.title}`) {
             VFS_NODES.delete(oldPath);
           }
-          say(`\u2713 \u7B14\u8BB0\u672C\u5DF2\u91CD\u547D\u540D\u4E3A ${targetDoc.title}`, "ok");
+          say(`✓ 笔记本已重命名为 ${targetDoc.title}`, "ok");
         }
         renderNotebookUI();
         renderVfsTreeUI();
@@ -17602,6 +17939,7 @@ function __require(modId) {
       const cell = doc.cells.find((c) => c.id === cid);
       if (!cell) return;
       cell.source = ta.value;
+      persistNotebooksToStorage();
       if (cell.type === "markdown") {
         const estH = estimateMarkdownEditorHeight(cell.source);
         ta.style.height = "auto";
@@ -17648,8 +17986,8 @@ function __require(modId) {
         debugNotebookCell(cid);
         return;
       }
-      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "c") {
-        if ((ta.selectionStart || 0) === (ta.selectionEnd || 0) && cid) {
+      if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.key.toLowerCase() === "c") {
+        if (cid) {
           e.preventDefault();
           const pos = ta.selectionStart || 0;
           const curLine = ta.value.slice(0, pos).split("\n").length;
@@ -17700,10 +18038,24 @@ function __require(modId) {
       resetTraceState();
       syncNotebookGlobalsToSidePanel(doc);
       renderNotebookUI();
-      say("\u25A0 \u5DF2\u9000\u51FA\u5F53\u524D\u5355\u5143\u683C\u5355\u6B65\u8C03\u8BD5\uFF0C\u6062\u590D\u663E\u793A Notebook \u5168\u5C40\u4E0A\u4E0B\u6587", "dim");
+      say("■ 已退出当前单元格单步调试，恢复显示 Notebook 全局上下文", "dim");
     });
     bindBtn("nbBtnRestart", () => restartNotebookKernel(false));
     bindBtn("nbBtnRunAll", () => runAllNotebookCells());
+    bindBtn("nbBtnExportIpynb", () => exportActiveNotebookIpynb());
+    const topExportBtn = $("btnExportTs");
+    if (topExportBtn) {
+      const origExportClick = topExportBtn.onclick;
+      topExportBtn.onclick = (ev) => {
+        if (appState.VIEW_MODE === "notebook") {
+          const expWrap = $("exportMenuWrap");
+          if (expWrap && expWrap.classList) expWrap.classList.remove("open");
+          exportActiveNotebookIpynb();
+          return;
+        }
+        if (typeof origExportClick === "function") origExportClick.call(topExportBtn, ev);
+      };
+    }
     initNotebookCellsEvents();
   }
   var selectedTutorialId = TS_NOTEBOOK_TUTORIALS[0]?.id ?? "ts-adv-01-interfaces-structural";
@@ -17735,17 +18087,17 @@ function __require(modId) {
       const isAct = item.id === current.id;
       const isLoaded = openedTitles.has(item.fileName);
       const codeCellCount = item.cells.filter((c) => c.type === "code").length;
-      return `<button type="button" class="tutorial-card-item${isAct ? " active" : ""}" data-tutorial-id="${esc(item.id)}" title="\u5355\u51FB\u9884\u89C8\u8BFE\u7A0B\u5927\u7EB2 \xB7 \u53CC\u51FB\u7ACB\u5373\u5BFC\u5165\u5E76\u6253\u5F00"><div class="tutorial-card-top"><span class="tutorial-card-badge">${esc(item.codeBadge)}</span><span class="tutorial-card-cat">${esc(item.category)}</span><span class="tutorial-card-lvl">${esc(item.level)}</span>` + (isLoaded ? `<span class="tutorial-card-loaded">\u5DF2\u5BFC\u5165</span>` : "") + `</div><div class="tutorial-card-title">${esc(item.title)}</div><div class="tutorial-card-meta"><span>\u{1F4D3} ${esc(item.fileName)}</span><span>\xB7 ${codeCellCount} \u4E2A\u4EE3\u7801\u683C</span></div></button>`;
+      return `<button type="button" class="tutorial-card-item${isAct ? " active" : ""}" data-tutorial-id="${esc(item.id)}" title="单击预览课程大纲 · 双击立即导入并打开"><div class="tutorial-card-top"><span class="tutorial-card-badge">${esc(item.codeBadge)}</span><span class="tutorial-card-cat">${esc(item.category)}</span><span class="tutorial-card-lvl">${esc(item.level)}</span>` + (isLoaded ? `<span class="tutorial-card-loaded">已导入</span>` : "") + `</div><div class="tutorial-card-title">${esc(item.title)}</div><div class="tutorial-card-meta"><span>📓 ${esc(item.fileName)}</span><span>· ${codeCellCount} 个代码格</span></div></button>`;
     }).join("");
-    const highlightsHtml = current.highlights.map((h) => `<span class="tutorial-hl-chip">\u2726 ${esc(h)}</span>`).join("");
+    const highlightsHtml = current.highlights.map((h) => `<span class="tutorial-hl-chip">✦ ${esc(h)}</span>`).join("");
     const cellsPreviewHtml = current.cells.map((c, idx) => {
       const isMd = c.type === "markdown";
       const firstLine = (c.source.split("\n")[0] || "").replace(/^#+\s*/, "").trim();
       const lineCount = c.source.split("\n").length;
-      return `<div class="tutorial-cell-prev ${isMd ? "md" : "code"}"><div class="tutorial-cell-prev-head"><span class="tutorial-cell-tag">${isMd ? "Markdown \u5BFC\u8BFB" : `Code [${idx}]`}</span><span class="tutorial-cell-lines">${lineCount} \u884C \xB7 ${esc(firstLine)}</span></div><pre class="tutorial-cell-code">${esc(c.source)}</pre></div>`;
+      return `<div class="tutorial-cell-prev ${isMd ? "md" : "code"}"><div class="tutorial-cell-prev-head"><span class="tutorial-cell-tag">${isMd ? "Markdown 导读" : `Code [${idx}]`}</span><span class="tutorial-cell-lines">${lineCount} 行 · ${esc(firstLine)}</span></div><pre class="tutorial-cell-code">${esc(c.source)}</pre></div>`;
     }).join("");
     const alreadyInWorkspace = openedTitles.has(current.fileName);
-    detailEl.innerHTML = `<div class="tutorial-detail-head"><div class="tutorial-detail-tags"><span class="tutorial-tag-cat">${esc(current.category)}</span><span class="tutorial-tag-lvl">${esc(current.level)}</span><span class="tutorial-tag-file">examples/notebooks/${esc(current.fileName)}</span></div><h4 class="tutorial-detail-title">${esc(current.title)}</h4><p class="tutorial-detail-summary">${esc(current.summary)}</p><div class="tutorial-hl-list">${highlightsHtml}</div></div><div class="tutorial-detail-cells-title">\u8BFE\u7A0B\u5355\u5143\u683C\u7ED3\u6784\u9884\u89C8\uFF08\u5171 ${current.cells.length} \u4E2A\u5355\u5143\u683C\uFF0C\u542B \u{1F41E} \u5355\u6B65\u53EF\u89C6\u5316\u8C03\u8BD5\u7EC3\u4E60\uFF09</div><div class="tutorial-detail-cells">${cellsPreviewHtml}</div><div class="tutorial-detail-foot"><button type="button" class="tutorial-btn secondary" data-tutorial-act="import-all" title="\u5C06\u5168\u90E8 6 \u95E8 TypeScript \u8FDB\u9636\u6559\u5B66\u8BFE\u7A0B\u4E00\u6B21\u6027\u5BFC\u5165\u5230 Notebook \u6807\u7B7E\u680F">\u{1F4DA} \u4E00\u952E\u5BFC\u5165\u5168\u90E8 6 \u95E8\u8BFE\u7A0B</button><button type="button" class="tutorial-btn primary" data-tutorial-act="import-one" data-tutorial-id="${esc(current.id)}">` + (alreadyInWorkspace ? "\u{1F4D3} \u5207\u6362\u5230\u6B64\u6559\u5B66 Notebook" : "\u{1F4E5} \u5BFC\u5165\u5E76\u6253\u5F00\u6B64\u6559\u5B66 Notebook") + `</button></div>`;
+    detailEl.innerHTML = `<div class="tutorial-detail-head"><div class="tutorial-detail-tags"><span class="tutorial-tag-cat">${esc(current.category)}</span><span class="tutorial-tag-lvl">${esc(current.level)}</span><span class="tutorial-tag-file">examples/notebooks/${esc(current.fileName)}</span></div><h4 class="tutorial-detail-title">${esc(current.title)}</h4><p class="tutorial-detail-summary">${esc(current.summary)}</p><div class="tutorial-hl-list">${highlightsHtml}</div></div><div class="tutorial-detail-cells-title">课程单元格结构预览（共 ${current.cells.length} 个单元格，含 🐞 单步可视化调试练习）</div><div class="tutorial-detail-cells">${cellsPreviewHtml}</div><div class="tutorial-detail-foot"><button type="button" class="tutorial-btn secondary" data-tutorial-act="import-all" title="将全部 6 门 TypeScript 进阶教学课程一次性导入到 Notebook 标签栏">📚 一键导入全部 6 门课程</button><button type="button" class="tutorial-btn primary" data-tutorial-act="import-one" data-tutorial-id="${esc(current.id)}">` + (alreadyInWorkspace ? "📓 切换到此教学 Notebook" : "📥 导入并打开此教学 Notebook") + `</button></div>`;
   }
   function openTutorialModal() {
     const modal = $("tutorialModal");
@@ -17782,7 +18134,7 @@ function __require(modId) {
     renderNotebookUI();
     renderVfsTreeUI();
     say(
-      isNew ? `\u{1F393} \u5DF2\u5BFC\u5165\u5E76\u6253\u5F00 TS \u8FDB\u9636\u6559\u5B66\u300A${item.title}\u300B\uFF08\u5171 ${targetDoc.cells.length} \u4E2A\u5355\u5143\u683C\uFF0C\u53EF\u6309 Shift+Enter \u9010\u683C\u8FD0\u884C\u6216\u70B9 \u{1F41E} \u5355\u6B65\u8C03\u8BD5\uFF09` : `\u{1F393} \u5DF2\u5207\u6362\u5230 TS \u8FDB\u9636\u6559\u5B66\u300A${item.title}\u300B`,
+      isNew ? `🎓 已导入并打开 TS 进阶教学《${item.title}》（共 ${targetDoc.cells.length} 个单元格，可按 Shift+Enter 逐格运行或点 🐞 单步调试）` : `🎓 已切换到 TS 进阶教学《${item.title}》`,
       "ok"
     );
     return true;
@@ -17818,7 +18170,7 @@ function __require(modId) {
     renderNotebookUI();
     renderVfsTreeUI();
     say(
-      `\u{1F393} \u5DF2\u5BFC\u5165\u5168\u90E8 ${TS_NOTEBOOK_TUTORIALS.length} \u95E8 TypeScript \u8FDB\u9636\u6559\u5B66 Notebook\uFF08\u65B0\u589E ${importedCount} \u95E8\uFF09\uFF0C\u53EF\u5728\u4E0A\u65B9\u6807\u7B7E\u680F\u81EA\u7531\u5207\u6362`,
+      `🎓 已导入全部 ${TS_NOTEBOOK_TUTORIALS.length} 门 TypeScript 进阶教学 Notebook（新增 ${importedCount} 门），可在上方标签栏自由切换`,
       "ok"
     );
     return importedCount;
@@ -17901,7 +18253,7 @@ function __require(modId) {
     doc.cells.push(newCell);
     doc.activeCellId = newCell.id;
     renderNotebookUI(true);
-    say(`\u2713 \u5DF2\u5C06\u793A\u4F8B ${sampleKey} \u5BFC\u5165\u5230\u5F53\u524D Notebook \u65B0\u5355\u5143\u683C`, "ok");
+    say(`✓ 已将示例 ${sampleKey} 导入到当前 Notebook 新单元格`, "ok");
   }
   registerUiHooks({
     setViewMode,

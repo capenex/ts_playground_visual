@@ -3,7 +3,22 @@
    Zero DOM dependencies — manages NotebookDocument / NotebookCell state & transformations
    ================================================================ */
 import { appState, esc } from "../state";
-import type { NotebookCell, NotebookDocument } from "../types";
+import type { NotebookCell, NotebookCellOutput, NotebookDocument } from "../types";
+import { isRecord } from "../utils/format";
+
+export const NOTEBOOK_STORAGE_KEY = "ts-visual-notebooks-v1";
+
+export interface NotebookStorageAdapter {
+  load: () => string | null;
+  save: (rawJson: string) => void;
+}
+
+let nbStorageAdapter: NotebookStorageAdapter | null = null;
+let nbStorageRestored = false;
+
+export function registerNotebookStorageAdapter(adapter: NotebookStorageAdapter): void {
+  nbStorageAdapter = adapter;
+}
 
 let nbClipboardCell: NotebookCell | null = null;
 let nbCellSeq = 100;
@@ -136,8 +151,132 @@ export const notebooksByLang: Record<"ts", { docs: NotebookDocument[]; activeDoc
   ts: { docs: [], activeDocId: "nb_intro" },
 };
 
+export function persistNotebooksToStorage(): void {
+  if (!nbStorageAdapter || !notebooksByLang.ts.docs.length) return;
+  try {
+    const payload = {
+      v: 1,
+      activeDocId: notebooksByLang.ts.activeDocId,
+      docs: notebooksByLang.ts.docs.map((d) => ({
+        id: d.id,
+        title: d.title,
+        lang: "ts",
+        execCounter: d.execCounter,
+        activeCellId: d.activeCellId,
+        cells: d.cells.map((c) => ({
+          id: c.id,
+          type: c.type,
+          source: c.source,
+          executionCount: c.executionCount,
+          status: c.status === "running" ? "idle" : c.status,
+          output: c.output,
+          markdownRendered: Boolean(c.markdownRendered),
+        })),
+        executedHistory: d.executedHistory,
+        lastGlobalVars: d.lastGlobalVars,
+      })),
+    };
+    nbStorageAdapter.save(JSON.stringify(payload));
+  } catch (_) {}
+}
+
+export function restoreNotebooksFromStorage(): boolean {
+  if (!nbStorageAdapter) return false;
+  try {
+    const raw = nbStorageAdapter.load();
+    if (!raw) return false;
+    const parsed: unknown = JSON.parse(raw);
+    if (!isRecord(parsed) || !Array.isArray(parsed.docs) || parsed.docs.length === 0) return false;
+    const docs: NotebookDocument[] = [];
+    for (const rawDoc of parsed.docs) {
+      if (!isRecord(rawDoc) || typeof rawDoc.title !== "string" || !Array.isArray(rawDoc.cells)) continue;
+      const docId = typeof rawDoc.id === "string" && rawDoc.id ? rawDoc.id : nextDocId();
+      const docNumM = docId.match(/^nb_(\d+)$/);
+      if (docNumM && docNumM[1]) {
+        const n = Number(docNumM[1]);
+        if (n >= nbDocSeq) nbDocSeq = n + 1;
+      }
+      const cells: NotebookCell[] = [];
+      for (const rc of rawDoc.cells) {
+        if (!isRecord(rc) || typeof rc.source !== "string") continue;
+        const cid = typeof rc.id === "string" && rc.id ? rc.id : nextCellId();
+        const cNumM = cid.match(/^cell_(\d+)_/);
+        if (cNumM && cNumM[1]) {
+          const cn = Number(cNumM[1]);
+          if (cn >= nbCellSeq) nbCellSeq = cn + 1;
+        }
+        let outVal: NotebookCellOutput | null = null;
+        if (isRecord(rc.output)) {
+          outVal = {
+            logs: Array.isArray(rc.output.logs) ? rc.output.logs.map(String) : [],
+            returnValue: typeof rc.output.returnValue === "string" ? rc.output.returnValue : null,
+            error: typeof rc.output.error === "string" ? rc.output.error : null,
+            errorLine: typeof rc.output.errorLine === "number" ? rc.output.errorLine : undefined,
+            elapsedMs: typeof rc.output.elapsedMs === "number" ? rc.output.elapsedMs : undefined,
+          };
+        }
+        cells.push({
+          id: cid,
+          type: rc.type === "markdown" ? "markdown" : "code",
+          source: rc.source,
+          executionCount: typeof rc.executionCount === "number" ? rc.executionCount : null,
+          status: rc.status === "success" || rc.status === "error" ? rc.status : "idle",
+          output: outVal,
+          markdownRendered: Boolean(rc.markdownRendered),
+        });
+      }
+      if (cells.length === 0) continue;
+      const firstCell = cells[0];
+      const actCellId =
+        typeof rawDoc.activeCellId === "string" && cells.some((c) => c.id === rawDoc.activeCellId)
+          ? rawDoc.activeCellId
+          : (firstCell ? firstCell.id : "");
+      const hist: Array<{ cellId: string; execCount: number; source: string }> = [];
+      if (Array.isArray(rawDoc.executedHistory)) {
+        for (const h of rawDoc.executedHistory) {
+          if (isRecord(h) && typeof h.cellId === "string" && typeof h.source === "string") {
+            hist.push({
+              cellId: h.cellId,
+              execCount: typeof h.execCount === "number" ? h.execCount : 0,
+              source: h.source,
+            });
+          }
+        }
+      }
+      docs.push({
+        id: docId,
+        title: rawDoc.title,
+        lang: "ts",
+        execCounter: typeof rawDoc.execCounter === "number" ? rawDoc.execCounter : 0,
+        activeCellId: actCellId,
+        debuggingCellId: null,
+        cells,
+        executedHistory: hist,
+        lastGlobalVars: isRecord(rawDoc.lastGlobalVars) ? rawDoc.lastGlobalVars : {},
+        lastGlobalDs: {},
+      });
+    }
+    if (docs.length === 0) return false;
+    notebooksByLang.ts.docs = docs;
+    const reqActive = typeof parsed.activeDocId === "string" ? parsed.activeDocId : "";
+    const activeDoc = docs.find((d) => d.id === reqActive) ?? docs[0];
+    if (activeDoc) {
+      notebooksByLang.ts.activeDocId = activeDoc.id;
+    }
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
 export function ensureLangNotebooks(_lang: "ts" = "ts") {
   if (!notebooksByLang.ts.docs.length) {
+    if (!nbStorageRestored) {
+      nbStorageRestored = true;
+      if (restoreNotebooksFromStorage() && notebooksByLang.ts.docs.length > 0) {
+        return notebooksByLang.ts;
+      }
+    }
     const docs = createDefaultNotebooks("ts");
     notebooksByLang.ts.docs = docs;
     notebooksByLang.ts.activeDocId = docs[0].id;

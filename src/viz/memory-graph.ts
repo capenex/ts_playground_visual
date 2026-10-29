@@ -627,24 +627,60 @@ export function renderStatic(i: number, withAnim = false) {
   }
   const v = (activeFrame && activeFrame.v) || st.v || {};
   const prevV = (prevSt && prevSt.v) || {};
-  const primEntries = Object.keys(v).map(k => {
+  const isTopFrame = Boolean(!activeFrame || activeFrame.isTop);
+  const assignTarget =
+    isTopFrame &&
+    st.anim &&
+    (st.anim.type === 'assign' || (st.anim.type === 'call' && st.anim.to)) &&
+    typeof st.anim.to === 'string' &&
+    st.anim.to !== 'return'
+      ? st.anim.to.trim()
+      : '';
+  const assignNextVal =
+    assignTarget && st.anim
+      ? (st.anim.val !== undefined ? st.anim.val : st.anim.result)
+      : undefined;
+
+  const primList = Object.keys(v).map(k => {
     const val = v[k];
     if (val !== null && typeof val === 'object') return '';
     const isFn = typeof val === 'function';
     const prevVal = prevV[k];
-    const changed = Boolean(
-      activeFrame &&
-      activeFrame.isTop &&
-      prevSt &&
-      (isFn
-        ? typeof prevVal !== 'function' || formatFunctionTypeSignature(k, prevVal) !== formatFunctionTypeSignature(k, val)
-        : prevVal !== val)
+    const isPendingAssign = Boolean(
+      assignTarget === k &&
+      assignNextVal !== undefined &&
+      assignNextVal !== null &&
+      String(val) !== String(assignNextVal)
     );
+    const changed = Boolean(
+      isPendingAssign ||
+      (activeFrame &&
+        activeFrame.isTop &&
+        prevSt &&
+        (isFn
+          ? typeof prevVal !== 'function' || formatFunctionTypeSignature(k, prevVal) !== formatFunctionTypeSignature(k, val)
+          : prevVal !== val))
+    );
+    const nextBadge = isPendingAssign
+      ? ` <span class="v-next" title="本行执行前为 ${esc(val)}，本行赋值后变为 ${esc(assignNextVal)}">→ ${esc(assignNextVal)}</span>`
+      : '';
     const valHtml = isFn
       ? '<span class="v fn-type">' + formatFnTypeHtml(formatFunctionTypeSignature(k, val)) + '</span>'
-      : '<span class="v">' + esc(val) + '</span>';
+      : '<span class="v">' + esc(val) + nextBadge + '</span>';
     return '<div class="pair' + (changed ? ' changed' : '') + '" data-var="' + esc(k) + '"><span class="k">' + esc(k) + '</span>' + valHtml + '</div>';
-  }).join('');
+  });
+  if (
+    assignTarget &&
+    /^[A-Za-z_$][\w$]*$/.test(assignTarget) &&
+    !(assignTarget in v) &&
+    assignNextVal !== undefined &&
+    assignNextVal !== null
+  ) {
+    primList.push(
+      '<div class="pair changed" data-var="' + esc(assignTarget) + '" title="本行即将声明并赋值的变量"><span class="k">' + esc(assignTarget) + '</span><span class="v"><span class="v-next">→ ' + esc(assignNextVal) + '</span></span></div>'
+    );
+  }
+  const primEntries = primList.join('');
   if (primEntries) {
     varsEl.innerHTML = primEntries;
   } else if (activeFrame && activeFrame.fn === 'global') {

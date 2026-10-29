@@ -29,6 +29,8 @@ function isAwaitYieldDescriptor(val: unknown): val is AwaitYieldDescriptor {
 export { safeJSONStringify };
 export * from "./event-loop-env";
 
+let logRunSeq = 0;
+
 export function say(msg: string, cls?: string, line?: number): void {
   const entry: ConsoleLogEntry = { msg };
   if (cls !== undefined) entry.cls = cls;
@@ -38,7 +40,16 @@ export function say(msg: string, cls?: string, line?: number): void {
   uiHooks.appendConsoleLog(entry);
 }
 
+export function logRunRoundHeader(actionLabel: string, targetName?: string): void {
+  logRunSeq++;
+  if (appState.CONSOLE_LOGS.length > 0) {
+    const suffix = targetName ? ` · ${targetName}` : '';
+    say(`── #${logRunSeq} ${actionLabel}${suffix} ──`, 'log-divider');
+  }
+}
+
 export function clearLog(msg?: string): void {
+  logRunSeq = 0;
   appState.CONSOLE_LOGS.length = 0;
   notifyConsoleLog('clear');
   uiHooks.clearConsoleDom();

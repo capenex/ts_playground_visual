@@ -27,6 +27,29 @@
     );
   }
 
+  function isValidUserPayload(keyName, rawValue) {
+    if (typeof rawValue !== 'string' || !rawValue) return false;
+    try {
+      var parsed = JSON.parse(rawValue);
+      if (!parsed || typeof parsed !== 'object') return false;
+      if (keyName === 'ts-playground-session-v1') {
+        if (parsed.v !== 1) return false;
+        var hasTsSrc = Boolean(parsed.ts && typeof parsed.ts.src === 'string');
+        var hasTabs = Boolean(parsed.tabsSession && Array.isArray(parsed.tabsSession.tabs) && parsed.tabsSession.tabs.length > 0);
+        return hasTsSrc || hasTabs;
+      }
+      if (keyName === 'ts-visual-vfs-workspace-v2') {
+        return Array.isArray(parsed.nodes) || Array.isArray(parsed);
+      }
+      if (keyName === 'ts-visual-notebooks-v1') {
+        return Array.isArray(parsed.docs) && parsed.docs.length > 0;
+      }
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   function runStorageVersionGuard(customStorage, customIndexedDB, targetVersion) {
     var version = typeof targetVersion === 'string' && targetVersion ? targetVersion : CURRENT_STORAGE_VERSION;
     var result = {
@@ -34,6 +57,7 @@
       matched: false,
       cleaned: false,
       removedKeys: [],
+      preservedKeys: [],
       error: null
     };
 
@@ -61,6 +85,19 @@
       for (var j = 0; j < keysSnapshot.length; j++) {
         var keyName = keysSnapshot[j];
         if (isOwnedLocalStorageKey(keyName)) {
+          if (keyName.indexOf('ts-playground-backup-') === 0) {
+            continue;
+          }
+          var rawVal = storage.getItem(keyName);
+          if (isValidUserPayload(keyName, rawVal)) {
+            result.preservedKeys.push(keyName);
+            continue;
+          }
+          if (typeof rawVal === 'string' && rawVal.length > 0 && keyName !== 'ts-visual-vfs-v1') {
+            try {
+              storage.setItem('ts-playground-backup-' + keyName, rawVal);
+            } catch (_) { /* ignore quota */ }
+          }
           storage.removeItem(keyName);
           result.removedKeys.push(keyName);
         }

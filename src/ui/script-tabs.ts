@@ -79,6 +79,11 @@ export function syncActiveScriptTabFromFileName(newFileName: string) {
 }
 
 export function renderScriptTabsUI() {
+  if (typeof document !== "undefined" && typeof document.dispatchEvent === "function") {
+    try {
+      document.dispatchEvent(new Event("ts-session-change"));
+    } catch (_) {}
+  }
   const tabsEl = $("scriptTabsList");
   if (!tabsEl) return;
   const store = ensureScriptTabsForLang("ts");
@@ -97,7 +102,7 @@ export function renderScriptTabsUI() {
         const isDebugEntry = isMultiDebug && appState.DEBUG_SESSION.entryFile === normPath;
         const badge = isDebugEntry ? ` <span class="dim" title="当前多文件调试入口模块">▶</span>` : "";
         return (
-          `<div class="nb-tab${isAct ? " active" : ""}" data-script-tab-id="${esc(t.id)}" title="单击切换标签页 · 双击文件名重命名">` +
+          `<div class="nb-tab${isAct ? " active" : ""}" role="tab" tabindex="0" aria-selected="${isAct ? "true" : "false"}" data-script-tab-id="${esc(t.id)}" title="单击或按 Enter/Space 切换标签页 · 双击文件名重命名">` +
           `<span class="nb-tab-icon ts-icon" aria-hidden="true"></span>` +
           `<span class="nb-tab-title">${esc(t.title)}${badge}</span>` +
           (store.tabs.length > 1
@@ -369,6 +374,32 @@ export function initScriptTabsAndImportEvents() {
           updateEditorChrome();
           renderScriptTabsUI();
           renderVfsTreeUI();
+        }
+      }
+    });
+
+    scriptTabsEl.addEventListener("keydown", (e: KeyboardEvent) => {
+      const target = eventTargetElement(e);
+      if (!target || (target.classList && (target.classList.contains("nb-tab-close") || target.classList.contains("nb-tab-rename-input")))) return;
+      const tabEl = closestElement(target, "[data-script-tab-id]");
+      if (!tabEl) return;
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        tabEl.click();
+        return;
+      }
+      if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+        e.preventDefault();
+        const allTabs = scriptTabsEl.querySelectorAll ? Array.from(scriptTabsEl.querySelectorAll<HTMLElement>("[data-script-tab-id]")) : [];
+        const curIdx = allTabs.indexOf(tabEl);
+        if (curIdx >= 0 && allTabs.length > 1) {
+          const nextIdx = (curIdx + (e.key === "ArrowRight" ? 1 : allTabs.length - 1)) % allTabs.length;
+          const nextEl = allTabs[nextIdx];
+          if (nextEl) {
+            nextEl.click();
+            const refreshed = scriptTabsEl.querySelectorAll ? scriptTabsEl.querySelectorAll<HTMLElement>("[data-script-tab-id]")[nextIdx] : null;
+            if (refreshed && typeof refreshed.focus === "function") refreshed.focus();
+          }
         }
       }
     });

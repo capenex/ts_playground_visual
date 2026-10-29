@@ -305,7 +305,7 @@ export function addCheckpointFunction(preferredLine?: number) {
     const keepLine = Math.max(1, Math.min(lines.length, Math.min(removedLine, lines.length)));
     appState.lastEditorCursorLine = keepLine;
     scrollCodeTo(keepLine);
-    say('· 已移除第 ' + removedLine + ' 行的 checkpoint() 检查点函数 (Ctrl+C)', 'dim');
+    say('· 已移除第 ' + removedLine + ' 行的 checkpoint() 检查点函数 (Alt+C)', 'dim');
     return;
   }
 
@@ -334,7 +334,7 @@ export function addCheckpointFunction(preferredLine?: number) {
     startDebug(0);
   }
   scrollCodeTo(insertedLineNum);
-  say('✓ 已在第 ' + insertedLineNum + ' 行添加检查点函数 checkpoint()（可按 Ctrl+C 随时增删该行检查点）', 'ok');
+  say('✓ 已在第 ' + insertedLineNum + ' 行添加检查点函数 checkpoint()（可按 Alt+C 随时增删该行检查点）', 'ok');
 }
 
 export function go(i: number) {
@@ -532,16 +532,6 @@ if ($('btnExportTs')) {
   };
 }
 
-if ($('btnShareLink')) {
-  $('btnShareLink').onclick = () => {
-    if (exportMenuWrap && exportMenuWrap.classList) exportMenuWrap.classList.remove('open');
-    const tag = $('shareLinkTag');
-    if (tag) tag.textContent = '暂未实现';
-    say('暂未实现', 'dim');
-  };
-}
-
-
 $<HTMLSelectElement>('sampleSel').onchange = () => uiHooks.loadSample($<HTMLSelectElement>('sampleSel').value);
 
 pickEl.addEventListener('click', (e: MouseEvent) => {
@@ -661,13 +651,11 @@ editor.addEventListener('keydown', (e: KeyboardEvent) => {
     editor.selectionStart = editor.selectionEnd = s + indent.length;
     onSourceChanged();
   }
-  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'c') {
-    if ((editor.selectionStart || 0) === (editor.selectionEnd || 0)) {
-      e.preventDefault();
-      recordEditorCursorLine();
-      addCheckpointFunction(appState.lastEditorCursorLine);
-      return;
-    }
+  if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.key.toLowerCase() === 'c') {
+    e.preventDefault();
+    recordEditorCursorLine();
+    addCheckpointFunction(appState.lastEditorCursorLine);
+    return;
   }
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
     e.preventDefault();
@@ -727,15 +715,6 @@ addEventListener('resize', () => positionStepViz());
 addEventListener('keydown', e => {
   if (isEditorFocused()) return;
   const target = eventTargetElement(e);
-  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'c') {
-    if (target && target.closest && target.closest('input,textarea')) return;
-    const sel = typeof window !== 'undefined' && typeof window.getSelection === 'function' ? String(window.getSelection() || '') : '';
-    if (!sel && appState.VIEW_MODE !== 'notebook') {
-      e.preventDefault();
-      addCheckpointFunction();
-      return;
-    }
-  }
   if (e.key === 'ArrowRight' || e.key === ' ') {
     if (target && target.closest && target.closest('button,select,input,textarea')) return;
     e.preventDefault();

@@ -37,7 +37,10 @@ export function buildTsPreambleFromHistory(
     if (excludeCellId && item.cellId === excludeCellId) continue;
     const { normalized } = normalizeCellTsForNotebook(item.source);
     const enums = transpileEnums(normalized);
-    const js0 = stripTypes(enums.error ? normalized : enums.code);
+    const js0 = stripTypes(enums.error ? normalized : enums.code).replace(
+      /^(\s*)class\s+([A-Za-z_$][\w$]*)\b/gm,
+      "$1var $2 = class $2"
+    );
     chunks.push(js0);
   }
   const combined = chunks.join("\n");
@@ -53,12 +56,16 @@ export function buildTsTypecheckContext(
   doc: NotebookDocument,
   cell: NotebookCell
 ): { preambleTs: string; preambleLines: number; combinedTs: string } {
-  const historyChunks: string[] = [];
+  const latestByCell = new Map<string, string>();
   for (const item of doc.executedHistory) {
     if (item.cellId === cell.id) continue;
     const src = String(item.source || "").replace(/\r\n?/g, "\n");
-    if (src.trim()) historyChunks.push(src);
+    if (src.trim()) {
+      if (latestByCell.has(item.cellId)) latestByCell.delete(item.cellId);
+      latestByCell.set(item.cellId, src);
+    }
   }
+  const historyChunks = Array.from(latestByCell.values());
   const preambleTs = historyChunks.join("\n");
   const preambleLines = preambleTs ? preambleTs.split("\n").length : 0;
   const cellSrc = String(cell.source || "").replace(/\r\n?/g, "\n");
@@ -170,7 +177,7 @@ export function runTsNotebookCell(
   }
 
   extractTsInterfaceMetadata(combinedTs);
-  const { preambleJs, allNames: histNames } = buildTsPreambleFromHistory(doc, cell.id);
+  const { preambleJs, allNames: histNames } = buildTsPreambleFromHistory(doc);
   const { normalized: normCellSrc } = normalizeCellTsForNotebook(rawSrc);
   const enums = transpileEnums(normCellSrc);
   if (enums.error) {
@@ -186,7 +193,10 @@ export function runTsNotebookCell(
     return false;
   }
 
-  const jsCell = stripTypes(enums.code);
+  const jsCell = stripTypes(enums.code).replace(
+    /^(\s*)class\s+([A-Za-z_$][\w$]*)\b/gm,
+    "$1var $2 = class $2"
+  );
   const entry = resolveEntry(normCellSrc, jsCell);
   const rawEntryExpr = (entry.expr || "").trim();
   const isConsoleLogCall = /^console\.log\s*\(/.test(rawEntryExpr);
@@ -339,7 +349,6 @@ export function runTsNotebookCell(
       elapsedMs,
     };
 
-    doc.executedHistory = doc.executedHistory.filter((h) => h.cellId !== cell.id);
     doc.executedHistory.push({ cellId: cell.id, execCount: cell.executionCount, source: rawSrc });
 
     say(
@@ -433,7 +442,7 @@ export function debugTsNotebookCell(
   }
 
   extractTsInterfaceMetadata(combinedTs);
-  const { preambleJs, allNames: histNames } = buildTsPreambleFromHistory(doc, cell.id);
+  const { preambleJs, allNames: histNames } = buildTsPreambleFromHistory(doc);
   const { normalized: normCellSrc } = normalizeCellTsForNotebook(rawSrc);
   const originalLines = rawSrc.split("\n");
   const enums = transpileEnums(normCellSrc);

@@ -4,6 +4,7 @@
    ================================================================ */
 import { SAMPLES } from "../samples/ts-samples";
 import { appState, uiHooks } from "../state";
+import { isRecord } from "../utils/format";
 import {
   ensureVfsInitialized,
   persistVfsToClientStorage,
@@ -181,3 +182,51 @@ export function handleVfsFileRenamedInTabs(
     isActive: store.activeTabId === matchingTab.id,
   };
 }
+
+export function serializeScriptTabsSession(): {
+  activeTabId: string;
+  tabs: Array<{ id: string; title: string; source: string; vfsPath: string; isSample: boolean }>;
+} {
+  const store = ensureScriptTabsForLang("ts");
+  return {
+    activeTabId: store.activeTabId,
+    tabs: store.tabs.map((t) => ({
+      id: t.id,
+      title: t.title,
+      source: t.source,
+      vfsPath: t.vfsPath || "",
+      isSample: Boolean(t.isSample),
+    })),
+  };
+}
+
+export function restoreScriptTabsSession(raw: unknown): boolean {
+  if (!isRecord(raw) || !Array.isArray(raw.tabs) || raw.tabs.length === 0) return false;
+  const restored: ScriptTabDoc[] = [];
+  for (const item of raw.tabs) {
+    if (!isRecord(item) || typeof item.title !== "string" || typeof item.source !== "string") continue;
+    const id = typeof item.id === "string" && item.id ? item.id : nextScriptTabId();
+    const numM = id.match(/^stab_(\d+)$/);
+    if (numM && numM[1]) {
+      const seqNum = Number(numM[1]);
+      if (seqNum >= scriptTabSeq) scriptTabSeq = seqNum + 1;
+    }
+    restored.push({
+      id,
+      title: item.title,
+      lang: "ts",
+      source: item.source,
+      vfsPath: typeof item.vfsPath === "string" ? item.vfsPath : "",
+      isSample: Boolean(item.isSample),
+    });
+  }
+  if (restored.length === 0) return false;
+  SCRIPT_TABS.ts.tabs = restored;
+  const reqActive = typeof raw.activeTabId === "string" ? raw.activeTabId : "";
+  const activeDoc = restored.find((t) => t.id === reqActive) ?? restored[0];
+  if (activeDoc) {
+    SCRIPT_TABS.ts.activeTabId = activeDoc.id;
+  }
+  return true;
+}
+

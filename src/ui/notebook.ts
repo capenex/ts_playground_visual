@@ -25,7 +25,10 @@ import {
   moveCellInModel,
   nextCellId,
   nextDocId,
+  NOTEBOOK_STORAGE_KEY,
   parseIpynbJsonToDocument,
+  persistNotebooksToStorage,
+  registerNotebookStorageAdapter,
   renderMarkdownHtml,
   serializeNotebookToIpynbJson,
   setClipboardCell,
@@ -61,6 +64,23 @@ import {
 
 export * from "../notebook/notebook-model";
 export * from "../notebook/notebook-kernel";
+
+registerNotebookStorageAdapter({
+  load: () => {
+    if (typeof localStorage === "undefined") return null;
+    try {
+      return localStorage.getItem(NOTEBOOK_STORAGE_KEY);
+    } catch (_) {
+      return null;
+    }
+  },
+  save: (rawJson: string) => {
+    if (typeof localStorage === "undefined") return;
+    try {
+      localStorage.setItem(NOTEBOOK_STORAGE_KEY, rawJson);
+    } catch (_) {}
+  },
+});
 
 /* ── Cell Manipulation UI Actions (Insert, Move, Duplicate, Cut/Copy/Paste, Delete) ── */
 export function insertNotebookCell(
@@ -189,9 +209,8 @@ export function setViewMode(mode: "script" | "notebook") {
   if (nbWrap) nbWrap.hidden = next !== "notebook";
   if (edWrap) edWrap.style.display = next === "notebook" ? "none" : "flex";
   if (srcPaneTitle) srcPaneTitle.style.display = next === "notebook" ? "none" : "flex";
-  if (expMenuWrap) {
-    expMenuWrap.style.display = next === "notebook" ? "none" : "";
-    if (next === "notebook" && expMenuWrap.classList) expMenuWrap.classList.remove("open");
+  if (expMenuWrap && expMenuWrap.classList) {
+    expMenuWrap.classList.remove("open");
   }
   if (vfsSidebar) {
     vfsSidebar.hidden = true;
@@ -205,6 +224,8 @@ export function setViewMode(mode: "script" | "notebook") {
     syncNotebookGlobalsToSidePanel(doc);
     renderNotebookUI();
   } else {
+    const exportTag = $("fileExportTag");
+    if (exportTag) exportTag.textContent = appState.FILE_NAME;
     stopAuto();
     clearFlyLayer();
     renderScriptTabsUI();
@@ -275,6 +296,7 @@ function renderCellCodeHighlight(
 
 /* ── Main DOM Render for Notebook Mode ── */
 export function renderNotebookUI(focusActiveEditor = false) {
+  persistNotebooksToStorage();
   const wrap = $("notebookWrap");
   if (!wrap || appState.VIEW_MODE !== "notebook") return;
 
@@ -289,7 +311,7 @@ export function renderNotebookUI(focusActiveEditor = false) {
         .map((d) => {
           const isAct = d.id === doc.id;
           return (
-            `<div class="nb-tab${isAct ? " active" : ""}" data-doc-id="${esc(d.id)}" title="双击可重命名笔记本">` +
+            `<div class="nb-tab${isAct ? " active" : ""}" role="tab" tabindex="0" aria-selected="${isAct ? "true" : "false"}" data-doc-id="${esc(d.id)}" title="单击或按 Enter/Space 切换 · 双击可重命名笔记本">` +
             `<span class="nb-tab-icon" aria-hidden="true"></span>` +
             `<span class="nb-tab-title">${esc(d.title)}</span>` +
             (store.docs.length > 1
@@ -300,6 +322,11 @@ export function renderNotebookUI(focusActiveEditor = false) {
         })
         .join("") +
       `<button type="button" class="nb-tab-add" id="nbBtnNewTab" title="新建空白 Notebook 标签页">＋</button>`;
+  }
+
+  const exportTag = $("fileExportTag");
+  if (exportTag) {
+    exportTag.textContent = doc.title.endsWith(".ipynb") ? doc.title : doc.title + ".ipynb";
   }
 
   const typeSel = $<HTMLSelectElement>("nbCellType");
@@ -515,6 +542,32 @@ function initNotebookTabsEvents() {
     }
   });
 
+  tabsEl.addEventListener("keydown", (e: KeyboardEvent) => {
+    const target = eventTargetElement(e);
+    if (!target || (target.classList && (target.classList.contains("nb-tab-close") || target.classList.contains("nb-tab-rename-input")))) return;
+    const tab = closestElement(target, ".nb-tab");
+    if (!tab || !tab.dataset.docId) return;
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      tab.click();
+      return;
+    }
+    if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+      e.preventDefault();
+      const allTabs = tabsEl.querySelectorAll ? Array.from(tabsEl.querySelectorAll<HTMLElement>(".nb-tab[data-doc-id]")) : [];
+      const curIdx = allTabs.indexOf(tab);
+      if (curIdx >= 0 && allTabs.length > 1) {
+        const nextIdx = (curIdx + (e.key === "ArrowRight" ? 1 : allTabs.length - 1)) % allTabs.length;
+        const nextEl = allTabs[nextIdx];
+        if (nextEl) {
+          nextEl.click();
+          const refreshed = tabsEl.querySelectorAll ? tabsEl.querySelectorAll<HTMLElement>(".nb-tab[data-doc-id]")[nextIdx] : null;
+          if (refreshed && typeof refreshed.focus === "function") refreshed.focus();
+        }
+      }
+    }
+  });
+
   tabsEl.addEventListener("dblclick", (e: MouseEvent) => {
     const tab = closestElement(e, ".nb-tab");
     if (!tab || !tab.dataset.docId) return;
@@ -681,6 +734,7 @@ function initNotebookCellsEvents() {
     const cell = doc.cells.find((c) => c.id === cid);
     if (!cell) return;
     cell.source = ta.value;
+    persistNotebooksToStorage();
 
     if (cell.type === "markdown") {
       const estH = estimateMarkdownEditorHeight(cell.source);
@@ -731,8 +785,8 @@ function initNotebookCellsEvents() {
       debugNotebookCell(cid);
       return;
     }
-    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "c") {
-      if ((ta.selectionStart || 0) === (ta.selectionEnd || 0) && cid) {
+    if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.key.toLowerCase() === "c") {
+      if (cid) {
         e.preventDefault();
         const pos = ta.selectionStart || 0;
         const curLine = ta.value.slice(0, pos).split("\n").length;
@@ -795,6 +849,21 @@ export function initNotebookUI() {
   });
   bindBtn("nbBtnRestart", () => restartNotebookKernel(false));
   bindBtn("nbBtnRunAll", () => runAllNotebookCells());
+  bindBtn("nbBtnExportIpynb", () => exportActiveNotebookIpynb());
+
+  const topExportBtn = $("btnExportTs");
+  if (topExportBtn) {
+    const origExportClick = topExportBtn.onclick;
+    topExportBtn.onclick = (ev: PointerEvent) => {
+      if (appState.VIEW_MODE === "notebook") {
+        const expWrap = $("exportMenuWrap");
+        if (expWrap && expWrap.classList) expWrap.classList.remove("open");
+        exportActiveNotebookIpynb();
+        return;
+      }
+      if (typeof origExportClick === "function") origExportClick.call(topExportBtn, ev);
+    };
+  }
 
   initNotebookCellsEvents();
 }
