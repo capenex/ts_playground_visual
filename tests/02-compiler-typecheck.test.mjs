@@ -155,4 +155,43 @@ msg
       `got ${JSON.stringify(diags)}`,
     );
   }
+
+  // 6. Regressions: B07 (inline case/default instrumentation), B08 (throw-only function TS2355), variadic checkpoint()
+  const switchSrc = [
+    'function pick(n: number): string {',
+    '  switch (n) {',
+    '    case 1: return "one";',
+    '    default: return "other";',
+    '  }',
+    '}',
+  ].join('\n');
+  const switchJs = sandbox.stripTypes(switchSrc);
+  const switchInst = sandbox.instrument(switchJs, switchSrc.split('\n'), sandbox.collectNames(switchJs));
+  check(
+    'B07: instrument injects __t hook after colon on inline case/default statements',
+    switchInst.includes('case 1: __t(3,') && switchInst.includes('default: __t(4,'),
+  );
+
+  const throwOnlyFnSrc = `
+function failAlways(msg: string): number {
+  throw new Error(msg);
 }
+failAlways("boom")
+`;
+  assertEq(
+    'B08: function that throws unconditionally is not flagged with TS2355',
+    sandbox.typecheckTS(throwOnlyFnSrc).length,
+    0,
+  );
+
+  const variadicCkptSrc = `
+const r: number = 1, sum: number = 9, best: number = 9;
+checkpoint("窗口达标", r, sum, best);
+`;
+  assertEq(
+    'typecheckTS accepts variadic/labeled checkpoint("窗口达标", r, sum, best) with 0 errors',
+    sandbox.typecheckTS(variadicCkptSrc).length,
+    0,
+  );
+}
+

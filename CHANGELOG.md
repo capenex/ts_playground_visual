@@ -4,6 +4,31 @@
 
 ---
 
+## [v0.8.1] - 2026-10-29 · 线上 18 项问题全量修复（B01–B10, F01–F02, O01–O05, R01）
+
+### 🐛 缺陷修复（Bugs Fixed）
+- **B01（新建 Notebook 刷新后持久化）**：在纯模型层 `src/notebook/notebook-model.ts` 新增零 DOM 的 `NotebookStorageAdapter`、`persistNotebooksToStorage()` 与 `restoreNotebooksFromStorage()`，并在 `src/ui/notebook.ts` 绑定 `localStorage`（`ts-visual-notebooks-v1`），完整持久化所有新建 Notebook 标签、单元格内容与执行状态。
+- **B02 & B03（多代码标签与自定义文件名刷新恢复）**：在 `src/runtime/script-tabs-store.ts` 新增 `serializeScriptTabsSession()` 与 `restoreScriptTabsSession()`，并在 `app-session.js` 中完整保存与恢复所有已打开脚本标签及当前激活文件名，解决非当前标签丢失与文件名回退为 `playground.ts` 的问题。
+- **B04（Notebook 单元格重复执行状态累积）**：重构 `src/notebook/notebook-kernel.ts` 的 `buildTsPreambleFromHistory` 与 `buildTsTypecheckContext`，支持同一累加单元格重复执行时基于最新状态继续累积（如 `1 -> 2 -> 3`），并支持顶层 `class` 重复执行与跨格类型检查去重。
+- **B05（普通运行 `console.log()` 返回值对齐）**：修复 `src/runtime/runner.ts` 中 `evalCall` 的 `pushLogLine` 箭头函数隐式返回数组长度的问题，确保普通运行与 Debug 模式下 `console.log()` 均返回 `undefined`。
+- **B06（文件末尾 `checkpoint()` 行号定位）**：在 `src/compiler/instrumenter.ts` 的 `findTrailingTopLevelCall` 中排除 `checkpoint` 与 `断点`，避免末尾检查点被当作入口表达式剥离而错位到上一行；同时在类型检查器与 Worker 中兼容条件检查点与多参观察检查点签名。
+- **B07（行内 `case / default` 语句单步追踪）**：在 `src/compiler/instrumenter.ts` 的 `tryInjectLoopOrElseIf` 中支持在 `case <expr>: <stmt>` 与 `default: <stmt>` 冒号后注入 `__t` 步进钩子，并在 `src/viz/memory-normalizers.ts` 中解析行内分支动作。
+- **B08（只抛异常函数免报 `TS2355`）**：在 `src/compiler/type-checker.ts` 中识别独立/行内/分支 `throw` 语句并标记 `hasValueReturn = true`，同时放行 `never` / `Promise<never>` 返回类型。
+- **B09（多文件普通运行报错模块自动定位）**：在 `src/runtime/runner.ts` 的 `evalCall` 中追踪第 5 参数模块文件名 `lastFile`，当普通运行发生异常或超时时自动通过 `uiHooks.switchToScriptFile` 切换至报错模块并标红对应行。
+- **B10（「TS 子集检查」徽标可见性）**：移除 `#checkerBadge` 的隐藏样式，在代码区右上角常驻展示「TS 子集检查」交互徽标并同步启动提示文案。
+
+### ✨ 功能补齐与体验优化（Features, UX & Storage Safety）
+- **F01（Notebook `.ipynb` 可见导出入口）**：在 Notebook 顶部栏新增 `#nbBtnExportIpynb`（「⬇ 导出 .ipynb」）按钮，并与右上角导出菜单联动。
+- **F02（分享链接生成与去重）**：移除 `src/ui/controls.ts` 中重复的占位点击监听，在 `app-session.js` 的 `copyShareLink()` 中启用 Gzip + Base64URL `#s=` 分享链接生成与剪贴板复制。
+- **R01（非破坏性存储版本守卫）**：升级 `storage-guard.js`，在存储版本变更时校验并保留合法的用户会话、VFS 工作区与 Notebook 数据，对非空损坏数据先备份再清理。
+- **O01（文件与 Notebook 标签栏无障碍键盘导航）**：为 `.nb-tab` 补齐 `role="tab"`、`tabindex="0"`、`aria-selected`、`:focus-visible` 描边及 `Enter` / `Space` / 左右方向键切换。
+- **O02（连续运行日志轮次分隔）**：在 `src/runtime/event-loop.ts` 新增 `logRunRoundHeader()`，在多次运行或调试之间自动插入带轮次与时间戳的 `.log-divider` 分隔条。
+- **O03（1128×772 视口底部提示防截断）**：优化 `#ctl` 与 `#ctl .hint` 弹性换行排版，确保 2 秒死循环熔断提示在标准桌面视口下完整显示。
+- **O04（单步调试暂停行“执行前 → 执行后”状态直显）**：在 `src/viz/memory-graph.ts` 的 `LOCALS` 栈帧卡片中同时展示当前暂停行执行前旧值与本行执行后新值（`pre → post`）及新声明变量的预览标记。
+- **O05（释放 `Ctrl+C` 原生复制快捷键）**：移除全局 `Ctrl+C` 拦截，将编辑器与 Notebook 切换检查点快捷键统一改为 `Alt+C`。
+
+---
+
 ## [v0.8.0] - 2026-10-27 · 架构纯粹化与门禁模块化：移除 Python 子系统 (ADR-001) & 重构 `test-pipeline.mjs`
 
 ### 📜 架构决策记录（Architecture Decision Record）

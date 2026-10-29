@@ -136,4 +136,46 @@ scheduler()
     if (!sandbox.computeAndAppendNextStep({ silent: true })) break;
   }
   check('async/await step debugger captures virtual EventLoop state (microtasks + macrotasks)', sawEventLoopState);
+
+  // 7. Regressions: B05 (console.log returns undefined in evalCall), B06 (trailing checkpoint line), B07 (inline case step)
+  const b05Res = sandbox.evalCall('function f(){ return console.log("hi"); }', 'f()', { instrumented: false });
+  check(
+    'B05: console.log() returns undefined in normal run (evalCall)',
+    b05Res.ok === true && b05Res.value === undefined && b05Res.logs[0] === 'hi',
+  );
+
+  resetSandbox(sandbox);
+  editorEl.value = [
+    'const a: number = 1;',
+    'console.log(a);',
+    'checkpoint(true, "audit-tail");',
+  ].join('\n');
+  sandbox.startDebug(0);
+  sandbox.runToNextCheckpoint();
+  const tailCkptStep = sandbox.TRACE.steps[sandbox.cur];
+  assertEq(
+    'B06: trailing checkpoint() at end of file is recorded on its own line (line 3)',
+    tailCkptStep && tailCkptStep.line,
+    3,
+  );
+
+  resetSandbox(sandbox);
+  editorEl.value = [
+    'function label(n: number): string {',
+    '  switch (n) {',
+    '    case 1: return "one";',
+    '    default: return "other";',
+    '  }',
+    '}',
+    'label(1)',
+  ].join('\n');
+  sandbox.startDebug(0);
+  while (!sandbox.DEBUG_SESSION.finished && sandbox.TRACE.steps.length < 20) {
+    sandbox.computeAndAppendNextStep({ silent: true });
+  }
+  check(
+    'B07: step debugger visits inline case 1: return "one" on line 3',
+    sandbox.TRACE.steps.some((s) => s.line === 3),
+  );
 }
+

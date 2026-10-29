@@ -209,5 +209,34 @@ processFile()
       'bst.ts',
     );
   }
+
+  // 6. Regressions: B01 (Notebook storage adapter round-trip), B02/B03 (Script tabs session round-trip), B09 (Multi-file runOnce error switches file)
+  let savedNbJson = null;
+  sandbox.registerNotebookStorageAdapter({
+    load: () => savedNbJson,
+    save: (raw) => { savedNbJson = raw; },
+  });
+  sandbox.persistNotebooksToStorage();
+  check('B01: persistNotebooksToStorage serializes notebooks JSON', typeof savedNbJson === 'string' && savedNbJson.includes('Intro.ipynb'));
+  check('B01: restoreNotebooksFromStorage restores notebooks from persisted JSON', sandbox.restoreNotebooksFromStorage() === true);
+
+  const tabsSnap = sandbox.serializeScriptTabsSession();
+  check(
+    'B02/B03: serializeScriptTabsSession & restoreScriptTabsSession preserve multi-tab titles and active tab',
+    Boolean(tabsSnap && Array.isArray(tabsSnap.tabs) && tabsSnap.tabs.length >= 2 && sandbox.restoreScriptTabsSession(tabsSnap)),
+  );
+
+  // B09: Multi-file normal run (runOnce) runtime error switches to offending module
+  sandbox.__VFS__.writeFile('/workspace/broken.ts', 'export function crashHere(): number {\n  throw new Error("boom_in_broken");\n}\n');
+  sandbox.__VFS__.writeFile('/workspace/entry_err.ts', 'import { crashHere } from "./broken";\ncrashHere()\n');
+  sandbox.switchToScriptFile('entry_err.ts');
+  sandbox.clearLog();
+  sandbox.runOnce();
+  assertEq(
+    'B09: multi-file runOnce runtime error switches active file to offending module (broken.ts)',
+    sandbox.appState.FILE_NAME,
+    'broken.ts',
+  );
 }
+
 
