@@ -5701,14 +5701,10 @@ runAsyncDemo()
           const args = argsRaw ? splitTopLevel(argsRaw).map((a) => a.trim()) : [];
           const argTypes = args.map((a) => inferType(a, lineNum));
           if (callee === "checkpoint" || callee === "断点") {
-            if (args.length > 2) {
-              addDiag(lineNum, "TS2554", `"${callee}" 最多接收 2 个参数 (cond?: boolean, msg?: string)，但传入了 ${args.length} 个`);
-            }
-            if (argTypes[0] && argTypes[0] !== "any" && !isTsAssignable(argTypes[0], "boolean")) {
-              addDiag(lineNum, "TS2345", `"${callee}" 的第 1 个参数（触发条件）类型 "${argTypes[0]}" 不能赋给类型 "boolean"`);
-            }
-            if (argTypes[1] && argTypes[1] !== "any" && !isTsAssignable(argTypes[1], "string")) {
-              addDiag(lineNum, "TS2345", `"${callee}" 的第 2 个参数（打印消息）类型 "${argTypes[1]}" 不能赋给类型 "string"`);
+            if (args.length <= 2 && argTypes[0] && argTypes[0] !== "any" && isTsAssignable(argTypes[0], "boolean")) {
+              if (argTypes[1] && argTypes[1] !== "any" && !isTsAssignable(argTypes[1], "string")) {
+                addDiag(lineNum, "TS2345", `"${callee}" 的第 2 个参数（打印消息）类型 "${argTypes[1]}" 不能赋给类型 "string"`);
+              }
             }
             return "void";
           }
@@ -10863,7 +10859,7 @@ runAsyncDemo()
       const ckptVals = nextV && Array.isArray(nextV.__ckptVals) ? nextV.__ckptVals.map(String) : null;
       let msgStr = "";
       if (ckptVals && ckptVals.length > 0 && ckptVals[0]) {
-        msgStr = ckptVals[0];
+        msgStr = ckptVals.join(", ");
       } else if (args.length >= 2 && args[1]) {
         const evaluatedMsg = safeEvalExpr(args[1], v);
         msgStr = evaluatedMsg !== void 0 && evaluatedMsg !== null ? String(evaluatedMsg) : args[1].replace(/^['"`]|['"`]$/g, "");
@@ -11240,9 +11236,15 @@ function __require(modId) {
     const logs = [];
     const handleCkpt = (args) => {
       const arr = Array.isArray(args) ? args : [];
-      const triggered = arr.length === 0 || arr[0] === void 0 ? true : Boolean(arr[0]);
-      if (triggered && arr.length >= 2 && arr[1] !== void 0) {
-        logs.push(String(arr[1]));
+      const isCondForm = arr.length > 0 && typeof arr[0] === "boolean";
+      const triggered = arr.length === 0 || arr[0] === void 0 ? true : isCondForm ? Boolean(arr[0]) : true;
+      if (!triggered) return;
+      if (isCondForm) {
+        if (arr.length >= 2 && arr[1] !== void 0) {
+          logs.push(String(arr[1]));
+        }
+      } else if (arr.length > 0) {
+        logs.push(arr.map((x) => String(x)).join(", "));
       }
     };
     const stub = o.instrumented ? "" : 'var checkpoint = function(){ if (typeof __t === "function" && __t.__ckpt) __t.__ckpt([].slice.call(arguments)); }, 断点 = checkpoint;\n';
@@ -11668,13 +11670,14 @@ function __require(modId) {
       if (activeRecording && pendingStep) {
         ckptEvaluatedOnStep = true;
         const arr = Array.isArray(args) ? args : [];
-        const triggered = arr.length === 0 || arr[0] === void 0 ? true : Boolean(arr[0]);
-        const msg = arr.length >= 2 && arr[1] !== void 0 ? String(arr[1]) : "";
+        const isCondForm = arr.length > 0 && typeof arr[0] === "boolean";
+        const triggered = arr.length === 0 || arr[0] === void 0 ? true : isCondForm ? Boolean(arr[0]) : true;
+        const vals = isCondForm ? arr.length >= 2 && arr[1] !== void 0 ? [String(arr[1])] : [] : arr.map((x) => String(x));
         if (triggered) {
           pendingStep.isCheckpoint = true;
-          pendingStep.checkpointVals = msg ? [msg] : [];
-          if (msg) {
-            stepLogs.push(msg);
+          pendingStep.checkpointVals = vals;
+          if (vals.length > 0) {
+            stepLogs.push(vals.join(", "));
           }
         } else {
           pendingStep.isCheckpoint = false;

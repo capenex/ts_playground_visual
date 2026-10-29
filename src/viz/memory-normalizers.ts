@@ -836,7 +836,7 @@ export function deriveAnimAndNote(
     const ckptVals = nextV && Array.isArray(nextV.__ckptVals) ? nextV.__ckptVals.map(String) : null;
     let msgStr = '';
     if (ckptVals && ckptVals.length > 0 && ckptVals[0]) {
-      msgStr = ckptVals[0];
+      msgStr = ckptVals.join(', ');
     } else if (args.length >= 2 && args[1]) {
       const evaluatedMsg = safeEvalExpr(args[1], v);
       msgStr = evaluatedMsg !== undefined && evaluatedMsg !== null

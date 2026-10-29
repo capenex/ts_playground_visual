@@ -268,9 +268,15 @@ export function evalCall(
   const logs: string[] = [];
   const handleCkpt = (args: unknown[]) => {
     const arr = Array.isArray(args) ? args : [];
-    const triggered = arr.length === 0 || arr[0] === undefined ? true : Boolean(arr[0]);
-    if (triggered && arr.length >= 2 && arr[1] !== undefined) {
-      logs.push(String(arr[1]));
+    const isCondForm = arr.length > 0 && typeof arr[0] === 'boolean';
+    const triggered = arr.length === 0 || arr[0] === undefined ? true : (isCondForm ? Boolean(arr[0]) : true);
+    if (!triggered) return;
+    if (isCondForm) {
+      if (arr.length >= 2 && arr[1] !== undefined) {
+        logs.push(String(arr[1]));
+      }
+    } else if (arr.length > 0) {
+      logs.push(arr.map(x => String(x)).join(', '));
     }
   };
   const stub = o.instrumented
@@ -714,13 +720,16 @@ export function computeAndAppendNextStep(opts: { silent?: boolean } = {}) {
     if (activeRecording && pendingStep) {
       ckptEvaluatedOnStep = true;
       const arr = Array.isArray(args) ? args : [];
-      const triggered = arr.length === 0 || arr[0] === undefined ? true : Boolean(arr[0]);
-      const msg = arr.length >= 2 && arr[1] !== undefined ? String(arr[1]) : '';
+      const isCondForm = arr.length > 0 && typeof arr[0] === 'boolean';
+      const triggered = arr.length === 0 || arr[0] === undefined ? true : (isCondForm ? Boolean(arr[0]) : true);
+      const vals = isCondForm
+        ? (arr.length >= 2 && arr[1] !== undefined ? [String(arr[1])] : [])
+        : arr.map(x => String(x));
       if (triggered) {
         pendingStep.isCheckpoint = true;
-        pendingStep.checkpointVals = msg ? [msg] : [];
-        if (msg) {
-          stepLogs.push(msg);
+        pendingStep.checkpointVals = vals;
+        if (vals.length > 0) {
+          stepLogs.push(vals.join(', '));
         }
       } else {
         pendingStep.isCheckpoint = false;

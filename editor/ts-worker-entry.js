@@ -472,7 +472,11 @@ declare function clearInterval(id?: number): void;
 declare function queueMicrotask(callback: () => void): void;
 declare function sleep<T = void>(ms?: number, value?: T): Promise<T>;
 declare function checkpoint(cond?: boolean, msg?: string): void;
+declare function checkpoint(label?: string, ...values: any[]): void;
+declare function checkpoint(...values: any[]): void;
 declare function 断点(cond?: boolean, msg?: string): void;
+declare function 断点(label?: string, ...values: any[]): void;
+declare function 断点(...values: any[]): void;
 
 interface FsStats {
   size: number;

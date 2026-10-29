@@ -103,10 +103,22 @@
       } catch (_) {}
     }
 
-    let targetSrc = buf && typeof buf.src === 'string' ? buf.src : '';
+    const upgradeLegacyCheckpoint = (s) =>
+      typeof s === 'string'
+        ? s.replace(/checkpoint\(\s*(["'])窗口达标\1\s*,\s*r\s*,\s*sum\s*,\s*best\s*\)/g, 'checkpoint(sum >= target, "窗口达标")')
+        : s;
+
+    let targetSrc = buf && typeof buf.src === 'string' ? upgradeLegacyCheckpoint(buf.src) : '';
     let targetName = (buf && buf.name) ? buf.name : (source === 'share' ? 'shared.ts' : 'playground.ts');
 
     if (restoredTabs && typeof getActiveScriptTab === 'function') {
+      if (typeof SCRIPT_TABS !== 'undefined' && SCRIPT_TABS.ts && Array.isArray(SCRIPT_TABS.ts.tabs)) {
+        SCRIPT_TABS.ts.tabs.forEach((t) => {
+          if (t && typeof t.source === 'string') {
+            t.source = upgradeLegacyCheckpoint(t.source);
+          }
+        });
+      }
       const activeTab = getActiveScriptTab('ts');
       if (activeTab) {
         targetSrc = activeTab.source;

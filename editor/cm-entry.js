@@ -395,8 +395,8 @@ function init() {
     { label: 'typeof', type: 'keyword', detail: '获取值或类型守卫 typeof x', boost: 82 },
     { label: 'infer', type: 'keyword', detail: '条件类型内提取类型变量 infer U', boost: 80 },
     { label: 'asserts', type: 'keyword', detail: '断言函数返回类型 asserts x is T', boost: 78 },
-    { label: 'checkpoint', type: 'function', detail: 'checkpoint(cond?: boolean, msg?: string): void · 条件检查点 (Ctrl+C)', boost: 92 },
-    { label: '断点', type: 'function', detail: '断点(cond?: boolean, msg?: string): void · 条件检查点 (Ctrl+C)', boost: 88 },
+    { label: 'checkpoint', type: 'function', detail: 'checkpoint(cond?: boolean, msg?: string): void · 条件检查点 (Alt+C)', boost: 92 },
+    { label: '断点', type: 'function', detail: '断点(cond?: boolean, msg?: string): void · 条件检查点 (Alt+C)', boost: 88 },
     { label: 'sleep', type: 'function', detail: 'sleep(ms: number, val?: T): Promise<T>', boost: 86 },
     { label: 'queueMicrotask', type: 'function', detail: 'queueMicrotask(cb: () => void): void', boost: 82 },
     { label: 'setTimeout', type: 'function', detail: 'setTimeout(cb: () => void, ms: number): number', boost: 82 },
@@ -786,7 +786,7 @@ function init() {
             run: (v) => selectNextOccurrence(v),
           },
           {
-            key: 'Ctrl-c',
+            key: 'Alt-c',
             run: (v) => {
               if (!v.state.selection.main.empty) return false;
               const ln = v.state.doc.lineAt(v.state.selection.main.head).number;
