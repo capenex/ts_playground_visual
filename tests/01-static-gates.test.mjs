@@ -190,11 +190,13 @@ export async function runStaticGatesSuite() {
   assertEq('Gate 9b: total DOM reference violations in 22 pure modules is 0', domViolations, 0);
 
   // TypeScript Official Compiler (`tsc --noEmit`) Strict Check
-  const tscBin = path.join(ROOT, 'node_modules', '.bin', 'tsc');
+  // Spawn the compiler through the current node binary: the node_modules/.bin shims are
+  // not directly executable on Windows (extensionless shim → ENOENT, .cmd → EINVAL).
+  const tscBin = path.join(ROOT, 'node_modules', 'typescript', 'bin', 'tsc');
   let tscOk = false;
   let tscOut = '';
   try {
-    execFileSync(tscBin, ['--noEmit'], { cwd: ROOT, stdio: 'pipe' });
+    execFileSync(process.execPath, [tscBin, '--noEmit'], { cwd: ROOT, stdio: 'pipe' });
     tscOk = true;
   } catch (err) {
     tscOut = String((err && err.stdout) || (err && err.message) || err);
