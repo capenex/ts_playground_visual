@@ -9,7 +9,7 @@
 <meta property="og:description" content="Self-contained TypeScript playground with a unified source editor and step-through trace debugger." />
 <meta property="og:type" content="website" />
 <meta name="twitter:card" content="summary_large_image" />
-<link rel="stylesheet" href="css/app.css?v=20261021a">
+<link rel="stylesheet" href="css/app.css?v=20261030a">
 <script src="storage-guard.js?v=20261026-1"></script>
 </head>
 <body>
@@ -114,7 +114,7 @@
         <span class="file-edit" aria-hidden="true">✎</span>
       </span>
       <div class="script-header-actions">
-        <span id="checkerBadge" class="checker-badge" role="button" tabindex="0" title="内置类型检查器只覆盖常用 TypeScript 语法，不是完整 tsc；点击查看已知限制">TS 子集检查</span>
+        <span id="checkerBadge" class="checker-badge" role="button" tabindex="0" title="点击自定义 tsconfig.json 严格度（默认：新手宽松模式）并查看类型检查器范围">⚙️ tsconfig · 新手宽松</span>
         <button type="button" id="btnToggleVfs" class="vfs-toggle-btn" title="展开/收起右侧虚拟文件目录系统 (VFS)">📁 文件目录</button>
       </div>
     </div>
@@ -207,26 +207,99 @@
 <div id="checkerModal" class="checker-modal" hidden>
   <div class="checker-modal-box" role="dialog" aria-modal="true" aria-labelledby="checkerModalTitle">
     <div class="checker-modal-head">
-      <span id="checkerModalTitle">内置检查器 · 范围与限制</span>
+      <span id="checkerModalTitle">⚙️ tsconfig.json 编译器配置 &amp; 检查器说明</span>
       <button id="checkerModalClose" type="button">关闭</button>
     </div>
     <div class="checker-modal-body">
-      <p><strong>这不是完整的 TypeScript 编译器（tsc）。</strong>它是项目内置的子集检查器，不调用官方语言服务，也不做跨文件或完整的类型推断。</p>
-      <h3>TypeScript 模式覆盖</h3>
+      <div class="tsconfig-panel" id="tsConfigPanel">
+        <div class="tsconfig-panel-head">
+          <div>
+            <div class="tsconfig-panel-title">1. 选择严格度预设 (Preset)</div>
+            <div class="tsconfig-panel-sub">默认启用「新手宽松模式」，未标类型或存在类型警告时仍可直接运行与单步调试</div>
+          </div>
+          <div class="tsconfig-actions-row">
+            <button type="button" id="btnOpenTsConfigFile" class="tsconfig-act-btn primary" title="在代码编辑器中打开 /workspace/tsconfig.json 直接编写 JSON">📝 编辑 tsconfig.json</button>
+            <button type="button" id="btnResetTsConfig" class="tsconfig-act-btn" title="恢复为默认的新手宽松模式">↺ 恢复默认</button>
+          </div>
+        </div>
+        <div class="tsconfig-presets" id="tsConfigPresetGroup" role="radiogroup" aria-label="tsconfig 严格度预设">
+          <button type="button" class="tsconfig-preset-card active" data-ts-preset="beginner">
+            <span class="preset-title">🟢 新手宽松 (默认)</span>
+            <span class="preset-desc">允许省略参数类型注解、允许空值赋值，出现类型警告时仍可继续运行与单步调试</span>
+          </button>
+          <button type="button" class="tsconfig-preset-card" data-ts-preset="standard">
+            <span class="preset-title">🔵 标准教学</span>
+            <span class="preset-desc">要求函数参数显式标注类型 (noImplicitAny) 并检查返回值，遇到类型错误时拦截运行</span>
+          </button>
+          <button type="button" class="tsconfig-preset-card" data-ts-preset="strict">
+            <span class="preset-title">🔴 最严工程 (strict)</span>
+            <span class="preset-desc">开启 strictNullChecks、noImplicitAny、noUnusedLocals 等全部严格规则并严格拦截运行</span>
+          </button>
+        </div>
+
+        <div class="tsconfig-panel-title" style="margin-top:12px">2. 细粒度 CompilerOptions 开关（实时同步至 <code>/workspace/tsconfig.json</code>）</div>
+        <div class="tsconfig-grid">
+          <label class="tsconfig-toggle-item">
+            <input type="checkbox" id="tsCfgAllowRun" checked>
+            <span class="toggle-text">
+              <strong>allowRunOnTypeError</strong>
+              <small>忽略类型错误继续运行与单步调试（仅提示黄字警告）</small>
+            </span>
+          </label>
+          <label class="tsconfig-toggle-item">
+            <input type="checkbox" id="tsCfgNoImplicitAny">
+            <span class="toggle-text">
+              <strong>noImplicitAny</strong>
+              <small>禁止隐式 any 参数与无初值未标注变量 (TS7006 / TS7005)</small>
+            </span>
+          </label>
+          <label class="tsconfig-toggle-item">
+            <input type="checkbox" id="tsCfgStrictNullChecks">
+            <span class="toggle-text">
+              <strong>strictNullChecks</strong>
+              <small>严格区分 null / undefined，禁止直接赋给普通类型</small>
+            </span>
+          </label>
+          <label class="tsconfig-toggle-item">
+            <input type="checkbox" id="tsCfgStrictFunctionTypes" checked>
+            <span class="toggle-text">
+              <strong>strictFunctionTypes</strong>
+              <small>严格校验函数调用实参个数与参数类型兼容性 (TS2554)</small>
+            </span>
+          </label>
+          <label class="tsconfig-toggle-item">
+            <input type="checkbox" id="tsCfgNoImplicitReturns">
+            <span class="toggle-text">
+              <strong>noImplicitReturns</strong>
+              <small>声明了非 void 返回类型的函数必须包含 return 返回值 (TS2355)</small>
+            </span>
+          </label>
+          <label class="tsconfig-toggle-item">
+            <input type="checkbox" id="tsCfgNoUnusedLocals">
+            <span class="toggle-text">
+              <strong>noUnusedLocals</strong>
+              <small>检查声明后从未被读取的局部变量并标记提示 (TS6133)</small>
+            </span>
+          </label>
+        </div>
+
+        <div class="tsconfig-preview-wrap">
+          <div class="tsconfig-preview-head">
+            <span>当前生效的 <code>/workspace/tsconfig.json</code> 预览</span>
+            <span id="tsConfigSyncStatus" class="tsconfig-sync-tag">✓ 已实时同步</span>
+          </div>
+          <pre id="tsConfigJsonPreview" class="tsconfig-json-pre"></pre>
+        </div>
+      </div>
+
+      <h3>双引擎类型检查说明（内置高速 AST 引擎 + 后台 Web Worker 官方 tsc）</h3>
+      <p>本项目同时运行<strong>内置子集检查器</strong>（毫秒级实时响应）与<strong>后台 Web Worker 官方 TypeScript 编译器</strong>，两者均实时读取上方的 <code>tsconfig.json</code> 配置。</p>
       <ul>
-        <li>基础类型注解、数组/联合类型、<code>interface</code> / <code>type</code> 对象结构</li>
-        <li>函数参数、返回类型、常用数组 / Map / Set / Math 方法和简单表达式</li>
-        <li>对象属性链、模板字符串插值、基础赋值 / 比较 / 调用检查</li>
-        <li>内置样例和常见算法代码里的类型错误</li>
+        <li>基础类型注解、数组/联合类型、<code>interface</code> / <code>type</code> 对象结构、泛型与条件类型</li>
+        <li>函数参数、返回类型、常用数组 / Map / Set / Math 方法和跨文件 ES Module 导入导出检查</li>
+        <li>开启「新手宽松模式」时，即使写了未标注类型的 JS 风格代码也能顺畅单步可视化推导</li>
       </ul>
-      <h3>TypeScript 模式不覆盖</h3>
-      <ul>
-        <li>完整泛型推断与约束、条件类型、映射类型、交叉类型</li>
-        <li>复杂类型收窄、声明合并、命名空间 / 模块解析、跨文件类型</li>
-        <li>装饰器、JSX / TSX、完整标准库类型、类型级运算、<code>satisfies</code> 的完整语义</li>
-        <li>所有 tsc 的诊断规则与错误码</li>
-      </ul>
-      <p class="warn">因此可能出现漏报（错误没标红）或误报（合法写法被标红）。以实际运行结果和官方 <code>tsc</code> 为准。</p>
+      <p class="warn">提示：你也可以展开右侧「📁 文件目录」，直接点击打开 <code>tsconfig.json</code> 手动修改 JSON 配置。</p>
     </div>
   </div>
 </div>
@@ -250,8 +323,8 @@
   </div>
 </div>
 
-<script src="js/app.bundle.js?v=20261023a"></script>
+<script src="js/app.bundle.js?v=20261030a"></script>
 <script src="app-session.js"></script>
-<script src="editor/cm.bundle.js?v=20261022a"></script>
+<script src="editor/cm.bundle.js?v=20261030a"></script>
 </body>
 </html>

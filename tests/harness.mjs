@@ -406,6 +406,10 @@ export async function createSandboxedApp() {
 export function resetSandbox(sandbox) {
   if (typeof sandbox.stopAuto === 'function') sandbox.stopAuto();
   sandbox.LANG = 'ts';
+  sandbox.STRICT_TS = true;
+  if (typeof sandbox.createTsConfigFromPreset === 'function') {
+    sandbox.TS_CONFIG = sandbox.createTsConfigFromPreset('beginner');
+  }
   sandbox.VIEW_MODE = 'script';
   sandbox.LIVE_ERRORS = [];
   sandbox.ERROR_LINES = new Set();

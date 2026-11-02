@@ -109,18 +109,43 @@ function init() {
     { tag: [tags.operator], color: '#d8e2ef' },
     { tag: [tags.compareOperator, tags.logicOperator, tags.updateOperator], color: '#d8e2ef' },
     { tag: [tags.punctuation], color: '#d8e2ef' },
+    { tag: [tags.invalid], color: '#d8e2ef' },
     { tag: [tags.self], color: '#9cdcfe' },
   ]);
 
   const theme = EditorView.theme({
-    '&': { height: '100%', backgroundColor: 'transparent', color: '#d8e2ef', fontSize: '15px' },
+    '&': {
+      height: '100%',
+      backgroundColor: '#070b10',
+      color: '#d8e2ef',
+      fontSize: '15px',
+      letterSpacing: '0px',
+      fontVariantLigatures: 'none',
+      fontFeatureSettings: '"liga" 0, "calt" 0',
+    },
     '.cm-scroller': {
       fontFamily: '"Cascadia Code","Cascadia Mono","JetBrains Mono","Fira Code",Consolas,"Courier New",ui-monospace,monospace',
       lineHeight: '24px',
       overflow: 'auto',
+      backgroundColor: '#070b10',
+      letterSpacing: '0px',
+      fontVariantLigatures: 'none',
+      fontFeatureSettings: '"liga" 0, "calt" 0',
     },
-    '.cm-content': { padding: '12px 0 48px 0', caretColor: '#38bdf8', minHeight: '100%' },
-    '.cm-line': { padding: '0 64px 0 16px' },
+    '.cm-content': {
+      padding: '12px 0 48px 0',
+      caretColor: '#38bdf8',
+      minHeight: '100%',
+      letterSpacing: '0px',
+      fontVariantLigatures: 'none',
+      fontFeatureSettings: '"liga" 0, "calt" 0',
+    },
+    '.cm-line': {
+      padding: '0 64px 0 16px',
+      letterSpacing: '0px',
+      fontVariantLigatures: 'none',
+      fontFeatureSettings: '"liga" 0, "calt" 0',
+    },
     '.cm-gutters': { backgroundColor: '#070b10', color: '#38414f', border: 'none', padding: '0 0 48px 0' },
     '.cm-lineNumbers .cm-gutterElement': { minWidth: '52px', padding: '0 10px 0 0', textAlign: 'right' },
     '.cm-activeLine': { backgroundColor: 'transparent' },
@@ -905,7 +930,7 @@ function init() {
       const line = doc.line(clampLine(d.line));
       out.push({
         from: line.from,
-        to: Math.max(line.from + 1, line.to),
+        to: Math.min(doc.length, Math.max(line.from, line.to)),
         severity: 'error',
         message: (d.code ? d.code + ': ' : '') + (d.message || '类型错误'),
       });
@@ -914,7 +939,12 @@ function init() {
     (payload.errorLines || []).forEach((n) => {
       if (seen.has(Number(n))) return;
       const line = doc.line(clampLine(n));
-      out.push({ from: line.from, to: Math.max(line.from + 1, line.to), severity: 'error', message: '运行时错误' });
+      out.push({
+        from: line.from,
+        to: Math.min(doc.length, Math.max(line.from, line.to)),
+        severity: 'error',
+        message: '运行时错误',
+      });
     });
     return out;
   }
@@ -925,17 +955,22 @@ function init() {
       setValue(payload.text);
     }
     if (payload.language) setLanguage(payload.language);
+    const effects = [];
     const nextStep = Number(payload.curLine) || -1;
     if (nextStep !== stepLine) {
       stepLine = nextStep;
-      view.dispatch({ effects: setStepLine.of(nextStep) });
+      effects.push(setStepLine.of(nextStep));
     }
     const diags = buildDiagnostics(payload);
     const diagSig = diags.map((d) => d.from + ':' + d.to + ':' + d.message).join('|');
     if (diagSig !== diagSignature) {
       diagSignature = diagSig;
       cachedDiagnostics = diags;
-      view.dispatch(setDiagnostics(view.state, diags));
+      const diagSpec = setDiagnostics(view.state, diags);
+      if (diagSpec && diagSpec.effects) {
+        if (Array.isArray(diagSpec.effects)) effects.push(...diagSpec.effects);
+        else effects.push(diagSpec.effects);
+      }
     }
     const declared = payload.declared instanceof Set ? payload.declared : new Set(payload.declared || []);
     const builtins = payload.builtins instanceof Set ? payload.builtins : new Set(payload.builtins || []);
@@ -945,11 +980,14 @@ function init() {
     if (payload.text != null) lastDecoText = payload.text;
     if (declSig !== declaredSignature || textChanged) {
       declaredSignature = declSig;
-      view.dispatch({ effects: setDeclaredDeco.of(buildNameDeco(declared, 'cm-declared')) });
+      effects.push(setDeclaredDeco.of(buildNameDeco(declared, 'cm-declared')));
     }
     if (builtinSig !== builtinSignature || textChanged) {
       builtinSignature = builtinSig;
-      view.dispatch({ effects: setBuiltinDeco.of(buildNameDeco(builtins, 'cm-builtin')) });
+      effects.push(setBuiltinDeco.of(buildNameDeco(builtins, 'cm-builtin')));
+    }
+    if (effects.length > 0) {
+      view.dispatch({ effects });
     }
   }
 

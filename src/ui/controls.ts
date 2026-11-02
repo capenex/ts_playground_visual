@@ -4,11 +4,22 @@
 import { skipString } from "../compiler/comments";
 import { stripTypes, transpileEnums, detectUnsupportedSyntax } from "../compiler/transpile";
 import { collectNames, instrument, resolveEntry, blankJsLine, snapFnExpr } from "../compiler/instrumenter";
-import { typecheckTS, extractTsInterfaceMetadata } from "../compiler/type-checker";
+import { typecheckTS, extractTsInterfaceMetadata, parseTsConfigJson, serializeTsConfigToJson } from "../compiler/type-checker";
 import { say, clearLog, safeJSONStringify, resetTraceState } from "../runtime/event-loop";
 import { computeAndAppendNextStep, startDebug, initWatchedVars, runOnce, reportTypeErrors } from "../runtime/runner";
 import { syncActiveScriptTabSource } from "../runtime/script-tabs-store";
-import { appState, AUTO_PLAY_MS, MAX_STEPS, registerUiHooks, uiHooks, VIDEO_SPEED_OPTIONS } from "../state";
+import { ensureVfsInitialized, VFS_NODES, persistVfsToClientStorage, notifyVfsStoreChanged } from "../runtime/vfs-store";
+import {
+  appState,
+  AUTO_PLAY_MS,
+  createTsConfigFromPreset,
+  detectTsConfigPreset,
+  MAX_STEPS,
+  registerUiHooks,
+  uiHooks,
+  VIDEO_SPEED_OPTIONS,
+} from "../state";
+import { TsCompilerOptions } from "../types";
 import { discoverVars, renderPicker, renderStatic, selectStackFrame } from "../viz/memory-graph";
 import {
   updateEditorChrome,
@@ -138,10 +149,12 @@ export function rebuildDebugAtPosition(newTargetLine: number, targetVisits: numb
   extractTsInterfaceMetadata(src);
   const diags = typecheckTS(src, appState.STRICT_TS);
   if (diags.length > 0) {
-    reportTypeErrors(diags);
-    return false;
-  }
-  if (appState.TYPE_ERROR_LINES.size || appState.RUNTIME_ERROR_LINES.size) {
+    if (!appState.TS_CONFIG.allowRunOnTypeError) {
+      reportTypeErrors(diags, false);
+      return false;
+    }
+    reportTypeErrors(diags, true);
+  } else if (appState.TYPE_ERROR_LINES.size || appState.RUNTIME_ERROR_LINES.size) {
     appState.TYPE_ERROR_LINES.clear();
     appState.RUNTIME_ERROR_LINES.clear();
   }
@@ -673,6 +686,29 @@ editor.addEventListener('keydown', (e: KeyboardEvent) => {
 export let staleTimer: ReturnType<typeof setTimeout> | null = null;
 export function onSourceChanged() {
   recordEditorCursorLine();
+  const activeFile = appState.FILE_NAME || '';
+  if (activeFile === 'tsconfig.json' || activeFile.endsWith('/tsconfig.json')) {
+    ensureVfsInitialized();
+    const rawJson = editor.value.replace(/\r/g, '');
+    VFS_NODES.set('tsconfig.json', {
+      path: 'tsconfig.json',
+      name: 'tsconfig.json',
+      type: 'file',
+      parentPath: '',
+      content: rawJson,
+    });
+    persistVfsToClientStorage();
+    notifyVfsStoreChanged();
+    const parsed = parseTsConfigJson(rawJson, appState.TS_CONFIG);
+    const syncTag = $('tsConfigSyncStatus');
+    if (!parsed.error) {
+      appState.TS_CONFIG = parsed.config;
+      syncTsConfigUI();
+      if (syncTag) syncTag.textContent = '✓ 已从编辑器同步';
+    } else if (syncTag) {
+      syncTag.textContent = '⚠ JSON 格式有误';
+    }
+  }
   appState.TYPE_ERROR_LINES.clear();
   appState.RUNTIME_ERROR_LINES.clear();
   hideHoverTip();
@@ -727,13 +763,101 @@ addEventListener('keydown', e => {
   }
 });
 
-/* ── built-in checker scope badge + limitations modal ── */
+export function syncTsConfigUI(): void {
+  const cfg = appState.TS_CONFIG;
+  const preset = detectTsConfigPreset(cfg);
+  cfg.preset = preset;
+
+  const badge = $('checkerBadge');
+  if (badge) {
+    const labelMap: Record<string, string> = {
+      beginner: '⚙️ tsconfig · 新手宽松',
+      standard: '⚙️ tsconfig · 标准教学',
+      strict: '⚙️ tsconfig · 最严检查',
+      custom: '⚙️ tsconfig · 自定义',
+    };
+    badge.textContent = labelMap[preset] || '⚙️ tsconfig · 自定义';
+    if (badge.classList) {
+      badge.classList.remove('preset-standard', 'preset-strict', 'preset-custom');
+      if (preset === 'standard') badge.classList.add('preset-standard');
+      else if (preset === 'strict') badge.classList.add('preset-strict');
+      else if (preset === 'custom') badge.classList.add('preset-custom');
+    }
+  }
+
+  const presetGroup = $('tsConfigPresetGroup');
+  if (presetGroup && presetGroup.querySelectorAll) {
+    const cards = presetGroup.querySelectorAll<HTMLElement>('.tsconfig-preset-card');
+    cards.forEach((card: HTMLElement) => {
+      if (card.classList) {
+        card.classList.toggle('active', card.dataset.tsPreset === preset);
+      }
+    });
+  }
+
+  const setChk = (id: string, val: boolean) => {
+    const el = $<HTMLInputElement>(id);
+    if (el) el.checked = Boolean(val);
+  };
+  setChk('tsCfgAllowRun', cfg.allowRunOnTypeError);
+  setChk('tsCfgNoImplicitAny', cfg.noImplicitAny);
+  setChk('tsCfgStrictNullChecks', cfg.strictNullChecks);
+  setChk('tsCfgStrictFunctionTypes', cfg.strictFunctionTypes);
+  setChk('tsCfgNoImplicitReturns', cfg.noImplicitReturns);
+  setChk('tsCfgNoUnusedLocals', cfg.noUnusedLocals);
+
+  const previewEl = $('tsConfigJsonPreview');
+  if (previewEl) {
+    previewEl.textContent = serializeTsConfigToJson(cfg);
+  }
+}
+
+export function applyTsConfig(nextCfg: TsCompilerOptions, writeToVfs = true): void {
+  const normalized: TsCompilerOptions = {
+    ...nextCfg,
+    strict: Boolean(
+      nextCfg.noImplicitAny &&
+      nextCfg.strictNullChecks &&
+      nextCfg.strictFunctionTypes &&
+      nextCfg.noImplicitReturns
+    ),
+  };
+  normalized.preset = detectTsConfigPreset(normalized);
+  appState.TS_CONFIG = normalized;
+
+  if (writeToVfs) {
+    ensureVfsInitialized();
+    const jsonText = serializeTsConfigToJson(normalized);
+    VFS_NODES.set('tsconfig.json', {
+      path: 'tsconfig.json',
+      name: 'tsconfig.json',
+      type: 'file',
+      parentPath: '',
+      content: jsonText,
+    });
+    persistVfsToClientStorage();
+    notifyVfsStoreChanged();
+    if (appState.FILE_NAME === 'tsconfig.json' || appState.FILE_NAME.endsWith('/tsconfig.json')) {
+      editor.value = jsonText;
+      try { syncActiveScriptTabSource(jsonText); } catch (_) {}
+    }
+  }
+
+  syncTsConfigUI();
+  appState.TYPE_ERROR_LINES.clear();
+  updateEditorChrome();
+}
+
+/* ── built-in checker scope badge + tsconfig.json configurator modal ── */
 (function initCheckerInfo() {
   const badge = $('checkerBadge');
   const modal = $('checkerModal');
   const close = $('checkerModalClose');
   if (!badge || !modal) return;
-  const open = () => { modal.hidden = false; };
+  const open = () => {
+    syncTsConfigUI();
+    modal.hidden = false;
+  };
   const hide = () => { modal.hidden = true; };
   badge.onclick = open;
   badge.onkeydown = (e: KeyboardEvent) => {
@@ -753,6 +877,84 @@ addEventListener('keydown', e => {
       if (e.key === 'Escape') hide();
     });
   }
+
+  const presetGroup = $('tsConfigPresetGroup');
+  if (presetGroup && presetGroup.addEventListener) {
+    presetGroup.addEventListener('click', (e: MouseEvent) => {
+      const btn = closestElement(e, '.tsconfig-preset-card');
+      if (!btn || !btn.dataset.tsPreset) return;
+      const pName = btn.dataset.tsPreset;
+      if (pName === 'beginner' || pName === 'standard' || pName === 'strict') {
+        const nextCfg = createTsConfigFromPreset(pName);
+        applyTsConfig(nextCfg, true);
+        const label = pName === 'beginner' ? '新手宽松模式' : (pName === 'standard' ? '标准教学模式' : '最严工程模式');
+        say(`✓ 已切换 tsconfig 为「${label}」并同步至 /workspace/tsconfig.json`, 'ok');
+      }
+    });
+  }
+
+  const toggleIds = [
+    'tsCfgAllowRun',
+    'tsCfgNoImplicitAny',
+    'tsCfgStrictNullChecks',
+    'tsCfgStrictFunctionTypes',
+    'tsCfgNoImplicitReturns',
+    'tsCfgNoUnusedLocals',
+  ];
+  const onToggleChange = () => {
+    const getChk = (id: string, fallback: boolean) => {
+      const el = $<HTMLInputElement>(id);
+      return el ? Boolean(el.checked) : fallback;
+    };
+    const cur = appState.TS_CONFIG;
+    const nextCfg: TsCompilerOptions = {
+      ...cur,
+      allowRunOnTypeError: getChk('tsCfgAllowRun', cur.allowRunOnTypeError),
+      noImplicitAny: getChk('tsCfgNoImplicitAny', cur.noImplicitAny),
+      strictNullChecks: getChk('tsCfgStrictNullChecks', cur.strictNullChecks),
+      strictFunctionTypes: getChk('tsCfgStrictFunctionTypes', cur.strictFunctionTypes),
+      noImplicitReturns: getChk('tsCfgNoImplicitReturns', cur.noImplicitReturns),
+      noUnusedLocals: getChk('tsCfgNoUnusedLocals', cur.noUnusedLocals),
+    };
+    applyTsConfig(nextCfg, true);
+  };
+  toggleIds.forEach(id => {
+    const el = $<HTMLInputElement>(id);
+    if (el && el.addEventListener) {
+      el.addEventListener('change', onToggleChange);
+    }
+  });
+
+  const resetBtn = $('btnResetTsConfig');
+  if (resetBtn) {
+    resetBtn.onclick = () => {
+      applyTsConfig(createTsConfigFromPreset('beginner'), true);
+      say('✓ 已恢复 tsconfig 为默认「新手宽松模式」', 'ok');
+    };
+  }
+
+  const openFileBtn = $('btnOpenTsConfigFile');
+  if (openFileBtn) {
+    openFileBtn.onclick = () => {
+      hide();
+      ensureVfsInitialized();
+      const jsonText = serializeTsConfigToJson(appState.TS_CONFIG);
+      VFS_NODES.set('tsconfig.json', {
+        path: 'tsconfig.json',
+        name: 'tsconfig.json',
+        type: 'file',
+        parentPath: '',
+        content: jsonText,
+      });
+      persistVfsToClientStorage();
+      notifyVfsStoreChanged();
+      uiHooks.setViewMode('script');
+      uiHooks.openVfsScriptFile('tsconfig.json', 'tsconfig.json', jsonText);
+      say('📝 已在编辑器中打开 /workspace/tsconfig.json，修改后将自动生效', 'ok');
+    };
+  }
+
+  syncTsConfigUI();
 })();
 
 
@@ -768,5 +970,5 @@ export function setStatus(msg: string, cls?: string): void {
   say(msg, cls);
 }
 
-registerUiHooks({ stopAuto });
+registerUiHooks({ stopAuto, syncTsConfigUI });
 

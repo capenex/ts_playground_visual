@@ -5,7 +5,7 @@ import { blankStrings, isIdentPart, RESERVED_WORDS } from "../compiler/comments"
 import { stripTypes } from "../compiler/transpile";
 import { collectNames } from "../compiler/instrumenter";
 import { typecheckTS, typecheckWorkspaceModules, normalizeWorkspaceModulePath } from "../compiler/type-checker";
-import { inferRuntimeTsType, formatFunctionTypeSignature } from "../compiler/tc-types";
+import { inferRuntimeTsType, formatFunctionTypeSignature, formatTsConfigCacheKey, parseTsConfigJson } from "../compiler/tc-types";
 import { appState, esc, registerUiHooks, uiHooks } from "../state";
 import { Diag, StepAnim } from "../types";
 import { editor, gutterEl, highlightEl, hoverTipEl } from "../ui/dom";
@@ -295,6 +295,20 @@ let LIVE_TYPE_CACHE: { key: string | null; diags: Diag[] } = { key: null, diags:
 export function liveTypeDiags(src: string | null | undefined): Diag[] {
   const text = String(src == null ? '' : src);
   const currentFile = normalizeWorkspaceModulePath(appState.FILE_NAME || 'main.ts');
+  const cfgKey = formatTsConfigCacheKey(appState.TS_CONFIG);
+  if (currentFile.endsWith('.json')) {
+    const jsonCacheKey = `json::${currentFile}::${text}`;
+    if (LIVE_TYPE_CACHE.key === jsonCacheKey) return LIVE_TYPE_CACHE.diags;
+    let jsonDiags: Diag[] = [];
+    if (currentFile === 'tsconfig.json' || currentFile.endsWith('/tsconfig.json')) {
+      const parsed = parseTsConfigJson(text, appState.TS_CONFIG);
+      if (parsed.error) {
+        jsonDiags = [{ line: 1, code: 'TS5095', message: parsed.error, file: currentFile }];
+      }
+    }
+    LIVE_TYPE_CACHE = { key: jsonCacheKey, diags: jsonDiags };
+    return jsonDiags;
+  }
   const hasModuleSyntax = /^\s*(?:import|export)\b/m.test(text);
   let fileMap = new Map<string, string>();
   let mapSig = '';
@@ -309,7 +323,7 @@ export function liveTypeDiags(src: string | null | undefined): Diag[] {
       fileMap = new Map<string, string>();
     }
   }
-  const cacheKey = `${currentFile}::${appState.STRICT_TS ? 1 : 0}::${mapSig}::${text}`;
+  const cacheKey = `${currentFile}::${appState.STRICT_TS ? 1 : 0}::${cfgKey}::${mapSig}::${text}`;
   if (LIVE_TYPE_CACHE.key === cacheKey) return LIVE_TYPE_CACHE.diags;
   let diags: Diag[] = [];
   try {

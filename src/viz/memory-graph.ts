@@ -339,9 +339,21 @@ export function vizInterface(d: Frame | null | undefined) {
   if (!fields.length && !d.isClass) return null;
   const ifaceTitle = d.interfaceName && d.interfaceName !== 'object' ? d.interfaceName : 'Object';
   const kwTxt = d.isClass ? 'class' : 'interface';
-  const badgeTxt = d.isSchema
-    ? (d.instanceName ? `schema · 绑定 ${d.instanceName}` : 'schema')
-    : 'instance';
+  if (d.isSchema) {
+    const schemaRows = fields.length
+      ? fields.slice(0, 12).map((f: { k: string; optional?: boolean; declaredType?: string }) =>
+          '<div class="viface-row">' +
+            '<span class="viface-k">' + esc(f.k) + (f.optional ? '<span class="viface-opt">?</span>' : '') + '</span>' +
+            (f.declaredType ? '<span class="viface-t">: ' + esc(f.declaredType) + '</span>' : '') +
+          '</div>'
+        ).join('')
+      : '<div class="viface-row"><span class="viface-v schema-only">（空接口契约）</span></div>';
+    return '<div class="viz"><div class="viface">' +
+      '<div class="viface-head"><span class="viface-kw">' + kwTxt + '</span><span class="viface-title">' + esc(ifaceTitle) + '</span><span class="viface-badge">definition</span></div>' +
+      '<div class="viface-body">' + schemaRows + '</div>' +
+      '</div></div>';
+  }
+  const badgeTxt = 'instance';
   const rows = fields.length
     ? fields.slice(0, 12).map((f: { k: string; v?: unknown; optional?: boolean; declaredType?: string }) => {
         const isHot = d.hot === f.k;
@@ -362,6 +374,75 @@ export function vizInterface(d: Frame | null | undefined) {
   return '<div class="viz"><div class="viface">' +
     '<div class="viface-head"><span class="viface-kw">' + kwTxt + '</span><span class="viface-title">' + esc(ifaceTitle) + '</span><span class="viface-badge">' + esc(badgeTxt) + '</span></div>' +
     '<div class="viface-body">' + rows + '</div>' +
+    '</div></div>';
+}
+
+export function vizTypeAlias(d: Frame | null | undefined) {
+  if (!d) return null;
+  const typeTitle = String(d.interfaceName || d.name || 'Type') + (d.typeParams || '');
+  const aliasKind = d.aliasKind || (Array.isArray(d.unionBranches) && d.unionBranches.length > 1 ? 'union' : (Array.isArray(d.fields) && d.fields.length > 0 ? 'object' : 'alias'));
+  const isUtilityObj = aliasKind === 'object' && Boolean(d.rawDef && !d.rawDef.trim().startsWith('{'));
+  const badgeTxt = aliasKind === 'union'
+    ? `union · ${(d.unionBranches || []).length}`
+    : (isUtilityObj ? 'utility · object' : (aliasKind === 'object' ? 'object' : 'alias'));
+  const exprBanner = isUtilityObj && d.rawDef
+    ? '<div class="vtype-expr"><span class="viface-eq">=</span><span class="vtype-raw">' + esc(d.rawDef) + '</span></div>'
+    : '';
+
+  let bodyHtml = '';
+  if (aliasKind === 'union' && Array.isArray(d.unionBranches) && d.unionBranches.length > 0) {
+    const hasObjectBranch = d.unionBranches.some(b => b.isObject && b.fields && b.fields.length > 0);
+    if (hasObjectBranch) {
+      bodyHtml = d.unionBranches.slice(0, 10).map(b => {
+        if (b.isObject && b.fields && b.fields.length > 0) {
+          const propsHtml = b.fields.map(f => {
+            const fKey = f.k || f.name || '';
+            return '<span class="vtype-prop">' +
+              '<span class="viface-k">' + esc(fKey) + (f.optional ? '<span class="viface-opt">?</span>' : '') + '</span>' +
+              (f.declaredType ? '<span class="viface-t">: ' + esc(f.declaredType) + '</span>' : '') +
+              '</span>';
+          }).join('<span class="vtype-sep">; </span>');
+          return '<div class="viface-row vtype-branch-obj">' +
+            '<span class="vtype-bar">|</span>' +
+            '<span class="vtype-brace">{</span>' +
+            '<span class="vtype-branch-fields">' + propsHtml + '</span>' +
+            '<span class="vtype-brace">}</span>' +
+            '</div>';
+        }
+        return '<div class="viface-row vtype-branch-obj">' +
+          '<span class="vtype-bar">|</span>' +
+          '<span class="viface-t">' + esc(b.raw) + '</span>' +
+          '</div>';
+      }).join('');
+    } else {
+      bodyHtml = '<div class="vtype-union-pills">' +
+        d.unionBranches.slice(0, 16).map((b, idx) => {
+          const isLitStr = /^['"`]/.test(b.raw);
+          return (idx > 0 ? '<span class="vtype-bar">|</span>' : '') +
+            '<span class="vtype-pill' + (isLitStr ? ' lit-str' : '') + '">' + esc(b.raw) + '</span>';
+        }).join('') +
+        '</div>';
+    }
+  } else if (Array.isArray(d.fields) && d.fields.length > 0) {
+    bodyHtml = d.fields.slice(0, 12).map(f => {
+      const fKey = f.k || '';
+      return '<div class="viface-row">' +
+        '<span class="viface-k">' + esc(fKey) + (f.optional ? '<span class="viface-opt">?</span>' : '') + '</span>' +
+        (f.declaredType ? '<span class="viface-t">: ' + esc(f.declaredType) + '</span>' : '') +
+        '</div>';
+    }).join('');
+  } else {
+    const defText = d.resolvedDef || d.rawDef || 'any';
+    bodyHtml = '<div class="viface-row">' +
+      '<span class="viface-eq">=</span>' +
+      '<span class="viface-t">' + esc(defText) + '</span>' +
+      '</div>';
+  }
+
+  return '<div class="viz"><div class="viface vtype-card">' +
+    '<div class="viface-head vtype-head"><span class="viface-kw">type</span><span class="viface-title">' + esc(typeTitle) + '</span><span class="viface-badge">' + esc(badgeTxt) + '</span></div>' +
+    exprBanner +
+    '<div class="viface-body">' + bodyHtml + '</div>' +
     '</div></div>';
 }
 
@@ -450,7 +531,7 @@ Object.assign(VIZ, {
   array: vizArray, map: vizMap, set: vizSet, stack: vizStack,
   string: vizString, grid: vizGrid, list: vizList,
   heap: vizHeap, queue: vizQueue, tree: vizTree, graph: vizGraph, uf: vizUF,
-  interface: vizInterface, object: vizInterface,
+  interface: vizInterface, object: vizInterface, type: vizTypeAlias,
   eventloop: vizEventLoop,
 });
 

@@ -608,18 +608,34 @@ declare class _Node {
   return extras;
 }
 
-const COMPILER_OPTIONS = {
+const BASE_COMPILER_OPTIONS = {
   target: ts.ScriptTarget.ES2022,
   module: ts.ModuleKind.ESNext,
   strict: false,
   noImplicitAny: false,
   strictNullChecks: false,
+  strictFunctionTypes: true,
+  noImplicitReturns: false,
+  noUnusedLocals: false,
   noEmit: true,
   skipLibCheck: true,
   noLib: false,
 };
 
-function checkTypeScriptSource(src) {
+function buildCompilerOptions(tsConfig) {
+  if (!tsConfig || typeof tsConfig !== 'object') return BASE_COMPILER_OPTIONS;
+  return {
+    ...BASE_COMPILER_OPTIONS,
+    strict: Boolean(tsConfig.strict),
+    noImplicitAny: Boolean(tsConfig.noImplicitAny),
+    strictNullChecks: Boolean(tsConfig.strictNullChecks),
+    strictFunctionTypes: tsConfig.strictFunctionTypes !== undefined ? Boolean(tsConfig.strictFunctionTypes) : true,
+    noImplicitReturns: Boolean(tsConfig.noImplicitReturns),
+    noUnusedLocals: Boolean(tsConfig.noUnusedLocals),
+  };
+}
+
+function checkTypeScriptSource(src, tsConfig) {
   const fullLibText = LIB_ES_CORE_DTS + buildDefaultNodeDecls(src);
   const dynamicLibSf = ts.createSourceFile(LIB_FILE_NAME, fullLibText, ts.ScriptTarget.ES2022, true);
   const userSf = ts.createSourceFile(USER_FILE_NAME, src, ts.ScriptTarget.ES2022, true);
@@ -644,7 +660,7 @@ function checkTypeScriptSource(src) {
     },
   };
 
-  const program = ts.createProgram([USER_FILE_NAME], COMPILER_OPTIONS, host);
+  const program = ts.createProgram([USER_FILE_NAME], buildCompilerOptions(tsConfig), host);
   const rawDiags = [
     ...program.getSyntacticDiagnostics(userSf),
     ...program.getSemanticDiagnostics(userSf),
@@ -680,12 +696,12 @@ function transpileTypeScriptSource(src) {
 if (typeof self !== 'undefined' && typeof self.addEventListener === 'function') {
   self.addEventListener('message', (ev) => {
     const data = ev && ev.data ? ev.data : {};
-    const { id, type, src } = data;
+    const { id, type, src, tsConfig, configKey } = data;
     try {
       if (type === 'check') {
         const s = String(src || '');
-        const diags = checkTypeScriptSource(s);
-        self.postMessage({ id, type: 'checkResult', src: s, diagnostics: diags, diags });
+        const diags = checkTypeScriptSource(s, tsConfig);
+        self.postMessage({ id, type: 'checkResult', src: s, configKey, diagnostics: diags, diags });
       } else if (type === 'transpile') {
         const js = transpileTypeScriptSource(String(src || ''));
         self.postMessage({ id, type: 'transpileResult', js });

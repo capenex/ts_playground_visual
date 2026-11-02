@@ -37,10 +37,41 @@ export interface InterfaceSchemaMeta {
   fields: InterfaceFieldMeta[];
 }
 
+export interface TypeUnionBranchMeta {
+  raw: string;
+  isObject: boolean;
+  fields?: InterfaceFieldMeta[];
+}
+
+export interface TypeAliasMeta {
+  name: string;
+  line?: number;
+  typeParams?: string;
+  rawDef: string;
+  resolvedDef: string;
+  aliasKind: 'union' | 'object' | 'alias';
+  fields?: InterfaceFieldMeta[];
+  unionBranches?: TypeUnionBranchMeta[];
+}
+
 export interface TsMeta {
   varTypes: Map<string, string>;
   interfaces: Map<string, InterfaceSchemaMeta>;
   fnTypes?: Map<string, string>;
+  typeAliases?: Map<string, TypeAliasMeta>;
+}
+
+export type TsConfigPreset = 'beginner' | 'standard' | 'strict' | 'custom';
+
+export interface TsCompilerOptions {
+  preset: TsConfigPreset;
+  strict: boolean;
+  noImplicitAny: boolean;
+  strictNullChecks: boolean;
+  strictFunctionTypes: boolean;
+  noImplicitReturns: boolean;
+  noUnusedLocals: boolean;
+  allowRunOnTypeError: boolean;
 }
 
 export interface HeapObj {
@@ -105,6 +136,11 @@ export interface StepAnim {
   isClass?: boolean;
   isSchema?: boolean;
   instanceName?: string | null;
+  typeParams?: string;
+  rawDef?: string;
+  resolvedDef?: string;
+  aliasKind?: 'union' | 'object' | 'alias';
+  unionBranches?: TypeUnionBranchMeta[];
   phase?: string;
   now?: number;
   virtualTime?: number;

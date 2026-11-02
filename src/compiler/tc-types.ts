@@ -11,9 +11,178 @@ import {
   stripInlineCommentSafe,
   RESERVED_WORDS,
 } from "./comments";
-import { isMapLike, isSetLike } from "../utils/format";
-import { appState } from "../state";
-import { Frame, InterfaceSchemaMeta, StepAnim } from "../types";
+import { isMapLike, isRecord, isSetLike } from "../utils/format";
+import { appState, createTsConfigFromPreset, detectTsConfigPreset } from "../state";
+import {
+  Frame,
+  InterfaceFieldMeta,
+  InterfaceSchemaMeta,
+  StepAnim,
+  TsCompilerOptions,
+  TypeAliasMeta,
+  TypeUnionBranchMeta,
+} from "../types";
+
+export function formatTsConfigCacheKey(cfg: TsCompilerOptions = appState.TS_CONFIG): string {
+  return [
+    cfg.strict ? 1 : 0,
+    cfg.noImplicitAny ? 1 : 0,
+    cfg.strictNullChecks ? 1 : 0,
+    cfg.strictFunctionTypes ? 1 : 0,
+    cfg.noImplicitReturns ? 1 : 0,
+    cfg.noUnusedLocals ? 1 : 0,
+    cfg.allowRunOnTypeError ? 1 : 0,
+  ].join('');
+}
+
+export function serializeTsConfigToJson(cfg: TsCompilerOptions = appState.TS_CONFIG): string {
+  const presetLabel =
+    cfg.preset === 'beginner'
+      ? '新手宽松模式 (Beginner) — 允许隐式 any、关闭严格空值检查、类型警告不阻断运行'
+      : cfg.preset === 'standard'
+      ? '标准教学模式 (Standard) — 检查显式类型与空值安全、允许省略参数类型'
+      : cfg.preset === 'strict'
+      ? '最严生产模式 (Strictest) — 全开 strict / noImplicitAny / noUnusedLocals'
+      : '自定义模式 (Custom)';
+  return [
+    `{`,
+    `  // 当前预设: ${presetLabel}`,
+    `  "compilerOptions": {`,
+    `    "target": "ES2022",`,
+    `    "module": "ESNext",`,
+    `    "strict": ${cfg.strict},`,
+    `    "noImplicitAny": ${cfg.noImplicitAny},`,
+    `    "strictNullChecks": ${cfg.strictNullChecks},`,
+    `    "strictFunctionTypes": ${cfg.strictFunctionTypes},`,
+    `    "noImplicitReturns": ${cfg.noImplicitReturns},`,
+    `    "noUnusedLocals": ${cfg.noUnusedLocals}`,
+    `  },`,
+    `  "playgroundOptions": {`,
+    `    "preset": "${cfg.preset}",`,
+    `    "allowRunOnTypeError": ${cfg.allowRunOnTypeError}`,
+    `  }`,
+    `}`,
+    ``,
+  ].join('\n');
+}
+
+function stripJsonCommentsAndTrailingCommas(raw: string): string {
+  let out = '';
+  let i = 0;
+  const n = raw.length;
+  while (i < n) {
+    const ch = raw[i];
+    const next = raw[i + 1];
+    if (ch === '"') {
+      const end = skipString(raw, i);
+      out += raw.slice(i, end);
+      i = end;
+      continue;
+    }
+    if (ch === '/' && next === '/') {
+      while (i < n && raw[i] !== '\n') i++;
+      continue;
+    }
+    if (ch === '/' && next === '*') {
+      i += 2;
+      while (i < n && !(raw[i] === '*' && raw[i + 1] === '/')) {
+        if (raw[i] === '\n') out += '\n';
+        i++;
+      }
+      i = Math.min(n, i + 2);
+      continue;
+    }
+    out += ch;
+    i++;
+  }
+  return out.replace(/,\s*([}\]])/g, '$1');
+}
+
+export function parseTsConfigJson(
+  rawJson: string,
+  fallbackConfig: TsCompilerOptions = appState.TS_CONFIG
+): { config: TsCompilerOptions; error: string | null } {
+  const cleaned = stripJsonCommentsAndTrailingCommas(String(rawJson || '')).trim();
+  if (!cleaned) {
+    return { config: { ...fallbackConfig }, error: null };
+  }
+  try {
+    const parsed: unknown = JSON.parse(cleaned);
+    if (!isRecord(parsed)) {
+      return { config: { ...fallbackConfig }, error: 'tsconfig.json 根节点必须是 JSON 对象' };
+    }
+    const co = isRecord(parsed.compilerOptions) ? parsed.compilerOptions : parsed;
+    const po = isRecord(parsed.playgroundOptions)
+      ? parsed.playgroundOptions
+      : isRecord(parsed.playgroundConfig)
+      ? parsed.playgroundConfig
+      : parsed;
+
+    let base = { ...fallbackConfig };
+    const rawPreset = typeof po.preset === 'string' ? po.preset.trim() : '';
+    if (rawPreset === 'beginner' || rawPreset === 'standard' || rawPreset === 'strict') {
+      base = createTsConfigFromPreset(rawPreset);
+    }
+
+    const hasStrictBool = typeof co.strict === 'boolean';
+    const strictVal = hasStrictBool ? Boolean(co.strict) : base.strict;
+    const noImplicitAny =
+      typeof co.noImplicitAny === 'boolean'
+        ? co.noImplicitAny
+        : hasStrictBool
+        ? strictVal
+        : base.noImplicitAny;
+    const strictNullChecks =
+      typeof co.strictNullChecks === 'boolean'
+        ? co.strictNullChecks
+        : hasStrictBool
+        ? strictVal
+        : base.strictNullChecks;
+    const strictFunctionTypes =
+      typeof co.strictFunctionTypes === 'boolean'
+        ? co.strictFunctionTypes
+        : hasStrictBool
+        ? strictVal
+        : base.strictFunctionTypes;
+    const noImplicitReturns =
+      typeof co.noImplicitReturns === 'boolean'
+        ? co.noImplicitReturns
+        : base.noImplicitReturns;
+    const noUnusedLocals =
+      typeof co.noUnusedLocals === 'boolean'
+        ? co.noUnusedLocals
+        : base.noUnusedLocals;
+    const allowRunOnTypeError =
+      typeof po.allowRunOnTypeError === 'boolean'
+        ? po.allowRunOnTypeError
+        : typeof co.allowRunOnTypeError === 'boolean'
+        ? co.allowRunOnTypeError
+        : base.allowRunOnTypeError;
+
+    const mergedWithoutPreset = {
+      strict: strictVal,
+      noImplicitAny,
+      strictNullChecks,
+      strictFunctionTypes,
+      noImplicitReturns,
+      noUnusedLocals,
+      allowRunOnTypeError,
+    };
+    const detectedPreset = detectTsConfigPreset(mergedWithoutPreset);
+    return {
+      config: {
+        preset: detectedPreset,
+        ...mergedWithoutPreset,
+      },
+      error: null,
+    };
+  } catch (e) {
+    return {
+      config: { ...fallbackConfig },
+      error: e instanceof Error && e.message ? e.message : String(e),
+    };
+  }
+}
 
 export interface TypeParamInfo {
   name: string;
@@ -44,10 +213,14 @@ export interface FnSigInfo {
   typeParams: TypeParamInfo[];
   line: number;
   hasValueReturn: boolean;
+  hasExplicitReturnType?: boolean;
+  isAsync?: boolean;
+  inferredReturnTypes?: string[];
 }
 
 export interface TypeCheckContext {
   lines: string[];
+  tsConfig: TsCompilerOptions;
   diagnostics: Array<{ line: number; code: string; message?: string }>;
   fns: Map<string, FnSigInfo>;
   typeAliases: Map<string, string>;
@@ -84,8 +257,12 @@ export const BUILTIN_TS_GLOBALS = new Set([
   'checkpoint', '断点',
 ]);
 
-export function createTypeCheckContext(src: string): TypeCheckContext {
+export function createTypeCheckContext(
+  src: string,
+  customTsConfig?: TsCompilerOptions
+): TypeCheckContext {
   const lines = src.replace(/\r\n?/g, '\n').split('\n');
+  const tsConfig: TsCompilerOptions = customTsConfig ? { ...customTsConfig } : { ...appState.TS_CONFIG };
   const diagnostics: Array<{ line: number; code: string; message?: string }> = [];
   const fns = new Map<string, FnSigInfo>();
   const typeAliases = new Map<string, string>();
@@ -133,6 +310,7 @@ export function createTypeCheckContext(src: string): TypeCheckContext {
 
   return {
     lines,
+    tsConfig,
     diagnostics,
     fns,
     typeAliases,
@@ -222,9 +400,10 @@ function formatSingleFnParamClause(rawParam: string): { name: string; formatted:
     const pLeft = headPart.slice(0, colonIdx).trim();
     const pType = headPart.slice(colonIdx + 1).trim() || 'any';
     const cleanName = pLeft.replace(/^\.\.\./, '').replace(/\?$/, '').trim();
+    const optMark = defaultPart && !pLeft.endsWith('?') ? '?' : '';
     return {
       name: cleanName,
-      formatted: `${pLeft}: ${pType}`,
+      formatted: `${pLeft}${optMark}: ${pType}`,
       rawType: pType,
     };
   }
@@ -234,13 +413,22 @@ function formatSingleFnParamClause(rawParam: string): { name: string; formatted:
     if (/^[+-]?\d+(?:\.\d+)?$/.test(defaultPart)) inferredType = 'number';
     else if (/^(true|false)$/.test(defaultPart)) inferredType = 'boolean';
     else if (/^["'`]/.test(defaultPart)) inferredType = 'string';
+    else if (defaultPart.startsWith('[') && defaultPart.endsWith(']')) {
+      const inner = defaultPart.slice(1, -1).trim();
+      if (!inner) inferredType = 'any[]';
+      else if (/^[+-]?\d+(?:\.\d+)?$/.test(splitTopLevel(inner)[0]?.trim() || '')) inferredType = 'number[]';
+      else if (/^["'`]/.test(splitTopLevel(inner)[0]?.trim() || '')) inferredType = 'string[]';
+      else if (/^(true|false)$/.test(splitTopLevel(inner)[0]?.trim() || '')) inferredType = 'boolean[]';
+      else inferredType = 'any[]';
+    }
   }
   const cleanName = headPart.replace(/^\.\.\./, '').replace(/\?$/, '').trim();
   const isRest = headPart.startsWith('...');
+  const optSuffix = defaultPart && !headPart.endsWith('?') && !isRest ? '?' : '';
   return {
     name: cleanName,
-    formatted: `${headPart}: ${ isRest && inferredType === 'any' ? 'any[]' : inferredType }`,
-    rawType: null,
+    formatted: `${headPart}${optSuffix}: ${isRest && inferredType === 'any' ? 'any[]' : inferredType}`,
+    rawType: inferredType !== 'any' ? inferredType : null,
   };
 }
 
@@ -313,6 +501,218 @@ export function formatFunctionTypeSignature(
   return '(...args: any[]) => any';
 }
 
+export function parseFieldsFromTypeBody(bodyStr: string, isClass = false): InterfaceFieldMeta[] {
+  const inner = bodyStr.trim().replace(/^\{/, '').replace(/\}$/, '').trim();
+  const fields: InterfaceFieldMeta[] = [];
+  const seen = new Set<string>();
+  if (!inner) return fields;
+  let topLevelOnly = '';
+  let bDepth = 0;
+  for (let i = 0; i < inner.length; i++) {
+    const ch = inner[i];
+    if (ch === '"' || ch === "'" || ch === '`') {
+      const end = skipString(inner, i);
+      if (bDepth === 0) topLevelOnly += inner.slice(i, end);
+      i = end - 1;
+      continue;
+    }
+    if (ch === '{') { bDepth++; continue; }
+    if (ch === '}') { bDepth = Math.max(0, bDepth - 1); continue; }
+    if (bDepth === 0) topLevelOnly += ch;
+  }
+  const members = topLevelOnly.split(/[;,\n]/).map(s => stripInlineCommentSafe(s).trim()).filter(Boolean);
+  members.forEach(mem => {
+    const cleaned = mem.replace(/^(?:(?:readonly|public|private|protected|static)\s+)+/, '');
+    if (/^(?:constructor|get\s+|set\s+|async\s+|[A-Za-z_$][\w$]*\s*\()/.test(cleaned)) return;
+    const m = cleaned.match(/^([A-Za-z_$][\w$]*)(\?)?\s*:\s*([^=]+?)(?:\s*=[\s\S]+)?$/);
+    if (m && m[1] && m[3] && !seen.has(m[1])) {
+      seen.add(m[1]);
+      fields.push({
+        k: m[1],
+        declaredType: m[3].trim(),
+        optional: Boolean(m[2]),
+      });
+      return;
+    }
+    if (isClass) {
+      const initOnly = cleaned.match(/^([A-Za-z_$][\w$]*)\s*=\s*(.+)$/);
+      if (initOnly && initOnly[1] && initOnly[2] && !seen.has(initOnly[1])) {
+        const rhs = initOnly[2].trim();
+        let inferred = 'any';
+        if (/^[+-]?\d+(?:\.\d+)?$/.test(rhs)) inferred = 'number';
+        else if (/^(true|false)$/.test(rhs)) inferred = 'boolean';
+        else if (/^["'`]/.test(rhs)) inferred = 'string';
+        else if (rhs.startsWith('[')) inferred = 'any[]';
+        seen.add(initOnly[1]);
+        fields.push({
+          k: initOnly[1],
+          declaredType: inferred,
+          optional: false,
+        });
+      }
+    }
+  });
+  if (isClass) {
+    const ctorM = inner.match(/\bconstructor\s*\(([^)]*)\)/);
+    if (ctorM && ctorM[1]?.trim()) {
+      splitTopLevel(ctorM[1]).forEach(rawP => {
+        const p = rawP.trim();
+        const pm = p.match(/^(?:(?:public|private|protected|readonly)\s+)+([A-Za-z_$][\w$]*)(\?)?(?:\s*:\s*([^=]+?))?(?:\s*=\s*([\s\S]+))?$/);
+        if (pm && pm[1] && !seen.has(pm[1])) {
+          seen.add(pm[1]);
+          let pType = pm[3] ? pm[3].trim() : 'any';
+          if (pType === 'any' && pm[4]) {
+            const rhs = pm[4].trim();
+            if (/^[+-]?\d+(?:\.\d+)?$/.test(rhs)) pType = 'number';
+            else if (/^(true|false)$/.test(rhs)) pType = 'boolean';
+            else if (/^["'`]/.test(rhs)) pType = 'string';
+          }
+          fields.push({ k: pm[1], declaredType: pType, optional: Boolean(pm[2]) });
+        }
+      });
+    }
+    const thisAssignRe = /\bthis\.([A-Za-z_$][\w$]*)\s*=/g;
+    let tm;
+    while ((tm = thisAssignRe.exec(inner))) {
+      if (tm[1] && !seen.has(tm[1])) {
+        seen.add(tm[1]);
+        fields.push({ k: tm[1], declaredType: 'any', optional: false });
+      }
+    }
+  }
+  return fields;
+}
+
+function resolveUtilityTypeFields(
+  expr: string,
+  knownInterfaces?: Map<string, InterfaceSchemaMeta>,
+  knownTypeAliases?: Map<string, TypeAliasMeta>
+): InterfaceFieldMeta[] | null {
+  const utilM = expr.match(/^(Omit|Pick|Partial|Required|Readonly)\s*<\s*([\s\S]+)\s*>$/);
+  if (!utilM || !utilM[1] || !utilM[2]) return null;
+  const utilName = utilM[1];
+  const args = splitTopLevel(utilM[2]);
+  const baseName = (args[0] || '').trim();
+  if (!baseName) return null;
+  let baseFields: InterfaceFieldMeta[] | null = null;
+  if (knownInterfaces && knownInterfaces.has(baseName)) {
+    const iface = knownInterfaces.get(baseName);
+    if (iface && iface.fields.length) baseFields = iface.fields;
+  } else if (knownTypeAliases && knownTypeAliases.has(baseName)) {
+    const ta = knownTypeAliases.get(baseName);
+    if (ta && ta.fields && ta.fields.length) baseFields = ta.fields;
+  } else if (baseName.startsWith('{') && baseName.endsWith('}')) {
+    baseFields = parseFieldsFromTypeBody(baseName, false);
+  }
+  if (!baseFields || !baseFields.length) return null;
+  if (utilName === 'Partial') {
+    return baseFields.map(f => ({ ...f, optional: true }));
+  }
+  if (utilName === 'Required') {
+    return baseFields.map(f => ({ ...f, optional: false }));
+  }
+  if (utilName === 'Readonly') {
+    return baseFields.map(f => ({ ...f, readonly: true }));
+  }
+  const keyExpr = (args[1] || '').trim();
+  const keySet = new Set(
+    splitTopLevelUnion(keyExpr)
+      .map(k => k.trim().replace(/^['"`]|['"`]$/g, '').trim())
+      .filter(Boolean)
+  );
+  if (utilName === 'Omit') {
+    return baseFields.filter(f => !keySet.has(f.k || f.name || '')).map(f => ({ ...f }));
+  }
+  if (utilName === 'Pick') {
+    return baseFields.filter(f => keySet.has(f.k || f.name || '')).map(f => ({ ...f }));
+  }
+  return null;
+}
+
+export function buildTypeAliasMeta(
+  name: string,
+  rawDef: string,
+  resolvedDef?: string,
+  line?: number,
+  typeParams?: string,
+  knownInterfaces?: Map<string, InterfaceSchemaMeta>,
+  knownTypeAliases?: Map<string, TypeAliasMeta>
+): TypeAliasMeta {
+  const cleanRaw = rawDef.trim().replace(/;\s*$/, '').replace(/^\|\s*/, '').trim();
+  let cleanResolved = (resolvedDef ? resolvedDef.trim() : cleanRaw)
+    .replace(/;\s*$/, '')
+    .replace(/^\|\s*/, '')
+    .trim();
+
+  const unionParts = splitTopLevelUnion(cleanResolved);
+  if (unionParts.length > 1) {
+    const unionBranches: TypeUnionBranchMeta[] = unionParts.map(part => {
+      const p = part.trim();
+      if (p.startsWith('{') && p.endsWith('}')) {
+        const branchFields = parseFieldsFromTypeBody(p, false);
+        return {
+          raw: p,
+          isObject: branchFields.length > 0,
+          fields: branchFields.length > 0 ? branchFields : undefined,
+        };
+      }
+      if (knownInterfaces && knownInterfaces.has(p)) {
+        const iface = knownInterfaces.get(p);
+        if (iface && iface.fields.length > 0) {
+          return {
+            raw: p,
+            isObject: true,
+            fields: iface.fields.map(f => ({ ...f })),
+          };
+        }
+      }
+      return { raw: p, isObject: false };
+    });
+    return {
+      name,
+      line,
+      typeParams: typeParams || undefined,
+      rawDef: cleanRaw,
+      resolvedDef: cleanResolved,
+      aliasKind: 'union',
+      unionBranches,
+    };
+  }
+
+  let objFields: InterfaceFieldMeta[] | null = null;
+  if (cleanResolved.startsWith('{') && cleanResolved.endsWith('}')) {
+    objFields = parseFieldsFromTypeBody(cleanResolved, false);
+  } else {
+    objFields =
+      resolveUtilityTypeFields(cleanResolved, knownInterfaces, knownTypeAliases) ||
+      resolveUtilityTypeFields(cleanRaw, knownInterfaces, knownTypeAliases);
+    if (objFields && objFields.length > 0 && !(cleanResolved.startsWith('{') && cleanResolved.endsWith('}'))) {
+      cleanResolved = `{ ${objFields.map(f => `${f.k || f.name || ''}${f.optional ? '?' : ''}: ${f.declaredType || 'any'}`).join('; ')} }`;
+    }
+  }
+
+  if (objFields && objFields.length > 0) {
+    return {
+      name,
+      line,
+      typeParams: typeParams || undefined,
+      rawDef: cleanRaw,
+      resolvedDef: cleanResolved,
+      aliasKind: 'object',
+      fields: objFields,
+    };
+  }
+
+  return {
+    name,
+    line,
+    typeParams: typeParams || undefined,
+    rawDef: cleanRaw,
+    resolvedDef: cleanResolved,
+    aliasKind: 'alias',
+  };
+}
+
 export function extractTsInterfaceMetadata(src: string | null | undefined, merge = false) {
   const interfaces = merge && appState.CURRENT_TS_META?.interfaces
     ? new Map<string, InterfaceSchemaMeta>(appState.CURRENT_TS_META.interfaces)
@@ -323,8 +723,11 @@ export function extractTsInterfaceMetadata(src: string | null | undefined, merge
   const fnTypes = merge && appState.CURRENT_TS_META?.fnTypes
     ? new Map<string, string>(appState.CURRENT_TS_META.fnTypes)
     : new Map<string, string>();
+  const typeAliases = merge && appState.CURRENT_TS_META?.typeAliases
+    ? new Map<string, TypeAliasMeta>(appState.CURRENT_TS_META.typeAliases)
+    : new Map<string, TypeAliasMeta>();
   if (!src || typeof src !== 'string') {
-    appState.CURRENT_TS_META = { interfaces, varTypes, fnTypes };
+    appState.CURRENT_TS_META = { interfaces, varTypes, fnTypes, typeAliases };
     return appState.CURRENT_TS_META;
   }
 
@@ -336,87 +739,7 @@ export function extractTsInterfaceMetadata(src: string | null | undefined, merge
   let activeBody = '';
   let depth = 0;
 
-  function parseFieldsFromBody(bodyStr: string, isClass = false) {
-    const inner = bodyStr.trim().replace(/^\{/, '').replace(/\}$/, '').trim();
-    const fields: Array<{ k: string; declaredType: string; optional: boolean }> = [];
-    const seen = new Set();
-    if (!inner) return fields;
-    let topLevelOnly = '';
-    let bDepth = 0;
-    for (let i = 0; i < inner.length; i++) {
-      const ch = inner[i];
-      if (ch === '"' || ch === "'" || ch === '`') {
-        const end = skipString(inner, i);
-        if (bDepth === 0) topLevelOnly += inner.slice(i, end);
-        i = end - 1;
-        continue;
-      }
-      if (ch === '{') { bDepth++; continue; }
-      if (ch === '}') { bDepth = Math.max(0, bDepth - 1); continue; }
-      if (bDepth === 0) topLevelOnly += ch;
-    }
-    const members = topLevelOnly.split(/[;,\n]/).map(s => stripInlineCommentSafe(s).trim()).filter(Boolean);
-    members.forEach(mem => {
-      const cleaned = mem.replace(/^(?:(?:readonly|public|private|protected|static)\s+)+/, '');
-      if (/^(?:constructor|get\s+|set\s+|async\s+|[A-Za-z_$][\w$]*\s*\()/.test(cleaned)) return;
-      const m = cleaned.match(/^([A-Za-z_$][\w$]*)(\?)?\s*:\s*([^=]+?)(?:\s*=[\s\S]+)?$/);
-      if (m && m[1] && m[3] && !seen.has(m[1])) {
-        seen.add(m[1]);
-        fields.push({
-          k: m[1],
-          declaredType: m[3].trim(),
-          optional: Boolean(m[2]),
-        });
-        return;
-      }
-      if (isClass) {
-        const initOnly = cleaned.match(/^([A-Za-z_$][\w$]*)\s*=\s*(.+)$/);
-        if (initOnly && initOnly[1] && initOnly[2] && !seen.has(initOnly[1])) {
-          const rhs = initOnly[2].trim();
-          let inferred = 'any';
-          if (/^[+-]?\d+(?:\.\d+)?$/.test(rhs)) inferred = 'number';
-          else if (/^(true|false)$/.test(rhs)) inferred = 'boolean';
-          else if (/^["'`]/.test(rhs)) inferred = 'string';
-          else if (rhs.startsWith('[')) inferred = 'any[]';
-          seen.add(initOnly[1]);
-          fields.push({
-            k: initOnly[1],
-            declaredType: inferred,
-            optional: false,
-          });
-        }
-      }
-    });
-    if (isClass) {
-      const ctorM = inner.match(/\bconstructor\s*\(([^)]*)\)/);
-      if (ctorM && ctorM[1]?.trim()) {
-        splitTopLevel(ctorM[1]).forEach(rawP => {
-          const p = rawP.trim();
-          const pm = p.match(/^(?:(?:public|private|protected|readonly)\s+)+([A-Za-z_$][\w$]*)(\?)?(?:\s*:\s*([^=]+?))?(?:\s*=\s*([\s\S]+))?$/);
-          if (pm && pm[1] && !seen.has(pm[1])) {
-            seen.add(pm[1]);
-            let pType = pm[3] ? pm[3].trim() : 'any';
-            if (pType === 'any' && pm[4]) {
-              const rhs = pm[4].trim();
-              if (/^[+-]?\d+(?:\.\d+)?$/.test(rhs)) pType = 'number';
-              else if (/^(true|false)$/.test(rhs)) pType = 'boolean';
-              else if (/^["'`]/.test(rhs)) pType = 'string';
-            }
-            fields.push({ k: pm[1], declaredType: pType, optional: Boolean(pm[2]) });
-          }
-        });
-      }
-      const thisAssignRe = /\bthis\.([A-Za-z_$][\w$]*)\s*=/g;
-      let tm;
-      while ((tm = thisAssignRe.exec(inner))) {
-        if (tm[1] && !seen.has(tm[1])) {
-          seen.add(tm[1]);
-          fields.push({ k: tm[1], declaredType: 'any', optional: false });
-        }
-      }
-    }
-    return fields;
-  }
+  const parseFieldsFromBody = parseFieldsFromTypeBody;
 
   for (let i = 0; i < lines.length; i++) {
     const raw = stripInlineCommentSafe(lines[i]);
@@ -477,21 +800,83 @@ export function extractTsInterfaceMetadata(src: string | null | undefined, merge
       continue;
     }
 
-    const typeObjM = trimmed.match(/^(?:export\s+)?type\s+([A-Za-z_$][\w$]*)\s*=\s*(\{[\s\S]*\});?$/);
-    if (typeObjM && typeObjM[1] && typeObjM[2]) {
-      interfaces.set(typeObjM[1], {
-        name: typeObjM[1],
-        line: i + 1,
-        isClass: false,
-        fields: parseFieldsFromBody(typeObjM[2], false),
-      });
-      continue;
-    }
-
-    const typeAliasM = trimmed.match(/^(?:export\s+)?type\s+([A-Za-z_$][\w$]*)(?:\s*<[^>]*>)?\s*=\s*(.+?);?$/);
-    if (typeAliasM && typeAliasM[1] && typeAliasM[2]) {
-      localTypeAliases.set(typeAliasM[1], typeAliasM[2].trim());
-      continue;
+    const typeHdrM = trimmed.match(/^(?:export\s+)?type\s+([A-Za-z_$][\w$]*)/);
+    if (typeHdrM && typeHdrM[1]) {
+      const aliasName = typeHdrM[1];
+      const declLineNum = i + 1;
+      let fullTypeDecl = trimmed;
+      let scanIdx = i;
+      const countTypeDepth = (str: string) => {
+        let d = 0, ad = 0;
+        let p = typeHdrM[0].length;
+        while (p < str.length && isWS(str[p])) p++;
+        if (str[p] === '<') {
+          let pad = 1; p++;
+          while (p < str.length && pad > 0) {
+            if (str[p] === '"' || str[p] === "'" || str[p] === '`') { p = skipString(str, p); continue; }
+            if (str[p] === '<') pad++;
+            else if (str[p] === '>' && str[p - 1] !== '=') pad--;
+            p++;
+          }
+        }
+        while (p < str.length && isWS(str[p])) p++;
+        if (str[p] === '=' && str[p + 1] !== '=' && str[p + 1] !== '>') p++;
+        for (; p < str.length; p++) {
+          const ch = str[p];
+          if (ch === '"' || ch === "'" || ch === '`') { p = skipString(str, p) - 1; continue; }
+          if (ch === '(' || ch === '[' || ch === '{') d++;
+          else if (ch === ')' || ch === ']' || ch === '}') d = Math.max(0, d - 1);
+          else if (ch === '<') ad++;
+          else if (ch === '>' && str[p - 1] !== '=') ad = Math.max(0, ad - 1);
+        }
+        return { d, ad };
+      };
+      let st = countTypeDepth(fullTypeDecl);
+      while (scanIdx + 1 < lines.length) {
+        const curTrim = fullTypeDecl.trim();
+        const nextClean = stripInlineCommentSafe(lines[scanIdx + 1]).trim();
+        const continues =
+          st.d > 0 ||
+          st.ad > 0 ||
+          (!/;\s*$/.test(curTrim) && (/[=|&?:]$|\bextends$/.test(curTrim) || /^(?:[|&?:]|extends\b)/.test(nextClean)));
+        if (!continues) break;
+        scanIdx++;
+        fullTypeDecl += ' ' + nextClean;
+        st = countTypeDepth(fullTypeDecl);
+      }
+      i = scanIdx;
+      let p = typeHdrM[0].length;
+      while (p < fullTypeDecl.length && isWS(fullTypeDecl[p])) p++;
+      let tParamStr = '';
+      if (fullTypeDecl[p] === '<') {
+        let pad = 1, k = p + 1;
+        while (k < fullTypeDecl.length && pad > 0) {
+          if (fullTypeDecl[k] === '"' || fullTypeDecl[k] === "'" || fullTypeDecl[k] === '`') { k = skipString(fullTypeDecl, k); continue; }
+          if (fullTypeDecl[k] === '<') pad++;
+          else if (fullTypeDecl[k] === '>' && fullTypeDecl[k - 1] !== '=') pad--;
+          k++;
+        }
+        if (pad === 0) {
+          tParamStr = fullTypeDecl.slice(p, k);
+          p = k;
+        }
+      }
+      while (p < fullTypeDecl.length && isWS(fullTypeDecl[p])) p++;
+      if (fullTypeDecl[p] === '=') {
+        const rhsType = fullTypeDecl.slice(p + 1).replace(/;\s*$/, '').trim();
+        localTypeAliases.set(aliasName, rhsType);
+        const aliasMeta = buildTypeAliasMeta(
+          aliasName,
+          rhsType,
+          undefined,
+          declLineNum,
+          tParamStr,
+          interfaces,
+          typeAliases
+        );
+        typeAliases.set(aliasName, aliasMeta);
+        continue;
+      }
     }
 
     const fnHdrM = trimmed.match(/^(?:export\s+)?(?:default\s+)?(async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)/);
@@ -536,12 +921,23 @@ export function extractTsInterfaceMetadata(src: string | null | undefined, merge
         });
         const afterClose = headerStr.slice(closeP + 1).trim();
         const retM = afterClose.match(/^:\s*([^{;]+?)(?:\s*\{[\s\S]*|\s*;)?$/);
-        const retType = retM && retM[1]
+        let retType = retM && retM[1]
           ? retM[1].trim()
-          : (isAsyncFn ? 'Promise<any>' : 'any');
+          : '';
+        if (!retType) {
+          const inlineEmptyBlock = /^\{\s*\}\s*;?$/.test(afterClose);
+          if (inlineEmptyBlock) {
+            retType = isAsyncFn ? 'Promise<void>' : 'void';
+          } else {
+            retType = isAsyncFn ? 'Promise<any>' : 'any';
+          }
+        }
         const fnSig = `${tParamPart ? tParamPart : ''}(${formattedParams.join(', ')}) => ${retType}`;
-        fnTypes.set(fnName, fnSig);
-        varTypes.set(fnName, fnSig);
+        const existingFnSig = merge ? fnTypes.get(fnName) : undefined;
+        if (!existingFnSig || !retType.endsWith('any') || existingFnSig.endsWith('=> any') || existingFnSig.endsWith('=> Promise<any>')) {
+          fnTypes.set(fnName, fnSig);
+          varTypes.set(fnName, fnSig);
+        }
       }
       continue;
     }
@@ -563,30 +959,142 @@ export function extractTsInterfaceMetadata(src: string | null | undefined, merge
     }
 
     // Variable assigned an arrow function or function expression without explicit variable `: Type`
-    const varArrowM = trimmed.match(
-      /^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(async\s+)?(?:function\s*\*?(?:\s+[A-Za-z_$][\w$]*)?\s*)?(<[^>]+>\s*)?\(([^)]*)\)\s*(?::\s*([^=]+?))?\s*(?:=>|\{)/
-    );
-    if (varArrowM && varArrowM[1]) {
-      const vName = varArrowM[1];
-      const isAsyncArrow = Boolean(varArrowM[2]);
-      const tParamPart = (varArrowM[3] || '').trim();
-      const paramInner = (varArrowM[4] || '').trim();
-      const rawParams = paramInner ? splitTopLevel(paramInner) : [];
-      const formattedParams: string[] = [];
-      rawParams.forEach(p => {
-        const parsedP = formatSingleFnParamClause(p);
-        if (parsedP.formatted) formattedParams.push(parsedP.formatted);
-        if (parsedP.name && parsedP.rawType) {
-          varTypes.set(parsedP.name, parsedP.rawType);
+    const varHeadM = trimmed.match(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?!>)/);
+    if (varHeadM && varHeadM[1]) {
+      const vName = varHeadM[1];
+      let rhs = trimmed.slice(varHeadM[0].length).replace(/;\s*$/, '').trim();
+      let isAsyncArrow = false;
+      if (/^async\b/.test(rhs) && (isWS(rhs[5]) || rhs[5] === '(' || rhs[5] === '<' || rhs.slice(5).trim().startsWith('function'))) {
+        isAsyncArrow = true;
+        rhs = rhs.slice(5).trim();
+      }
+      let isFnExpr = false;
+      const fnExprM = rhs.match(/^function\s*\*?(?:\s+[A-Za-z_$][\w$]*)?\s*/);
+      if (fnExprM) {
+        isFnExpr = true;
+        rhs = rhs.slice(fnExprM[0].length).trim();
+      }
+      let tParamPart = '';
+      if (rhs.startsWith('<')) {
+        let ad = 1, k = 1;
+        while (k < rhs.length && ad > 0) {
+          const ch = rhs[k];
+          if (ch === '"' || ch === "'" || ch === '`') { k = skipString(rhs, k); continue; }
+          if (ch === '<') ad++;
+          else if (ch === '>' && rhs[k - 1] !== '=') ad--;
+          k++;
         }
-      });
-      const retType = varArrowM[5]
-        ? varArrowM[5].trim()
-        : (isAsyncArrow ? 'Promise<any>' : 'any');
-      const fnSig = `${tParamPart}(${formattedParams.join(', ')}) => ${retType}`;
-      fnTypes.set(vName, fnSig);
-      varTypes.set(vName, fnSig);
-      continue;
+        if (ad === 0) {
+          tParamPart = rhs.slice(0, k).trim();
+          rhs = rhs.slice(k).trim();
+        }
+      }
+      let matchedArrowOrFn = false;
+      let paramInner = '';
+      let explicitRet = '';
+      let bodyRemainder = '';
+      if (rhs.startsWith('(')) {
+        const closeP = findBalancedParen(rhs, 0);
+        if (closeP >= 1) {
+          paramInner = rhs.slice(1, closeP).trim();
+          const afterP = rhs.slice(closeP + 1).trim();
+          if (isFnExpr) {
+            const rM = afterP.match(/^(?::\s*([^{]+?))?\s*(\{[\s\S]*)$/);
+            if (rM && rM[2]) {
+              matchedArrowOrFn = true;
+              explicitRet = rM[1] ? rM[1].trim() : '';
+              bodyRemainder = rM[2].trim();
+            }
+          } else if (afterP.startsWith('=>')) {
+            matchedArrowOrFn = true;
+            bodyRemainder = afterP.slice(2).trim();
+          } else if (afterP.startsWith(':')) {
+            const afterColon = afterP.slice(1).trim();
+            let td = 0, arrowPos = -1;
+            let skipFirstFnArrow = afterColon.startsWith('(') || afterColon.startsWith('<');
+            for (let k = 0; k < afterColon.length - 1; k++) {
+              const ch = afterColon[k];
+              if (ch === '"' || ch === "'" || ch === '`') { k = skipString(afterColon, k) - 1; continue; }
+              if (ch === '(' || ch === '[' || ch === '{' || ch === '<') td++;
+              else if (ch === ')' || ch === ']' || ch === '}' || (ch === '>' && afterColon[k - 1] !== '=')) td = Math.max(0, td - 1);
+              else if (td === 0 && ch === '=' && afterColon[k + 1] === '>') {
+                if (skipFirstFnArrow) {
+                  skipFirstFnArrow = false;
+                  k++;
+                  continue;
+                }
+                arrowPos = k;
+                break;
+              }
+            }
+            if (arrowPos > 0) {
+              matchedArrowOrFn = true;
+              explicitRet = afterColon.slice(0, arrowPos).trim();
+              bodyRemainder = afterColon.slice(arrowPos + 2).trim();
+            }
+          }
+        }
+      } else if (!isFnExpr) {
+        const singleM = rhs.match(/^([A-Za-z_$][\w$]*)\s*=>\s*([\s\S]+)$/);
+        if (singleM && singleM[1] && singleM[2]) {
+          matchedArrowOrFn = true;
+          paramInner = singleM[1];
+          bodyRemainder = singleM[2].trim();
+        }
+      }
+
+      if (matchedArrowOrFn) {
+        const rawParams = paramInner ? splitTopLevel(paramInner) : [];
+        const formattedParams: string[] = [];
+        rawParams.forEach(p => {
+          const parsedP = formatSingleFnParamClause(p);
+          if (parsedP.formatted) formattedParams.push(parsedP.formatted);
+          if (parsedP.name && parsedP.rawType) {
+            varTypes.set(parsedP.name, parsedP.rawType);
+          }
+        });
+        let retType = explicitRet;
+        if (!retType) {
+          let baseRet = 'any';
+          if (bodyRemainder.startsWith('{')) {
+            if (/^\{\s*\}$/.test(bodyRemainder)) {
+              baseRet = 'void';
+            } else if (bodyRemainder.endsWith('}')) {
+              const innerB = bodyRemainder.slice(1, -1).trim();
+              const rM = innerB.match(/\breturn(?:\s+([^;}]+))?/);
+              if (!rM) {
+                baseRet = /\bthrow\b/.test(innerB) ? 'never' : 'void';
+              } else if (!rM[1] || !rM[1].trim()) {
+                baseRet = 'void';
+              } else {
+                const lit = inferLiteralType(rM[1].trim());
+                if (lit) {
+                  baseRet = /^[+-]?\d/.test(lit) ? 'number' : (lit === 'true' || lit === 'false' ? 'boolean' : 'string');
+                }
+              }
+            }
+          } else if (bodyRemainder) {
+            const lit = inferLiteralType(bodyRemainder);
+            if (lit) {
+              baseRet = /^[+-]?\d/.test(lit) ? 'number' : (lit === 'true' || lit === 'false' ? 'boolean' : 'string');
+            } else if (bodyRemainder === 'undefined') {
+              baseRet = 'undefined';
+            } else if (bodyRemainder === 'null') {
+              baseRet = 'null';
+            } else if (bodyRemainder.startsWith('`') && bodyRemainder.endsWith('`')) {
+              baseRet = 'string';
+            }
+          }
+          retType = isAsyncArrow && !baseRet.startsWith('Promise<') ? `Promise<${baseRet}>` : baseRet;
+        }
+        const fnSig = `${tParamPart}(${formattedParams.join(', ')}) => ${retType}`;
+        const existingSig = merge ? fnTypes.get(vName) : undefined;
+        if (!existingSig || (!retType.endsWith('any') && !retType.endsWith('<any>')) || existingSig.endsWith('=> any') || existingSig.endsWith('=> Promise<any>')) {
+          fnTypes.set(vName, fnSig);
+          varTypes.set(vName, fnSig);
+        }
+        continue;
+      }
     }
 
     const varNewM = trimmed.match(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*new\s+([A-Za-z_$][\w$]*)\s*(?:<[^>]*>)?\s*\(/);
@@ -595,16 +1103,40 @@ export function extractTsInterfaceMetadata(src: string | null | undefined, merge
     }
   }
 
-  appState.CURRENT_TS_META = { interfaces, varTypes, fnTypes };
+  // Re-resolve typeAliases once all interfaces and typeAliases in the file are collected
+  typeAliases.forEach((meta, aliasName) => {
+    const refreshed = buildTypeAliasMeta(
+      aliasName,
+      meta.rawDef,
+      meta.resolvedDef !== meta.rawDef ? meta.resolvedDef : undefined,
+      meta.line,
+      meta.typeParams,
+      interfaces,
+      typeAliases
+    );
+    typeAliases.set(aliasName, refreshed);
+  });
+
+  appState.CURRENT_TS_META = { interfaces, varTypes, fnTypes, typeAliases };
   return appState.CURRENT_TS_META;
 }
 
 export function matchInterfaceForObject(name: string | null | undefined, value: StepAnim | Frame | null | undefined): InterfaceSchemaMeta | null {
-  const { interfaces, varTypes } = appState.CURRENT_TS_META;
+  const { interfaces, varTypes, typeAliases } = appState.CURRENT_TS_META;
   const declaredVarT = name ? varTypes.get(name) : undefined;
   if (declaredVarT) {
     const cleanT = declaredVarT.replace(/\[\]$/, '').trim();
     if (interfaces.has(cleanT)) return interfaces.get(cleanT) || null;
+    const aliasMeta = typeAliases ? typeAliases.get(cleanT) : undefined;
+    if (aliasMeta && aliasMeta.fields && aliasMeta.fields.length > 0) {
+      return {
+        kind: 'type',
+        name: cleanT,
+        line: aliasMeta.line,
+        isClass: false,
+        fields: aliasMeta.fields,
+      };
+    }
   }
   if (value && typeof value === 'object') {
     const clsName = typeof value.__cls__ === 'string' ? value.__cls__ : '';
@@ -828,6 +1360,9 @@ export function isTsAssignable(
   const e = normalizeTsType(expected);
   if (a === e || a === 'any' || e === 'any' || e === 'unknown' || a === 'never') return true;
   if (a === 'undefined' && e === 'void') return true;
+  if (!appState.TS_CONFIG.strictNullChecks && (a === 'null' || a === 'undefined') && e !== 'never') {
+    return true;
+  }
   if (a === 'unknown') return false;
   if (e === 'never') return a === 'never';
   if (isLiteralOfPrimitive(a, e)) return true;
@@ -877,15 +1412,26 @@ export function isTsAssignable(
       return true;
     }
   }
-  const fnArrowIdx = e.lastIndexOf('=>');
-  if (fnArrowIdx > 0 && e.startsWith('(')) {
-    const expectedRet = e.slice(fnArrowIdx + 2).trim();
-    const aArrowIdx = a.lastIndexOf('=>');
-    if (aArrowIdx > 0 && a.startsWith('(')) {
-      const actualRet = a.slice(aArrowIdx + 2).trim();
-      return isTsAssignable(actualRet, expectedRet, knownNominalTypes);
+  const findTopArrow = (s: string): number => {
+    let d = 0;
+    for (let i = 0; i < s.length - 1; i++) {
+      const ch = s[i];
+      if (ch === '"' || ch === "'" || ch === '`') { i = skipString(s, i) - 1; continue; }
+      if (ch === '(' || ch === '[' || ch === '{' || ch === '<') d++;
+      else if (ch === ')' || ch === ']' || ch === '}' || (ch === '>' && s[i - 1] !== '=')) d = Math.max(0, d - 1);
+      else if (d === 0 && ch === '=' && s[i + 1] === '>') return i;
     }
-    if (a === 'function' || isTsAssignable(a, expectedRet, knownNominalTypes)) return true;
+    return -1;
+  };
+  const fnArrowIdx = findTopArrow(e);
+  if (fnArrowIdx > 0 && (e.startsWith('(') || e.startsWith('<'))) {
+    const expectedRet = e.slice(fnArrowIdx + 2).trim();
+    const aArrowIdx = findTopArrow(a);
+    if (aArrowIdx > 0 && (a.startsWith('(') || a.startsWith('<'))) {
+      const actualRet = a.slice(aArrowIdx + 2).trim();
+      return expectedRet === 'void' || isTsAssignable(actualRet, expectedRet, knownNominalTypes);
+    }
+    if (a === 'function' || expectedRet === 'void' || isTsAssignable(a, expectedRet, knownNominalTypes)) return true;
   }
   const aGenM = a.match(/^([A-Za-z_$][\w$]*)<(.+)>$/);
   const eGenM = e.match(/^([A-Za-z_$][\w$]*)<(.+)>$/);

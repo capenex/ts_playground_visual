@@ -86,10 +86,19 @@ export async function runVizEditorSuite(sandbox) {
   // 4. CodeMirror 6 Editor Bundle & Pure TypeScript Configuration
   const cmBundlePath = path.join(ROOT, 'editor', 'cm.bundle.js');
   const cmEntryPath = path.join(ROOT, 'editor', 'cm-entry.js');
+  const appCssPath = path.join(ROOT, 'css', 'app.css');
   check('editor/cm.bundle.js exists and is built', fs.existsSync(cmBundlePath) && fs.statSync(cmBundlePath).size > 50000);
   const cmEntrySrc = fs.readFileSync(cmEntryPath, 'utf8');
+  const appCssSrc = fs.readFileSync(appCssPath, 'utf8');
   check('editor/cm-entry.js has zero @codemirror/lang-python or PY_COMPLETIONS',
     !cmEntrySrc.includes('@codemirror/lang-python') && !cmEntrySrc.includes('PY_COMPLETIONS'),
+  );
+  check('editor/cm-entry.js and css/app.css disable font ligatures and enforce opaque #070b10 background to prevent deleted char ghosting',
+    cmEntrySrc.includes("fontVariantLigatures: 'none'") &&
+    cmEntrySrc.includes('fontFeatureSettings: \'"liga" 0, "calt" 0\'') &&
+    cmEntrySrc.includes("backgroundColor: '#070b10'") &&
+    appCssSrc.includes('#cmEditor .cm-scroller{overflow:auto;background:#070b10;letter-spacing:0;font-variant-ligatures:none;') &&
+    cmEntrySrc.includes('if (effects.length > 0) {\n      view.dispatch({ effects });\n    }'),
   );
 
   // 5. Pure WebM Muxer (`muxWebmChunks`) & EBML Binary Framing
@@ -112,4 +121,95 @@ export async function runVizEditorSuite(sandbox) {
     webmBuf[2] === 0xdf &&
     webmBuf[3] === 0xa3,
   );
+
+  // 6. Static `interface` (Decoupled from Runtime Instances) & Static `type` Alias Visualization
+  resetSandbox(sandbox);
+  const schemaAndTypeSrc = [
+    'export interface CalcJob {',
+    '  id: string;',
+    '  formula: string;',
+    '  cutoffEnergyEv: number;',
+    '  note?: string;',
+    '}',
+    "type JobPriority = 'low' | 'normal' | 'high';",
+    "type CreateCalcJobInput = Omit<CalcJob, 'id'>;",
+    'type JobState =',
+    "  | {status: 'queued'; queuePosition: number}",
+    "  | {status: 'completed'; totalEnergyEv: number}",
+    "  | {status: 'failed'; reason: string};",
+    "let job: CalcJob = {id: '123', formula: 'xyz', cutoffEnergyEv: 114};",
+    "job.id = '456';",
+    'console.log(job);',
+    '1;',
+  ].join('\n');
+  sandbox.startDebug(2, schemaAndTypeSrc);
+  const stepDs = sandbox.TRACE.steps[sandbox.cur]?.ds || {};
+  const calcJobSchema = stepDs.CalcJob;
+  const jobInstance = stepDs.job;
+  check('interface CalcJob schema card exists and is not bound to runtime instance `job`',
+    Boolean(
+      calcJobSchema &&
+      calcJobSchema.kind === 'interface' &&
+      calcJobSchema.isSchema === true &&
+      calcJobSchema.instanceName === null &&
+      Array.isArray(calcJobSchema.fields) &&
+      calcJobSchema.fields.every((f) => f.v === undefined)
+    ),
+  );
+  const calcJobHtml = sandbox.VIZ.interface(calcJobSchema);
+  check('VIZ.interface renders pure static definition without instance values or `绑定` / `未实例化`',
+    typeof calcJobHtml === 'string' &&
+    calcJobHtml.includes('definition') &&
+    !calcJobHtml.includes('绑定') &&
+    !calcJobHtml.includes('456') &&
+    !calcJobHtml.includes('未实例化'),
+  );
+  check('runtime instance `job` still renders its own runtime values',
+    Boolean(jobInstance && jobInstance.isSchema === false && sandbox.VIZ.interface(jobInstance).includes('456')),
+  );
+
+  const priorityType = stepDs.JobPriority;
+  const omitType = stepDs.CreateCalcJobInput;
+  const stateType = stepDs.JobState;
+  check('type JobPriority is visualized as a static union type with 3 branches',
+    Boolean(
+      priorityType &&
+      priorityType.kind === 'type' &&
+      priorityType.isSchema === true &&
+      priorityType.instanceName === null &&
+      priorityType.aliasKind === 'union' &&
+      Array.isArray(priorityType.unionBranches) &&
+      priorityType.unionBranches.length === 3 &&
+      sandbox.VIZ.type(priorityType).includes('low')
+    ),
+  );
+  check('type CreateCalcJobInput = Omit<CalcJob, "id"> resolves omitted fields statically without `id`',
+    Boolean(
+      omitType &&
+      omitType.kind === 'type' &&
+      omitType.isSchema === true &&
+      omitType.instanceName === null &&
+      omitType.aliasKind === 'object' &&
+      Array.isArray(omitType.fields) &&
+      omitType.fields.length === 3 &&
+      omitType.fields.some((f) => f.k === 'formula') &&
+      !omitType.fields.some((f) => f.k === 'id') &&
+      sandbox.VIZ.type(omitType).includes('Omit&lt;CalcJob')
+    ),
+  );
+  check('type JobState multi-line discriminated union is visualized with 3 object branches',
+    Boolean(
+      stateType &&
+      stateType.kind === 'type' &&
+      stateType.isSchema === true &&
+      stateType.instanceName === null &&
+      stateType.aliasKind === 'union' &&
+      Array.isArray(stateType.unionBranches) &&
+      stateType.unionBranches.length === 3 &&
+      stateType.unionBranches.every((b) => b.isObject === true) &&
+      sandbox.VIZ.type(stateType).includes('queuePosition') &&
+      sandbox.VIZ.type(stateType).includes('totalEnergyEv')
+    ),
+  );
 }
+

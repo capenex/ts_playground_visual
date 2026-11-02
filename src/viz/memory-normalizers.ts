@@ -11,12 +11,14 @@ import {
   isSetLike,
   isRecord,
   isFrame,
+  isInaccessibleOrGlobalObject,
+  isVirtualPromise,
   defineHidden,
   formatShortVal,
   cloneDeepBounded,
 } from "../utils/format";
 
-export { isMapLike, isSetLike, isRecord, isFrame, defineHidden, formatShortVal, cloneDeepBounded };
+export { isMapLike, isSetLike, isRecord, isFrame, isInaccessibleOrGlobalObject, isVirtualPromise, defineHidden, formatShortVal, cloneDeepBounded };
 
 const asChildFrame = (v: unknown): Frame | null => (isFrame(v) ? v : null);
 
@@ -227,7 +229,7 @@ export function snapshot(kind: string, value: unknown, extra?: Record<string, un
 }
 
 export function classifyValue(name: string, value: unknown) {
-  if (value == null) return null;
+  if (value == null || isInaccessibleOrGlobalObject(value)) return null;
   const n = String(name);
   if (Array.isArray(value)) {
     if (value.length > 0 && Array.isArray(value[0])) return snapshot('grid', value);
@@ -246,7 +248,7 @@ export function classifyValue(name: string, value: unknown) {
   }
   if (isFrame(value)) {
     const obj = value;
-    if (obj.__isVirtualPromise) return null;
+    if (isVirtualPromise(obj)) return null;
     if (Array.isArray(obj.nodes) && Array.isArray(obj.edges)) return snapshot('graph', obj);
     if (Array.isArray(obj.nodes) && 'root' in obj) return snapshot('tree', obj);
     if (n !== 'this') {
@@ -301,48 +303,63 @@ export function classifyValue(name: string, value: unknown) {
 }
 
 export function populateInterfaceSchemas(ds: Record<string, StepAnim>) {
-  const { interfaces, varTypes } = appState.CURRENT_TS_META;
-  if (!interfaces || !interfaces.size) return;
-  interfaces.forEach(iface => {
-    if (iface.isClass && (!iface.fields || !iface.fields.length)) return;
-    const prefix = iface.isClass ? 'class ' : 'interface ';
-    const slotKey = (iface.name in ds) ? (prefix + iface.name) : iface.name;
-    let boundInstance: StepAnim | null = null;
-    let boundVarName: string | null = null;
-    Object.keys(ds).forEach(k => {
-      const item = ds[k];
-      if (!boundInstance && item && item.kind === 'interface' && !item.isSchema && item.interfaceName === iface.name) {
-        boundInstance = item;
-        boundVarName = k;
-      }
-    });
-    if (!boundVarName && varTypes) {
-      Object.keys(ds).forEach(k => {
-        if (!boundVarName && varTypes.get(k) === iface.name) {
-          boundVarName = k;
-        }
+  const { interfaces, typeAliases } = appState.CURRENT_TS_META;
+  if (interfaces && interfaces.size > 0) {
+    interfaces.forEach(iface => {
+      if (iface.isClass && (!iface.fields || !iface.fields.length)) return;
+      const prefix = iface.isClass ? 'class ' : 'interface ';
+      const slotKey = (iface.name in ds) ? (prefix + iface.name) : iface.name;
+      const fields = iface.fields.map((f: InterfaceFieldMeta) => {
+        const key = f.k || f.name || '';
+        return {
+          k: key,
+          declaredType: f.declaredType,
+          optional: Boolean(f.optional),
+        };
       });
-    }
-    const fields = iface.fields.map((f: InterfaceFieldMeta) => {
-      const key = f.k || f.name || '';
-      const instField = boundInstance && boundInstance.fields ? boundInstance.fields.find(x => x.k === key) : null;
-      return {
-        k: key,
-        declaredType: f.declaredType,
-        optional: Boolean(f.optional),
-        v: instField ? instField.v : undefined,
+      ds[slotKey] = {
+        kind: 'interface',
+        interfaceName: iface.name,
+        isClass: Boolean(iface.isClass),
+        isSchema: true,
+        instanceName: null,
+        fields,
+        entries: fields.map((f: { k: string; declaredType?: string }) => ({ k: f.k, v: f.declaredType })),
       };
     });
-    ds[slotKey] = {
-      kind: 'interface',
-      interfaceName: iface.name,
-      isClass: Boolean(iface.isClass),
-      isSchema: true,
-      instanceName: boundVarName,
-      fields,
-      entries: fields.map((f: { k: string; v?: unknown; declaredType?: string }) => ({ k: f.k, v: f.v !== undefined ? f.v : f.declaredType })),
-    };
-  });
+  }
+  if (typeAliases && typeAliases.size > 0) {
+    typeAliases.forEach(ta => {
+      const slotKey = (ta.name in ds) ? ('type ' + ta.name) : ta.name;
+      const fields = ta.fields
+        ? ta.fields.map((f: InterfaceFieldMeta) => ({
+            k: f.k || f.name || '',
+            declaredType: f.declaredType,
+            optional: Boolean(f.optional),
+          }))
+        : undefined;
+      const unionBranches = ta.unionBranches
+        ? ta.unionBranches.map(b => ({
+            raw: b.raw,
+            isObject: b.isObject,
+            fields: b.fields ? b.fields.map(f => ({ ...f })) : undefined,
+          }))
+        : undefined;
+      ds[slotKey] = {
+        kind: 'type',
+        interfaceName: ta.name,
+        isClass: false,
+        isSchema: true,
+        instanceName: null,
+        typeParams: ta.typeParams,
+        rawDef: ta.rawDef,
+        resolvedDef: ta.resolvedDef,
+        aliasKind: ta.aliasKind,
+        fields,
+        unionBranches,
+      };
+    });
+  }
 }
 
 export function detectWindowRange(v: StepAnim | null | undefined): [number, number] | null {
@@ -444,13 +461,8 @@ function enrichFromNoteTextAccess(
   while ((pm = propRe.exec(text))) {
     const objName = pm[1] || '', propName = pm[2];
     const objItem = ds[objName];
-    if (objItem && (objItem.kind === 'interface' || objItem.kind === 'object')) {
+    if (objItem && !objItem.isSchema && (objItem.kind === 'interface' || objItem.kind === 'object')) {
       objItem.hot = propName;
-      const ifaceName = objItem.interfaceName;
-      const ifaceItem = ifaceName ? ds[ifaceName] : undefined;
-      if (ifaceItem && ifaceItem.kind === 'interface') {
-        ifaceItem.hot = propName;
-      }
     }
   }
 
@@ -938,6 +950,12 @@ export function pressure(d: Frame | null | undefined) {
     case 'map': return Math.min(1, n / 7);
     case 'interface':
     case 'object': return Math.min(1, n / 6);
+    case 'type': {
+      if (d.unionBranches && d.unionBranches.some(b => b.isObject)) {
+        return Math.min(1, Math.max(0.5, d.unionBranches.length / 3));
+      }
+      return Math.min(1, Math.max(n, d.unionBranches ? d.unionBranches.length : 2) / 6);
+    }
     case 'set': return Math.min(1, n / 9);
     case 'string': return Math.min(1, n / 18);
     case 'tree': return n >= 6 ? 0.38 : 0.28;

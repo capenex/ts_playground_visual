@@ -7,7 +7,10 @@ import type {
   InterfaceSchemaMeta,
   LangBuffer,
   TraceData,
+  TsCompilerOptions,
+  TsConfigPreset,
   TsMeta,
+  TypeAliasMeta,
 } from './types';
 
 export const MAX_STEPS = 5000;
@@ -19,6 +22,64 @@ export const VIDEO_HEIGHT = 1080;
 export const VIDEO_FPS = 60;
 export const VIDEO_SPEED_OPTIONS = [0.75, 1, 1.5, 2, 3];
 export const PAUSE_SIGNAL = { __debugPause: true };
+
+export const TS_CONFIG_PRESETS: Record<'beginner' | 'standard' | 'strict', TsCompilerOptions> = {
+  beginner: {
+    preset: 'beginner',
+    strict: false,
+    noImplicitAny: false,
+    strictNullChecks: false,
+    strictFunctionTypes: true,
+    noImplicitReturns: false,
+    noUnusedLocals: false,
+    allowRunOnTypeError: true,
+  },
+  standard: {
+    preset: 'standard',
+    strict: true,
+    noImplicitAny: false,
+    strictNullChecks: true,
+    strictFunctionTypes: true,
+    noImplicitReturns: true,
+    noUnusedLocals: false,
+    allowRunOnTypeError: false,
+  },
+  strict: {
+    preset: 'strict',
+    strict: true,
+    noImplicitAny: true,
+    strictNullChecks: true,
+    strictFunctionTypes: true,
+    noImplicitReturns: true,
+    noUnusedLocals: true,
+    allowRunOnTypeError: false,
+  },
+};
+
+export function createTsConfigFromPreset(
+  preset: 'beginner' | 'standard' | 'strict' = 'beginner'
+): TsCompilerOptions {
+  return { ...TS_CONFIG_PRESETS[preset] };
+}
+
+export function detectTsConfigPreset(cfg: Omit<TsCompilerOptions, 'preset'>): TsConfigPreset {
+  const keys: Array<'beginner' | 'standard' | 'strict'> = ['beginner', 'standard', 'strict'];
+  for (const key of keys) {
+    const p = TS_CONFIG_PRESETS[key];
+    if (
+      cfg.strict === p.strict &&
+      cfg.noImplicitAny === p.noImplicitAny &&
+      cfg.strictNullChecks === p.strictNullChecks &&
+      cfg.strictFunctionTypes === p.strictFunctionTypes &&
+      cfg.noImplicitReturns === p.noImplicitReturns &&
+      cfg.noUnusedLocals === p.noUnusedLocals &&
+      cfg.allowRunOnTypeError === p.allowRunOnTypeError
+    ) {
+      return key;
+    }
+  }
+  return 'custom';
+}
 
 export function esc(t: unknown): string {
   return String(t)
@@ -47,6 +108,7 @@ export interface AppState {
   IS_STILL: boolean;
   URL_WATCH: string[] | null;
   STRICT_TS: boolean;
+  TS_CONFIG: TsCompilerOptions;
   TYPE_ERROR_LINES: Set<number>;
   RUNTIME_ERROR_LINES: Set<number>;
   lastEditorCursorLine: number;
@@ -78,6 +140,7 @@ export const appState: AppState = {
   IS_STILL: false,
   URL_WATCH: null,
   STRICT_TS: true,
+  TS_CONFIG: createTsConfigFromPreset('beginner'),
   TYPE_ERROR_LINES: new Set<number>(),
   RUNTIME_ERROR_LINES: new Set<number>(),
   lastEditorCursorLine: -1,
@@ -87,6 +150,7 @@ export const appState: AppState = {
   CURRENT_TS_META: {
     interfaces: new Map<string, InterfaceSchemaMeta>(),
     varTypes: new Map<string, string>(),
+    typeAliases: new Map<string, TypeAliasMeta>(),
   },
   DEBUG_SESSION: {
     active: false,
@@ -161,6 +225,9 @@ export function bindStateGlobals(target: object = globalThis): void {
     VIDEO_FPS,
     VIDEO_SPEED_OPTIONS,
     PAUSE_SIGNAL,
+    TS_CONFIG_PRESETS,
+    createTsConfigFromPreset,
+    detectTsConfigPreset,
     esc,
     appState,
   });
@@ -191,6 +258,7 @@ export interface RuntimeUiHooks {
   setEditorSource: (src: string) => void;
   renderNotebookUI: (focusActiveEditor?: boolean) => void;
   setCntStatus: (text: string, cls?: string) => void;
+  syncTsConfigUI: () => void;
 }
 
 export const uiHooks: RuntimeUiHooks = {
@@ -218,6 +286,7 @@ export const uiHooks: RuntimeUiHooks = {
   setEditorSource: () => {},
   renderNotebookUI: () => {},
   setCntStatus: () => {},
+  syncTsConfigUI: () => {},
 };
 
 export function registerUiHooks(hooks: Partial<RuntimeUiHooks>): void {

@@ -193,5 +193,99 @@ checkpoint("窗口达标", r, sum, best);
     sandbox.typecheckTS(variadicCkptSrc).length,
     0,
   );
+
+  // 7. Regression: Arrow function parameter & return type inference in CURRENT_TS_META / LOCALS
+  const arrowMetaSrc = [
+    'let a = () => {};',
+    'let add = (x: number, y: number) => x + y;',
+    'let ctxFn: (x: number) => string = (x) => String(x);',
+    'let multi = (x: number, y = "ok") => {',
+    '  const z = x * 2;',
+    '  return `${y}:${z}`;',
+    '};',
+    'let ho = (cb: (n: number) => void) => { cb(1); };',
+    'a();',
+    'add(1, 2);',
+  ].join('\n');
+  sandbox.startDebug(1, arrowMetaSrc);
+  const fnTypes = sandbox.CURRENT_TS_META && sandbox.CURRENT_TS_META.fnTypes;
+  assertEq('arrow fn `let a = () => {}` infers `() => void`', fnTypes && fnTypes.get('a'), '() => void');
+  assertEq('arrow fn `let add = (x: number, y: number) => x + y` infers `(x: number, y: number) => number`', fnTypes && fnTypes.get('add'), '(x: number, y: number) => number');
+  assertEq('arrow fn with contextual LHS type infers `(x: number) => string`', fnTypes && fnTypes.get('ctxFn'), '(x: number) => string');
+  assertEq('multi-line arrow fn with default param infers `(x: number, y?: string) => string`', fnTypes && fnTypes.get('multi'), '(x: number, y?: string) => string');
+  assertEq('higher-order arrow fn with callback param infers `(cb: (n: number) => void) => void`', fnTypes && fnTypes.get('ho'), '(cb: (n: number) => void) => void');
+
+  // 8. Customizable tsconfig.json & Default Beginner Mode Verification
+  resetSandbox(sandbox);
+  assertEq('default TS_CONFIG preset is beginner', sandbox.TS_CONFIG.preset, 'beginner');
+  assertEq('default beginner mode disables noImplicitAny & strictNullChecks and enables allowRunOnTypeError',
+    {
+      noImplicitAny: sandbox.TS_CONFIG.noImplicitAny,
+      strictNullChecks: sandbox.TS_CONFIG.strictNullChecks,
+      allowRunOnTypeError: sandbox.TS_CONFIG.allowRunOnTypeError,
+    },
+    { noImplicitAny: false, strictNullChecks: false, allowRunOnTypeError: true },
+  );
+
+  const untypedFnSrc = 'function quickAdd(a, b) { return a + b; }\nquickAdd(2, 3)';
+  assertEq('beginner mode allows untyped function parameters (0 TS7006 errors)',
+    sandbox.typecheckTS(untypedFnSrc).length,
+    0,
+  );
+  assertEq('beginner mode allows null assignment when strictNullChecks is false',
+    sandbox.typecheckTS('const maybeNum: number = null;\nmaybeNum').length,
+    0,
+  );
+  check('beginner mode allowRunOnTypeError=true allows startDebug to run despite type mismatch',
+    sandbox.startDebug(0, 'const wrong: number = "still_runs";\nwrong') === true,
+  );
+
+  // Switch to strict preset
+  sandbox.applyTsConfig(sandbox.createTsConfigFromPreset('strict'), true);
+  assertEq('strict preset sets preset="strict" and strict=true',
+    { preset: sandbox.TS_CONFIG.preset, strict: sandbox.TS_CONFIG.strict, allowRun: sandbox.TS_CONFIG.allowRunOnTypeError },
+    { preset: 'strict', strict: true, allowRun: false },
+  );
+  check('strict mode flags untyped function parameters with TS7006',
+    sandbox.typecheckTS(untypedFnSrc).some((d) => d.code === 'TS7006'),
+  );
+  check('strict mode flags null assignment to number with TS2322 (strictNullChecks)',
+    sandbox.typecheckTS('const maybeNum: number = null;').some((d) => d.code === 'TS2322'),
+  );
+  check('strict mode flags missing return statement with TS2355 (noImplicitReturns)',
+    sandbox.typecheckTS('function noRet(x: number): number { const y = x + 1; }\nnoRet(1)').some((d) => d.code === 'TS2355'),
+  );
+  check('strict mode flags unused local variable with TS6133 (noUnusedLocals)',
+    sandbox.typecheckTS('const unusedLocal: number = 99;').some((d) => d.code === 'TS6133'),
+  );
+  check('strict mode allowRunOnTypeError=false blocks startDebug on type error',
+    sandbox.startDebug(0, 'const wrong: number = "blocked";\nwrong') === false,
+  );
+
+  // JSON with comments & trailing commas parsing via parseTsConfigJson
+  const customJson = `{
+    // custom tsconfig with comments
+    "compilerOptions": {
+      "noImplicitAny": true,
+      "strictNullChecks": false,
+    },
+    "playgroundConfig": {
+      "allowRunOnTypeError": true,
+    }
+  }`;
+  const parsedCustom = sandbox.parseTsConfigJson(customJson);
+  assertEq('parseTsConfigJson parses JSON with comments and trailing commas',
+    {
+      err: parsedCustom.error,
+      noImplicitAny: parsedCustom.config.noImplicitAny,
+      strictNullChecks: parsedCustom.config.strictNullChecks,
+      allowRun: parsedCustom.config.allowRunOnTypeError,
+      preset: parsedCustom.config.preset,
+    },
+    { err: null, noImplicitAny: true, strictNullChecks: false, allowRun: true, preset: 'custom' },
+  );
+
+  // Restore default beginner preset
+  resetSandbox(sandbox);
 }
 

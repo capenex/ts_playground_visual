@@ -11,15 +11,18 @@ import {
 } from "./comments";
 import { extractBindingNames } from "./instrumenter";
 import { appState, uiHooks } from "../state";
-import { Diag } from "../types";
+import { Diag, TypeAliasMeta } from "../types";
 import {
+  buildTypeAliasMeta,
   createTypeCheckContext,
   extractTsInterfaceMetadata,
   FnSigInfo,
   formatFnSigInfoToTypeString,
+  formatTsConfigCacheKey,
   inferLiteralType,
   isTsAssignable,
   normalizeTsType,
+  parseTsConfigJson,
   parseTypeParams,
   PropShapeInfo,
   splitTopLevelDecl,
@@ -37,7 +40,15 @@ export * from "./tc-eval";
 export * from "./tc-infer";
 export * from "./module-graph";
 
-let _TYPECHECK_CACHE: { src: string | null; strict: boolean | null; diags: Diag[] } = { src: null, strict: null, diags: [] };
+let _TYPECHECK_CACHE: {
+  src: string | null;
+  strict: boolean | null;
+  configKey: string | null;
+  diags: Diag[];
+  fnTypes?: Map<string, string>;
+  varTypes?: Map<string, string>;
+  typeAliases?: Map<string, TypeAliasMeta>;
+} = { src: null, strict: null, configKey: null, diags: [] };
 
 export function collectPass1Declarations(
   ctx: TypeCheckContext,
@@ -305,9 +316,10 @@ export function collectPass1Declarations(
       }
     }
 
-    const fnMatch = raw.match(/^(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)/);
-    if (fnMatch && fnMatch[1] && raw.indexOf('(') >= 0) {
-      const fnName = fnMatch[1];
+    const fnMatch = raw.match(/^(?:export\s+)?(?:default\s+)?(async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)/);
+    if (fnMatch && fnMatch[2] && raw.indexOf('(') >= 0) {
+      const isAsyncFn = Boolean(fnMatch[1]);
+      const fnName = fnMatch[2];
       let headerStr = raw;
       let scanLine = i;
       let openP = -1;
@@ -339,11 +351,13 @@ export function collectPass1Declarations(
         const paramStr = headerStr.slice(openP + 1, closeP).trim();
         const afterClose = headerStr.slice(closeP + 1).trim();
         const retM = afterClose.match(/^:\s*([^{]+?)(?:\s*\{[\s\S]*)?$/);
-        const rawRetType = (retM && retM[1]) ? retM[1].trim() : 'any';
+        const hasExplicitRet = Boolean(retM && retM[1]);
+        const defaultRet = isAsyncFn ? 'Promise<any>' : 'any';
+        const rawRetType = (retM && retM[1]) ? retM[1].trim() : defaultRet;
         const tempEnv = new Map<string, string>();
         fnTParams.forEach(tp => tempEnv.set(tp.name, tp.name));
-        const retType = retM ? resolveAlias(rawRetType, tempEnv) : 'any';
-        const { params, minArgs } = parseParamList(paramStr, lineNum, true);
+        const retType = retM ? resolveAlias(rawRetType, tempEnv) : defaultRet;
+        const { params, minArgs } = parseParamList(paramStr, lineNum, Boolean(ctx.tsConfig.noImplicitAny));
         fns.set(fnName, {
           name: fnName,
           params,
@@ -353,6 +367,9 @@ export function collectPass1Declarations(
           typeParams: fnTParams,
           line: lineNum,
           hasValueReturn: false,
+          hasExplicitReturnType: hasExplicitRet,
+          isAsync: isAsyncFn,
+          inferredReturnTypes: [],
         });
       }
     }
@@ -664,8 +681,146 @@ export function checkPass2Statements(
       continue;
     }
 
-    const fnOpen = trimmed.match(/^(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*(\*)?\s*([A-Za-z_$][\w$]*)\s*(?:<[\s\S]*>)?\s*\(/);
-    const arrowFnOpen = !fnOpen ? trimmed.match(/^(?:export\s+)?(const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:function\s*\*?(?:\s+[A-Za-z_$][\w$]*)?\s*)?(?:(<[\s\S]*>)\s*)?\(([^)]*)\)\s*(?::\s*([^=]+?))?\s*(?:=>\s*)?\{/) : null;
+    const matchArrowOrFnVarOpen = (lineStr: string) => {
+      const mVar = lineStr.match(/^(?:export\s+)?(const|let|var)\s+([A-Za-z_$][\w$]*)/);
+      if (!mVar || !mVar[1] || !mVar[2]) return null;
+      const varKind = mVar[1];
+      const varName = mVar[2];
+      const afterName = lineStr.slice(mVar[0].length);
+      let eqIdx = -1, colonIdx = -1, d = 0;
+      for (let k = 0; k < afterName.length; k++) {
+        const ch = afterName[k];
+        if (ch === '"' || ch === "'" || ch === '`') { k = skipString(afterName, k) - 1; continue; }
+        if (ch === '(' || ch === '[' || ch === '{' || ch === '<') d++;
+        else if (ch === ')' || ch === ']' || ch === '}' || (ch === '>' && afterName[k - 1] !== '=')) d = Math.max(0, d - 1);
+        else if (d === 0 && ch === ':' && colonIdx < 0 && eqIdx < 0) {
+          colonIdx = k;
+        } else if (
+          d === 0 &&
+          ch === '=' &&
+          afterName[k + 1] !== '=' &&
+          afterName[k + 1] !== '>' &&
+          afterName[k - 1] !== '=' &&
+          afterName[k - 1] !== '!' &&
+          afterName[k - 1] !== '<' &&
+          afterName[k - 1] !== '>'
+        ) {
+          eqIdx = k;
+          break;
+        }
+      }
+      if (eqIdx < 0) return null;
+      const rawVarDeclType = colonIdx >= 0 ? afterName.slice(colonIdx + 1, eqIdx).trim() : null;
+      let rhs = afterName.slice(eqIdx + 1).trim();
+      let isAsync = false;
+      if (/^async\b/.test(rhs) && (isWS(rhs[5]) || rhs[5] === '(' || rhs[5] === '<' || rhs.slice(5).trim().startsWith('function'))) {
+        isAsync = true;
+        rhs = rhs.slice(5).trim();
+      }
+      let isFnKeyword = false;
+      const fnKwM = rhs.match(/^function\s*(\*)?(?:\s+[A-Za-z_$][\w$]*)?\s*/);
+      if (fnKwM) {
+        isFnKeyword = true;
+        rhs = rhs.slice(fnKwM[0].length).trim();
+      }
+      let typeParamStr = '';
+      if (rhs.startsWith('<')) {
+        let ad = 1, k = 1;
+        while (k < rhs.length && ad > 0) {
+          const ch = rhs[k];
+          if (ch === '"' || ch === "'" || ch === '`') { k = skipString(rhs, k); continue; }
+          if (ch === '<') ad++;
+          else if (ch === '>' && rhs[k - 1] !== '=') ad--;
+          k++;
+        }
+        if (ad === 0) {
+          typeParamStr = rhs.slice(0, k).trim();
+          rhs = rhs.slice(k).trim();
+        }
+      }
+      if (rhs.startsWith('(')) {
+        const closeP = findBalancedParen(rhs, 0);
+        if (closeP < 0) return null;
+        const paramStr = rhs.slice(1, closeP).trim();
+        const afterParen = rhs.slice(closeP + 1).trim();
+        if (isFnKeyword) {
+          const retM = afterParen.match(/^(?::\s*([^{]+?))?\s*\{/);
+          if (!retM) return null;
+          return {
+            varKind,
+            varName,
+            rawVarDeclType,
+            isAsync,
+            typeParamStr,
+            paramStr,
+            rawRetType: retM[1] ? retM[1].trim() : null,
+          };
+        }
+        if (afterParen.startsWith('=>')) {
+          const afterArrow = afterParen.slice(2).trim();
+          if (!afterArrow.startsWith('{')) return null;
+          return {
+            varKind,
+            varName,
+            rawVarDeclType,
+            isAsync,
+            typeParamStr,
+            paramStr,
+            rawRetType: null,
+          };
+        }
+        if (afterParen.startsWith(':')) {
+          const afterColon = afterParen.slice(1).trim();
+          let td = 0, arrowPos = -1;
+          let skipFirstFnArrow = afterColon.startsWith('(') || afterColon.startsWith('<');
+          for (let k = 0; k < afterColon.length - 1; k++) {
+            const ch = afterColon[k];
+            if (ch === '"' || ch === "'" || ch === '`') { k = skipString(afterColon, k) - 1; continue; }
+            if (ch === '(' || ch === '[' || ch === '{' || ch === '<') td++;
+            else if (ch === ')' || ch === ']' || ch === '}' || (ch === '>' && afterColon[k - 1] !== '=')) td = Math.max(0, td - 1);
+            else if (td === 0 && ch === '=' && afterColon[k + 1] === '>') {
+              if (skipFirstFnArrow) {
+                skipFirstFnArrow = false;
+                k++;
+                continue;
+              }
+              arrowPos = k;
+              break;
+            }
+          }
+          if (arrowPos > 0) {
+            const afterArrow = afterColon.slice(arrowPos + 2).trim();
+            if (!afterArrow.startsWith('{')) return null;
+            return {
+              varKind,
+              varName,
+              rawVarDeclType,
+              isAsync,
+              typeParamStr,
+              paramStr,
+              rawRetType: afterColon.slice(0, arrowPos).trim(),
+            };
+          }
+        }
+        return null;
+      }
+      const singleParamM = !isFnKeyword ? rhs.match(/^([A-Za-z_$][\w$]*)\s*=>\s*\{/) : null;
+      if (singleParamM && singleParamM[1]) {
+        return {
+          varKind,
+          varName,
+          rawVarDeclType,
+          isAsync,
+          typeParamStr,
+          paramStr: singleParamM[1],
+          rawRetType: null,
+        };
+      }
+      return null;
+    };
+
+    const fnOpen = trimmed.match(/^(?:export\s+)?(?:default\s+)?(async\s+)?function\s*(\*)?\s*([A-Za-z_$][\w$]*)\s*(?:<[\s\S]*>)?\s*\(/);
+    const arrowFnOpen = !fnOpen ? matchArrowOrFnVarOpen(trimmed) : null;
     let validMethodOpen: string[] | null = null;
     if (!fnOpen && !arrowFnOpen && currentClass && braceDepth === classStartBraceDepth + 1) {
       const mHdr = trimmed.match(/^(?:(?:public|private|protected|static|async|readonly|override)\s+)*(?:(get|set)\s+)?(\*\s*)?([A-Za-z_$][\w$]*)\s*(?:<[\s\S]*>)?\s*\(/);
@@ -689,8 +844,8 @@ export function checkPass2Statements(
       }
     }
     const callbackArrowOpen = (!fnOpen && !arrowFnOpen && !validMethodOpen)
-      ? (trimmed.match(/(?:async\s*)?(?:(<[A-Za-z_$][\w$,\s=<>]*>)\s*)?\(([^()]*)\)\s*(?::\s*([^{=]+?))?\s*=>\s*\{$/) ||
-         trimmed.match(/(?:async\s*)?function\s*\*?(?:\s+[A-Za-z_$][\w$]*)?\s*(?:(<[A-Za-z_$][\w$,\s=<>]*>)\s*)?\(([^()]*)\)\s*(?::\s*([^{=]+?))?\s*\{$/))
+      ? (trimmed.match(/(?:(async)\s*)?(?:(<[A-Za-z_$][\w$,\s=<>]*>)\s*)?\(([^()]*)\)\s*(?::\s*([^{=]+?))?\s*=>\s*\{$/) ||
+         trimmed.match(/(?:(async)\s*)?function\s*\*?(?:\s+[A-Za-z_$][\w$]*)?\s*(?:(<[A-Za-z_$][\w$,\s=<>]*>)\s*)?\(([^()]*)\)\s*(?::\s*([^{=]+?))?\s*\{$/))
       : null;
 
     let bodyStartInRaw = 0;
@@ -702,10 +857,11 @@ export function checkPass2Statements(
           trimmed += ' ' + stripInlineCommentSafe(lines[i]).trim();
         }
       }
-      if (arrowFnOpen && arrowFnOpen[2]) {
-        const fnVarName = arrowFnOpen[2];
-        const isConstFn = arrowFnOpen[1] === 'const';
-        env.set(fnVarName, { type: 'function', isConst: isConstFn, line: lineNum, declaredType: 'function' });
+      if (arrowFnOpen) {
+        const fnVarName = arrowFnOpen.varName;
+        const isConstFn = arrowFnOpen.varKind === 'const';
+        const declVarT = arrowFnOpen.rawVarDeclType ? resolveAlias(arrowFnOpen.rawVarDeclType) : 'function';
+        env.set(fnVarName, { type: declVarT, isConst: isConstFn, line: lineNum, declaredType: declVarT });
       }
       if (callbackArrowOpen && currentFn && /^return\b/.test(trimmed)) {
         currentFn.hasValueReturn = true;
@@ -723,28 +879,46 @@ export function checkPass2Statements(
               ? `${currentClass}.get.${validMethodOpen[1]}`
               : `${currentClass}.${validMethodOpen[1]}`)
         : '';
-      const existingFn: FnSigInfo | undefined = (fnOpen && fnOpen[2] ? fns.get(fnOpen[2]) : undefined) ||
+      const existingFn: FnSigInfo | undefined = (fnOpen && fnOpen[3] ? fns.get(fnOpen[3]) : undefined) ||
         (methodKey && validMethodOpen ? (fns.get(methodKey) || fns.get(`${currentClass}.${validMethodOpen[1]}`)) : undefined);
       let activeFn: FnSigInfo;
       if (existingFn) {
         activeFn = existingFn;
-        if (fnOpen && fnOpen[1] === '*') {
+        activeFn.inferredReturnTypes = [];
+        if (fnOpen && fnOpen[2] === '*') {
           activeFn.hasValueReturn = true;
         }
       } else if (callbackArrowOpen) {
-        const cbTParams = callbackArrowOpen[1] ? parseTypeParams(callbackArrowOpen[1]) : [];
-        const cbParamStr = (callbackArrowOpen[2] || '').trim();
-        const cbRawRet = callbackArrowOpen[3] ? callbackArrowOpen[3].trim() : 'any';
-        const cbRet = callbackArrowOpen[3] ? resolveAlias(cbRawRet) : 'any';
+        const isAsyncCb = Boolean(callbackArrowOpen[1]);
+        const cbTParams = callbackArrowOpen[2] ? parseTypeParams(callbackArrowOpen[2]) : [];
+        const cbParamStr = (callbackArrowOpen[3] || '').trim();
+        const hasCbRet = Boolean(callbackArrowOpen[4]);
+        const cbRawRet = callbackArrowOpen[4] ? callbackArrowOpen[4].trim() : (isAsyncCb ? 'Promise<any>' : 'any');
+        const cbRet = callbackArrowOpen[4] ? resolveAlias(cbRawRet) : cbRawRet;
         const { params: cbParams, minArgs: cbMin } = parseParamList(cbParamStr, lineNum, false);
-        activeFn = { name: '<callback>', params: cbParams, minArgs: cbMin, returnType: cbRet, rawReturnType: cbRawRet, typeParams: cbTParams, line: lineNum, hasValueReturn: false };
+        activeFn = {
+          name: '<callback>',
+          params: cbParams,
+          minArgs: cbMin,
+          returnType: cbRet,
+          rawReturnType: cbRawRet,
+          typeParams: cbTParams,
+          line: lineNum,
+          hasValueReturn: false,
+          hasExplicitReturnType: hasCbRet,
+          isAsync: isAsyncCb,
+          inferredReturnTypes: [],
+        };
       } else {
-        const fName = (fnOpen ? fnOpen[2] : (arrowFnOpen ? arrowFnOpen[2] : (methodKey || (currentClass + '.' + (validMethodOpen ? validMethodOpen[1] : ''))))) || '';
+        const fName = (fnOpen ? fnOpen[3] : (arrowFnOpen ? arrowFnOpen.varName : (methodKey || (currentClass + '.' + (validMethodOpen ? validMethodOpen[1] : ''))))) || '';
         let paramStr = '';
         let retType = 'any';
         let rawRetType = 'any';
+        let hasExplicitRet = false;
+        let isAsyncFn = false;
         let fnTParams: Array<{ name: string; constraint: string | null; defaultType: string | null }> = [];
         if (fnOpen) {
+          isAsyncFn = Boolean(fnOpen[1]);
           const openP = trimmed.indexOf('(');
           const closeP = findBalancedParen(trimmed, openP);
           if (closeP > openP) {
@@ -752,24 +926,87 @@ export function checkPass2Statements(
             const afterClose = trimmed.slice(closeP + 1).trim();
             const retM = afterClose.match(/^:\s*([^{]+?)(?:\s*\{[\s\S]*)?$/);
             if (retM && retM[1]) {
+              hasExplicitRet = true;
               rawRetType = retM[1].trim();
               retType = resolveAlias(rawRetType);
+            } else if (isAsyncFn) {
+              rawRetType = 'Promise<any>';
+              retType = 'Promise<any>';
             }
           }
         } else if (arrowFnOpen) {
-          fnTParams = arrowFnOpen[3] ? parseTypeParams(arrowFnOpen[3]) : [];
-          paramStr = (arrowFnOpen[4] || '').trim();
-          rawRetType = arrowFnOpen[5] ? arrowFnOpen[5].trim() : 'any';
-          retType = arrowFnOpen[5] ? resolveAlias(rawRetType) : 'any';
+          isAsyncFn = arrowFnOpen.isAsync;
+          fnTParams = arrowFnOpen.typeParamStr ? parseTypeParams(arrowFnOpen.typeParamStr) : [];
+          paramStr = arrowFnOpen.paramStr;
+          if (arrowFnOpen.rawRetType) {
+            hasExplicitRet = true;
+            rawRetType = arrowFnOpen.rawRetType;
+            retType = resolveAlias(rawRetType);
+          } else if (isAsyncFn) {
+            rawRetType = 'Promise<any>';
+            retType = 'Promise<any>';
+          }
         } else if (validMethodOpen) {
+          isAsyncFn = /\basync\s+/.test(validMethodOpen[0] || '');
           paramStr = (validMethodOpen[2] || '').trim();
           const isCtorOrSetter = validMethodOpen[1] === 'constructor' || validMethodOpen[4] === 'set';
-          rawRetType = isCtorOrSetter ? 'void' : (validMethodOpen[3] ? validMethodOpen[3].trim() : 'any');
+          hasExplicitRet = isCtorOrSetter || Boolean(validMethodOpen[3]);
+          rawRetType = isCtorOrSetter ? 'void' : (validMethodOpen[3] ? validMethodOpen[3].trim() : (isAsyncFn ? 'Promise<any>' : 'any'));
           retType = isCtorOrSetter ? 'void' : resolveAlias(rawRetType);
         }
-        const { params, minArgs } = parseParamList(paramStr, lineNum, Boolean(fnOpen || validMethodOpen));
-        const isGen = Boolean((fnOpen && fnOpen[1] === '*') || /^Generator<|^AsyncGenerator<|^IterableIterator<|^Iterator</.test(retType));
-        activeFn = { name: fName, params, minArgs, returnType: retType, rawReturnType: rawRetType, typeParams: fnTParams, line: lineNum, hasValueReturn: isGen };
+        const { params, minArgs } = parseParamList(
+          paramStr,
+          lineNum,
+          Boolean(ctx.tsConfig.noImplicitAny) && Boolean(fnOpen || validMethodOpen)
+        );
+        if (arrowFnOpen && arrowFnOpen.rawVarDeclType) {
+          const resolvedVarDecl = resolveAlias(arrowFnOpen.rawVarDeclType);
+          let d = 0, topArrow = -1;
+          for (let k = 0; k < resolvedVarDecl.length - 1; k++) {
+            const ch = resolvedVarDecl[k];
+            if (ch === '"' || ch === "'" || ch === '`') { k = skipString(resolvedVarDecl, k) - 1; continue; }
+            if (ch === '(' || ch === '[' || ch === '{' || ch === '<') d++;
+            else if (ch === ')' || ch === ']' || ch === '}' || (ch === '>' && resolvedVarDecl[k - 1] !== '=')) d = Math.max(0, d - 1);
+            else if (d === 0 && ch === '=' && resolvedVarDecl[k + 1] === '>') { topArrow = k; break; }
+          }
+          if (topArrow > 0) {
+            const leftPart = resolvedVarDecl.slice(0, topArrow).trim();
+            const rightPart = resolvedVarDecl.slice(topArrow + 2).trim();
+            const openP = leftPart.indexOf('(');
+            const closeP = openP >= 0 ? findBalancedParen(leftPart, openP) : -1;
+            if (closeP > openP) {
+              const { params: ctxParams } = parseParamList(leftPart.slice(openP + 1, closeP).trim(), lineNum, false);
+              const rawItems = paramStr ? splitTopLevelDecl(paramStr) : [];
+              params.forEach((p, idx) => {
+                const rawC = (rawItems[idx] || '').trim();
+                const ctxP = ctxParams[idx];
+                if (!rawC.includes(':') && !rawC.includes('=') && ctxP && (p.type === 'any' || p.type === 'any[]')) {
+                  p.type = ctxP.type;
+                  p.rawType = ctxP.rawType || ctxP.type;
+                }
+              });
+            }
+            if (!hasExplicitRet && rightPart && rightPart !== 'any') {
+              hasExplicitRet = true;
+              rawRetType = rightPart;
+              retType = resolveAlias(rightPart);
+            }
+          }
+        }
+        const isGen = Boolean((fnOpen && fnOpen[2] === '*') || /^Generator<|^AsyncGenerator<|^IterableIterator<|^Iterator</.test(retType));
+        activeFn = {
+          name: fName,
+          params,
+          minArgs,
+          returnType: retType,
+          rawReturnType: rawRetType,
+          typeParams: fnTParams,
+          line: lineNum,
+          hasValueReturn: isGen,
+          hasExplicitReturnType: hasExplicitRet,
+          isAsync: isAsyncFn,
+          inferredReturnTypes: [],
+        };
         fns.set(fName, activeFn);
       }
       currentFn = activeFn;
@@ -810,23 +1047,17 @@ export function checkPass2Statements(
       }
       const closeBraceIdx = trimmed.lastIndexOf('}');
       const bodyAfterOpenBrace = openBraceIdx >= 0 ? trimmed.slice(openBraceIdx + 1) : '';
-      if (/\bthrow\b/.test(bodyAfterOpenBrace)) {
-        activeFn.hasValueReturn = true;
-      }
-      const rm = bodyAfterOpenBrace.match(/\breturn\b([^;}\n]*)/);
-      if (rm && rm[1]?.trim()) {
-        activeFn.hasValueReturn = true;
-        const inlineRetExpr = rm[1].trim();
-        const inlineRetT = inferType(inlineRetExpr, lineNum);
-        const expRet = activeFn.returnType;
-        const unwrappedExp = (expRet && expRet.startsWith('Promise<') && expRet.endsWith('>')) ? expRet.slice(8, -1) : expRet;
-        if (expRet && expRet !== 'any' && !isExpressionAssignable(inlineRetExpr, inlineRetT, expRet, lineNum) && !isExpressionAssignable(inlineRetExpr, inlineRetT, unwrappedExp, lineNum)) {
-          addDiag(lineNum, 'TS2322', `不能将返回值类型 "${inlineRetT}" 分配给函数 "${activeFn.name}" 声明的返回类型 "${expRet}"`);
-        }
-      }
       if (openBraceIdx >= 0 && closeBraceIdx > openBraceIdx) {
         const inlineBody = trimmed.slice(openBraceIdx + 1, closeBraceIdx).trim();
         inlineBody.split(';').map(s => s.trim()).filter(Boolean).forEach(stmt => {
+          const inlineVar = stmt.match(/^(?:const|let|var)\s+([A-Za-z_$][\w$]*)(?:\s*:\s*([^=]+?))?\s*=\s*([\s\S]+)$/);
+          if (inlineVar && inlineVar[1] && inlineVar[3]) {
+            const vName = inlineVar[1];
+            const vDecl = inlineVar[2] ? resolveAlias(inlineVar[2].trim()) : null;
+            const vT = vDecl || inferType(inlineVar[3].trim(), lineNum);
+            env.set(vName, { type: vT, isConst: stmt.startsWith('const'), line: lineNum, declaredType: vT });
+            return;
+          }
           const inlineAssign = stmt.match(/^([A-Za-z_$][\w$!]*(?:\.[A-Za-z_$][\w$!]*|\s*\[[^\]]+\])*)\s*(\+=|-=|\*=|\/=|=(?!=))\s*([\s\S]+)$/);
           if (inlineAssign && inlineAssign[1] && inlineAssign[3]) {
             const lhs = inlineAssign[1].trim();
@@ -842,6 +1073,34 @@ export function checkPass2Statements(
             }
           }
         });
+      }
+      if (/\bthrow\b/.test(bodyAfterOpenBrace)) {
+        activeFn.hasValueReturn = true;
+      }
+      const rm = bodyAfterOpenBrace.match(/\breturn\b([^;}\n]*)/);
+      if (rm) {
+        const inlineRetExpr = (rm[1] || '').trim();
+        if (inlineRetExpr) {
+          activeFn.hasValueReturn = true;
+          const inlineRetT = inferType(inlineRetExpr, lineNum);
+          if (!activeFn.hasExplicitReturnType) {
+            if (!activeFn.inferredReturnTypes) activeFn.inferredReturnTypes = [];
+            if (!activeFn.inferredReturnTypes.includes(inlineRetT)) {
+              activeFn.inferredReturnTypes.push(inlineRetT);
+            }
+          } else {
+            const expRet = activeFn.returnType;
+            const unwrappedExp = (expRet && expRet.startsWith('Promise<') && expRet.endsWith('>')) ? expRet.slice(8, -1) : expRet;
+            if (expRet && expRet !== 'any' && !isExpressionAssignable(inlineRetExpr, inlineRetT, expRet, lineNum) && !isExpressionAssignable(inlineRetExpr, inlineRetT, unwrappedExp, lineNum)) {
+              addDiag(lineNum, 'TS2322', `不能将返回值类型 "${inlineRetT}" 分配给函数 "${activeFn.name}" 声明的返回类型 "${expRet}"`);
+            }
+          }
+        } else if (!activeFn.hasExplicitReturnType) {
+          if (!activeFn.inferredReturnTypes) activeFn.inferredReturnTypes = [];
+          if (!activeFn.inferredReturnTypes.includes('void')) {
+            activeFn.inferredReturnTypes.push('void');
+          }
+        }
       }
     }
 
@@ -861,14 +1120,54 @@ export function checkPass2Statements(
         }
         if (currentFn && braceDepth <= fnStartBraceDepth) {
           const isGenRet = /^Generator<|^AsyncGenerator<|^IterableIterator<|^Iterator</.test(currentFn.returnType);
-          if (currentFn.returnType !== 'any' && currentFn.returnType !== 'void' && currentFn.returnType !== 'Promise<void>' && currentFn.returnType !== 'never' && currentFn.returnType !== 'Promise<never>' && currentFn.returnType !== 'unknown' && !isGenRet && !currentFn.hasValueReturn) {
+          if (!currentFn.hasExplicitReturnType && !isGenRet) {
+            const collected = (currentFn.inferredReturnTypes || []).filter(Boolean);
+            const nonAny = collected.filter(t => t !== 'any');
+            const effective = nonAny.length > 0 ? nonAny : collected;
+            let inferredRet = 'void';
+            if (effective.length > 0) {
+              inferredRet = effective.join(' | ');
+            } else if (currentFn.hasValueReturn) {
+              inferredRet = 'never';
+            }
+            if (currentFn.isAsync && !inferredRet.startsWith('Promise<')) {
+              inferredRet = `Promise<${inferredRet}>`;
+            }
+            currentFn.rawReturnType = inferredRet;
+            currentFn.returnType = resolveAlias(inferredRet);
+          } else if (
+            ctx.tsConfig.noImplicitReturns !== false &&
+            currentFn.returnType !== 'any' &&
+            currentFn.returnType !== 'void' &&
+            currentFn.returnType !== 'Promise<void>' &&
+            currentFn.returnType !== 'never' &&
+            currentFn.returnType !== 'Promise<never>' &&
+            currentFn.returnType !== 'unknown' &&
+            !isGenRet &&
+            !currentFn.hasValueReturn
+          ) {
             addDiag(currentFn.line, 'TS2355', `函数 "${currentFn.name}" 声明返回类型为 "${currentFn.returnType}"，但缺少 return 返回值语句`);
           }
+          const finishedFn = currentFn;
           const prev = fnScopeStack.pop();
           if (prev) {
             currentFn = prev.fn;
             fnStartBraceDepth = prev.startDepth;
             if (prev.prevEnv) {
+              if (finishedFn.name && finishedFn.name !== '<callback>' && prev.prevEnv.has(finishedFn.name)) {
+                const prevEntry = prev.prevEnv.get(finishedFn.name);
+                if (prevEntry) {
+                  const fullSig = formatFnSigInfoToTypeString(finishedFn);
+                  const nextType = prevEntry.declaredType && prevEntry.declaredType !== 'function'
+                    ? prevEntry.declaredType
+                    : fullSig;
+                  prev.prevEnv.set(finishedFn.name, {
+                    ...prevEntry,
+                    type: nextType,
+                    declaredType: nextType,
+                  });
+                }
+              }
               env.clear();
               prev.prevEnv.forEach((v, kName) => env.set(kName, v));
               if (currentClass) env.set('this', { type: currentClass, isConst: true, line: lineNum, declaredType: currentClass });
@@ -1018,36 +1317,314 @@ export function checkPass2Statements(
       }
       rest = rest.replace(/;\s*$/, '').trim();
       if (openB === 0) {
+        const parseTopLevelFnType = (fnTypeStr: string | null, ln: number) => {
+          if (!fnTypeStr) return null;
+          const resolved = resolveAlias(fnTypeStr.trim());
+          let d = 0;
+          let arrowIdx = -1;
+          for (let k = 0; k < resolved.length - 1; k++) {
+            const ch = resolved[k];
+            if (ch === '"' || ch === "'" || ch === '`') { k = skipString(resolved, k) - 1; continue; }
+            if (ch === '(' || ch === '[' || ch === '{' || ch === '<') d++;
+            else if (ch === ')' || ch === ']' || ch === '}' || (ch === '>' && resolved[k - 1] !== '=')) d = Math.max(0, d - 1);
+            else if (d === 0 && ch === '=' && resolved[k + 1] === '>') { arrowIdx = k; break; }
+          }
+          if (arrowIdx < 0) return null;
+          const left = resolved.slice(0, arrowIdx).trim();
+          const right = resolved.slice(arrowIdx + 2).trim();
+          const openP = left.indexOf('(');
+          if (openP < 0) return null;
+          const closeP = findBalancedParen(left, openP);
+          if (closeP < openP) return null;
+          const pInner = left.slice(openP + 1, closeP).trim();
+          const { params: ctxParams } = parseParamList(pInner, ln, false);
+          return { params: ctxParams, returnType: right || 'any' };
+        };
+
+        const parseInlineArrow = (exprStr: string) => {
+          let s = exprStr.trim();
+          let isAsync = false;
+          if (/^async\b/.test(s) && (isWS(s[5]) || s[5] === '(' || s[5] === '<')) {
+            isAsync = true;
+            s = s.slice(5).trim();
+          }
+          let typeParamStr = '';
+          if (s.startsWith('<')) {
+            let ad = 1, k = 1;
+            while (k < s.length && ad > 0) {
+              const ch = s[k];
+              if (ch === '"' || ch === "'" || ch === '`') { k = skipString(s, k); continue; }
+              if (ch === '<') ad++;
+              else if (ch === '>' && s[k - 1] !== '=') ad--;
+              k++;
+            }
+            if (ad === 0) {
+              typeParamStr = s.slice(0, k).trim();
+              s = s.slice(k).trim();
+            }
+          }
+          if (s.startsWith('(')) {
+            const closeP = findBalancedParen(s, 0);
+            if (closeP < 0) return null;
+            const paramStr = s.slice(1, closeP).trim();
+            const afterParen = s.slice(closeP + 1).trim();
+            if (afterParen.startsWith('=>')) {
+              return {
+                isAsync,
+                typeParamStr,
+                paramStr,
+                rawRet: null,
+                bodyStr: afterParen.slice(2).trim(),
+              };
+            }
+            if (afterParen.startsWith(':')) {
+              const afterColon = afterParen.slice(1).trim();
+              let d = 0;
+              let arrowPos = -1;
+              let skipFirstFnTypeArrow = afterColon.startsWith('(') || afterColon.startsWith('<');
+              for (let k = 0; k < afterColon.length - 1; k++) {
+                const ch = afterColon[k];
+                if (ch === '"' || ch === "'" || ch === '`') { k = skipString(afterColon, k) - 1; continue; }
+                if (ch === '(' || ch === '[' || ch === '{' || ch === '<') d++;
+                else if (ch === ')' || ch === ']' || ch === '}' || (ch === '>' && afterColon[k - 1] !== '=')) d = Math.max(0, d - 1);
+                else if (d === 0 && ch === '=' && afterColon[k + 1] === '>') {
+                  if (skipFirstFnTypeArrow) {
+                    skipFirstFnTypeArrow = false;
+                    k++;
+                    continue;
+                  }
+                  arrowPos = k;
+                  break;
+                }
+              }
+              if (arrowPos > 0) {
+                return {
+                  isAsync,
+                  typeParamStr,
+                  paramStr,
+                  rawRet: afterColon.slice(0, arrowPos).trim(),
+                  bodyStr: afterColon.slice(arrowPos + 2).trim(),
+                };
+              }
+            }
+            return null;
+          }
+          const singleM = s.match(/^([A-Za-z_$][\w$]*)\s*=>\s*([\s\S]+)$/);
+          if (singleM && singleM[1] && singleM[2]) {
+            return {
+              isAsync,
+              typeParamStr,
+              paramStr: singleM[1],
+              rawRet: null,
+              bodyStr: singleM[2].trim(),
+            };
+          }
+          return null;
+        };
+
+        const splitBlockTopStatements = (blockInner: string): string[] => {
+          const stmts: string[] = [];
+          let cur = '';
+          let d = 0;
+          for (let k = 0; k < blockInner.length; k++) {
+            const ch = blockInner[k];
+            if (ch === '"' || ch === "'" || ch === '`') {
+              const end = skipString(blockInner, k);
+              cur += blockInner.slice(k, end);
+              k = end - 1;
+              continue;
+            }
+            if (ch === '(' || ch === '[' || ch === '{') d++;
+            else if (ch === ')' || ch === ']' || ch === '}') d = Math.max(0, d - 1);
+            if ((ch === ';' || ch === '\n') && d === 0) {
+              if (cur.trim()) stmts.push(cur.trim());
+              cur = '';
+            } else {
+              cur += ch;
+            }
+          }
+          if (cur.trim()) stmts.push(cur.trim());
+          return stmts;
+        };
+
         const parts = splitTopLevelDecl(rest);
         parts.forEach(part => {
           const pTrim = part.trim();
-          const pm = pTrim.match(/^([A-Za-z_$][\w$]*)(?:\s*:\s*((?:[^=]|=>)+?))?(?:\s*=\s*(?!=|>)([\s\S]+))?$/);
-          if (pm && pm[1]) {
-            const vName = pm[1];
-            const declT = pm[2] ? resolveAlias(pm[2].trim()) : null;
-            const initExpr = pm[3] ? pm[3].trim() : null;
+          const idM = pTrim.match(/^([A-Za-z_$][\w$]*)/);
+          if (idM && idM[1]) {
+            const vName = idM[1];
+            const afterName = pTrim.slice(vName.length);
+            let eqIdx = -1, colonIdx = -1, d = 0;
+            for (let k = 0; k < afterName.length; k++) {
+              const ch = afterName[k];
+              if (ch === '"' || ch === "'" || ch === '`') { k = skipString(afterName, k) - 1; continue; }
+              if (ch === '(' || ch === '[' || ch === '{' || ch === '<') d++;
+              else if (ch === ')' || ch === ']' || ch === '}' || (ch === '>' && afterName[k - 1] !== '=')) d = Math.max(0, d - 1);
+              else if (d === 0 && ch === ':' && colonIdx < 0 && eqIdx < 0) {
+                colonIdx = k;
+              } else if (
+                d === 0 &&
+                ch === '=' &&
+                afterName[k + 1] !== '=' &&
+                afterName[k + 1] !== '>' &&
+                afterName[k - 1] !== '=' &&
+                afterName[k - 1] !== '!' &&
+                afterName[k - 1] !== '<' &&
+                afterName[k - 1] !== '>'
+              ) {
+                eqIdx = k;
+                break;
+              }
+            }
+            const rawDeclStr = colonIdx >= 0
+              ? afterName.slice(colonIdx + 1, eqIdx >= 0 ? eqIdx : afterName.length).trim()
+              : null;
+            const declT = rawDeclStr ? resolveAlias(rawDeclStr) : null;
+            const initExpr = eqIdx >= 0 ? afterName.slice(eqIdx + 1).trim() : null;
+
+            let inlineArrowSigStr: string | null = null;
             if (initExpr) {
-              const inlineArrowM = initExpr.match(/^(?:async\s+)?(?:(<[\s\S]*?>)\s*)?\(([^)]*)\)\s*(?::\s*((?:[^=]|=>)+?))?\s*=>\s*([\s\S]+)$/);
-              if (inlineArrowM && inlineArrowM[2] !== undefined) {
-                const arrowTParams = inlineArrowM[1] ? parseTypeParams(inlineArrowM[1]) : [];
-                const arrowParamStr = inlineArrowM[2].trim();
-                const arrowRawRet = inlineArrowM[3] ? inlineArrowM[3].trim() : null;
-                const { params: aParams, minArgs: aMin } = parseParamList(arrowParamStr, lineNum, false);
-                const aRet = arrowRawRet ? resolveAlias(arrowRawRet) : 'any';
-                fns.set(vName, {
+              const parsedArrow = parseInlineArrow(initExpr);
+              if (parsedArrow) {
+                const arrowTParams = parsedArrow.typeParamStr ? parseTypeParams(parsedArrow.typeParamStr) : [];
+                const rawParamItems = parsedArrow.paramStr ? splitTopLevelDecl(parsedArrow.paramStr) : [];
+                const { params: aParams, minArgs: aMin } = parseParamList(parsedArrow.paramStr, lineNum, false);
+                const ctxFn = parseTopLevelFnType(rawDeclStr || declT, lineNum);
+                if (ctxFn) {
+                  aParams.forEach((p, idx) => {
+                    const rawClause = (rawParamItems[idx] || '').trim();
+                    const hasExplicitOrDefault = rawClause.includes(':') || rawClause.includes('=');
+                    const ctxP = ctxFn.params[idx];
+                    if (!hasExplicitOrDefault && ctxP && (p.type === 'any' || p.type === 'any[]')) {
+                      p.type = ctxP.type;
+                      p.rawType = ctxP.rawType || ctxP.type;
+                    }
+                  });
+                }
+
+                const savedEnv = new Map<string, VarEnvInfo | undefined>();
+                const boundNames = new Set<string>();
+                const savedTParams = new Map<string, string | undefined>();
+                arrowTParams.forEach(tp => {
+                  savedTParams.set(tp.name, activeTypeParams.get(tp.name));
+                  activeTypeParams.set(tp.name, tp.constraint ? resolveAlias(tp.constraint) : tp.name);
+                });
+                aParams.forEach(p => {
+                  boundNames.add(p.name);
+                  savedEnv.set(p.name, env.get(p.name));
+                  env.set(p.name, { type: p.type, isConst: false, line: lineNum, declaredType: p.type });
+                });
+
+                const rawBody = parsedArrow.bodyStr.trim();
+                const isBlockBody = rawBody.startsWith('{') && rawBody.endsWith('}') && findBalancedParen(rawBody, 0) === rawBody.length - 1;
+                let inferredBodyRet = 'any';
+                let hasValRet = true;
+                if (isBlockBody) {
+                  const innerBody = rawBody.slice(1, -1).trim();
+                  const stmts = innerBody ? splitBlockTopStatements(innerBody) : [];
+                  if (stmts.length === 0) {
+                    inferredBodyRet = 'void';
+                    hasValRet = false;
+                  } else {
+                    const retTypes: string[] = [];
+                    let sawThrow = false;
+                    stmts.forEach(st => {
+                      const localVarM = st.match(/^(?:const|let|var)\s+([A-Za-z_$][\w$]*)(?:\s*:\s*([^=]+?))?\s*=\s*([\s\S]+)$/);
+                      if (localVarM && localVarM[1] && localVarM[3]) {
+                        const lvName = localVarM[1];
+                        const lvDecl = localVarM[2] ? resolveAlias(localVarM[2].trim()) : null;
+                        const lvT = lvDecl || inferType(localVarM[3].trim(), lineNum);
+                        if (!boundNames.has(lvName)) {
+                          boundNames.add(lvName);
+                          savedEnv.set(lvName, env.get(lvName));
+                        }
+                        env.set(lvName, { type: lvT, isConst: st.startsWith('const'), line: lineNum, declaredType: lvT });
+                        return;
+                      }
+                      const rM = st.match(/^return(?:\s+([\s\S]+))?$/);
+                      if (rM) {
+                        const rExpr = rM[1] ? rM[1].trim() : '';
+                        const rT = rExpr ? inferType(rExpr, lineNum) : 'void';
+                        if (!retTypes.includes(rT)) retTypes.push(rT);
+                        return;
+                      }
+                      if (/^throw\b/.test(st)) {
+                        sawThrow = true;
+                        const thExpr = st.replace(/^throw\s+/, '').trim();
+                        if (thExpr) inferType(thExpr, lineNum);
+                        return;
+                      }
+                      inferType(st, lineNum);
+                    });
+                    if (retTypes.length === 0) {
+                      inferredBodyRet = sawThrow ? 'never' : 'void';
+                      hasValRet = sawThrow;
+                    } else {
+                      inferredBodyRet = retTypes.join('|');
+                      hasValRet = retTypes.some(t => t !== 'void');
+                    }
+                  }
+                } else {
+                  inferredBodyRet = inferType(rawBody, lineNum);
+                  hasValRet = true;
+                }
+
+                boundNames.forEach(bName => {
+                  const prev = savedEnv.get(bName);
+                  if (prev !== undefined) env.set(bName, prev);
+                  else env.delete(bName);
+                });
+                arrowTParams.forEach(tp => {
+                  const prevTp = savedTParams.get(tp.name);
+                  if (prevTp !== undefined) activeTypeParams.set(tp.name, prevTp);
+                  else activeTypeParams.delete(tp.name);
+                });
+
+                let finalRawRet: string;
+                let finalRet: string;
+                if (parsedArrow.rawRet) {
+                  finalRawRet = parsedArrow.rawRet;
+                  finalRet = resolveAlias(finalRawRet);
+                  const expectedBodyRet = parsedArrow.isAsync && finalRet.startsWith('Promise<') && finalRet.endsWith('>')
+                    ? finalRet.slice(8, -1).trim()
+                    : finalRet;
+                  if (
+                    expectedBodyRet !== 'any' &&
+                    expectedBodyRet !== 'void' &&
+                    inferredBodyRet !== 'any' &&
+                    !isExpressionAssignable(isBlockBody ? '' : rawBody, inferredBodyRet, expectedBodyRet, lineNum)
+                  ) {
+                    addDiag(lineNum, 'TS2322', `不能将返回值类型 "${inferredBodyRet}" 分配给声明的返回类型 "${finalRet}"`);
+                  }
+                } else {
+                  let baseRet = inferredBodyRet;
+                  if (baseRet === 'any' && ctxFn && ctxFn.returnType) {
+                    baseRet = ctxFn.returnType;
+                  }
+                  if (parsedArrow.isAsync && !baseRet.startsWith('Promise<')) {
+                    baseRet = `Promise<${baseRet}>`;
+                  }
+                  finalRawRet = baseRet;
+                  finalRet = resolveAlias(baseRet);
+                }
+
+                const arrowSig: FnSigInfo = {
                   name: vName,
                   params: aParams,
                   minArgs: aMin,
-                  returnType: aRet,
-                  rawReturnType: arrowRawRet || aRet,
+                  returnType: finalRet,
+                  rawReturnType: finalRawRet,
                   typeParams: arrowTParams,
                   line: lineNum,
-                  hasValueReturn: true,
-                });
+                  hasValueReturn: hasValRet,
+                };
+                fns.set(vName, arrowSig);
+                inlineArrowSigStr = formatFnSigInfoToTypeString(arrowSig);
               }
             }
+
             const narrowedPropKey = initExpr ? '__narrowed_prop_' + initExpr : '';
-            let initT = initExpr ? inferType(initExpr, lineNum) : 'any';
+            let initT = inlineArrowSigStr ? inlineArrowSigStr : (initExpr ? inferType(initExpr, lineNum) : 'any');
             if (narrowedPropKey && env.has(narrowedPropKey)) {
               initT = (env.get(narrowedPropKey) || { type: 'any' }).type;
               env.delete(narrowedPropKey);
@@ -1061,6 +1638,9 @@ export function checkPass2Statements(
               } else if (!isExpressionAssignable(initExpr, initT, declT, lineNum)) {
                 addDiag(lineNum, 'TS2322', `不能将类型 "${initT}" 分配给类型 "${declT}" (变量 "${vName}")`);
               }
+            }
+            if (!declT && !initExpr && ctx.tsConfig.noImplicitAny) {
+              addDiag(lineNum, 'TS7005', `变量 "${vName}" 隐式具有 "any" 类型（严格模式下请显式添加类型注解或初始值）`);
             }
             const litVal = isConst && initExpr ? inferLiteralType(initExpr) : null;
             env.set(vName, {
@@ -1118,22 +1698,29 @@ export function checkPass2Statements(
       const retT = retExpr ? inferType(retExpr, lineNum) : 'void';
       if (currentFn) {
         if (retExpr) currentFn.hasValueReturn = true;
-        const expectedRet = currentFn.returnType;
-        if (expectedRet && expectedRet !== 'any') {
-          const promiseInnerM = expectedRet.match(/^Promise<([\s\S]+)>$/);
-          const genInnerM = expectedRet.match(/^(?:Async)?Generator<([\s\S]+)>$/);
-          let unwrappedExpected = (promiseInnerM && promiseInnerM[1]) ? promiseInnerM[1] : expectedRet;
-          if (genInnerM && genInnerM[1]) {
-            const genArgs = splitTopLevelDecl(genInnerM[1]);
-            unwrappedExpected = genArgs[1] ? genArgs[1].trim() : 'any';
+        if (!currentFn.hasExplicitReturnType) {
+          if (!currentFn.inferredReturnTypes) currentFn.inferredReturnTypes = [];
+          if (!currentFn.inferredReturnTypes.includes(retT)) {
+            currentFn.inferredReturnTypes.push(retT);
           }
-          if (unwrappedExpected !== 'any') {
-            if (retExpr.startsWith('{') && getInterfaceShape(unwrappedExpected)) {
-              checkObjectLiteralAgainstShape(retExpr, unwrappedExpected, lineNum, `函数 "${currentFn.name}" 返回值`);
-            } else if (unwrappedExpected.endsWith('[]') && splitTopLevelUnion(unwrappedExpected).length <= 1 && retExpr.startsWith('[')) {
-              checkArrayElementsAgainst(retExpr, unwrappedExpected.slice(0, -2), lineNum, `函数 "${currentFn.name}" 返回数组中`);
-            } else if (!isExpressionAssignable(retExpr, retT, expectedRet, lineNum) && !isExpressionAssignable(retExpr, retT, unwrappedExpected, lineNum)) {
-              addDiag(lineNum, 'TS2322', `不能将返回值类型 "${retT}" 分配给函数 "${currentFn.name}" 声明的返回类型 "${expectedRet}"`);
+        } else {
+          const expectedRet = currentFn.returnType;
+          if (expectedRet && expectedRet !== 'any') {
+            const promiseInnerM = expectedRet.match(/^Promise<([\s\S]+)>$/);
+            const genInnerM = expectedRet.match(/^(?:Async)?Generator<([\s\S]+)>$/);
+            let unwrappedExpected = (promiseInnerM && promiseInnerM[1]) ? promiseInnerM[1] : expectedRet;
+            if (genInnerM && genInnerM[1]) {
+              const genArgs = splitTopLevelDecl(genInnerM[1]);
+              unwrappedExpected = genArgs[1] ? genArgs[1].trim() : 'any';
+            }
+            if (unwrappedExpected !== 'any') {
+              if (retExpr.startsWith('{') && getInterfaceShape(unwrappedExpected)) {
+                checkObjectLiteralAgainstShape(retExpr, unwrappedExpected, lineNum, `函数 "${currentFn.name}" 返回值`);
+              } else if (unwrappedExpected.endsWith('[]') && splitTopLevelUnion(unwrappedExpected).length <= 1 && retExpr.startsWith('[')) {
+                checkArrayElementsAgainst(retExpr, unwrappedExpected.slice(0, -2), lineNum, `函数 "${currentFn.name}" 返回数组中`);
+              } else if (!isExpressionAssignable(retExpr, retT, expectedRet, lineNum) && !isExpressionAssignable(retExpr, retT, unwrappedExpected, lineNum)) {
+                addDiag(lineNum, 'TS2322', `不能将返回值类型 "${retT}" 分配给函数 "${currentFn.name}" 声明的返回类型 "${expectedRet}"`);
+              }
             }
           }
         }
@@ -1187,9 +1774,16 @@ export function checkPass2Statements(
           const rT = rExpr ? inferType(rExpr, lineNum) : 'void';
           if (currentFn) {
             if (rExpr) currentFn.hasValueReturn = true;
-            const expectedRet = currentFn.returnType;
-            if (expectedRet && expectedRet !== 'any' && !isExpressionAssignable(rExpr, rT, expectedRet, lineNum)) {
-              addDiag(lineNum, 'TS2322', `不能将返回值类型 "${rT}" 分配给函数 "${currentFn.name}" 声明的返回类型 "${expectedRet}"`);
+            if (!currentFn.hasExplicitReturnType) {
+              if (!currentFn.inferredReturnTypes) currentFn.inferredReturnTypes = [];
+              if (!currentFn.inferredReturnTypes.includes(rT)) {
+                currentFn.inferredReturnTypes.push(rT);
+              }
+            } else {
+              const expectedRet = currentFn.returnType;
+              if (expectedRet && expectedRet !== 'any' && !isExpressionAssignable(rExpr, rT, expectedRet, lineNum)) {
+                addDiag(lineNum, 'TS2322', `不能将返回值类型 "${rT}" 分配给函数 "${currentFn.name}" 声明的返回类型 "${expectedRet}"`);
+              }
             }
           }
         }
@@ -1206,8 +1800,22 @@ export function checkPass2Statements(
         }
       }
       const defRest = (defaultM[1] || '').trim();
-      if (/^(?:return\s+\S|throw\b)/.test(defRest) && currentFn) {
-        currentFn.hasValueReturn = true;
+      if (defRest) {
+        if (/^throw\b/.test(defRest) && currentFn) {
+          currentFn.hasValueReturn = true;
+        }
+        const inlineDefRet = defRest.match(/^return(?:\s+([\s\S]+?))?;?$/);
+        if (inlineDefRet && currentFn) {
+          const rExpr = inlineDefRet[1] ? inlineDefRet[1].trim() : '';
+          const rT = rExpr ? inferType(rExpr, lineNum) : 'void';
+          if (rExpr) currentFn.hasValueReturn = true;
+          if (!currentFn.hasExplicitReturnType) {
+            if (!currentFn.inferredReturnTypes) currentFn.inferredReturnTypes = [];
+            if (!currentFn.inferredReturnTypes.includes(rT)) {
+              currentFn.inferredReturnTypes.push(rT);
+            }
+          }
+        }
       }
       continue;
     }
@@ -1458,14 +2066,30 @@ export function checkPass2Statements(
       }
     }
   }
+
+  if (ctx.tsConfig.noUnusedLocals) {
+    const cleanSource = lines.map(ln => stripInlineCommentSafe(ln)).join('\n');
+    env.forEach((info, vName) => {
+      if (!info.line || vName === 'this' || vName.startsWith('__')) return;
+      const declLineRaw = stripInlineCommentSafe(lines[info.line - 1] || '').trim();
+      if (/^export\b/.test(declLineRaw)) return;
+      const idRe = new RegExp(`\\b${vName.replace(/\$/g, '\\$')}\\b`, 'g');
+      const matches = cleanSource.match(idRe);
+      if (!matches || matches.length <= 1) {
+        addDiag(info.line, 'TS6133', `已声明 "${vName}"，但从未读取其值 (noUnusedLocals)`);
+      }
+    });
+  }
 }
 
 function syncContextFunctionTypesToMeta(ctx: TypeCheckContext): void {
   const meta = appState.CURRENT_TS_META;
   if (!meta) return;
   if (!meta.fnTypes) meta.fnTypes = new Map<string, string>();
+  if (!meta.typeAliases) meta.typeAliases = new Map<string, TypeAliasMeta>();
   const fnTypes = meta.fnTypes;
   const varTypes = meta.varTypes;
+  const typeAliases = meta.typeAliases;
   ctx.fns.forEach((sig, fnKey) => {
     if (!fnKey || fnKey.includes('.') || fnKey.startsWith('<')) return;
     const formatted = formatFnSigInfoToTypeString(sig);
@@ -1479,16 +2103,70 @@ function syncContextFunctionTypesToMeta(ctx: TypeCheckContext): void {
       varTypes.set(vName, candidate);
     }
   });
+  ctx.typeAliases.forEach((evaluatedBody, aliasName) => {
+    const prev = typeAliases.get(aliasName);
+    const rawDef = prev ? prev.rawDef : evaluatedBody;
+    const updated = buildTypeAliasMeta(
+      aliasName,
+      rawDef,
+      evaluatedBody,
+      prev ? prev.line : undefined,
+      prev ? prev.typeParams : undefined,
+      meta.interfaces,
+      typeAliases
+    );
+    typeAliases.set(aliasName, updated);
+  });
+  ctx.genericTypeAliases.forEach((gInfo, aliasName) => {
+    const prev = typeAliases.get(aliasName);
+    const tParamsStr = `<${gInfo.typeParams.map(tp => tp.name).join(', ')}>`;
+    const updated = buildTypeAliasMeta(
+      aliasName,
+      prev ? prev.rawDef : gInfo.body,
+      undefined,
+      gInfo.line || (prev ? prev.line : undefined),
+      tParamsStr,
+      meta.interfaces,
+      typeAliases
+    );
+    typeAliases.set(aliasName, updated);
+  });
 }
 
 export function typecheckTS(src: string, strict = appState.STRICT_TS) {
   extractTsInterfaceMetadata(src);
   if (!strict) return [];
-  if (typeof src === 'string' && _TYPECHECK_CACHE.src === src && _TYPECHECK_CACHE.strict === strict) {
+  const configKey = formatTsConfigCacheKey(appState.TS_CONFIG);
+  if (
+    typeof src === 'string' &&
+    _TYPECHECK_CACHE.src === src &&
+    _TYPECHECK_CACHE.strict === strict &&
+    _TYPECHECK_CACHE.configKey === configKey
+  ) {
+    if (appState.CURRENT_TS_META) {
+      if (_TYPECHECK_CACHE.fnTypes) {
+        if (!appState.CURRENT_TS_META.fnTypes) {
+          appState.CURRENT_TS_META.fnTypes = new Map<string, string>();
+        }
+        const targetFnTypes = appState.CURRENT_TS_META.fnTypes;
+        _TYPECHECK_CACHE.fnTypes.forEach((v, k) => targetFnTypes.set(k, v));
+      }
+      if (_TYPECHECK_CACHE.varTypes) {
+        const targetVarTypes = appState.CURRENT_TS_META.varTypes;
+        _TYPECHECK_CACHE.varTypes.forEach((v, k) => targetVarTypes.set(k, v));
+      }
+      if (_TYPECHECK_CACHE.typeAliases) {
+        if (!appState.CURRENT_TS_META.typeAliases) {
+          appState.CURRENT_TS_META.typeAliases = new Map<string, TypeAliasMeta>();
+        }
+        const targetAliases = appState.CURRENT_TS_META.typeAliases;
+        _TYPECHECK_CACHE.typeAliases.forEach((v, k) => targetAliases.set(k, v));
+      }
+    }
     return _TYPECHECK_CACHE.diags.map((d: Diag) => ({ ...d }));
   }
 
-  const ctx = createTypeCheckContext(src);
+  const ctx = createTypeCheckContext(src, appState.TS_CONFIG);
   const evalEngine = createTypeEvalEngine(ctx);
   const inferEngine = createTypeInferEngine(ctx, evalEngine);
 
@@ -1498,7 +2176,11 @@ export function typecheckTS(src: string, strict = appState.STRICT_TS) {
 
   const { diagnostics } = ctx;
 
-  if (_TS_WORKER_STATE.lastSrc === src && Array.isArray(_TS_WORKER_STATE.lastDiags)) {
+  if (
+    _TS_WORKER_STATE.lastSrc === src &&
+    _TS_WORKER_STATE.lastConfigKey === configKey &&
+    Array.isArray(_TS_WORKER_STATE.lastDiags)
+  ) {
     _TS_WORKER_STATE.lastDiags.forEach((wd: { line: number; code: string; message?: string }) => {
       if (!diagnostics.some(d => d.line === wd.line && d.code === wd.code)) {
         diagnostics.push({ line: wd.line, code: wd.code, message: wd.message });
@@ -1509,7 +2191,15 @@ export function typecheckTS(src: string, strict = appState.STRICT_TS) {
   }
 
   if (typeof src === 'string') {
-    _TYPECHECK_CACHE = { src, strict, diags: diagnostics.map(d => ({ ...d })) };
+    _TYPECHECK_CACHE = {
+      src,
+      strict,
+      configKey,
+      diags: diagnostics.map(d => ({ ...d })),
+      fnTypes: appState.CURRENT_TS_META?.fnTypes ? new Map(appState.CURRENT_TS_META.fnTypes) : undefined,
+      varTypes: appState.CURRENT_TS_META?.varTypes ? new Map(appState.CURRENT_TS_META.varTypes) : undefined,
+      typeAliases: appState.CURRENT_TS_META?.typeAliases ? new Map(appState.CURRENT_TS_META.typeAliases) : undefined,
+    };
   }
   return diagnostics;
 }
@@ -1620,12 +2310,37 @@ export function typecheckWorkspaceModules(
   fileMap: ReadonlyMap<string, string> | Record<string, string>,
   strict = appState.STRICT_TS
 ): { diagnostics: Diag[]; diags: Diag[]; graph: ModuleGraphResult } {
+  const isReadonlyMap = (
+    m: ReadonlyMap<string, string> | Record<string, string>
+  ): m is ReadonlyMap<string, string> => m instanceof Map;
+  const rawTsConfig = isReadonlyMap(fileMap)
+    ? (fileMap.get('tsconfig.json') ?? fileMap.get('/workspace/tsconfig.json'))
+    : (fileMap['tsconfig.json'] ?? fileMap['/workspace/tsconfig.json']);
+  let activeTsConfig = appState.TS_CONFIG;
+  let tsConfigErrorDiag: Diag | null = null;
+  if (typeof rawTsConfig === 'string' && rawTsConfig.trim()) {
+    const parsedCfg = parseTsConfigJson(rawTsConfig, appState.TS_CONFIG);
+    if (parsedCfg.error) {
+      tsConfigErrorDiag = {
+        file: 'tsconfig.json',
+        line: 1,
+        code: 'TS5095',
+        message: parsedCfg.error,
+        severity: 'error',
+      };
+    } else {
+      activeTsConfig = parsedCfg.config;
+      appState.TS_CONFIG = parsedCfg.config;
+    }
+  }
+
   const graph = buildModuleGraph(entryFile, entrySource, fileMap);
   if (!graph.isMultiFile) {
     const singleDiags: Diag[] = typecheckTS(entrySource, strict).map(d => ({
       ...d,
       file: ('file' in d && d.file) ? d.file : graph.entryFile,
     }));
+    if (tsConfigErrorDiag) singleDiags.unshift(tsConfigErrorDiag);
     return { diagnostics: singleDiags, diags: singleDiags, graph };
   }
 
@@ -1633,6 +2348,7 @@ export function typecheckWorkspaceModules(
     interfaces: new Map(),
     varTypes: new Map(),
     fnTypes: new Map(),
+    typeAliases: new Map(),
   };
 
   for (const modFile of graph.order) {
@@ -1663,17 +2379,19 @@ export function typecheckWorkspaceModules(
 
   if (!strict) {
     const diags = [...graph.diagnostics];
+    if (tsConfigErrorDiag) diags.unshift(tsConfigErrorDiag);
     return { diagnostics: diags, diags, graph };
   }
 
   const allDiagnostics: Diag[] = [...graph.diagnostics];
+  if (tsConfigErrorDiag) allDiagnostics.unshift(tsConfigErrorDiag);
   const checkedContexts = new Map<string, TypeCheckContext>();
 
   for (const modFile of graph.order) {
     const modNode = graph.modules.get(modFile);
     if (!modNode) continue;
 
-    const ctx = createTypeCheckContext(modNode.rawSource);
+    const ctx = createTypeCheckContext(modNode.rawSource, activeTsConfig);
     const evalEngine = createTypeEvalEngine(ctx);
     const inferEngine = createTypeInferEngine(ctx, evalEngine);
 
@@ -1745,6 +2463,7 @@ const _TS_WORKER_STATE: {
   reqId: number;
   pendingSrc: string | null;
   lastSrc: string | null;
+  lastConfigKey: string | null;
   lastDiags: Array<{ line: number; code: string; message?: string }> | null;
   timer: ReturnType<typeof setTimeout> | null;
 } = {
@@ -1753,6 +2472,7 @@ const _TS_WORKER_STATE: {
   reqId: 0,
   pendingSrc: null,
   lastSrc: null,
+  lastConfigKey: null,
   lastDiags: null,
   timer: null,
 };
@@ -1769,10 +2489,11 @@ export function ensureTsWorker() {
       const data = ev && ev.data;
       if (!data || data.type !== 'checkResult') return;
       _TS_WORKER_STATE.lastSrc = data.src;
+      _TS_WORKER_STATE.lastConfigKey = typeof data.configKey === 'string' ? data.configKey : null;
       const newDiags = Array.isArray(data.diagnostics) ? data.diagnostics : [];
       _TS_WORKER_STATE.lastDiags = newDiags;
       if (_TYPECHECK_CACHE.src === data.src && newDiags.length > 0) {
-        _TYPECHECK_CACHE = { src: null, strict: null, diags: [] };
+        _TYPECHECK_CACHE = { src: null, strict: null, configKey: null, diags: [] };
         try { uiHooks.updateEditorChrome(); } catch (_) {}
       }
     };
@@ -1794,11 +2515,19 @@ export function requestTsWorkerCheck(src: string, strict: boolean) {
   const w = ensureTsWorker();
   if (!w) return;
   _TS_WORKER_STATE.pendingSrc = src;
+  const configKey = formatTsConfigCacheKey(appState.TS_CONFIG);
   if (_TS_WORKER_STATE.timer) clearTimeout(_TS_WORKER_STATE.timer);
   _TS_WORKER_STATE.timer = setTimeout(() => {
     const id = ++_TS_WORKER_STATE.reqId;
     try {
-      w.postMessage({ id, type: 'check', src: _TS_WORKER_STATE.pendingSrc, strict: Boolean(strict) });
+      w.postMessage({
+        id,
+        type: 'check',
+        src: _TS_WORKER_STATE.pendingSrc,
+        strict: Boolean(strict),
+        tsConfig: { ...appState.TS_CONFIG },
+        configKey,
+      });
     } catch (_) {}
   }, 60);
 }

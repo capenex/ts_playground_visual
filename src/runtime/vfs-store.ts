@@ -135,6 +135,34 @@ export function ensureVfsInitialized(): void {
   } catch (_) {
     /* ignore storage errors */
   }
+  if (!VFS_NODES.has("tsconfig.json")) {
+    VFS_NODES.set("tsconfig.json", {
+      path: "tsconfig.json",
+      name: "tsconfig.json",
+      type: "file",
+      parentPath: "",
+      content: JSON.stringify(
+        {
+          compilerOptions: {
+            target: "ES2022",
+            module: "ESNext",
+            strict: false,
+            noImplicitAny: false,
+            strictNullChecks: false,
+            strictFunctionTypes: true,
+            noImplicitReturns: false,
+            noUnusedLocals: false,
+          },
+          playgroundConfig: {
+            preset: "beginner",
+            allowRunOnTypeError: true,
+          },
+        },
+        null,
+        2
+      ),
+    });
+  }
 }
 
 export function persistVfsToClientStorage(): void {

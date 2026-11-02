@@ -1012,7 +1012,7 @@ export function createTypeInferEngine(ctx: TypeCheckContext, evalEngine: TypeEva
     outEnv: Map<string, string> | null = null
   ): string {
     const hasRest = sig.params.some(p => p.isRest);
-    if (args.length < sig.minArgs || (!hasRest && args.length > sig.params.length)) {
+    if (ctx.tsConfig.strictFunctionTypes !== false && (args.length < sig.minArgs || (!hasRest && args.length > sig.params.length))) {
       addDiag(lineNum, 'TS2554', `${calleeLabel} 应有 ${sig.minArgs === sig.params.length ? sig.params.length : sig.minArgs + '-' + sig.params.length} 个参数，但获得 ${args.length} 个`);
       return sig.returnType || 'any';
     }
@@ -1124,7 +1124,7 @@ export function createTypeInferEngine(ctx: TypeCheckContext, evalEngine: TypeEva
     });
   }
 
-  function parseParamList(paramStr: string, lineNum: number, checkUntypedParams = true) {
+  function parseParamList(paramStr: string, lineNum: number, checkUntypedParams = Boolean(ctx.tsConfig.noImplicitAny)) {
     const rawParams = paramStr ? splitTopLevelDecl(paramStr) : [];
     const params: Array<{ name: string; type: string; rawType: string; optional: boolean; isRest?: boolean }> = [];
     let minArgs = 0;
@@ -1177,7 +1177,7 @@ export function createTypeInferEngine(ctx: TypeCheckContext, evalEngine: TypeEva
     const setterM = s.match(/^(?:(?:public|private|protected|static|readonly|override)\s+)*set\s+([A-Za-z_$][\w$]*)\s*\(([^)]*)\)/);
     if (setterM && setterM[1]) {
       const sName = setterM[1];
-      const { params, minArgs } = parseParamList((setterM[2] || '').trim(), lineNum, true);
+      const { params, minArgs } = parseParamList((setterM[2] || '').trim(), lineNum, Boolean(ctx.tsConfig.noImplicitAny));
       const sType = params[0]?.type || 'any';
       const sRaw = params[0]?.rawType || sType;
       if (!propMap.has(sName)) {
@@ -1226,7 +1226,7 @@ export function createTypeInferEngine(ctx: TypeCheckContext, evalEngine: TypeEva
         const retM = afterClose.match(/^:\s*([^{;]+?)(?:\s*(?:\{[\s\S]*|;))?$/);
         const rawRetType = mName === 'constructor' ? 'void' : (retM && retM[1] ? retM[1].trim() : 'any');
         const retType = mName === 'constructor' ? 'void' : resolveAlias(rawRetType);
-        const { params, minArgs } = parseParamList(paramStr, lineNum, true);
+        const { params, minArgs } = parseParamList(paramStr, lineNum, Boolean(ctx.tsConfig.noImplicitAny));
         if (mName === 'constructor') {
           splitTopLevelDecl(paramStr).forEach((rawP, idx) => {
             const pTrim = rawP.trim();

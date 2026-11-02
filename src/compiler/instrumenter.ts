@@ -142,10 +142,11 @@ export function collectNames(js: string): string[] {
 }
 
 export function snapFnExpr(names: string[]): string {
-  const body = names.map(n =>
-    `try{__v[${JSON.stringify(n)}]=${n};}catch(e){}`
-  ).join('');
-  return `function(){var __v={};${body}return __v;}`;
+  const body = names.map(n => {
+    const k = JSON.stringify(n);
+    return `try{var __x=${n};if(__x!==undefined&&!(__x!==null&&(typeof __x==="object"||typeof __x==="function")&&__g&&${k} in __g&&__x===__g[${k}])){if(__x!==null&&typeof __x==="object")void __x.__isVirtualPromise;__v[${k}]=__x;}}catch(e){}`;
+  }).join('');
+  return `function(){var __v={},__g=typeof globalThis!=="undefined"?globalThis:null;${body}return __v;}`;
 }
 
 function endsWithContinuation(t: string): boolean {

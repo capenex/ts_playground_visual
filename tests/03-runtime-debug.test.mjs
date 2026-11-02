@@ -177,5 +177,44 @@ scheduler()
     'B07: step debugger visits inline case 1: return "one" on line 3',
     sandbox.TRACE.steps.some((s) => s.line === 3),
   );
+
+  // 8. Cross-Origin iframe Window (`globalThis.parent` / `globalThis.top`) Isolation in `structures.ts`
+  resetSandbox(sandbox);
+  const crossOriginThrow = (prop) => {
+    throw new Error(
+      `Failed to read a named property '${String(prop)}' from 'Window': Blocked a frame with origin "https://ais-dev.run.app" from accessing a cross-origin frame.`,
+    );
+  };
+  const crossOriginWinProxy = new Proxy(
+    {},
+    {
+      get(_t, prop) {
+        return crossOriginThrow(prop);
+      },
+      has(_t, prop) {
+        return crossOriginThrow(prop);
+      },
+    },
+  );
+  sandbox.parent = crossOriginWinProxy;
+  sandbox.top = crossOriginWinProxy;
+  try {
+    editorEl.value = sandbox.SAMPLES.structures;
+    sandbox.startDebug(7, sandbox.SAMPLES.structures);
+    while (!sandbox.DEBUG_SESSION.finished && sandbox.TRACE.steps.length < 40) {
+      if (!sandbox.computeAndAppendNextStep({ silent: true })) break;
+    }
+    const lastStructStep = sandbox.TRACE.steps[sandbox.TRACE.steps.length - 1];
+    check(
+      'Cross-origin globalThis.parent/top does not crash structures.ts (const parent = [...])',
+      !sandbox.DEBUG_SESSION.crashed &&
+        sandbox.DEBUG_SESSION.finished &&
+        sandbox.DEBUG_SESSION.returnValue === 5 &&
+        Boolean(lastStructStep && lastStructStep.ds && lastStructStep.ds.parent && lastStructStep.ds.parent.kind === 'uf'),
+    );
+  } finally {
+    delete sandbox.parent;
+    delete sandbox.top;
+  }
 }
 

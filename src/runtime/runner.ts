@@ -27,6 +27,7 @@ import { getActiveScriptTab, SCRIPT_TABS } from "./script-tabs-store";
 import {
   cloneDeepBounded,
   isRecord,
+  isVirtualPromise,
   safeJSONStringify,
 } from "../utils/format";
 import {
@@ -38,12 +39,20 @@ import {
   discoverVars,
 } from "../viz/memory-normalizers";
 
-export function reportTypeErrors(diags: Array<Diag>) {
+export function reportTypeErrors(diags: Array<Diag>, warnOnly = false) {
   const activeFile = appState.ENTRY_FILE_PATH || appState.FILE_NAME || 'main.ts';
   appState.TYPE_ERROR_LINES = new Set(
     diags.filter(d => !d.file || d.file === activeFile).map(d => d.line)
   );
   uiHooks.updateEditorChrome();
+  if (warnOnly) {
+    say(`⚠ TypeScript 类型提示 (共 ${diags.length} 处，当前 tsconfig 允许忽略类型错误继续运行)：`, 'warn');
+    diags.forEach(d => {
+      const filePrefix = d.file && d.file !== activeFile ? `${d.file} · ` : '';
+      say(`  • ${d.code} [${filePrefix}第 ${d.line} 行]: ${d.message || d.msg || ''}`, 'warn', d.line);
+    });
+    return;
+  }
   say(`✗ TypeScript 严格类型检查未通过 (共 ${diags.length} 处错误)：`, 'err');
   diags.forEach(d => {
     const filePrefix = d.file && d.file !== activeFile ? `${d.file} · ` : '';
@@ -364,11 +373,14 @@ export function runOnce(budgetMs?: number, sourceCode?: string) {
     return;
   }
   const { diagnostics: diags, graph } = typecheckWorkspaceModules(entryFile, src, fileMap, appState.STRICT_TS);
+  const hasBlockingModuleError = diags.some(d => d.code === 'TS2307' || d.code === 'TS2300');
   if (diags.length > 0) {
-    reportTypeErrors(diags);
-    return;
-  }
-  if (appState.TYPE_ERROR_LINES.size || appState.RUNTIME_ERROR_LINES.size) {
+    if (!appState.TS_CONFIG.allowRunOnTypeError || hasBlockingModuleError) {
+      reportTypeErrors(diags, false);
+      return;
+    }
+    reportTypeErrors(diags, true);
+  } else if (appState.TYPE_ERROR_LINES.size || appState.RUNTIME_ERROR_LINES.size) {
     appState.TYPE_ERROR_LINES.clear();
     appState.RUNTIME_ERROR_LINES.clear();
     uiHooks.updateEditorChrome();
@@ -857,7 +869,7 @@ export function computeAndAppendNextStep(opts: { silent?: boolean } = {}) {
     const rawMap = nextVRaw;
     Object.keys(rawMap).forEach(name => {
       const nv = rawMap[name];
-      if (nv && typeof nv === 'object' && '__isVirtualPromise' in nv) {
+      if (isVirtualPromise(nv)) {
         stepObj.v[name] = cloneDeepBounded(nv, 2);
       }
       if (stepObj.vRaw && stepObj.vRaw[name] === undefined && nv !== undefined && !stepObj.ds[name]) {
@@ -962,12 +974,15 @@ export function startDebug(initialStep = 0, sourceCode?: string) {
   }
 
   const { diagnostics: diags, graph } = typecheckWorkspaceModules(entryFile, src, fileMap, appState.STRICT_TS);
+  const hasBlockingModuleError = diags.some(d => d.code === 'TS2307' || d.code === 'TS2300');
   if (diags.length > 0) {
-    resetTraceState();
-    reportTypeErrors(diags);
-    return false;
-  }
-  if (appState.TYPE_ERROR_LINES.size || appState.RUNTIME_ERROR_LINES.size) {
+    if (!appState.TS_CONFIG.allowRunOnTypeError || hasBlockingModuleError) {
+      resetTraceState();
+      reportTypeErrors(diags, false);
+      return false;
+    }
+    reportTypeErrors(diags, true);
+  } else if (appState.TYPE_ERROR_LINES.size || appState.RUNTIME_ERROR_LINES.size) {
     appState.TYPE_ERROR_LINES.clear();
     appState.RUNTIME_ERROR_LINES.clear();
   }
@@ -1010,7 +1025,7 @@ export function startDebug(initialStep = 0, sourceCode?: string) {
       return false;
     }
   } else {
-    extractTsInterfaceMetadata(src);
+    extractTsInterfaceMetadata(src, true);
     const enums = transpileEnums(src);
     if (enums.error) {
       resetTraceState();

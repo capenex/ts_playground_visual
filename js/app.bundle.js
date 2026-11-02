@@ -16,12 +16,15 @@
     MAX_STEPS: () => MAX_STEPS,
     PAUSE_SIGNAL: () => PAUSE_SIGNAL,
     RUN_TIMEOUT_MS: () => RUN_TIMEOUT_MS,
+    TS_CONFIG_PRESETS: () => TS_CONFIG_PRESETS,
     VIDEO_FPS: () => VIDEO_FPS,
     VIDEO_HEIGHT: () => VIDEO_HEIGHT,
     VIDEO_SPEED_OPTIONS: () => VIDEO_SPEED_OPTIONS,
     VIDEO_WIDTH: () => VIDEO_WIDTH,
     appState: () => appState,
     bindStateGlobals: () => bindStateGlobals,
+    createTsConfigFromPreset: () => createTsConfigFromPreset,
+    detectTsConfigPreset: () => detectTsConfigPreset,
     esc: () => esc,
     notifyConsoleLog: () => notifyConsoleLog,
     registerUiHooks: () => registerUiHooks,
@@ -37,6 +40,51 @@
   var VIDEO_FPS = 60;
   var VIDEO_SPEED_OPTIONS = [0.75, 1, 1.5, 2, 3];
   var PAUSE_SIGNAL = { __debugPause: true };
+  var TS_CONFIG_PRESETS = {
+    beginner: {
+      preset: "beginner",
+      strict: false,
+      noImplicitAny: false,
+      strictNullChecks: false,
+      strictFunctionTypes: true,
+      noImplicitReturns: false,
+      noUnusedLocals: false,
+      allowRunOnTypeError: true
+    },
+    standard: {
+      preset: "standard",
+      strict: true,
+      noImplicitAny: false,
+      strictNullChecks: true,
+      strictFunctionTypes: true,
+      noImplicitReturns: true,
+      noUnusedLocals: false,
+      allowRunOnTypeError: false
+    },
+    strict: {
+      preset: "strict",
+      strict: true,
+      noImplicitAny: true,
+      strictNullChecks: true,
+      strictFunctionTypes: true,
+      noImplicitReturns: true,
+      noUnusedLocals: true,
+      allowRunOnTypeError: false
+    }
+  };
+  function createTsConfigFromPreset(preset = "beginner") {
+    return { ...TS_CONFIG_PRESETS[preset] };
+  }
+  function detectTsConfigPreset(cfg) {
+    const keys = ["beginner", "standard", "strict"];
+    for (const key of keys) {
+      const p = TS_CONFIG_PRESETS[key];
+      if (cfg.strict === p.strict && cfg.noImplicitAny === p.noImplicitAny && cfg.strictNullChecks === p.strictNullChecks && cfg.strictFunctionTypes === p.strictFunctionTypes && cfg.noImplicitReturns === p.noImplicitReturns && cfg.noUnusedLocals === p.noUnusedLocals && cfg.allowRunOnTypeError === p.allowRunOnTypeError) {
+        return key;
+      }
+    }
+    return "custom";
+  }
   function esc(t) {
     return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
@@ -60,6 +108,7 @@
     IS_STILL: false,
     URL_WATCH: null,
     STRICT_TS: true,
+    TS_CONFIG: createTsConfigFromPreset("beginner"),
     TYPE_ERROR_LINES: /* @__PURE__ */ new Set(),
     RUNTIME_ERROR_LINES: /* @__PURE__ */ new Set(),
     lastEditorCursorLine: -1,
@@ -68,7 +117,8 @@
     ACTIVE_DEBUG_FILE: "",
     CURRENT_TS_META: {
       interfaces: /* @__PURE__ */ new Map(),
-      varTypes: /* @__PURE__ */ new Map()
+      varTypes: /* @__PURE__ */ new Map(),
+      typeAliases: /* @__PURE__ */ new Map()
     },
     DEBUG_SESSION: {
       active: false,
@@ -133,6 +183,9 @@
       VIDEO_FPS,
       VIDEO_SPEED_OPTIONS,
       PAUSE_SIGNAL,
+      TS_CONFIG_PRESETS,
+      createTsConfigFromPreset,
+      detectTsConfigPreset,
       esc,
       appState
     });
@@ -181,6 +234,8 @@
     renderNotebookUI: () => {
     },
     setCntStatus: () => {
+    },
+    syncTsConfigUI: () => {
     }
   };
   function registerUiHooks(hooks) {
@@ -2574,10 +2629,11 @@ runAsyncDemo()
     return [...names];
   }
   function snapFnExpr(names) {
-    const body = names.map(
-      (n) => `try{__v[${JSON.stringify(n)}]=${n};}catch(e){}`
-    ).join("");
-    return `function(){var __v={};${body}return __v;}`;
+    const body = names.map((n) => {
+      const k = JSON.stringify(n);
+      return `try{var __x=${n};if(__x!==undefined&&!(__x!==null&&(typeof __x==="object"||typeof __x==="function")&&__g&&${k} in __g&&__x===__g[${k}])){if(__x!==null&&typeof __x==="object")void __x.__isVirtualPromise;__v[${k}]=__x;}}catch(e){}`;
+    }).join("");
+    return `function(){var __v={},__g=typeof globalThis!=="undefined"?globalThis:null;${body}return __v;}`;
   }
   function endsWithContinuation(t) {
     if (!t) return false;
@@ -3016,6 +3072,7 @@ runAsyncDemo()
     BUILTIN_TS_GLOBALS: () => BUILTIN_TS_GLOBALS,
     buildExportAssignmentFooter: () => buildExportAssignmentFooter,
     buildModuleGraph: () => buildModuleGraph,
+    buildTypeAliasMeta: () => buildTypeAliasMeta,
     checkPass2Statements: () => checkPass2Statements,
     collectPass1Declarations: () => collectPass1Declarations,
     createTypeCheckContext: () => createTypeCheckContext,
@@ -3025,6 +3082,7 @@ runAsyncDemo()
     extractTsInterfaceMetadata: () => extractTsInterfaceMetadata,
     formatFnSigInfoToTypeString: () => formatFnSigInfoToTypeString,
     formatFunctionTypeSignature: () => formatFunctionTypeSignature,
+    formatTsConfigCacheKey: () => formatTsConfigCacheKey,
     inferExpr: () => inferExpr,
     inferLiteralType: () => inferLiteralType,
     inferRuntimeTsType: () => inferRuntimeTsType,
@@ -3035,14 +3093,17 @@ runAsyncDemo()
     matchTemplateLiteralType: () => matchTemplateLiteralType,
     normalizeTsType: () => normalizeTsType,
     normalizeWorkspaceModulePath: () => normalizeWorkspaceModulePath,
+    parseFieldsFromTypeBody: () => parseFieldsFromTypeBody,
     parseModuleImportsAndExports: () => parseModuleImportsAndExports,
     parseObjectLiteralEntries: () => parseObjectLiteralEntries,
     parseTopLevelConditional: () => parseTopLevelConditional,
+    parseTsConfigJson: () => parseTsConfigJson,
     parseType: () => parseType,
     parseTypeParams: () => parseTypeParams,
     requestTsWorkerCheck: () => requestTsWorkerCheck,
     resolveModuleImportPath: () => resolveModuleImportPath,
     rewriteModuleEsmToCjs: () => rewriteModuleEsmToCjs,
+    serializeTsConfigToJson: () => serializeTsConfigToJson,
     splitTopLevelDecl: () => splitTopLevelDecl,
     splitTopLevelIntersection: () => splitTopLevelIntersection,
     splitTopLevelUnion: () => splitTopLevelUnion,
@@ -3068,6 +3129,24 @@ runAsyncDemo()
   function isFrame(v) {
     return typeof v === "object" && v !== null && !Array.isArray(v);
   }
+  function isInaccessibleOrGlobalObject(val) {
+    if (typeof val !== "object" || val === null) return false;
+    try {
+      if (typeof globalThis !== "undefined" && val === globalThis) return true;
+      void Reflect.get(val, "__isVirtualPromise");
+      return false;
+    } catch (_) {
+      return true;
+    }
+  }
+  function isVirtualPromise(val) {
+    if (!isRecord(val)) return false;
+    try {
+      return Boolean(val.__isVirtualPromise);
+    } catch (_) {
+      return false;
+    }
+  }
   function defineHidden(obj, key, val) {
     if (!obj || typeof obj !== "object") return;
     try {
@@ -3085,25 +3164,36 @@ runAsyncDemo()
     if (val === null) return "null";
     if (typeof val === "string") return JSON.stringify(val.length > 16 ? val.slice(0, 14) + "…" : val);
     if (typeof val === "number" || typeof val === "boolean") return String(val);
+    if (isInaccessibleOrGlobalObject(val)) return "[HostObject]";
     if (Array.isArray(val)) return "[" + val.slice(0, 4).map(formatShortVal).join(", ") + (val.length > 4 ? ", …" : "") + "]";
     if (isMapLike(val)) return "Map(" + val.size + ")";
     if (isSetLike(val)) return "Set(" + val.size + ")";
     if (isRecord(val)) {
-      const keys = Object.keys(val);
-      if (keys.length > 0 && keys.length <= 4 && keys.every((k) => val[k] === null || typeof val[k] !== "object")) {
-        return "{ " + keys.map((k) => k + ": " + formatShortVal(val[k])).join(", ") + " }";
+      try {
+        const keys = Object.keys(val);
+        if (keys.length > 0 && keys.length <= 4 && keys.every((k) => val[k] === null || typeof val[k] !== "object")) {
+          return "{ " + keys.map((k) => k + ": " + formatShortVal(val[k])).join(", ") + " }";
+        }
+      } catch (_) {
       }
     }
     return "{…}";
   }
   function cloneDeepBounded(val, depth = 0) {
     if (!isRecord(val)) return val;
-    if (val.__isVirtualPromise) {
+    if (isInaccessibleOrGlobalObject(val)) return "[HostObject]";
+    if (isVirtualPromise(val)) {
       if (val.state === "pending") return "Promise <pending>";
       if (val.state === "fulfilled") return "Promise <fulfilled: " + formatShortVal(val.value) + ">";
       return "Promise <rejected: " + formatShortVal(val.reason) + ">";
     }
-    if (depth >= 4) return String(val);
+    if (depth >= 4) {
+      try {
+        return String(val);
+      } catch (_) {
+        return "[Object]";
+      }
+    }
     if (Array.isArray(val)) return val.slice(0, 40).map((x) => cloneDeepBounded(x, depth + 1));
     if (isMapLike(val)) {
       const entries = [];
@@ -3122,13 +3212,19 @@ runAsyncDemo()
       return items;
     }
     const out = {};
-    const clsName = typeof val.__cls__ === "string" && val.__cls__ ? val.__cls__ : val.constructor && val.constructor !== Object && val.constructor.name ? val.constructor.name : "";
-    if (clsName) {
-      defineHidden(out, "__cls__", clsName);
+    try {
+      const clsName = typeof val.__cls__ === "string" && val.__cls__ ? val.__cls__ : val.constructor && val.constructor !== Object && val.constructor.name ? val.constructor.name : "";
+      if (clsName) {
+        defineHidden(out, "__cls__", clsName);
+      }
+      Object.keys(val).slice(0, 20).forEach((k) => {
+        try {
+          out[k] = cloneDeepBounded(val[k], depth + 1);
+        } catch (_) {
+        }
+      });
+    } catch (_) {
     }
-    Object.keys(val).slice(0, 20).forEach((k) => {
-      out[k] = cloneDeepBounded(val[k], depth + 1);
-    });
     return out;
   }
   function safeJSONStringify(val) {
@@ -3159,6 +3255,120 @@ runAsyncDemo()
   }
 
   // src/compiler/tc-types.ts
+  function formatTsConfigCacheKey(cfg = appState.TS_CONFIG) {
+    return [
+      cfg.strict ? 1 : 0,
+      cfg.noImplicitAny ? 1 : 0,
+      cfg.strictNullChecks ? 1 : 0,
+      cfg.strictFunctionTypes ? 1 : 0,
+      cfg.noImplicitReturns ? 1 : 0,
+      cfg.noUnusedLocals ? 1 : 0,
+      cfg.allowRunOnTypeError ? 1 : 0
+    ].join("");
+  }
+  function serializeTsConfigToJson(cfg = appState.TS_CONFIG) {
+    const presetLabel = cfg.preset === "beginner" ? "新手宽松模式 (Beginner) — 允许隐式 any、关闭严格空值检查、类型警告不阻断运行" : cfg.preset === "standard" ? "标准教学模式 (Standard) — 检查显式类型与空值安全、允许省略参数类型" : cfg.preset === "strict" ? "最严生产模式 (Strictest) — 全开 strict / noImplicitAny / noUnusedLocals" : "自定义模式 (Custom)";
+    return [
+      `{`,
+      `  // 当前预设: ${presetLabel}`,
+      `  "compilerOptions": {`,
+      `    "target": "ES2022",`,
+      `    "module": "ESNext",`,
+      `    "strict": ${cfg.strict},`,
+      `    "noImplicitAny": ${cfg.noImplicitAny},`,
+      `    "strictNullChecks": ${cfg.strictNullChecks},`,
+      `    "strictFunctionTypes": ${cfg.strictFunctionTypes},`,
+      `    "noImplicitReturns": ${cfg.noImplicitReturns},`,
+      `    "noUnusedLocals": ${cfg.noUnusedLocals}`,
+      `  },`,
+      `  "playgroundOptions": {`,
+      `    "preset": "${cfg.preset}",`,
+      `    "allowRunOnTypeError": ${cfg.allowRunOnTypeError}`,
+      `  }`,
+      `}`,
+      ``
+    ].join("\n");
+  }
+  function stripJsonCommentsAndTrailingCommas(raw) {
+    let out = "";
+    let i = 0;
+    const n = raw.length;
+    while (i < n) {
+      const ch = raw[i];
+      const next = raw[i + 1];
+      if (ch === '"') {
+        const end = skipString(raw, i);
+        out += raw.slice(i, end);
+        i = end;
+        continue;
+      }
+      if (ch === "/" && next === "/") {
+        while (i < n && raw[i] !== "\n") i++;
+        continue;
+      }
+      if (ch === "/" && next === "*") {
+        i += 2;
+        while (i < n && !(raw[i] === "*" && raw[i + 1] === "/")) {
+          if (raw[i] === "\n") out += "\n";
+          i++;
+        }
+        i = Math.min(n, i + 2);
+        continue;
+      }
+      out += ch;
+      i++;
+    }
+    return out.replace(/,\s*([}\]])/g, "$1");
+  }
+  function parseTsConfigJson(rawJson, fallbackConfig = appState.TS_CONFIG) {
+    const cleaned = stripJsonCommentsAndTrailingCommas(String(rawJson || "")).trim();
+    if (!cleaned) {
+      return { config: { ...fallbackConfig }, error: null };
+    }
+    try {
+      const parsed = JSON.parse(cleaned);
+      if (!isRecord(parsed)) {
+        return { config: { ...fallbackConfig }, error: "tsconfig.json 根节点必须是 JSON 对象" };
+      }
+      const co = isRecord(parsed.compilerOptions) ? parsed.compilerOptions : parsed;
+      const po = isRecord(parsed.playgroundOptions) ? parsed.playgroundOptions : isRecord(parsed.playgroundConfig) ? parsed.playgroundConfig : parsed;
+      let base = { ...fallbackConfig };
+      const rawPreset = typeof po.preset === "string" ? po.preset.trim() : "";
+      if (rawPreset === "beginner" || rawPreset === "standard" || rawPreset === "strict") {
+        base = createTsConfigFromPreset(rawPreset);
+      }
+      const hasStrictBool = typeof co.strict === "boolean";
+      const strictVal = hasStrictBool ? Boolean(co.strict) : base.strict;
+      const noImplicitAny = typeof co.noImplicitAny === "boolean" ? co.noImplicitAny : hasStrictBool ? strictVal : base.noImplicitAny;
+      const strictNullChecks = typeof co.strictNullChecks === "boolean" ? co.strictNullChecks : hasStrictBool ? strictVal : base.strictNullChecks;
+      const strictFunctionTypes = typeof co.strictFunctionTypes === "boolean" ? co.strictFunctionTypes : hasStrictBool ? strictVal : base.strictFunctionTypes;
+      const noImplicitReturns = typeof co.noImplicitReturns === "boolean" ? co.noImplicitReturns : base.noImplicitReturns;
+      const noUnusedLocals = typeof co.noUnusedLocals === "boolean" ? co.noUnusedLocals : base.noUnusedLocals;
+      const allowRunOnTypeError = typeof po.allowRunOnTypeError === "boolean" ? po.allowRunOnTypeError : typeof co.allowRunOnTypeError === "boolean" ? co.allowRunOnTypeError : base.allowRunOnTypeError;
+      const mergedWithoutPreset = {
+        strict: strictVal,
+        noImplicitAny,
+        strictNullChecks,
+        strictFunctionTypes,
+        noImplicitReturns,
+        noUnusedLocals,
+        allowRunOnTypeError
+      };
+      const detectedPreset = detectTsConfigPreset(mergedWithoutPreset);
+      return {
+        config: {
+          preset: detectedPreset,
+          ...mergedWithoutPreset
+        },
+        error: null
+      };
+    } catch (e) {
+      return {
+        config: { ...fallbackConfig },
+        error: e instanceof Error && e.message ? e.message : String(e)
+      };
+    }
+  }
   var BUILTIN_TS_GLOBALS = /* @__PURE__ */ new Set([
     "Math",
     "JSON",
@@ -3246,8 +3456,9 @@ runAsyncDemo()
     "checkpoint",
     "断点"
   ]);
-  function createTypeCheckContext(src) {
+  function createTypeCheckContext(src, customTsConfig) {
     const lines = src.replace(/\r\n?/g, "\n").split("\n");
+    const tsConfig = customTsConfig ? { ...customTsConfig } : { ...appState.TS_CONFIG };
     const diagnostics = [];
     const fns = /* @__PURE__ */ new Map();
     const typeAliases = /* @__PURE__ */ new Map();
@@ -3281,6 +3492,7 @@ runAsyncDemo()
     }
     return {
       lines,
+      tsConfig,
       diagnostics,
       fns,
       typeAliases,
@@ -3351,9 +3563,10 @@ runAsyncDemo()
       const pLeft = headPart.slice(0, colonIdx).trim();
       const pType = headPart.slice(colonIdx + 1).trim() || "any";
       const cleanName2 = pLeft.replace(/^\.\.\./, "").replace(/\?$/, "").trim();
+      const optMark = defaultPart && !pLeft.endsWith("?") ? "?" : "";
       return {
         name: cleanName2,
-        formatted: `${pLeft}: ${pType}`,
+        formatted: `${pLeft}${optMark}: ${pType}`,
         rawType: pType
       };
     }
@@ -3362,13 +3575,22 @@ runAsyncDemo()
       if (/^[+-]?\d+(?:\.\d+)?$/.test(defaultPart)) inferredType = "number";
       else if (/^(true|false)$/.test(defaultPart)) inferredType = "boolean";
       else if (/^["'`]/.test(defaultPart)) inferredType = "string";
+      else if (defaultPart.startsWith("[") && defaultPart.endsWith("]")) {
+        const inner = defaultPart.slice(1, -1).trim();
+        if (!inner) inferredType = "any[]";
+        else if (/^[+-]?\d+(?:\.\d+)?$/.test(splitTopLevel(inner)[0]?.trim() || "")) inferredType = "number[]";
+        else if (/^["'`]/.test(splitTopLevel(inner)[0]?.trim() || "")) inferredType = "string[]";
+        else if (/^(true|false)$/.test(splitTopLevel(inner)[0]?.trim() || "")) inferredType = "boolean[]";
+        else inferredType = "any[]";
+      }
     }
     const cleanName = headPart.replace(/^\.\.\./, "").replace(/\?$/, "").trim();
     const isRest = headPart.startsWith("...");
+    const optSuffix = defaultPart && !headPart.endsWith("?") && !isRest ? "?" : "";
     return {
       name: cleanName,
-      formatted: `${headPart}: ${isRest && inferredType === "any" ? "any[]" : inferredType}`,
-      rawType: null
+      formatted: `${headPart}${optSuffix}: ${isRest && inferredType === "any" ? "any[]" : inferredType}`,
+      rawType: inferredType !== "any" ? inferredType : null
     };
   }
   function formatFnSigInfoToTypeString(sig) {
@@ -3417,12 +3639,205 @@ runAsyncDemo()
     }
     return "(...args: any[]) => any";
   }
+  function parseFieldsFromTypeBody(bodyStr, isClass = false) {
+    const inner = bodyStr.trim().replace(/^\{/, "").replace(/\}$/, "").trim();
+    const fields = [];
+    const seen = /* @__PURE__ */ new Set();
+    if (!inner) return fields;
+    let topLevelOnly = "";
+    let bDepth = 0;
+    for (let i = 0; i < inner.length; i++) {
+      const ch = inner[i];
+      if (ch === '"' || ch === "'" || ch === "`") {
+        const end = skipString(inner, i);
+        if (bDepth === 0) topLevelOnly += inner.slice(i, end);
+        i = end - 1;
+        continue;
+      }
+      if (ch === "{") {
+        bDepth++;
+        continue;
+      }
+      if (ch === "}") {
+        bDepth = Math.max(0, bDepth - 1);
+        continue;
+      }
+      if (bDepth === 0) topLevelOnly += ch;
+    }
+    const members = topLevelOnly.split(/[;,\n]/).map((s) => stripInlineCommentSafe(s).trim()).filter(Boolean);
+    members.forEach((mem) => {
+      const cleaned = mem.replace(/^(?:(?:readonly|public|private|protected|static)\s+)+/, "");
+      if (/^(?:constructor|get\s+|set\s+|async\s+|[A-Za-z_$][\w$]*\s*\()/.test(cleaned)) return;
+      const m = cleaned.match(/^([A-Za-z_$][\w$]*)(\?)?\s*:\s*([^=]+?)(?:\s*=[\s\S]+)?$/);
+      if (m && m[1] && m[3] && !seen.has(m[1])) {
+        seen.add(m[1]);
+        fields.push({
+          k: m[1],
+          declaredType: m[3].trim(),
+          optional: Boolean(m[2])
+        });
+        return;
+      }
+      if (isClass) {
+        const initOnly = cleaned.match(/^([A-Za-z_$][\w$]*)\s*=\s*(.+)$/);
+        if (initOnly && initOnly[1] && initOnly[2] && !seen.has(initOnly[1])) {
+          const rhs = initOnly[2].trim();
+          let inferred = "any";
+          if (/^[+-]?\d+(?:\.\d+)?$/.test(rhs)) inferred = "number";
+          else if (/^(true|false)$/.test(rhs)) inferred = "boolean";
+          else if (/^["'`]/.test(rhs)) inferred = "string";
+          else if (rhs.startsWith("[")) inferred = "any[]";
+          seen.add(initOnly[1]);
+          fields.push({
+            k: initOnly[1],
+            declaredType: inferred,
+            optional: false
+          });
+        }
+      }
+    });
+    if (isClass) {
+      const ctorM = inner.match(/\bconstructor\s*\(([^)]*)\)/);
+      if (ctorM && ctorM[1]?.trim()) {
+        splitTopLevel(ctorM[1]).forEach((rawP) => {
+          const p = rawP.trim();
+          const pm = p.match(/^(?:(?:public|private|protected|readonly)\s+)+([A-Za-z_$][\w$]*)(\?)?(?:\s*:\s*([^=]+?))?(?:\s*=\s*([\s\S]+))?$/);
+          if (pm && pm[1] && !seen.has(pm[1])) {
+            seen.add(pm[1]);
+            let pType = pm[3] ? pm[3].trim() : "any";
+            if (pType === "any" && pm[4]) {
+              const rhs = pm[4].trim();
+              if (/^[+-]?\d+(?:\.\d+)?$/.test(rhs)) pType = "number";
+              else if (/^(true|false)$/.test(rhs)) pType = "boolean";
+              else if (/^["'`]/.test(rhs)) pType = "string";
+            }
+            fields.push({ k: pm[1], declaredType: pType, optional: Boolean(pm[2]) });
+          }
+        });
+      }
+      const thisAssignRe = /\bthis\.([A-Za-z_$][\w$]*)\s*=/g;
+      let tm;
+      while (tm = thisAssignRe.exec(inner)) {
+        if (tm[1] && !seen.has(tm[1])) {
+          seen.add(tm[1]);
+          fields.push({ k: tm[1], declaredType: "any", optional: false });
+        }
+      }
+    }
+    return fields;
+  }
+  function resolveUtilityTypeFields(expr, knownInterfaces, knownTypeAliases) {
+    const utilM = expr.match(/^(Omit|Pick|Partial|Required|Readonly)\s*<\s*([\s\S]+)\s*>$/);
+    if (!utilM || !utilM[1] || !utilM[2]) return null;
+    const utilName = utilM[1];
+    const args = splitTopLevel(utilM[2]);
+    const baseName = (args[0] || "").trim();
+    if (!baseName) return null;
+    let baseFields = null;
+    if (knownInterfaces && knownInterfaces.has(baseName)) {
+      const iface = knownInterfaces.get(baseName);
+      if (iface && iface.fields.length) baseFields = iface.fields;
+    } else if (knownTypeAliases && knownTypeAliases.has(baseName)) {
+      const ta = knownTypeAliases.get(baseName);
+      if (ta && ta.fields && ta.fields.length) baseFields = ta.fields;
+    } else if (baseName.startsWith("{") && baseName.endsWith("}")) {
+      baseFields = parseFieldsFromTypeBody(baseName, false);
+    }
+    if (!baseFields || !baseFields.length) return null;
+    if (utilName === "Partial") {
+      return baseFields.map((f) => ({ ...f, optional: true }));
+    }
+    if (utilName === "Required") {
+      return baseFields.map((f) => ({ ...f, optional: false }));
+    }
+    if (utilName === "Readonly") {
+      return baseFields.map((f) => ({ ...f, readonly: true }));
+    }
+    const keyExpr = (args[1] || "").trim();
+    const keySet = new Set(
+      splitTopLevelUnion(keyExpr).map((k) => k.trim().replace(/^['"`]|['"`]$/g, "").trim()).filter(Boolean)
+    );
+    if (utilName === "Omit") {
+      return baseFields.filter((f) => !keySet.has(f.k || f.name || "")).map((f) => ({ ...f }));
+    }
+    if (utilName === "Pick") {
+      return baseFields.filter((f) => keySet.has(f.k || f.name || "")).map((f) => ({ ...f }));
+    }
+    return null;
+  }
+  function buildTypeAliasMeta(name, rawDef, resolvedDef, line, typeParams, knownInterfaces, knownTypeAliases) {
+    const cleanRaw = rawDef.trim().replace(/;\s*$/, "").replace(/^\|\s*/, "").trim();
+    let cleanResolved = (resolvedDef ? resolvedDef.trim() : cleanRaw).replace(/;\s*$/, "").replace(/^\|\s*/, "").trim();
+    const unionParts = splitTopLevelUnion(cleanResolved);
+    if (unionParts.length > 1) {
+      const unionBranches = unionParts.map((part) => {
+        const p = part.trim();
+        if (p.startsWith("{") && p.endsWith("}")) {
+          const branchFields = parseFieldsFromTypeBody(p, false);
+          return {
+            raw: p,
+            isObject: branchFields.length > 0,
+            fields: branchFields.length > 0 ? branchFields : void 0
+          };
+        }
+        if (knownInterfaces && knownInterfaces.has(p)) {
+          const iface = knownInterfaces.get(p);
+          if (iface && iface.fields.length > 0) {
+            return {
+              raw: p,
+              isObject: true,
+              fields: iface.fields.map((f) => ({ ...f }))
+            };
+          }
+        }
+        return { raw: p, isObject: false };
+      });
+      return {
+        name,
+        line,
+        typeParams: typeParams || void 0,
+        rawDef: cleanRaw,
+        resolvedDef: cleanResolved,
+        aliasKind: "union",
+        unionBranches
+      };
+    }
+    let objFields = null;
+    if (cleanResolved.startsWith("{") && cleanResolved.endsWith("}")) {
+      objFields = parseFieldsFromTypeBody(cleanResolved, false);
+    } else {
+      objFields = resolveUtilityTypeFields(cleanResolved, knownInterfaces, knownTypeAliases) || resolveUtilityTypeFields(cleanRaw, knownInterfaces, knownTypeAliases);
+      if (objFields && objFields.length > 0 && !(cleanResolved.startsWith("{") && cleanResolved.endsWith("}"))) {
+        cleanResolved = `{ ${objFields.map((f) => `${f.k || f.name || ""}${f.optional ? "?" : ""}: ${f.declaredType || "any"}`).join("; ")} }`;
+      }
+    }
+    if (objFields && objFields.length > 0) {
+      return {
+        name,
+        line,
+        typeParams: typeParams || void 0,
+        rawDef: cleanRaw,
+        resolvedDef: cleanResolved,
+        aliasKind: "object",
+        fields: objFields
+      };
+    }
+    return {
+      name,
+      line,
+      typeParams: typeParams || void 0,
+      rawDef: cleanRaw,
+      resolvedDef: cleanResolved,
+      aliasKind: "alias"
+    };
+  }
   function extractTsInterfaceMetadata(src, merge = false) {
     const interfaces = merge && appState.CURRENT_TS_META?.interfaces ? new Map(appState.CURRENT_TS_META.interfaces) : /* @__PURE__ */ new Map();
     const varTypes = merge && appState.CURRENT_TS_META?.varTypes ? new Map(appState.CURRENT_TS_META.varTypes) : /* @__PURE__ */ new Map();
     const fnTypes = merge && appState.CURRENT_TS_META?.fnTypes ? new Map(appState.CURRENT_TS_META.fnTypes) : /* @__PURE__ */ new Map();
+    const typeAliases = merge && appState.CURRENT_TS_META?.typeAliases ? new Map(appState.CURRENT_TS_META.typeAliases) : /* @__PURE__ */ new Map();
     if (!src || typeof src !== "string") {
-      appState.CURRENT_TS_META = { interfaces, varTypes, fnTypes };
+      appState.CURRENT_TS_META = { interfaces, varTypes, fnTypes, typeAliases };
       return appState.CURRENT_TS_META;
     }
     const lines = src.replace(/\r\n?/g, "\n").split("\n");
@@ -3432,93 +3847,7 @@ runAsyncDemo()
     let activeIsClass = false;
     let activeBody = "";
     let depth = 0;
-    function parseFieldsFromBody(bodyStr, isClass = false) {
-      const inner = bodyStr.trim().replace(/^\{/, "").replace(/\}$/, "").trim();
-      const fields = [];
-      const seen = /* @__PURE__ */ new Set();
-      if (!inner) return fields;
-      let topLevelOnly = "";
-      let bDepth = 0;
-      for (let i = 0; i < inner.length; i++) {
-        const ch = inner[i];
-        if (ch === '"' || ch === "'" || ch === "`") {
-          const end = skipString(inner, i);
-          if (bDepth === 0) topLevelOnly += inner.slice(i, end);
-          i = end - 1;
-          continue;
-        }
-        if (ch === "{") {
-          bDepth++;
-          continue;
-        }
-        if (ch === "}") {
-          bDepth = Math.max(0, bDepth - 1);
-          continue;
-        }
-        if (bDepth === 0) topLevelOnly += ch;
-      }
-      const members = topLevelOnly.split(/[;,\n]/).map((s) => stripInlineCommentSafe(s).trim()).filter(Boolean);
-      members.forEach((mem) => {
-        const cleaned = mem.replace(/^(?:(?:readonly|public|private|protected|static)\s+)+/, "");
-        if (/^(?:constructor|get\s+|set\s+|async\s+|[A-Za-z_$][\w$]*\s*\()/.test(cleaned)) return;
-        const m = cleaned.match(/^([A-Za-z_$][\w$]*)(\?)?\s*:\s*([^=]+?)(?:\s*=[\s\S]+)?$/);
-        if (m && m[1] && m[3] && !seen.has(m[1])) {
-          seen.add(m[1]);
-          fields.push({
-            k: m[1],
-            declaredType: m[3].trim(),
-            optional: Boolean(m[2])
-          });
-          return;
-        }
-        if (isClass) {
-          const initOnly = cleaned.match(/^([A-Za-z_$][\w$]*)\s*=\s*(.+)$/);
-          if (initOnly && initOnly[1] && initOnly[2] && !seen.has(initOnly[1])) {
-            const rhs = initOnly[2].trim();
-            let inferred = "any";
-            if (/^[+-]?\d+(?:\.\d+)?$/.test(rhs)) inferred = "number";
-            else if (/^(true|false)$/.test(rhs)) inferred = "boolean";
-            else if (/^["'`]/.test(rhs)) inferred = "string";
-            else if (rhs.startsWith("[")) inferred = "any[]";
-            seen.add(initOnly[1]);
-            fields.push({
-              k: initOnly[1],
-              declaredType: inferred,
-              optional: false
-            });
-          }
-        }
-      });
-      if (isClass) {
-        const ctorM = inner.match(/\bconstructor\s*\(([^)]*)\)/);
-        if (ctorM && ctorM[1]?.trim()) {
-          splitTopLevel(ctorM[1]).forEach((rawP) => {
-            const p = rawP.trim();
-            const pm = p.match(/^(?:(?:public|private|protected|readonly)\s+)+([A-Za-z_$][\w$]*)(\?)?(?:\s*:\s*([^=]+?))?(?:\s*=\s*([\s\S]+))?$/);
-            if (pm && pm[1] && !seen.has(pm[1])) {
-              seen.add(pm[1]);
-              let pType = pm[3] ? pm[3].trim() : "any";
-              if (pType === "any" && pm[4]) {
-                const rhs = pm[4].trim();
-                if (/^[+-]?\d+(?:\.\d+)?$/.test(rhs)) pType = "number";
-                else if (/^(true|false)$/.test(rhs)) pType = "boolean";
-                else if (/^["'`]/.test(rhs)) pType = "string";
-              }
-              fields.push({ k: pm[1], declaredType: pType, optional: Boolean(pm[2]) });
-            }
-          });
-        }
-        const thisAssignRe = /\bthis\.([A-Za-z_$][\w$]*)\s*=/g;
-        let tm;
-        while (tm = thisAssignRe.exec(inner)) {
-          if (tm[1] && !seen.has(tm[1])) {
-            seen.add(tm[1]);
-            fields.push({ k: tm[1], declaredType: "any", optional: false });
-          }
-        }
-      }
-      return fields;
-    }
+    const parseFieldsFromBody = parseFieldsFromTypeBody;
     for (let i = 0; i < lines.length; i++) {
       const raw = stripInlineCommentSafe(lines[i]);
       const trimmed = raw.trim();
@@ -3575,20 +3904,90 @@ runAsyncDemo()
         }
         continue;
       }
-      const typeObjM = trimmed.match(/^(?:export\s+)?type\s+([A-Za-z_$][\w$]*)\s*=\s*(\{[\s\S]*\});?$/);
-      if (typeObjM && typeObjM[1] && typeObjM[2]) {
-        interfaces.set(typeObjM[1], {
-          name: typeObjM[1],
-          line: i + 1,
-          isClass: false,
-          fields: parseFieldsFromBody(typeObjM[2], false)
-        });
-        continue;
-      }
-      const typeAliasM = trimmed.match(/^(?:export\s+)?type\s+([A-Za-z_$][\w$]*)(?:\s*<[^>]*>)?\s*=\s*(.+?);?$/);
-      if (typeAliasM && typeAliasM[1] && typeAliasM[2]) {
-        localTypeAliases.set(typeAliasM[1], typeAliasM[2].trim());
-        continue;
+      const typeHdrM = trimmed.match(/^(?:export\s+)?type\s+([A-Za-z_$][\w$]*)/);
+      if (typeHdrM && typeHdrM[1]) {
+        const aliasName = typeHdrM[1];
+        const declLineNum = i + 1;
+        let fullTypeDecl = trimmed;
+        let scanIdx = i;
+        const countTypeDepth = (str) => {
+          let d = 0, ad = 0;
+          let p2 = typeHdrM[0].length;
+          while (p2 < str.length && isWS(str[p2])) p2++;
+          if (str[p2] === "<") {
+            let pad = 1;
+            p2++;
+            while (p2 < str.length && pad > 0) {
+              if (str[p2] === '"' || str[p2] === "'" || str[p2] === "`") {
+                p2 = skipString(str, p2);
+                continue;
+              }
+              if (str[p2] === "<") pad++;
+              else if (str[p2] === ">" && str[p2 - 1] !== "=") pad--;
+              p2++;
+            }
+          }
+          while (p2 < str.length && isWS(str[p2])) p2++;
+          if (str[p2] === "=" && str[p2 + 1] !== "=" && str[p2 + 1] !== ">") p2++;
+          for (; p2 < str.length; p2++) {
+            const ch = str[p2];
+            if (ch === '"' || ch === "'" || ch === "`") {
+              p2 = skipString(str, p2) - 1;
+              continue;
+            }
+            if (ch === "(" || ch === "[" || ch === "{") d++;
+            else if (ch === ")" || ch === "]" || ch === "}") d = Math.max(0, d - 1);
+            else if (ch === "<") ad++;
+            else if (ch === ">" && str[p2 - 1] !== "=") ad = Math.max(0, ad - 1);
+          }
+          return { d, ad };
+        };
+        let st = countTypeDepth(fullTypeDecl);
+        while (scanIdx + 1 < lines.length) {
+          const curTrim = fullTypeDecl.trim();
+          const nextClean = stripInlineCommentSafe(lines[scanIdx + 1]).trim();
+          const continues = st.d > 0 || st.ad > 0 || !/;\s*$/.test(curTrim) && (/[=|&?:]$|\bextends$/.test(curTrim) || /^(?:[|&?:]|extends\b)/.test(nextClean));
+          if (!continues) break;
+          scanIdx++;
+          fullTypeDecl += " " + nextClean;
+          st = countTypeDepth(fullTypeDecl);
+        }
+        i = scanIdx;
+        let p = typeHdrM[0].length;
+        while (p < fullTypeDecl.length && isWS(fullTypeDecl[p])) p++;
+        let tParamStr = "";
+        if (fullTypeDecl[p] === "<") {
+          let pad = 1, k = p + 1;
+          while (k < fullTypeDecl.length && pad > 0) {
+            if (fullTypeDecl[k] === '"' || fullTypeDecl[k] === "'" || fullTypeDecl[k] === "`") {
+              k = skipString(fullTypeDecl, k);
+              continue;
+            }
+            if (fullTypeDecl[k] === "<") pad++;
+            else if (fullTypeDecl[k] === ">" && fullTypeDecl[k - 1] !== "=") pad--;
+            k++;
+          }
+          if (pad === 0) {
+            tParamStr = fullTypeDecl.slice(p, k);
+            p = k;
+          }
+        }
+        while (p < fullTypeDecl.length && isWS(fullTypeDecl[p])) p++;
+        if (fullTypeDecl[p] === "=") {
+          const rhsType = fullTypeDecl.slice(p + 1).replace(/;\s*$/, "").trim();
+          localTypeAliases.set(aliasName, rhsType);
+          const aliasMeta = buildTypeAliasMeta(
+            aliasName,
+            rhsType,
+            void 0,
+            declLineNum,
+            tParamStr,
+            interfaces,
+            typeAliases
+          );
+          typeAliases.set(aliasName, aliasMeta);
+          continue;
+        }
       }
       const fnHdrM = trimmed.match(/^(?:export\s+)?(?:default\s+)?(async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)/);
       if (fnHdrM && fnHdrM[2] && trimmed.includes("(")) {
@@ -3635,10 +4034,21 @@ runAsyncDemo()
           });
           const afterClose = headerStr.slice(closeP + 1).trim();
           const retM = afterClose.match(/^:\s*([^{;]+?)(?:\s*\{[\s\S]*|\s*;)?$/);
-          const retType = retM && retM[1] ? retM[1].trim() : isAsyncFn ? "Promise<any>" : "any";
+          let retType = retM && retM[1] ? retM[1].trim() : "";
+          if (!retType) {
+            const inlineEmptyBlock = /^\{\s*\}\s*;?$/.test(afterClose);
+            if (inlineEmptyBlock) {
+              retType = isAsyncFn ? "Promise<void>" : "void";
+            } else {
+              retType = isAsyncFn ? "Promise<any>" : "any";
+            }
+          }
           const fnSig = `${tParamPart ? tParamPart : ""}(${formattedParams.join(", ")}) => ${retType}`;
-          fnTypes.set(fnName, fnSig);
-          varTypes.set(fnName, fnSig);
+          const existingFnSig = merge ? fnTypes.get(fnName) : void 0;
+          if (!existingFnSig || !retType.endsWith("any") || existingFnSig.endsWith("=> any") || existingFnSig.endsWith("=> Promise<any>")) {
+            fnTypes.set(fnName, fnSig);
+            varTypes.set(fnName, fnSig);
+          }
         }
         continue;
       }
@@ -3656,43 +4066,184 @@ runAsyncDemo()
         }
         continue;
       }
-      const varArrowM = trimmed.match(
-        /^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(async\s+)?(?:function\s*\*?(?:\s+[A-Za-z_$][\w$]*)?\s*)?(<[^>]+>\s*)?\(([^)]*)\)\s*(?::\s*([^=]+?))?\s*(?:=>|\{)/
-      );
-      if (varArrowM && varArrowM[1]) {
-        const vName = varArrowM[1];
-        const isAsyncArrow = Boolean(varArrowM[2]);
-        const tParamPart = (varArrowM[3] || "").trim();
-        const paramInner = (varArrowM[4] || "").trim();
-        const rawParams = paramInner ? splitTopLevel(paramInner) : [];
-        const formattedParams = [];
-        rawParams.forEach((p) => {
-          const parsedP = formatSingleFnParamClause(p);
-          if (parsedP.formatted) formattedParams.push(parsedP.formatted);
-          if (parsedP.name && parsedP.rawType) {
-            varTypes.set(parsedP.name, parsedP.rawType);
+      const varHeadM = trimmed.match(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?!>)/);
+      if (varHeadM && varHeadM[1]) {
+        const vName = varHeadM[1];
+        let rhs = trimmed.slice(varHeadM[0].length).replace(/;\s*$/, "").trim();
+        let isAsyncArrow = false;
+        if (/^async\b/.test(rhs) && (isWS(rhs[5]) || rhs[5] === "(" || rhs[5] === "<" || rhs.slice(5).trim().startsWith("function"))) {
+          isAsyncArrow = true;
+          rhs = rhs.slice(5).trim();
+        }
+        let isFnExpr = false;
+        const fnExprM = rhs.match(/^function\s*\*?(?:\s+[A-Za-z_$][\w$]*)?\s*/);
+        if (fnExprM) {
+          isFnExpr = true;
+          rhs = rhs.slice(fnExprM[0].length).trim();
+        }
+        let tParamPart = "";
+        if (rhs.startsWith("<")) {
+          let ad = 1, k = 1;
+          while (k < rhs.length && ad > 0) {
+            const ch = rhs[k];
+            if (ch === '"' || ch === "'" || ch === "`") {
+              k = skipString(rhs, k);
+              continue;
+            }
+            if (ch === "<") ad++;
+            else if (ch === ">" && rhs[k - 1] !== "=") ad--;
+            k++;
           }
-        });
-        const retType = varArrowM[5] ? varArrowM[5].trim() : isAsyncArrow ? "Promise<any>" : "any";
-        const fnSig = `${tParamPart}(${formattedParams.join(", ")}) => ${retType}`;
-        fnTypes.set(vName, fnSig);
-        varTypes.set(vName, fnSig);
-        continue;
+          if (ad === 0) {
+            tParamPart = rhs.slice(0, k).trim();
+            rhs = rhs.slice(k).trim();
+          }
+        }
+        let matchedArrowOrFn = false;
+        let paramInner = "";
+        let explicitRet = "";
+        let bodyRemainder = "";
+        if (rhs.startsWith("(")) {
+          const closeP = findBalancedParen(rhs, 0);
+          if (closeP >= 1) {
+            paramInner = rhs.slice(1, closeP).trim();
+            const afterP = rhs.slice(closeP + 1).trim();
+            if (isFnExpr) {
+              const rM = afterP.match(/^(?::\s*([^{]+?))?\s*(\{[\s\S]*)$/);
+              if (rM && rM[2]) {
+                matchedArrowOrFn = true;
+                explicitRet = rM[1] ? rM[1].trim() : "";
+                bodyRemainder = rM[2].trim();
+              }
+            } else if (afterP.startsWith("=>")) {
+              matchedArrowOrFn = true;
+              bodyRemainder = afterP.slice(2).trim();
+            } else if (afterP.startsWith(":")) {
+              const afterColon = afterP.slice(1).trim();
+              let td = 0, arrowPos = -1;
+              let skipFirstFnArrow = afterColon.startsWith("(") || afterColon.startsWith("<");
+              for (let k = 0; k < afterColon.length - 1; k++) {
+                const ch = afterColon[k];
+                if (ch === '"' || ch === "'" || ch === "`") {
+                  k = skipString(afterColon, k) - 1;
+                  continue;
+                }
+                if (ch === "(" || ch === "[" || ch === "{" || ch === "<") td++;
+                else if (ch === ")" || ch === "]" || ch === "}" || ch === ">" && afterColon[k - 1] !== "=") td = Math.max(0, td - 1);
+                else if (td === 0 && ch === "=" && afterColon[k + 1] === ">") {
+                  if (skipFirstFnArrow) {
+                    skipFirstFnArrow = false;
+                    k++;
+                    continue;
+                  }
+                  arrowPos = k;
+                  break;
+                }
+              }
+              if (arrowPos > 0) {
+                matchedArrowOrFn = true;
+                explicitRet = afterColon.slice(0, arrowPos).trim();
+                bodyRemainder = afterColon.slice(arrowPos + 2).trim();
+              }
+            }
+          }
+        } else if (!isFnExpr) {
+          const singleM = rhs.match(/^([A-Za-z_$][\w$]*)\s*=>\s*([\s\S]+)$/);
+          if (singleM && singleM[1] && singleM[2]) {
+            matchedArrowOrFn = true;
+            paramInner = singleM[1];
+            bodyRemainder = singleM[2].trim();
+          }
+        }
+        if (matchedArrowOrFn) {
+          const rawParams = paramInner ? splitTopLevel(paramInner) : [];
+          const formattedParams = [];
+          rawParams.forEach((p) => {
+            const parsedP = formatSingleFnParamClause(p);
+            if (parsedP.formatted) formattedParams.push(parsedP.formatted);
+            if (parsedP.name && parsedP.rawType) {
+              varTypes.set(parsedP.name, parsedP.rawType);
+            }
+          });
+          let retType = explicitRet;
+          if (!retType) {
+            let baseRet = "any";
+            if (bodyRemainder.startsWith("{")) {
+              if (/^\{\s*\}$/.test(bodyRemainder)) {
+                baseRet = "void";
+              } else if (bodyRemainder.endsWith("}")) {
+                const innerB = bodyRemainder.slice(1, -1).trim();
+                const rM = innerB.match(/\breturn(?:\s+([^;}]+))?/);
+                if (!rM) {
+                  baseRet = /\bthrow\b/.test(innerB) ? "never" : "void";
+                } else if (!rM[1] || !rM[1].trim()) {
+                  baseRet = "void";
+                } else {
+                  const lit = inferLiteralType(rM[1].trim());
+                  if (lit) {
+                    baseRet = /^[+-]?\d/.test(lit) ? "number" : lit === "true" || lit === "false" ? "boolean" : "string";
+                  }
+                }
+              }
+            } else if (bodyRemainder) {
+              const lit = inferLiteralType(bodyRemainder);
+              if (lit) {
+                baseRet = /^[+-]?\d/.test(lit) ? "number" : lit === "true" || lit === "false" ? "boolean" : "string";
+              } else if (bodyRemainder === "undefined") {
+                baseRet = "undefined";
+              } else if (bodyRemainder === "null") {
+                baseRet = "null";
+              } else if (bodyRemainder.startsWith("`") && bodyRemainder.endsWith("`")) {
+                baseRet = "string";
+              }
+            }
+            retType = isAsyncArrow && !baseRet.startsWith("Promise<") ? `Promise<${baseRet}>` : baseRet;
+          }
+          const fnSig = `${tParamPart}(${formattedParams.join(", ")}) => ${retType}`;
+          const existingSig = merge ? fnTypes.get(vName) : void 0;
+          if (!existingSig || !retType.endsWith("any") && !retType.endsWith("<any>") || existingSig.endsWith("=> any") || existingSig.endsWith("=> Promise<any>")) {
+            fnTypes.set(vName, fnSig);
+            varTypes.set(vName, fnSig);
+          }
+          continue;
+        }
       }
       const varNewM = trimmed.match(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*new\s+([A-Za-z_$][\w$]*)\s*(?:<[^>]*>)?\s*\(/);
       if (varNewM && varNewM[1] && varNewM[2] && !/^(Map|Set|Array)$/.test(varNewM[2])) {
         varTypes.set(varNewM[1], varNewM[2]);
       }
     }
-    appState.CURRENT_TS_META = { interfaces, varTypes, fnTypes };
+    typeAliases.forEach((meta, aliasName) => {
+      const refreshed = buildTypeAliasMeta(
+        aliasName,
+        meta.rawDef,
+        meta.resolvedDef !== meta.rawDef ? meta.resolvedDef : void 0,
+        meta.line,
+        meta.typeParams,
+        interfaces,
+        typeAliases
+      );
+      typeAliases.set(aliasName, refreshed);
+    });
+    appState.CURRENT_TS_META = { interfaces, varTypes, fnTypes, typeAliases };
     return appState.CURRENT_TS_META;
   }
   function matchInterfaceForObject(name, value) {
-    const { interfaces, varTypes } = appState.CURRENT_TS_META;
+    const { interfaces, varTypes, typeAliases } = appState.CURRENT_TS_META;
     const declaredVarT = name ? varTypes.get(name) : void 0;
     if (declaredVarT) {
       const cleanT = declaredVarT.replace(/\[\]$/, "").trim();
       if (interfaces.has(cleanT)) return interfaces.get(cleanT) || null;
+      const aliasMeta = typeAliases ? typeAliases.get(cleanT) : void 0;
+      if (aliasMeta && aliasMeta.fields && aliasMeta.fields.length > 0) {
+        return {
+          kind: "type",
+          name: cleanT,
+          line: aliasMeta.line,
+          isClass: false,
+          fields: aliasMeta.fields
+        };
+      }
     }
     if (value && typeof value === "object") {
       const clsName = typeof value.__cls__ === "string" ? value.__cls__ : "";
@@ -3904,6 +4455,9 @@ runAsyncDemo()
     const e = normalizeTsType(expected);
     if (a === e || a === "any" || e === "any" || e === "unknown" || a === "never") return true;
     if (a === "undefined" && e === "void") return true;
+    if (!appState.TS_CONFIG.strictNullChecks && (a === "null" || a === "undefined") && e !== "never") {
+      return true;
+    }
     if (a === "unknown") return false;
     if (e === "never") return a === "never";
     if (isLiteralOfPrimitive(a, e)) return true;
@@ -3953,15 +4507,29 @@ runAsyncDemo()
         return true;
       }
     }
-    const fnArrowIdx = e.lastIndexOf("=>");
-    if (fnArrowIdx > 0 && e.startsWith("(")) {
-      const expectedRet = e.slice(fnArrowIdx + 2).trim();
-      const aArrowIdx = a.lastIndexOf("=>");
-      if (aArrowIdx > 0 && a.startsWith("(")) {
-        const actualRet = a.slice(aArrowIdx + 2).trim();
-        return isTsAssignable(actualRet, expectedRet, knownNominalTypes);
+    const findTopArrow = (s) => {
+      let d = 0;
+      for (let i = 0; i < s.length - 1; i++) {
+        const ch = s[i];
+        if (ch === '"' || ch === "'" || ch === "`") {
+          i = skipString(s, i) - 1;
+          continue;
+        }
+        if (ch === "(" || ch === "[" || ch === "{" || ch === "<") d++;
+        else if (ch === ")" || ch === "]" || ch === "}" || ch === ">" && s[i - 1] !== "=") d = Math.max(0, d - 1);
+        else if (d === 0 && ch === "=" && s[i + 1] === ">") return i;
       }
-      if (a === "function" || isTsAssignable(a, expectedRet, knownNominalTypes)) return true;
+      return -1;
+    };
+    const fnArrowIdx = findTopArrow(e);
+    if (fnArrowIdx > 0 && (e.startsWith("(") || e.startsWith("<"))) {
+      const expectedRet = e.slice(fnArrowIdx + 2).trim();
+      const aArrowIdx = findTopArrow(a);
+      if (aArrowIdx > 0 && (a.startsWith("(") || a.startsWith("<"))) {
+        const actualRet = a.slice(aArrowIdx + 2).trim();
+        return expectedRet === "void" || isTsAssignable(actualRet, expectedRet, knownNominalTypes);
+      }
+      if (a === "function" || expectedRet === "void" || isTsAssignable(a, expectedRet, knownNominalTypes)) return true;
     }
     const aGenM = a.match(/^([A-Za-z_$][\w$]*)<(.+)>$/);
     const eGenM = e.match(/^([A-Za-z_$][\w$]*)<(.+)>$/);
@@ -5992,7 +6560,7 @@ runAsyncDemo()
     }
     function instantiateAndCheckCall(sig, explicitTypeArgs, args, argTypes, calleeLabel, lineNum, outEnv = null) {
       const hasRest = sig.params.some((p) => p.isRest);
-      if (args.length < sig.minArgs || !hasRest && args.length > sig.params.length) {
+      if (ctx.tsConfig.strictFunctionTypes !== false && (args.length < sig.minArgs || !hasRest && args.length > sig.params.length)) {
         addDiag(lineNum, "TS2554", `${calleeLabel} 应有 ${sig.minArgs === sig.params.length ? sig.params.length : sig.minArgs + "-" + sig.params.length} 个参数，但获得 ${args.length} 个`);
         return sig.returnType || "any";
       }
@@ -6100,7 +6668,7 @@ runAsyncDemo()
         }
       });
     }
-    function parseParamList(paramStr, lineNum, checkUntypedParams = true) {
+    function parseParamList(paramStr, lineNum, checkUntypedParams = Boolean(ctx.tsConfig.noImplicitAny)) {
       const rawParams = paramStr ? splitTopLevelDecl(paramStr) : [];
       const params = [];
       let minArgs = 0;
@@ -6152,7 +6720,7 @@ runAsyncDemo()
       const setterM = s.match(/^(?:(?:public|private|protected|static|readonly|override)\s+)*set\s+([A-Za-z_$][\w$]*)\s*\(([^)]*)\)/);
       if (setterM && setterM[1]) {
         const sName = setterM[1];
-        const { params, minArgs } = parseParamList((setterM[2] || "").trim(), lineNum, true);
+        const { params, minArgs } = parseParamList((setterM[2] || "").trim(), lineNum, Boolean(ctx.tsConfig.noImplicitAny));
         const sType = params[0]?.type || "any";
         const sRaw = params[0]?.rawType || sType;
         if (!propMap.has(sName)) {
@@ -6204,7 +6772,7 @@ runAsyncDemo()
           const retM = afterClose.match(/^:\s*([^{;]+?)(?:\s*(?:\{[\s\S]*|;))?$/);
           const rawRetType = mName === "constructor" ? "void" : retM && retM[1] ? retM[1].trim() : "any";
           const retType = mName === "constructor" ? "void" : resolveAlias(rawRetType);
-          const { params, minArgs } = parseParamList(paramStr, lineNum, true);
+          const { params, minArgs } = parseParamList(paramStr, lineNum, Boolean(ctx.tsConfig.noImplicitAny));
           if (mName === "constructor") {
             splitTopLevelDecl(paramStr).forEach((rawP, idx) => {
               const pTrim = rawP.trim();
@@ -6866,7 +7434,7 @@ runAsyncDemo()
   }
 
   // src/compiler/type-checker.ts
-  var _TYPECHECK_CACHE = { src: null, strict: null, diags: [] };
+  var _TYPECHECK_CACHE = { src: null, strict: null, configKey: null, diags: [] };
   function collectPass1Declarations(ctx, evalEngine, inferEngine) {
     const {
       lines,
@@ -7137,9 +7705,10 @@ runAsyncDemo()
           continue;
         }
       }
-      const fnMatch = raw.match(/^(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)/);
-      if (fnMatch && fnMatch[1] && raw.indexOf("(") >= 0) {
-        const fnName = fnMatch[1];
+      const fnMatch = raw.match(/^(?:export\s+)?(?:default\s+)?(async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)/);
+      if (fnMatch && fnMatch[2] && raw.indexOf("(") >= 0) {
+        const isAsyncFn = Boolean(fnMatch[1]);
+        const fnName = fnMatch[2];
         let headerStr = raw;
         let scanLine = i;
         let openP = -1;
@@ -7174,11 +7743,13 @@ runAsyncDemo()
           const paramStr = headerStr.slice(openP + 1, closeP).trim();
           const afterClose = headerStr.slice(closeP + 1).trim();
           const retM = afterClose.match(/^:\s*([^{]+?)(?:\s*\{[\s\S]*)?$/);
-          const rawRetType = retM && retM[1] ? retM[1].trim() : "any";
+          const hasExplicitRet = Boolean(retM && retM[1]);
+          const defaultRet = isAsyncFn ? "Promise<any>" : "any";
+          const rawRetType = retM && retM[1] ? retM[1].trim() : defaultRet;
           const tempEnv = /* @__PURE__ */ new Map();
           fnTParams.forEach((tp) => tempEnv.set(tp.name, tp.name));
-          const retType = retM ? resolveAlias(rawRetType, tempEnv) : "any";
-          const { params, minArgs } = parseParamList(paramStr, lineNum, true);
+          const retType = retM ? resolveAlias(rawRetType, tempEnv) : defaultRet;
+          const { params, minArgs } = parseParamList(paramStr, lineNum, Boolean(ctx.tsConfig.noImplicitAny));
           fns.set(fnName, {
             name: fnName,
             params,
@@ -7187,7 +7758,10 @@ runAsyncDemo()
             rawReturnType: rawRetType,
             typeParams: fnTParams,
             line: lineNum,
-            hasValueReturn: false
+            hasValueReturn: false,
+            hasExplicitReturnType: hasExplicitRet,
+            isAsync: isAsyncFn,
+            inferredReturnTypes: []
           });
         }
       }
@@ -7466,8 +8040,145 @@ runAsyncDemo()
       if (/^(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*\*?\s*[A-Za-z_$][\w$]*[\s\S]*;\s*$/.test(trimmed) && !trimmed.includes("{")) {
         continue;
       }
-      const fnOpen = trimmed.match(/^(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*(\*)?\s*([A-Za-z_$][\w$]*)\s*(?:<[\s\S]*>)?\s*\(/);
-      const arrowFnOpen = !fnOpen ? trimmed.match(/^(?:export\s+)?(const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:function\s*\*?(?:\s+[A-Za-z_$][\w$]*)?\s*)?(?:(<[\s\S]*>)\s*)?\(([^)]*)\)\s*(?::\s*([^=]+?))?\s*(?:=>\s*)?\{/) : null;
+      const matchArrowOrFnVarOpen = (lineStr) => {
+        const mVar = lineStr.match(/^(?:export\s+)?(const|let|var)\s+([A-Za-z_$][\w$]*)/);
+        if (!mVar || !mVar[1] || !mVar[2]) return null;
+        const varKind = mVar[1];
+        const varName = mVar[2];
+        const afterName = lineStr.slice(mVar[0].length);
+        let eqIdx = -1, colonIdx = -1, d = 0;
+        for (let k = 0; k < afterName.length; k++) {
+          const ch = afterName[k];
+          if (ch === '"' || ch === "'" || ch === "`") {
+            k = skipString(afterName, k) - 1;
+            continue;
+          }
+          if (ch === "(" || ch === "[" || ch === "{" || ch === "<") d++;
+          else if (ch === ")" || ch === "]" || ch === "}" || ch === ">" && afterName[k - 1] !== "=") d = Math.max(0, d - 1);
+          else if (d === 0 && ch === ":" && colonIdx < 0 && eqIdx < 0) {
+            colonIdx = k;
+          } else if (d === 0 && ch === "=" && afterName[k + 1] !== "=" && afterName[k + 1] !== ">" && afterName[k - 1] !== "=" && afterName[k - 1] !== "!" && afterName[k - 1] !== "<" && afterName[k - 1] !== ">") {
+            eqIdx = k;
+            break;
+          }
+        }
+        if (eqIdx < 0) return null;
+        const rawVarDeclType = colonIdx >= 0 ? afterName.slice(colonIdx + 1, eqIdx).trim() : null;
+        let rhs = afterName.slice(eqIdx + 1).trim();
+        let isAsync = false;
+        if (/^async\b/.test(rhs) && (isWS(rhs[5]) || rhs[5] === "(" || rhs[5] === "<" || rhs.slice(5).trim().startsWith("function"))) {
+          isAsync = true;
+          rhs = rhs.slice(5).trim();
+        }
+        let isFnKeyword = false;
+        const fnKwM = rhs.match(/^function\s*(\*)?(?:\s+[A-Za-z_$][\w$]*)?\s*/);
+        if (fnKwM) {
+          isFnKeyword = true;
+          rhs = rhs.slice(fnKwM[0].length).trim();
+        }
+        let typeParamStr = "";
+        if (rhs.startsWith("<")) {
+          let ad = 1, k = 1;
+          while (k < rhs.length && ad > 0) {
+            const ch = rhs[k];
+            if (ch === '"' || ch === "'" || ch === "`") {
+              k = skipString(rhs, k);
+              continue;
+            }
+            if (ch === "<") ad++;
+            else if (ch === ">" && rhs[k - 1] !== "=") ad--;
+            k++;
+          }
+          if (ad === 0) {
+            typeParamStr = rhs.slice(0, k).trim();
+            rhs = rhs.slice(k).trim();
+          }
+        }
+        if (rhs.startsWith("(")) {
+          const closeP = findBalancedParen(rhs, 0);
+          if (closeP < 0) return null;
+          const paramStr = rhs.slice(1, closeP).trim();
+          const afterParen = rhs.slice(closeP + 1).trim();
+          if (isFnKeyword) {
+            const retM2 = afterParen.match(/^(?::\s*([^{]+?))?\s*\{/);
+            if (!retM2) return null;
+            return {
+              varKind,
+              varName,
+              rawVarDeclType,
+              isAsync,
+              typeParamStr,
+              paramStr,
+              rawRetType: retM2[1] ? retM2[1].trim() : null
+            };
+          }
+          if (afterParen.startsWith("=>")) {
+            const afterArrow = afterParen.slice(2).trim();
+            if (!afterArrow.startsWith("{")) return null;
+            return {
+              varKind,
+              varName,
+              rawVarDeclType,
+              isAsync,
+              typeParamStr,
+              paramStr,
+              rawRetType: null
+            };
+          }
+          if (afterParen.startsWith(":")) {
+            const afterColon = afterParen.slice(1).trim();
+            let td = 0, arrowPos = -1;
+            let skipFirstFnArrow = afterColon.startsWith("(") || afterColon.startsWith("<");
+            for (let k = 0; k < afterColon.length - 1; k++) {
+              const ch = afterColon[k];
+              if (ch === '"' || ch === "'" || ch === "`") {
+                k = skipString(afterColon, k) - 1;
+                continue;
+              }
+              if (ch === "(" || ch === "[" || ch === "{" || ch === "<") td++;
+              else if (ch === ")" || ch === "]" || ch === "}" || ch === ">" && afterColon[k - 1] !== "=") td = Math.max(0, td - 1);
+              else if (td === 0 && ch === "=" && afterColon[k + 1] === ">") {
+                if (skipFirstFnArrow) {
+                  skipFirstFnArrow = false;
+                  k++;
+                  continue;
+                }
+                arrowPos = k;
+                break;
+              }
+            }
+            if (arrowPos > 0) {
+              const afterArrow = afterColon.slice(arrowPos + 2).trim();
+              if (!afterArrow.startsWith("{")) return null;
+              return {
+                varKind,
+                varName,
+                rawVarDeclType,
+                isAsync,
+                typeParamStr,
+                paramStr,
+                rawRetType: afterColon.slice(0, arrowPos).trim()
+              };
+            }
+          }
+          return null;
+        }
+        const singleParamM = !isFnKeyword ? rhs.match(/^([A-Za-z_$][\w$]*)\s*=>\s*\{/) : null;
+        if (singleParamM && singleParamM[1]) {
+          return {
+            varKind,
+            varName,
+            rawVarDeclType,
+            isAsync,
+            typeParamStr,
+            paramStr: singleParamM[1],
+            rawRetType: null
+          };
+        }
+        return null;
+      };
+      const fnOpen = trimmed.match(/^(?:export\s+)?(?:default\s+)?(async\s+)?function\s*(\*)?\s*([A-Za-z_$][\w$]*)\s*(?:<[\s\S]*>)?\s*\(/);
+      const arrowFnOpen = !fnOpen ? matchArrowOrFnVarOpen(trimmed) : null;
       let validMethodOpen = null;
       if (!fnOpen && !arrowFnOpen && currentClass && braceDepth === classStartBraceDepth + 1) {
         const mHdr = trimmed.match(/^(?:(?:public|private|protected|static|async|readonly|override)\s+)*(?:(get|set)\s+)?(\*\s*)?([A-Za-z_$][\w$]*)\s*(?:<[\s\S]*>)?\s*\(/);
@@ -7493,7 +8204,7 @@ runAsyncDemo()
           }
         }
       }
-      const callbackArrowOpen = !fnOpen && !arrowFnOpen && !validMethodOpen ? trimmed.match(/(?:async\s*)?(?:(<[A-Za-z_$][\w$,\s=<>]*>)\s*)?\(([^()]*)\)\s*(?::\s*([^{=]+?))?\s*=>\s*\{$/) || trimmed.match(/(?:async\s*)?function\s*\*?(?:\s+[A-Za-z_$][\w$]*)?\s*(?:(<[A-Za-z_$][\w$,\s=<>]*>)\s*)?\(([^()]*)\)\s*(?::\s*([^{=]+?))?\s*\{$/) : null;
+      const callbackArrowOpen = !fnOpen && !arrowFnOpen && !validMethodOpen ? trimmed.match(/(?:(async)\s*)?(?:(<[A-Za-z_$][\w$,\s=<>]*>)\s*)?\(([^()]*)\)\s*(?::\s*([^{=]+?))?\s*=>\s*\{$/) || trimmed.match(/(?:(async)\s*)?function\s*\*?(?:\s+[A-Za-z_$][\w$]*)?\s*(?:(<[A-Za-z_$][\w$,\s=<>]*>)\s*)?\(([^()]*)\)\s*(?::\s*([^{=]+?))?\s*\{$/) : null;
       let bodyStartInRaw = 0;
       if (fnOpen || arrowFnOpen || validMethodOpen || callbackArrowOpen) {
         if (fnOpen) {
@@ -7503,10 +8214,11 @@ runAsyncDemo()
             trimmed += " " + stripInlineCommentSafe(lines[i]).trim();
           }
         }
-        if (arrowFnOpen && arrowFnOpen[2]) {
-          const fnVarName = arrowFnOpen[2];
-          const isConstFn = arrowFnOpen[1] === "const";
-          env.set(fnVarName, { type: "function", isConst: isConstFn, line: lineNum, declaredType: "function" });
+        if (arrowFnOpen) {
+          const fnVarName = arrowFnOpen.varName;
+          const isConstFn = arrowFnOpen.varKind === "const";
+          const declVarT = arrowFnOpen.rawVarDeclType ? resolveAlias(arrowFnOpen.rawVarDeclType) : "function";
+          env.set(fnVarName, { type: declVarT, isConst: isConstFn, line: lineNum, declaredType: declVarT });
         }
         if (callbackArrowOpen && currentFn && /^return\b/.test(trimmed)) {
           currentFn.hasValueReturn = true;
@@ -7518,27 +8230,45 @@ runAsyncDemo()
           prevTypeParams: new Map(activeTypeParams)
         });
         const methodKey = validMethodOpen && validMethodOpen[1] && currentClass ? validMethodOpen[4] === "set" ? `${currentClass}.set.${validMethodOpen[1]}` : validMethodOpen[4] === "get" ? `${currentClass}.get.${validMethodOpen[1]}` : `${currentClass}.${validMethodOpen[1]}` : "";
-        const existingFn = (fnOpen && fnOpen[2] ? fns.get(fnOpen[2]) : void 0) || (methodKey && validMethodOpen ? fns.get(methodKey) || fns.get(`${currentClass}.${validMethodOpen[1]}`) : void 0);
+        const existingFn = (fnOpen && fnOpen[3] ? fns.get(fnOpen[3]) : void 0) || (methodKey && validMethodOpen ? fns.get(methodKey) || fns.get(`${currentClass}.${validMethodOpen[1]}`) : void 0);
         let activeFn;
         if (existingFn) {
           activeFn = existingFn;
-          if (fnOpen && fnOpen[1] === "*") {
+          activeFn.inferredReturnTypes = [];
+          if (fnOpen && fnOpen[2] === "*") {
             activeFn.hasValueReturn = true;
           }
         } else if (callbackArrowOpen) {
-          const cbTParams = callbackArrowOpen[1] ? parseTypeParams(callbackArrowOpen[1]) : [];
-          const cbParamStr = (callbackArrowOpen[2] || "").trim();
-          const cbRawRet = callbackArrowOpen[3] ? callbackArrowOpen[3].trim() : "any";
-          const cbRet = callbackArrowOpen[3] ? resolveAlias(cbRawRet) : "any";
+          const isAsyncCb = Boolean(callbackArrowOpen[1]);
+          const cbTParams = callbackArrowOpen[2] ? parseTypeParams(callbackArrowOpen[2]) : [];
+          const cbParamStr = (callbackArrowOpen[3] || "").trim();
+          const hasCbRet = Boolean(callbackArrowOpen[4]);
+          const cbRawRet = callbackArrowOpen[4] ? callbackArrowOpen[4].trim() : isAsyncCb ? "Promise<any>" : "any";
+          const cbRet = callbackArrowOpen[4] ? resolveAlias(cbRawRet) : cbRawRet;
           const { params: cbParams, minArgs: cbMin } = parseParamList(cbParamStr, lineNum, false);
-          activeFn = { name: "<callback>", params: cbParams, minArgs: cbMin, returnType: cbRet, rawReturnType: cbRawRet, typeParams: cbTParams, line: lineNum, hasValueReturn: false };
+          activeFn = {
+            name: "<callback>",
+            params: cbParams,
+            minArgs: cbMin,
+            returnType: cbRet,
+            rawReturnType: cbRawRet,
+            typeParams: cbTParams,
+            line: lineNum,
+            hasValueReturn: false,
+            hasExplicitReturnType: hasCbRet,
+            isAsync: isAsyncCb,
+            inferredReturnTypes: []
+          };
         } else {
-          const fName = (fnOpen ? fnOpen[2] : arrowFnOpen ? arrowFnOpen[2] : methodKey || currentClass + "." + (validMethodOpen ? validMethodOpen[1] : "")) || "";
+          const fName = (fnOpen ? fnOpen[3] : arrowFnOpen ? arrowFnOpen.varName : methodKey || currentClass + "." + (validMethodOpen ? validMethodOpen[1] : "")) || "";
           let paramStr = "";
           let retType = "any";
           let rawRetType = "any";
+          let hasExplicitRet = false;
+          let isAsyncFn = false;
           let fnTParams = [];
           if (fnOpen) {
+            isAsyncFn = Boolean(fnOpen[1]);
             const openP = trimmed.indexOf("(");
             const closeP = findBalancedParen(trimmed, openP);
             if (closeP > openP) {
@@ -7546,24 +8276,93 @@ runAsyncDemo()
               const afterClose = trimmed.slice(closeP + 1).trim();
               const retM2 = afterClose.match(/^:\s*([^{]+?)(?:\s*\{[\s\S]*)?$/);
               if (retM2 && retM2[1]) {
+                hasExplicitRet = true;
                 rawRetType = retM2[1].trim();
                 retType = resolveAlias(rawRetType);
+              } else if (isAsyncFn) {
+                rawRetType = "Promise<any>";
+                retType = "Promise<any>";
               }
             }
           } else if (arrowFnOpen) {
-            fnTParams = arrowFnOpen[3] ? parseTypeParams(arrowFnOpen[3]) : [];
-            paramStr = (arrowFnOpen[4] || "").trim();
-            rawRetType = arrowFnOpen[5] ? arrowFnOpen[5].trim() : "any";
-            retType = arrowFnOpen[5] ? resolveAlias(rawRetType) : "any";
+            isAsyncFn = arrowFnOpen.isAsync;
+            fnTParams = arrowFnOpen.typeParamStr ? parseTypeParams(arrowFnOpen.typeParamStr) : [];
+            paramStr = arrowFnOpen.paramStr;
+            if (arrowFnOpen.rawRetType) {
+              hasExplicitRet = true;
+              rawRetType = arrowFnOpen.rawRetType;
+              retType = resolveAlias(rawRetType);
+            } else if (isAsyncFn) {
+              rawRetType = "Promise<any>";
+              retType = "Promise<any>";
+            }
           } else if (validMethodOpen) {
+            isAsyncFn = /\basync\s+/.test(validMethodOpen[0] || "");
             paramStr = (validMethodOpen[2] || "").trim();
             const isCtorOrSetter = validMethodOpen[1] === "constructor" || validMethodOpen[4] === "set";
-            rawRetType = isCtorOrSetter ? "void" : validMethodOpen[3] ? validMethodOpen[3].trim() : "any";
+            hasExplicitRet = isCtorOrSetter || Boolean(validMethodOpen[3]);
+            rawRetType = isCtorOrSetter ? "void" : validMethodOpen[3] ? validMethodOpen[3].trim() : isAsyncFn ? "Promise<any>" : "any";
             retType = isCtorOrSetter ? "void" : resolveAlias(rawRetType);
           }
-          const { params, minArgs } = parseParamList(paramStr, lineNum, Boolean(fnOpen || validMethodOpen));
-          const isGen = Boolean(fnOpen && fnOpen[1] === "*" || /^Generator<|^AsyncGenerator<|^IterableIterator<|^Iterator</.test(retType));
-          activeFn = { name: fName, params, minArgs, returnType: retType, rawReturnType: rawRetType, typeParams: fnTParams, line: lineNum, hasValueReturn: isGen };
+          const { params, minArgs } = parseParamList(
+            paramStr,
+            lineNum,
+            Boolean(ctx.tsConfig.noImplicitAny) && Boolean(fnOpen || validMethodOpen)
+          );
+          if (arrowFnOpen && arrowFnOpen.rawVarDeclType) {
+            const resolvedVarDecl = resolveAlias(arrowFnOpen.rawVarDeclType);
+            let d = 0, topArrow = -1;
+            for (let k = 0; k < resolvedVarDecl.length - 1; k++) {
+              const ch = resolvedVarDecl[k];
+              if (ch === '"' || ch === "'" || ch === "`") {
+                k = skipString(resolvedVarDecl, k) - 1;
+                continue;
+              }
+              if (ch === "(" || ch === "[" || ch === "{" || ch === "<") d++;
+              else if (ch === ")" || ch === "]" || ch === "}" || ch === ">" && resolvedVarDecl[k - 1] !== "=") d = Math.max(0, d - 1);
+              else if (d === 0 && ch === "=" && resolvedVarDecl[k + 1] === ">") {
+                topArrow = k;
+                break;
+              }
+            }
+            if (topArrow > 0) {
+              const leftPart = resolvedVarDecl.slice(0, topArrow).trim();
+              const rightPart = resolvedVarDecl.slice(topArrow + 2).trim();
+              const openP = leftPart.indexOf("(");
+              const closeP = openP >= 0 ? findBalancedParen(leftPart, openP) : -1;
+              if (closeP > openP) {
+                const { params: ctxParams } = parseParamList(leftPart.slice(openP + 1, closeP).trim(), lineNum, false);
+                const rawItems = paramStr ? splitTopLevelDecl(paramStr) : [];
+                params.forEach((p, idx) => {
+                  const rawC = (rawItems[idx] || "").trim();
+                  const ctxP = ctxParams[idx];
+                  if (!rawC.includes(":") && !rawC.includes("=") && ctxP && (p.type === "any" || p.type === "any[]")) {
+                    p.type = ctxP.type;
+                    p.rawType = ctxP.rawType || ctxP.type;
+                  }
+                });
+              }
+              if (!hasExplicitRet && rightPart && rightPart !== "any") {
+                hasExplicitRet = true;
+                rawRetType = rightPart;
+                retType = resolveAlias(rightPart);
+              }
+            }
+          }
+          const isGen = Boolean(fnOpen && fnOpen[2] === "*" || /^Generator<|^AsyncGenerator<|^IterableIterator<|^Iterator</.test(retType));
+          activeFn = {
+            name: fName,
+            params,
+            minArgs,
+            returnType: retType,
+            rawReturnType: rawRetType,
+            typeParams: fnTParams,
+            line: lineNum,
+            hasValueReturn: isGen,
+            hasExplicitReturnType: hasExplicitRet,
+            isAsync: isAsyncFn,
+            inferredReturnTypes: []
+          };
           fns.set(fName, activeFn);
         }
         currentFn = activeFn;
@@ -7607,23 +8406,17 @@ runAsyncDemo()
         }
         const closeBraceIdx = trimmed.lastIndexOf("}");
         const bodyAfterOpenBrace = openBraceIdx >= 0 ? trimmed.slice(openBraceIdx + 1) : "";
-        if (/\bthrow\b/.test(bodyAfterOpenBrace)) {
-          activeFn.hasValueReturn = true;
-        }
-        const rm = bodyAfterOpenBrace.match(/\breturn\b([^;}\n]*)/);
-        if (rm && rm[1]?.trim()) {
-          activeFn.hasValueReturn = true;
-          const inlineRetExpr = rm[1].trim();
-          const inlineRetT = inferType(inlineRetExpr, lineNum);
-          const expRet = activeFn.returnType;
-          const unwrappedExp = expRet && expRet.startsWith("Promise<") && expRet.endsWith(">") ? expRet.slice(8, -1) : expRet;
-          if (expRet && expRet !== "any" && !isExpressionAssignable(inlineRetExpr, inlineRetT, expRet, lineNum) && !isExpressionAssignable(inlineRetExpr, inlineRetT, unwrappedExp, lineNum)) {
-            addDiag(lineNum, "TS2322", `不能将返回值类型 "${inlineRetT}" 分配给函数 "${activeFn.name}" 声明的返回类型 "${expRet}"`);
-          }
-        }
         if (openBraceIdx >= 0 && closeBraceIdx > openBraceIdx) {
           const inlineBody = trimmed.slice(openBraceIdx + 1, closeBraceIdx).trim();
           inlineBody.split(";").map((s) => s.trim()).filter(Boolean).forEach((stmt) => {
+            const inlineVar = stmt.match(/^(?:const|let|var)\s+([A-Za-z_$][\w$]*)(?:\s*:\s*([^=]+?))?\s*=\s*([\s\S]+)$/);
+            if (inlineVar && inlineVar[1] && inlineVar[3]) {
+              const vName = inlineVar[1];
+              const vDecl = inlineVar[2] ? resolveAlias(inlineVar[2].trim()) : null;
+              const vT = vDecl || inferType(inlineVar[3].trim(), lineNum);
+              env.set(vName, { type: vT, isConst: stmt.startsWith("const"), line: lineNum, declaredType: vT });
+              return;
+            }
             const inlineAssign = stmt.match(/^([A-Za-z_$][\w$!]*(?:\.[A-Za-z_$][\w$!]*|\s*\[[^\]]+\])*)\s*(\+=|-=|\*=|\/=|=(?!=))\s*([\s\S]+)$/);
             if (inlineAssign && inlineAssign[1] && inlineAssign[3]) {
               const lhs = inlineAssign[1].trim();
@@ -7639,6 +8432,34 @@ runAsyncDemo()
               }
             }
           });
+        }
+        if (/\bthrow\b/.test(bodyAfterOpenBrace)) {
+          activeFn.hasValueReturn = true;
+        }
+        const rm = bodyAfterOpenBrace.match(/\breturn\b([^;}\n]*)/);
+        if (rm) {
+          const inlineRetExpr = (rm[1] || "").trim();
+          if (inlineRetExpr) {
+            activeFn.hasValueReturn = true;
+            const inlineRetT = inferType(inlineRetExpr, lineNum);
+            if (!activeFn.hasExplicitReturnType) {
+              if (!activeFn.inferredReturnTypes) activeFn.inferredReturnTypes = [];
+              if (!activeFn.inferredReturnTypes.includes(inlineRetT)) {
+                activeFn.inferredReturnTypes.push(inlineRetT);
+              }
+            } else {
+              const expRet = activeFn.returnType;
+              const unwrappedExp = expRet && expRet.startsWith("Promise<") && expRet.endsWith(">") ? expRet.slice(8, -1) : expRet;
+              if (expRet && expRet !== "any" && !isExpressionAssignable(inlineRetExpr, inlineRetT, expRet, lineNum) && !isExpressionAssignable(inlineRetExpr, inlineRetT, unwrappedExp, lineNum)) {
+                addDiag(lineNum, "TS2322", `不能将返回值类型 "${inlineRetT}" 分配给函数 "${activeFn.name}" 声明的返回类型 "${expRet}"`);
+              }
+            }
+          } else if (!activeFn.hasExplicitReturnType) {
+            if (!activeFn.inferredReturnTypes) activeFn.inferredReturnTypes = [];
+            if (!activeFn.inferredReturnTypes.includes("void")) {
+              activeFn.inferredReturnTypes.push("void");
+            }
+          }
         }
       }
       for (let k = Math.max(0, bodyStartInRaw); k < rawLine.length; k++) {
@@ -7660,14 +8481,42 @@ runAsyncDemo()
           }
           if (currentFn && braceDepth <= fnStartBraceDepth) {
             const isGenRet = /^Generator<|^AsyncGenerator<|^IterableIterator<|^Iterator</.test(currentFn.returnType);
-            if (currentFn.returnType !== "any" && currentFn.returnType !== "void" && currentFn.returnType !== "Promise<void>" && currentFn.returnType !== "never" && currentFn.returnType !== "Promise<never>" && currentFn.returnType !== "unknown" && !isGenRet && !currentFn.hasValueReturn) {
+            if (!currentFn.hasExplicitReturnType && !isGenRet) {
+              const collected = (currentFn.inferredReturnTypes || []).filter(Boolean);
+              const nonAny = collected.filter((t) => t !== "any");
+              const effective = nonAny.length > 0 ? nonAny : collected;
+              let inferredRet = "void";
+              if (effective.length > 0) {
+                inferredRet = effective.join(" | ");
+              } else if (currentFn.hasValueReturn) {
+                inferredRet = "never";
+              }
+              if (currentFn.isAsync && !inferredRet.startsWith("Promise<")) {
+                inferredRet = `Promise<${inferredRet}>`;
+              }
+              currentFn.rawReturnType = inferredRet;
+              currentFn.returnType = resolveAlias(inferredRet);
+            } else if (ctx.tsConfig.noImplicitReturns !== false && currentFn.returnType !== "any" && currentFn.returnType !== "void" && currentFn.returnType !== "Promise<void>" && currentFn.returnType !== "never" && currentFn.returnType !== "Promise<never>" && currentFn.returnType !== "unknown" && !isGenRet && !currentFn.hasValueReturn) {
               addDiag(currentFn.line, "TS2355", `函数 "${currentFn.name}" 声明返回类型为 "${currentFn.returnType}"，但缺少 return 返回值语句`);
             }
+            const finishedFn = currentFn;
             const prev = fnScopeStack.pop();
             if (prev) {
               currentFn = prev.fn;
               fnStartBraceDepth = prev.startDepth;
               if (prev.prevEnv) {
+                if (finishedFn.name && finishedFn.name !== "<callback>" && prev.prevEnv.has(finishedFn.name)) {
+                  const prevEntry = prev.prevEnv.get(finishedFn.name);
+                  if (prevEntry) {
+                    const fullSig = formatFnSigInfoToTypeString(finishedFn);
+                    const nextType = prevEntry.declaredType && prevEntry.declaredType !== "function" ? prevEntry.declaredType : fullSig;
+                    prev.prevEnv.set(finishedFn.name, {
+                      ...prevEntry,
+                      type: nextType,
+                      declaredType: nextType
+                    });
+                  }
+                }
                 env.clear();
                 prev.prevEnv.forEach((v, kName) => env.set(kName, v));
                 if (currentClass) env.set("this", { type: currentClass, isConst: true, line: lineNum, declaredType: currentClass });
@@ -7818,36 +8667,301 @@ runAsyncDemo()
         }
         rest = rest.replace(/;\s*$/, "").trim();
         if (openB === 0) {
+          const parseTopLevelFnType = (fnTypeStr, ln) => {
+            if (!fnTypeStr) return null;
+            const resolved = resolveAlias(fnTypeStr.trim());
+            let d = 0;
+            let arrowIdx = -1;
+            for (let k = 0; k < resolved.length - 1; k++) {
+              const ch = resolved[k];
+              if (ch === '"' || ch === "'" || ch === "`") {
+                k = skipString(resolved, k) - 1;
+                continue;
+              }
+              if (ch === "(" || ch === "[" || ch === "{" || ch === "<") d++;
+              else if (ch === ")" || ch === "]" || ch === "}" || ch === ">" && resolved[k - 1] !== "=") d = Math.max(0, d - 1);
+              else if (d === 0 && ch === "=" && resolved[k + 1] === ">") {
+                arrowIdx = k;
+                break;
+              }
+            }
+            if (arrowIdx < 0) return null;
+            const left = resolved.slice(0, arrowIdx).trim();
+            const right = resolved.slice(arrowIdx + 2).trim();
+            const openP = left.indexOf("(");
+            if (openP < 0) return null;
+            const closeP = findBalancedParen(left, openP);
+            if (closeP < openP) return null;
+            const pInner = left.slice(openP + 1, closeP).trim();
+            const { params: ctxParams } = parseParamList(pInner, ln, false);
+            return { params: ctxParams, returnType: right || "any" };
+          };
+          const parseInlineArrow = (exprStr) => {
+            let s = exprStr.trim();
+            let isAsync = false;
+            if (/^async\b/.test(s) && (isWS(s[5]) || s[5] === "(" || s[5] === "<")) {
+              isAsync = true;
+              s = s.slice(5).trim();
+            }
+            let typeParamStr = "";
+            if (s.startsWith("<")) {
+              let ad = 1, k = 1;
+              while (k < s.length && ad > 0) {
+                const ch = s[k];
+                if (ch === '"' || ch === "'" || ch === "`") {
+                  k = skipString(s, k);
+                  continue;
+                }
+                if (ch === "<") ad++;
+                else if (ch === ">" && s[k - 1] !== "=") ad--;
+                k++;
+              }
+              if (ad === 0) {
+                typeParamStr = s.slice(0, k).trim();
+                s = s.slice(k).trim();
+              }
+            }
+            if (s.startsWith("(")) {
+              const closeP = findBalancedParen(s, 0);
+              if (closeP < 0) return null;
+              const paramStr = s.slice(1, closeP).trim();
+              const afterParen = s.slice(closeP + 1).trim();
+              if (afterParen.startsWith("=>")) {
+                return {
+                  isAsync,
+                  typeParamStr,
+                  paramStr,
+                  rawRet: null,
+                  bodyStr: afterParen.slice(2).trim()
+                };
+              }
+              if (afterParen.startsWith(":")) {
+                const afterColon = afterParen.slice(1).trim();
+                let d = 0;
+                let arrowPos = -1;
+                let skipFirstFnTypeArrow = afterColon.startsWith("(") || afterColon.startsWith("<");
+                for (let k = 0; k < afterColon.length - 1; k++) {
+                  const ch = afterColon[k];
+                  if (ch === '"' || ch === "'" || ch === "`") {
+                    k = skipString(afterColon, k) - 1;
+                    continue;
+                  }
+                  if (ch === "(" || ch === "[" || ch === "{" || ch === "<") d++;
+                  else if (ch === ")" || ch === "]" || ch === "}" || ch === ">" && afterColon[k - 1] !== "=") d = Math.max(0, d - 1);
+                  else if (d === 0 && ch === "=" && afterColon[k + 1] === ">") {
+                    if (skipFirstFnTypeArrow) {
+                      skipFirstFnTypeArrow = false;
+                      k++;
+                      continue;
+                    }
+                    arrowPos = k;
+                    break;
+                  }
+                }
+                if (arrowPos > 0) {
+                  return {
+                    isAsync,
+                    typeParamStr,
+                    paramStr,
+                    rawRet: afterColon.slice(0, arrowPos).trim(),
+                    bodyStr: afterColon.slice(arrowPos + 2).trim()
+                  };
+                }
+              }
+              return null;
+            }
+            const singleM = s.match(/^([A-Za-z_$][\w$]*)\s*=>\s*([\s\S]+)$/);
+            if (singleM && singleM[1] && singleM[2]) {
+              return {
+                isAsync,
+                typeParamStr,
+                paramStr: singleM[1],
+                rawRet: null,
+                bodyStr: singleM[2].trim()
+              };
+            }
+            return null;
+          };
+          const splitBlockTopStatements = (blockInner) => {
+            const stmts = [];
+            let cur = "";
+            let d = 0;
+            for (let k = 0; k < blockInner.length; k++) {
+              const ch = blockInner[k];
+              if (ch === '"' || ch === "'" || ch === "`") {
+                const end = skipString(blockInner, k);
+                cur += blockInner.slice(k, end);
+                k = end - 1;
+                continue;
+              }
+              if (ch === "(" || ch === "[" || ch === "{") d++;
+              else if (ch === ")" || ch === "]" || ch === "}") d = Math.max(0, d - 1);
+              if ((ch === ";" || ch === "\n") && d === 0) {
+                if (cur.trim()) stmts.push(cur.trim());
+                cur = "";
+              } else {
+                cur += ch;
+              }
+            }
+            if (cur.trim()) stmts.push(cur.trim());
+            return stmts;
+          };
           const parts = splitTopLevelDecl(rest);
           parts.forEach((part) => {
             const pTrim = part.trim();
-            const pm = pTrim.match(/^([A-Za-z_$][\w$]*)(?:\s*:\s*((?:[^=]|=>)+?))?(?:\s*=\s*(?!=|>)([\s\S]+))?$/);
-            if (pm && pm[1]) {
-              const vName = pm[1];
-              const declT = pm[2] ? resolveAlias(pm[2].trim()) : null;
-              const initExpr = pm[3] ? pm[3].trim() : null;
+            const idM = pTrim.match(/^([A-Za-z_$][\w$]*)/);
+            if (idM && idM[1]) {
+              const vName = idM[1];
+              const afterName = pTrim.slice(vName.length);
+              let eqIdx = -1, colonIdx = -1, d = 0;
+              for (let k = 0; k < afterName.length; k++) {
+                const ch = afterName[k];
+                if (ch === '"' || ch === "'" || ch === "`") {
+                  k = skipString(afterName, k) - 1;
+                  continue;
+                }
+                if (ch === "(" || ch === "[" || ch === "{" || ch === "<") d++;
+                else if (ch === ")" || ch === "]" || ch === "}" || ch === ">" && afterName[k - 1] !== "=") d = Math.max(0, d - 1);
+                else if (d === 0 && ch === ":" && colonIdx < 0 && eqIdx < 0) {
+                  colonIdx = k;
+                } else if (d === 0 && ch === "=" && afterName[k + 1] !== "=" && afterName[k + 1] !== ">" && afterName[k - 1] !== "=" && afterName[k - 1] !== "!" && afterName[k - 1] !== "<" && afterName[k - 1] !== ">") {
+                  eqIdx = k;
+                  break;
+                }
+              }
+              const rawDeclStr = colonIdx >= 0 ? afterName.slice(colonIdx + 1, eqIdx >= 0 ? eqIdx : afterName.length).trim() : null;
+              const declT = rawDeclStr ? resolveAlias(rawDeclStr) : null;
+              const initExpr = eqIdx >= 0 ? afterName.slice(eqIdx + 1).trim() : null;
+              let inlineArrowSigStr = null;
               if (initExpr) {
-                const inlineArrowM = initExpr.match(/^(?:async\s+)?(?:(<[\s\S]*?>)\s*)?\(([^)]*)\)\s*(?::\s*((?:[^=]|=>)+?))?\s*=>\s*([\s\S]+)$/);
-                if (inlineArrowM && inlineArrowM[2] !== void 0) {
-                  const arrowTParams = inlineArrowM[1] ? parseTypeParams(inlineArrowM[1]) : [];
-                  const arrowParamStr = inlineArrowM[2].trim();
-                  const arrowRawRet = inlineArrowM[3] ? inlineArrowM[3].trim() : null;
-                  const { params: aParams, minArgs: aMin } = parseParamList(arrowParamStr, lineNum, false);
-                  const aRet = arrowRawRet ? resolveAlias(arrowRawRet) : "any";
-                  fns.set(vName, {
+                const parsedArrow = parseInlineArrow(initExpr);
+                if (parsedArrow) {
+                  const arrowTParams = parsedArrow.typeParamStr ? parseTypeParams(parsedArrow.typeParamStr) : [];
+                  const rawParamItems = parsedArrow.paramStr ? splitTopLevelDecl(parsedArrow.paramStr) : [];
+                  const { params: aParams, minArgs: aMin } = parseParamList(parsedArrow.paramStr, lineNum, false);
+                  const ctxFn = parseTopLevelFnType(rawDeclStr || declT, lineNum);
+                  if (ctxFn) {
+                    aParams.forEach((p, idx) => {
+                      const rawClause = (rawParamItems[idx] || "").trim();
+                      const hasExplicitOrDefault = rawClause.includes(":") || rawClause.includes("=");
+                      const ctxP = ctxFn.params[idx];
+                      if (!hasExplicitOrDefault && ctxP && (p.type === "any" || p.type === "any[]")) {
+                        p.type = ctxP.type;
+                        p.rawType = ctxP.rawType || ctxP.type;
+                      }
+                    });
+                  }
+                  const savedEnv = /* @__PURE__ */ new Map();
+                  const boundNames = /* @__PURE__ */ new Set();
+                  const savedTParams = /* @__PURE__ */ new Map();
+                  arrowTParams.forEach((tp) => {
+                    savedTParams.set(tp.name, activeTypeParams.get(tp.name));
+                    activeTypeParams.set(tp.name, tp.constraint ? resolveAlias(tp.constraint) : tp.name);
+                  });
+                  aParams.forEach((p) => {
+                    boundNames.add(p.name);
+                    savedEnv.set(p.name, env.get(p.name));
+                    env.set(p.name, { type: p.type, isConst: false, line: lineNum, declaredType: p.type });
+                  });
+                  const rawBody = parsedArrow.bodyStr.trim();
+                  const isBlockBody = rawBody.startsWith("{") && rawBody.endsWith("}") && findBalancedParen(rawBody, 0) === rawBody.length - 1;
+                  let inferredBodyRet = "any";
+                  let hasValRet = true;
+                  if (isBlockBody) {
+                    const innerBody = rawBody.slice(1, -1).trim();
+                    const stmts = innerBody ? splitBlockTopStatements(innerBody) : [];
+                    if (stmts.length === 0) {
+                      inferredBodyRet = "void";
+                      hasValRet = false;
+                    } else {
+                      const retTypes = [];
+                      let sawThrow = false;
+                      stmts.forEach((st) => {
+                        const localVarM = st.match(/^(?:const|let|var)\s+([A-Za-z_$][\w$]*)(?:\s*:\s*([^=]+?))?\s*=\s*([\s\S]+)$/);
+                        if (localVarM && localVarM[1] && localVarM[3]) {
+                          const lvName = localVarM[1];
+                          const lvDecl = localVarM[2] ? resolveAlias(localVarM[2].trim()) : null;
+                          const lvT = lvDecl || inferType(localVarM[3].trim(), lineNum);
+                          if (!boundNames.has(lvName)) {
+                            boundNames.add(lvName);
+                            savedEnv.set(lvName, env.get(lvName));
+                          }
+                          env.set(lvName, { type: lvT, isConst: st.startsWith("const"), line: lineNum, declaredType: lvT });
+                          return;
+                        }
+                        const rM = st.match(/^return(?:\s+([\s\S]+))?$/);
+                        if (rM) {
+                          const rExpr = rM[1] ? rM[1].trim() : "";
+                          const rT = rExpr ? inferType(rExpr, lineNum) : "void";
+                          if (!retTypes.includes(rT)) retTypes.push(rT);
+                          return;
+                        }
+                        if (/^throw\b/.test(st)) {
+                          sawThrow = true;
+                          const thExpr = st.replace(/^throw\s+/, "").trim();
+                          if (thExpr) inferType(thExpr, lineNum);
+                          return;
+                        }
+                        inferType(st, lineNum);
+                      });
+                      if (retTypes.length === 0) {
+                        inferredBodyRet = sawThrow ? "never" : "void";
+                        hasValRet = sawThrow;
+                      } else {
+                        inferredBodyRet = retTypes.join("|");
+                        hasValRet = retTypes.some((t) => t !== "void");
+                      }
+                    }
+                  } else {
+                    inferredBodyRet = inferType(rawBody, lineNum);
+                    hasValRet = true;
+                  }
+                  boundNames.forEach((bName) => {
+                    const prev = savedEnv.get(bName);
+                    if (prev !== void 0) env.set(bName, prev);
+                    else env.delete(bName);
+                  });
+                  arrowTParams.forEach((tp) => {
+                    const prevTp = savedTParams.get(tp.name);
+                    if (prevTp !== void 0) activeTypeParams.set(tp.name, prevTp);
+                    else activeTypeParams.delete(tp.name);
+                  });
+                  let finalRawRet;
+                  let finalRet;
+                  if (parsedArrow.rawRet) {
+                    finalRawRet = parsedArrow.rawRet;
+                    finalRet = resolveAlias(finalRawRet);
+                    const expectedBodyRet = parsedArrow.isAsync && finalRet.startsWith("Promise<") && finalRet.endsWith(">") ? finalRet.slice(8, -1).trim() : finalRet;
+                    if (expectedBodyRet !== "any" && expectedBodyRet !== "void" && inferredBodyRet !== "any" && !isExpressionAssignable(isBlockBody ? "" : rawBody, inferredBodyRet, expectedBodyRet, lineNum)) {
+                      addDiag(lineNum, "TS2322", `不能将返回值类型 "${inferredBodyRet}" 分配给声明的返回类型 "${finalRet}"`);
+                    }
+                  } else {
+                    let baseRet = inferredBodyRet;
+                    if (baseRet === "any" && ctxFn && ctxFn.returnType) {
+                      baseRet = ctxFn.returnType;
+                    }
+                    if (parsedArrow.isAsync && !baseRet.startsWith("Promise<")) {
+                      baseRet = `Promise<${baseRet}>`;
+                    }
+                    finalRawRet = baseRet;
+                    finalRet = resolveAlias(baseRet);
+                  }
+                  const arrowSig = {
                     name: vName,
                     params: aParams,
                     minArgs: aMin,
-                    returnType: aRet,
-                    rawReturnType: arrowRawRet || aRet,
+                    returnType: finalRet,
+                    rawReturnType: finalRawRet,
                     typeParams: arrowTParams,
                     line: lineNum,
-                    hasValueReturn: true
-                  });
+                    hasValueReturn: hasValRet
+                  };
+                  fns.set(vName, arrowSig);
+                  inlineArrowSigStr = formatFnSigInfoToTypeString(arrowSig);
                 }
               }
               const narrowedPropKey = initExpr ? "__narrowed_prop_" + initExpr : "";
-              let initT = initExpr ? inferType(initExpr, lineNum) : "any";
+              let initT = inlineArrowSigStr ? inlineArrowSigStr : initExpr ? inferType(initExpr, lineNum) : "any";
               if (narrowedPropKey && env.has(narrowedPropKey)) {
                 initT = (env.get(narrowedPropKey) || { type: "any" }).type;
                 env.delete(narrowedPropKey);
@@ -7860,6 +8974,9 @@ runAsyncDemo()
                 } else if (!isExpressionAssignable(initExpr, initT, declT, lineNum)) {
                   addDiag(lineNum, "TS2322", `不能将类型 "${initT}" 分配给类型 "${declT}" (变量 "${vName}")`);
                 }
+              }
+              if (!declT && !initExpr && ctx.tsConfig.noImplicitAny) {
+                addDiag(lineNum, "TS7005", `变量 "${vName}" 隐式具有 "any" 类型（严格模式下请显式添加类型注解或初始值）`);
               }
               const litVal = isConst && initExpr ? inferLiteralType(initExpr) : null;
               env.set(vName, {
@@ -7919,22 +9036,29 @@ runAsyncDemo()
         const retT = retExpr ? inferType(retExpr, lineNum) : "void";
         if (currentFn) {
           if (retExpr) currentFn.hasValueReturn = true;
-          const expectedRet = currentFn.returnType;
-          if (expectedRet && expectedRet !== "any") {
-            const promiseInnerM = expectedRet.match(/^Promise<([\s\S]+)>$/);
-            const genInnerM = expectedRet.match(/^(?:Async)?Generator<([\s\S]+)>$/);
-            let unwrappedExpected = promiseInnerM && promiseInnerM[1] ? promiseInnerM[1] : expectedRet;
-            if (genInnerM && genInnerM[1]) {
-              const genArgs = splitTopLevelDecl(genInnerM[1]);
-              unwrappedExpected = genArgs[1] ? genArgs[1].trim() : "any";
+          if (!currentFn.hasExplicitReturnType) {
+            if (!currentFn.inferredReturnTypes) currentFn.inferredReturnTypes = [];
+            if (!currentFn.inferredReturnTypes.includes(retT)) {
+              currentFn.inferredReturnTypes.push(retT);
             }
-            if (unwrappedExpected !== "any") {
-              if (retExpr.startsWith("{") && getInterfaceShape(unwrappedExpected)) {
-                checkObjectLiteralAgainstShape(retExpr, unwrappedExpected, lineNum, `函数 "${currentFn.name}" 返回值`);
-              } else if (unwrappedExpected.endsWith("[]") && splitTopLevelUnion(unwrappedExpected).length <= 1 && retExpr.startsWith("[")) {
-                checkArrayElementsAgainst(retExpr, unwrappedExpected.slice(0, -2), lineNum, `函数 "${currentFn.name}" 返回数组中`);
-              } else if (!isExpressionAssignable(retExpr, retT, expectedRet, lineNum) && !isExpressionAssignable(retExpr, retT, unwrappedExpected, lineNum)) {
-                addDiag(lineNum, "TS2322", `不能将返回值类型 "${retT}" 分配给函数 "${currentFn.name}" 声明的返回类型 "${expectedRet}"`);
+          } else {
+            const expectedRet = currentFn.returnType;
+            if (expectedRet && expectedRet !== "any") {
+              const promiseInnerM = expectedRet.match(/^Promise<([\s\S]+)>$/);
+              const genInnerM = expectedRet.match(/^(?:Async)?Generator<([\s\S]+)>$/);
+              let unwrappedExpected = promiseInnerM && promiseInnerM[1] ? promiseInnerM[1] : expectedRet;
+              if (genInnerM && genInnerM[1]) {
+                const genArgs = splitTopLevelDecl(genInnerM[1]);
+                unwrappedExpected = genArgs[1] ? genArgs[1].trim() : "any";
+              }
+              if (unwrappedExpected !== "any") {
+                if (retExpr.startsWith("{") && getInterfaceShape(unwrappedExpected)) {
+                  checkObjectLiteralAgainstShape(retExpr, unwrappedExpected, lineNum, `函数 "${currentFn.name}" 返回值`);
+                } else if (unwrappedExpected.endsWith("[]") && splitTopLevelUnion(unwrappedExpected).length <= 1 && retExpr.startsWith("[")) {
+                  checkArrayElementsAgainst(retExpr, unwrappedExpected.slice(0, -2), lineNum, `函数 "${currentFn.name}" 返回数组中`);
+                } else if (!isExpressionAssignable(retExpr, retT, expectedRet, lineNum) && !isExpressionAssignable(retExpr, retT, unwrappedExpected, lineNum)) {
+                  addDiag(lineNum, "TS2322", `不能将返回值类型 "${retT}" 分配给函数 "${currentFn.name}" 声明的返回类型 "${expectedRet}"`);
+                }
               }
             }
           }
@@ -7986,9 +9110,16 @@ runAsyncDemo()
             const rT = rExpr ? inferType(rExpr, lineNum) : "void";
             if (currentFn) {
               if (rExpr) currentFn.hasValueReturn = true;
-              const expectedRet = currentFn.returnType;
-              if (expectedRet && expectedRet !== "any" && !isExpressionAssignable(rExpr, rT, expectedRet, lineNum)) {
-                addDiag(lineNum, "TS2322", `不能将返回值类型 "${rT}" 分配给函数 "${currentFn.name}" 声明的返回类型 "${expectedRet}"`);
+              if (!currentFn.hasExplicitReturnType) {
+                if (!currentFn.inferredReturnTypes) currentFn.inferredReturnTypes = [];
+                if (!currentFn.inferredReturnTypes.includes(rT)) {
+                  currentFn.inferredReturnTypes.push(rT);
+                }
+              } else {
+                const expectedRet = currentFn.returnType;
+                if (expectedRet && expectedRet !== "any" && !isExpressionAssignable(rExpr, rT, expectedRet, lineNum)) {
+                  addDiag(lineNum, "TS2322", `不能将返回值类型 "${rT}" 分配给函数 "${currentFn.name}" 声明的返回类型 "${expectedRet}"`);
+                }
               }
             }
           }
@@ -8005,8 +9136,22 @@ runAsyncDemo()
           }
         }
         const defRest = (defaultM[1] || "").trim();
-        if (/^(?:return\s+\S|throw\b)/.test(defRest) && currentFn) {
-          currentFn.hasValueReturn = true;
+        if (defRest) {
+          if (/^throw\b/.test(defRest) && currentFn) {
+            currentFn.hasValueReturn = true;
+          }
+          const inlineDefRet = defRest.match(/^return(?:\s+([\s\S]+?))?;?$/);
+          if (inlineDefRet && currentFn) {
+            const rExpr = inlineDefRet[1] ? inlineDefRet[1].trim() : "";
+            const rT = rExpr ? inferType(rExpr, lineNum) : "void";
+            if (rExpr) currentFn.hasValueReturn = true;
+            if (!currentFn.hasExplicitReturnType) {
+              if (!currentFn.inferredReturnTypes) currentFn.inferredReturnTypes = [];
+              if (!currentFn.inferredReturnTypes.includes(rT)) {
+                currentFn.inferredReturnTypes.push(rT);
+              }
+            }
+          }
         }
         continue;
       }
@@ -8248,13 +9393,28 @@ runAsyncDemo()
         }
       }
     }
+    if (ctx.tsConfig.noUnusedLocals) {
+      const cleanSource = lines.map((ln) => stripInlineCommentSafe(ln)).join("\n");
+      env.forEach((info, vName) => {
+        if (!info.line || vName === "this" || vName.startsWith("__")) return;
+        const declLineRaw = stripInlineCommentSafe(lines[info.line - 1] || "").trim();
+        if (/^export\b/.test(declLineRaw)) return;
+        const idRe = new RegExp(`\\b${vName.replace(/\$/g, "\\$")}\\b`, "g");
+        const matches = cleanSource.match(idRe);
+        if (!matches || matches.length <= 1) {
+          addDiag(info.line, "TS6133", `已声明 "${vName}"，但从未读取其值 (noUnusedLocals)`);
+        }
+      });
+    }
   }
   function syncContextFunctionTypesToMeta(ctx) {
     const meta = appState.CURRENT_TS_META;
     if (!meta) return;
     if (!meta.fnTypes) meta.fnTypes = /* @__PURE__ */ new Map();
+    if (!meta.typeAliases) meta.typeAliases = /* @__PURE__ */ new Map();
     const fnTypes = meta.fnTypes;
     const varTypes = meta.varTypes;
+    const typeAliases = meta.typeAliases;
     ctx.fns.forEach((sig, fnKey) => {
       if (!fnKey || fnKey.includes(".") || fnKey.startsWith("<")) return;
       const formatted = formatFnSigInfoToTypeString(sig);
@@ -8268,21 +9428,70 @@ runAsyncDemo()
         varTypes.set(vName, candidate);
       }
     });
+    ctx.typeAliases.forEach((evaluatedBody, aliasName) => {
+      const prev = typeAliases.get(aliasName);
+      const rawDef = prev ? prev.rawDef : evaluatedBody;
+      const updated = buildTypeAliasMeta(
+        aliasName,
+        rawDef,
+        evaluatedBody,
+        prev ? prev.line : void 0,
+        prev ? prev.typeParams : void 0,
+        meta.interfaces,
+        typeAliases
+      );
+      typeAliases.set(aliasName, updated);
+    });
+    ctx.genericTypeAliases.forEach((gInfo, aliasName) => {
+      const prev = typeAliases.get(aliasName);
+      const tParamsStr = `<${gInfo.typeParams.map((tp) => tp.name).join(", ")}>`;
+      const updated = buildTypeAliasMeta(
+        aliasName,
+        prev ? prev.rawDef : gInfo.body,
+        void 0,
+        gInfo.line || (prev ? prev.line : void 0),
+        tParamsStr,
+        meta.interfaces,
+        typeAliases
+      );
+      typeAliases.set(aliasName, updated);
+    });
   }
   function typecheckTS(src, strict = appState.STRICT_TS) {
     extractTsInterfaceMetadata(src);
     if (!strict) return [];
-    if (typeof src === "string" && _TYPECHECK_CACHE.src === src && _TYPECHECK_CACHE.strict === strict) {
+    const configKey = formatTsConfigCacheKey(appState.TS_CONFIG);
+    if (typeof src === "string" && _TYPECHECK_CACHE.src === src && _TYPECHECK_CACHE.strict === strict && _TYPECHECK_CACHE.configKey === configKey) {
+      if (appState.CURRENT_TS_META) {
+        if (_TYPECHECK_CACHE.fnTypes) {
+          if (!appState.CURRENT_TS_META.fnTypes) {
+            appState.CURRENT_TS_META.fnTypes = /* @__PURE__ */ new Map();
+          }
+          const targetFnTypes = appState.CURRENT_TS_META.fnTypes;
+          _TYPECHECK_CACHE.fnTypes.forEach((v, k) => targetFnTypes.set(k, v));
+        }
+        if (_TYPECHECK_CACHE.varTypes) {
+          const targetVarTypes = appState.CURRENT_TS_META.varTypes;
+          _TYPECHECK_CACHE.varTypes.forEach((v, k) => targetVarTypes.set(k, v));
+        }
+        if (_TYPECHECK_CACHE.typeAliases) {
+          if (!appState.CURRENT_TS_META.typeAliases) {
+            appState.CURRENT_TS_META.typeAliases = /* @__PURE__ */ new Map();
+          }
+          const targetAliases = appState.CURRENT_TS_META.typeAliases;
+          _TYPECHECK_CACHE.typeAliases.forEach((v, k) => targetAliases.set(k, v));
+        }
+      }
       return _TYPECHECK_CACHE.diags.map((d) => ({ ...d }));
     }
-    const ctx = createTypeCheckContext(src);
+    const ctx = createTypeCheckContext(src, appState.TS_CONFIG);
     const evalEngine = createTypeEvalEngine(ctx);
     const inferEngine = createTypeInferEngine(ctx, evalEngine);
     collectPass1Declarations(ctx, evalEngine, inferEngine);
     checkPass2Statements(ctx, evalEngine, inferEngine);
     syncContextFunctionTypesToMeta(ctx);
     const { diagnostics } = ctx;
-    if (_TS_WORKER_STATE.lastSrc === src && Array.isArray(_TS_WORKER_STATE.lastDiags)) {
+    if (_TS_WORKER_STATE.lastSrc === src && _TS_WORKER_STATE.lastConfigKey === configKey && Array.isArray(_TS_WORKER_STATE.lastDiags)) {
       _TS_WORKER_STATE.lastDiags.forEach((wd) => {
         if (!diagnostics.some((d) => d.line === wd.line && d.code === wd.code)) {
           diagnostics.push({ line: wd.line, code: wd.code, message: wd.message });
@@ -8292,7 +9501,15 @@ runAsyncDemo()
       requestTsWorkerCheck(src, strict);
     }
     if (typeof src === "string") {
-      _TYPECHECK_CACHE = { src, strict, diags: diagnostics.map((d) => ({ ...d })) };
+      _TYPECHECK_CACHE = {
+        src,
+        strict,
+        configKey,
+        diags: diagnostics.map((d) => ({ ...d })),
+        fnTypes: appState.CURRENT_TS_META?.fnTypes ? new Map(appState.CURRENT_TS_META.fnTypes) : void 0,
+        varTypes: appState.CURRENT_TS_META?.varTypes ? new Map(appState.CURRENT_TS_META.varTypes) : void 0,
+        typeAliases: appState.CURRENT_TS_META?.typeAliases ? new Map(appState.CURRENT_TS_META.typeAliases) : void 0
+      };
     }
     return diagnostics;
   }
@@ -8385,18 +9602,39 @@ runAsyncDemo()
     }
   }
   function typecheckWorkspaceModules(entryFile, entrySource, fileMap, strict = appState.STRICT_TS) {
+    const isReadonlyMap = (m) => m instanceof Map;
+    const rawTsConfig = isReadonlyMap(fileMap) ? fileMap.get("tsconfig.json") ?? fileMap.get("/workspace/tsconfig.json") : fileMap["tsconfig.json"] ?? fileMap["/workspace/tsconfig.json"];
+    let activeTsConfig = appState.TS_CONFIG;
+    let tsConfigErrorDiag = null;
+    if (typeof rawTsConfig === "string" && rawTsConfig.trim()) {
+      const parsedCfg = parseTsConfigJson(rawTsConfig, appState.TS_CONFIG);
+      if (parsedCfg.error) {
+        tsConfigErrorDiag = {
+          file: "tsconfig.json",
+          line: 1,
+          code: "TS5095",
+          message: parsedCfg.error,
+          severity: "error"
+        };
+      } else {
+        activeTsConfig = parsedCfg.config;
+        appState.TS_CONFIG = parsedCfg.config;
+      }
+    }
     const graph = buildModuleGraph(entryFile, entrySource, fileMap);
     if (!graph.isMultiFile) {
       const singleDiags = typecheckTS(entrySource, strict).map((d) => ({
         ...d,
         file: "file" in d && d.file ? d.file : graph.entryFile
       }));
+      if (tsConfigErrorDiag) singleDiags.unshift(tsConfigErrorDiag);
       return { diagnostics: singleDiags, diags: singleDiags, graph };
     }
     appState.CURRENT_TS_META = {
       interfaces: /* @__PURE__ */ new Map(),
       varTypes: /* @__PURE__ */ new Map(),
-      fnTypes: /* @__PURE__ */ new Map()
+      fnTypes: /* @__PURE__ */ new Map(),
+      typeAliases: /* @__PURE__ */ new Map()
     };
     for (const modFile of graph.order) {
       const modNode = graph.modules.get(modFile);
@@ -8424,14 +9662,16 @@ runAsyncDemo()
     }
     if (!strict) {
       const diags = [...graph.diagnostics];
+      if (tsConfigErrorDiag) diags.unshift(tsConfigErrorDiag);
       return { diagnostics: diags, diags, graph };
     }
     const allDiagnostics = [...graph.diagnostics];
+    if (tsConfigErrorDiag) allDiagnostics.unshift(tsConfigErrorDiag);
     const checkedContexts = /* @__PURE__ */ new Map();
     for (const modFile of graph.order) {
       const modNode = graph.modules.get(modFile);
       if (!modNode) continue;
-      const ctx = createTypeCheckContext(modNode.rawSource);
+      const ctx = createTypeCheckContext(modNode.rawSource, activeTsConfig);
       const evalEngine = createTypeEvalEngine(ctx);
       const inferEngine = createTypeInferEngine(ctx, evalEngine);
       for (const imp of modNode.imports) {
@@ -8497,6 +9737,7 @@ runAsyncDemo()
     reqId: 0,
     pendingSrc: null,
     lastSrc: null,
+    lastConfigKey: null,
     lastDiags: null,
     timer: null
   };
@@ -8512,10 +9753,11 @@ runAsyncDemo()
         const data = ev && ev.data;
         if (!data || data.type !== "checkResult") return;
         _TS_WORKER_STATE.lastSrc = data.src;
+        _TS_WORKER_STATE.lastConfigKey = typeof data.configKey === "string" ? data.configKey : null;
         const newDiags = Array.isArray(data.diagnostics) ? data.diagnostics : [];
         _TS_WORKER_STATE.lastDiags = newDiags;
         if (_TYPECHECK_CACHE.src === data.src && newDiags.length > 0) {
-          _TYPECHECK_CACHE = { src: null, strict: null, diags: [] };
+          _TYPECHECK_CACHE = { src: null, strict: null, configKey: null, diags: [] };
           try {
             uiHooks.updateEditorChrome();
           } catch (_) {
@@ -8539,11 +9781,19 @@ runAsyncDemo()
     const w = ensureTsWorker();
     if (!w) return;
     _TS_WORKER_STATE.pendingSrc = src;
+    const configKey = formatTsConfigCacheKey(appState.TS_CONFIG);
     if (_TS_WORKER_STATE.timer) clearTimeout(_TS_WORKER_STATE.timer);
     _TS_WORKER_STATE.timer = setTimeout(() => {
       const id = ++_TS_WORKER_STATE.reqId;
       try {
-        w.postMessage({ id, type: "check", src: _TS_WORKER_STATE.pendingSrc, strict: Boolean(strict) });
+        w.postMessage({
+          id,
+          type: "check",
+          src: _TS_WORKER_STATE.pendingSrc,
+          strict: Boolean(strict),
+          tsConfig: { ...appState.TS_CONFIG },
+          configKey
+        });
       } catch (_) {
       }
     }, 60);
@@ -9590,6 +10840,34 @@ runAsyncDemo()
       }
     } catch (_) {
     }
+    if (!VFS_NODES.has("tsconfig.json")) {
+      VFS_NODES.set("tsconfig.json", {
+        path: "tsconfig.json",
+        name: "tsconfig.json",
+        type: "file",
+        parentPath: "",
+        content: JSON.stringify(
+          {
+            compilerOptions: {
+              target: "ES2022",
+              module: "ESNext",
+              strict: false,
+              noImplicitAny: false,
+              strictNullChecks: false,
+              strictFunctionTypes: true,
+              noImplicitReturns: false,
+              noUnusedLocals: false
+            },
+            playgroundConfig: {
+              preset: "beginner",
+              allowRunOnTypeError: true
+            }
+          },
+          null,
+          2
+        )
+      });
+    }
   }
   function persistVfsToClientStorage() {
     try {
@@ -10269,7 +11547,7 @@ runAsyncDemo()
     return { kind: "array", items: [] };
   }
   function classifyValue(name, value) {
-    if (value == null) return null;
+    if (value == null || isInaccessibleOrGlobalObject(value)) return null;
     const n = String(name);
     if (Array.isArray(value)) {
       if (value.length > 0 && Array.isArray(value[0])) return snapshot("grid", value);
@@ -10288,7 +11566,7 @@ runAsyncDemo()
     }
     if (isFrame(value)) {
       const obj = value;
-      if (obj.__isVirtualPromise) return null;
+      if (isVirtualPromise(obj)) return null;
       if (Array.isArray(obj.nodes) && Array.isArray(obj.edges)) return snapshot("graph", obj);
       if (Array.isArray(obj.nodes) && "root" in obj) return snapshot("tree", obj);
       if (n !== "this") {
@@ -10336,48 +11614,59 @@ runAsyncDemo()
     return null;
   }
   function populateInterfaceSchemas(ds) {
-    const { interfaces, varTypes } = appState.CURRENT_TS_META;
-    if (!interfaces || !interfaces.size) return;
-    interfaces.forEach((iface) => {
-      if (iface.isClass && (!iface.fields || !iface.fields.length)) return;
-      const prefix = iface.isClass ? "class " : "interface ";
-      const slotKey = iface.name in ds ? prefix + iface.name : iface.name;
-      let boundInstance = null;
-      let boundVarName = null;
-      Object.keys(ds).forEach((k) => {
-        const item = ds[k];
-        if (!boundInstance && item && item.kind === "interface" && !item.isSchema && item.interfaceName === iface.name) {
-          boundInstance = item;
-          boundVarName = k;
-        }
-      });
-      if (!boundVarName && varTypes) {
-        Object.keys(ds).forEach((k) => {
-          if (!boundVarName && varTypes.get(k) === iface.name) {
-            boundVarName = k;
-          }
+    const { interfaces, typeAliases } = appState.CURRENT_TS_META;
+    if (interfaces && interfaces.size > 0) {
+      interfaces.forEach((iface) => {
+        if (iface.isClass && (!iface.fields || !iface.fields.length)) return;
+        const prefix = iface.isClass ? "class " : "interface ";
+        const slotKey = iface.name in ds ? prefix + iface.name : iface.name;
+        const fields = iface.fields.map((f) => {
+          const key = f.k || f.name || "";
+          return {
+            k: key,
+            declaredType: f.declaredType,
+            optional: Boolean(f.optional)
+          };
         });
-      }
-      const fields = iface.fields.map((f) => {
-        const key = f.k || f.name || "";
-        const instField = boundInstance && boundInstance.fields ? boundInstance.fields.find((x) => x.k === key) : null;
-        return {
-          k: key,
-          declaredType: f.declaredType,
-          optional: Boolean(f.optional),
-          v: instField ? instField.v : void 0
+        ds[slotKey] = {
+          kind: "interface",
+          interfaceName: iface.name,
+          isClass: Boolean(iface.isClass),
+          isSchema: true,
+          instanceName: null,
+          fields,
+          entries: fields.map((f) => ({ k: f.k, v: f.declaredType }))
         };
       });
-      ds[slotKey] = {
-        kind: "interface",
-        interfaceName: iface.name,
-        isClass: Boolean(iface.isClass),
-        isSchema: true,
-        instanceName: boundVarName,
-        fields,
-        entries: fields.map((f) => ({ k: f.k, v: f.v !== void 0 ? f.v : f.declaredType }))
-      };
-    });
+    }
+    if (typeAliases && typeAliases.size > 0) {
+      typeAliases.forEach((ta) => {
+        const slotKey = ta.name in ds ? "type " + ta.name : ta.name;
+        const fields = ta.fields ? ta.fields.map((f) => ({
+          k: f.k || f.name || "",
+          declaredType: f.declaredType,
+          optional: Boolean(f.optional)
+        })) : void 0;
+        const unionBranches = ta.unionBranches ? ta.unionBranches.map((b) => ({
+          raw: b.raw,
+          isObject: b.isObject,
+          fields: b.fields ? b.fields.map((f) => ({ ...f })) : void 0
+        })) : void 0;
+        ds[slotKey] = {
+          kind: "type",
+          interfaceName: ta.name,
+          isClass: false,
+          isSchema: true,
+          instanceName: null,
+          typeParams: ta.typeParams,
+          rawDef: ta.rawDef,
+          resolvedDef: ta.resolvedDef,
+          aliasKind: ta.aliasKind,
+          fields,
+          unionBranches
+        };
+      });
+    }
   }
   function detectWindowRange(v) {
     if (!v) return null;
@@ -10485,13 +11774,8 @@ runAsyncDemo()
     while (pm = propRe.exec(text)) {
       const objName = pm[1] || "", propName = pm[2];
       const objItem = ds[objName];
-      if (objItem && (objItem.kind === "interface" || objItem.kind === "object")) {
+      if (objItem && !objItem.isSchema && (objItem.kind === "interface" || objItem.kind === "object")) {
         objItem.hot = propName;
-        const ifaceName = objItem.interfaceName;
-        const ifaceItem = ifaceName ? ds[ifaceName] : void 0;
-        if (ifaceItem && ifaceItem.kind === "interface") {
-          ifaceItem.hot = propName;
-        }
       }
     }
     const g = text.match(/\b([A-Za-z_$][\w$]*)\s*\[\s*([^[\]]+?)\s*\]\s*\[\s*([^[\]]+?)\s*\]/);
@@ -10958,6 +12242,12 @@ runAsyncDemo()
       case "interface":
       case "object":
         return Math.min(1, n / 6);
+      case "type": {
+        if (d.unionBranches && d.unionBranches.some((b) => b.isObject)) {
+          return Math.min(1, Math.max(0.5, d.unionBranches.length / 3));
+        }
+        return Math.min(1, Math.max(n, d.unionBranches ? d.unionBranches.length : 2) / 6);
+      }
       case "set":
         return Math.min(1, n / 9);
       case "string":
@@ -11068,12 +12358,20 @@ runAsyncDemo()
   }
 
   // src/runtime/runner.ts
-  function reportTypeErrors(diags) {
+  function reportTypeErrors(diags, warnOnly = false) {
     const activeFile = appState.ENTRY_FILE_PATH || appState.FILE_NAME || "main.ts";
     appState.TYPE_ERROR_LINES = new Set(
       diags.filter((d) => !d.file || d.file === activeFile).map((d) => d.line)
     );
     uiHooks.updateEditorChrome();
+    if (warnOnly) {
+      say(`⚠ TypeScript 类型提示 (共 ${diags.length} 处，当前 tsconfig 允许忽略类型错误继续运行)：`, "warn");
+      diags.forEach((d) => {
+        const filePrefix = d.file && d.file !== activeFile ? `${d.file} · ` : "";
+        say(`  • ${d.code} [${filePrefix}第 ${d.line} 行]: ${d.message || d.msg || ""}`, "warn", d.line);
+      });
+      return;
+    }
     say(`✗ TypeScript 严格类型检查未通过 (共 ${diags.length} 处错误)：`, "err");
     diags.forEach((d) => {
       const filePrefix = d.file && d.file !== activeFile ? `${d.file} · ` : "";
@@ -11326,11 +12624,14 @@ function __require(modId) {
       return;
     }
     const { diagnostics: diags, graph } = typecheckWorkspaceModules(entryFile, src, fileMap, appState.STRICT_TS);
+    const hasBlockingModuleError = diags.some((d) => d.code === "TS2307" || d.code === "TS2300");
     if (diags.length > 0) {
-      reportTypeErrors(diags);
-      return;
-    }
-    if (appState.TYPE_ERROR_LINES.size || appState.RUNTIME_ERROR_LINES.size) {
+      if (!appState.TS_CONFIG.allowRunOnTypeError || hasBlockingModuleError) {
+        reportTypeErrors(diags, false);
+        return;
+      }
+      reportTypeErrors(diags, true);
+    } else if (appState.TYPE_ERROR_LINES.size || appState.RUNTIME_ERROR_LINES.size) {
       appState.TYPE_ERROR_LINES.clear();
       appState.RUNTIME_ERROR_LINES.clear();
       uiHooks.updateEditorChrome();
@@ -11793,7 +13094,7 @@ function __require(modId) {
       const rawMap = nextVRaw;
       Object.keys(rawMap).forEach((name) => {
         const nv = rawMap[name];
-        if (nv && typeof nv === "object" && "__isVirtualPromise" in nv) {
+        if (isVirtualPromise(nv)) {
           stepObj.v[name] = cloneDeepBounded(nv, 2);
         }
         if (stepObj.vRaw && stepObj.vRaw[name] === void 0 && nv !== void 0 && !stepObj.ds[name]) {
@@ -11881,12 +13182,15 @@ function __require(modId) {
       return false;
     }
     const { diagnostics: diags, graph } = typecheckWorkspaceModules(entryFile, src, fileMap, appState.STRICT_TS);
+    const hasBlockingModuleError = diags.some((d) => d.code === "TS2307" || d.code === "TS2300");
     if (diags.length > 0) {
-      resetTraceState();
-      reportTypeErrors(diags);
-      return false;
-    }
-    if (appState.TYPE_ERROR_LINES.size || appState.RUNTIME_ERROR_LINES.size) {
+      if (!appState.TS_CONFIG.allowRunOnTypeError || hasBlockingModuleError) {
+        resetTraceState();
+        reportTypeErrors(diags, false);
+        return false;
+      }
+      reportTypeErrors(diags, true);
+    } else if (appState.TYPE_ERROR_LINES.size || appState.RUNTIME_ERROR_LINES.size) {
       appState.TYPE_ERROR_LINES.clear();
       appState.RUNTIME_ERROR_LINES.clear();
     }
@@ -11922,7 +13226,7 @@ function __require(modId) {
         return false;
       }
     } else {
-      extractTsInterfaceMetadata(src);
+      extractTsInterfaceMetadata(src, true);
       const enums = transpileEnums(src);
       if (enums.error) {
         resetTraceState();
@@ -12538,6 +13842,20 @@ function __require(modId) {
   function liveTypeDiags(src) {
     const text = String(src == null ? "" : src);
     const currentFile = normalizeWorkspaceModulePath(appState.FILE_NAME || "main.ts");
+    const cfgKey = formatTsConfigCacheKey(appState.TS_CONFIG);
+    if (currentFile.endsWith(".json")) {
+      const jsonCacheKey = `json::${currentFile}::${text}`;
+      if (LIVE_TYPE_CACHE.key === jsonCacheKey) return LIVE_TYPE_CACHE.diags;
+      let jsonDiags = [];
+      if (currentFile === "tsconfig.json" || currentFile.endsWith("/tsconfig.json")) {
+        const parsed = parseTsConfigJson(text, appState.TS_CONFIG);
+        if (parsed.error) {
+          jsonDiags = [{ line: 1, code: "TS5095", message: parsed.error, file: currentFile }];
+        }
+      }
+      LIVE_TYPE_CACHE = { key: jsonCacheKey, diags: jsonDiags };
+      return jsonDiags;
+    }
     const hasModuleSyntax = /^\s*(?:import|export)\b/m.test(text);
     let fileMap = /* @__PURE__ */ new Map();
     let mapSig = "";
@@ -12552,7 +13870,7 @@ function __require(modId) {
         fileMap = /* @__PURE__ */ new Map();
       }
     }
-    const cacheKey = `${currentFile}::${appState.STRICT_TS ? 1 : 0}::${mapSig}::${text}`;
+    const cacheKey = `${currentFile}::${appState.STRICT_TS ? 1 : 0}::${cfgKey}::${mapSig}::${text}`;
     if (LIVE_TYPE_CACHE.key === cacheKey) return LIVE_TYPE_CACHE.diags;
     let diags = [];
     try {
@@ -12842,9 +14160,11 @@ function __require(modId) {
     formatShortVal: () => formatShortVal,
     getActiveFrame: () => getActiveFrame,
     isFrame: () => isFrame,
+    isInaccessibleOrGlobalObject: () => isInaccessibleOrGlobalObject,
     isMapLike: () => isMapLike,
     isRecord: () => isRecord,
     isSetLike: () => isSetLike,
+    isVirtualPromise: () => isVirtualPromise,
     normalizeGraph: () => normalizeGraph,
     normalizeList: () => normalizeList,
     normalizeTree: () => normalizeTree,
@@ -12877,6 +14197,7 @@ function __require(modId) {
     vizStack: () => vizStack,
     vizString: () => vizString,
     vizTree: () => vizTree,
+    vizTypeAlias: () => vizTypeAlias,
     vizUF: () => vizUF
   });
   function selectStackFrame(frameIdx) {
@@ -13167,7 +14488,13 @@ function __require(modId) {
     if (!fields.length && !d.isClass) return null;
     const ifaceTitle = d.interfaceName && d.interfaceName !== "object" ? d.interfaceName : "Object";
     const kwTxt = d.isClass ? "class" : "interface";
-    const badgeTxt = d.isSchema ? d.instanceName ? `schema · 绑定 ${d.instanceName}` : "schema" : "instance";
+    if (d.isSchema) {
+      const schemaRows = fields.length ? fields.slice(0, 12).map(
+        (f) => '<div class="viface-row"><span class="viface-k">' + esc(f.k) + (f.optional ? '<span class="viface-opt">?</span>' : "") + "</span>" + (f.declaredType ? '<span class="viface-t">: ' + esc(f.declaredType) + "</span>" : "") + "</div>"
+      ).join("") : '<div class="viface-row"><span class="viface-v schema-only">（空接口契约）</span></div>';
+      return '<div class="viz"><div class="viface"><div class="viface-head"><span class="viface-kw">' + kwTxt + '</span><span class="viface-title">' + esc(ifaceTitle) + '</span><span class="viface-badge">definition</span></div><div class="viface-body">' + schemaRows + "</div></div></div>";
+    }
+    const badgeTxt = "instance";
     const rows = fields.length ? fields.slice(0, 12).map((f) => {
       const isHot = d.hot === f.k;
       const hasVal = f.v !== void 0;
@@ -13176,6 +14503,44 @@ function __require(modId) {
       return '<div class="viface-row' + (isHot ? " hot" : "") + '"><span class="viface-k">' + esc(f.k) + (f.optional ? '<span class="viface-opt">?</span>' : "") + "</span>" + (f.declaredType ? '<span class="viface-t">: ' + esc(f.declaredType) + "</span>" : "") + (hasVal ? '<span class="viface-eq">=</span><span class="viface-v' + (isStr ? " str" : "") + '">' + esc(valDisplay) + "</span>" : '<span class="viface-v schema-only">' + esc(valDisplay) + "</span>") + "</div>";
     }).join("") : '<div class="viface-row"><span class="viface-v schema-only">（无实例属性）</span></div>';
     return '<div class="viz"><div class="viface"><div class="viface-head"><span class="viface-kw">' + kwTxt + '</span><span class="viface-title">' + esc(ifaceTitle) + '</span><span class="viface-badge">' + esc(badgeTxt) + '</span></div><div class="viface-body">' + rows + "</div></div></div>";
+  }
+  function vizTypeAlias(d) {
+    if (!d) return null;
+    const typeTitle = String(d.interfaceName || d.name || "Type") + (d.typeParams || "");
+    const aliasKind = d.aliasKind || (Array.isArray(d.unionBranches) && d.unionBranches.length > 1 ? "union" : Array.isArray(d.fields) && d.fields.length > 0 ? "object" : "alias");
+    const isUtilityObj = aliasKind === "object" && Boolean(d.rawDef && !d.rawDef.trim().startsWith("{"));
+    const badgeTxt = aliasKind === "union" ? `union · ${(d.unionBranches || []).length}` : isUtilityObj ? "utility · object" : aliasKind === "object" ? "object" : "alias";
+    const exprBanner = isUtilityObj && d.rawDef ? '<div class="vtype-expr"><span class="viface-eq">=</span><span class="vtype-raw">' + esc(d.rawDef) + "</span></div>" : "";
+    let bodyHtml = "";
+    if (aliasKind === "union" && Array.isArray(d.unionBranches) && d.unionBranches.length > 0) {
+      const hasObjectBranch = d.unionBranches.some((b) => b.isObject && b.fields && b.fields.length > 0);
+      if (hasObjectBranch) {
+        bodyHtml = d.unionBranches.slice(0, 10).map((b) => {
+          if (b.isObject && b.fields && b.fields.length > 0) {
+            const propsHtml = b.fields.map((f) => {
+              const fKey = f.k || f.name || "";
+              return '<span class="vtype-prop"><span class="viface-k">' + esc(fKey) + (f.optional ? '<span class="viface-opt">?</span>' : "") + "</span>" + (f.declaredType ? '<span class="viface-t">: ' + esc(f.declaredType) + "</span>" : "") + "</span>";
+            }).join('<span class="vtype-sep">; </span>');
+            return '<div class="viface-row vtype-branch-obj"><span class="vtype-bar">|</span><span class="vtype-brace">{</span><span class="vtype-branch-fields">' + propsHtml + '</span><span class="vtype-brace">}</span></div>';
+          }
+          return '<div class="viface-row vtype-branch-obj"><span class="vtype-bar">|</span><span class="viface-t">' + esc(b.raw) + "</span></div>";
+        }).join("");
+      } else {
+        bodyHtml = '<div class="vtype-union-pills">' + d.unionBranches.slice(0, 16).map((b, idx) => {
+          const isLitStr = /^['"`]/.test(b.raw);
+          return (idx > 0 ? '<span class="vtype-bar">|</span>' : "") + '<span class="vtype-pill' + (isLitStr ? " lit-str" : "") + '">' + esc(b.raw) + "</span>";
+        }).join("") + "</div>";
+      }
+    } else if (Array.isArray(d.fields) && d.fields.length > 0) {
+      bodyHtml = d.fields.slice(0, 12).map((f) => {
+        const fKey = f.k || "";
+        return '<div class="viface-row"><span class="viface-k">' + esc(fKey) + (f.optional ? '<span class="viface-opt">?</span>' : "") + "</span>" + (f.declaredType ? '<span class="viface-t">: ' + esc(f.declaredType) + "</span>" : "") + "</div>";
+      }).join("");
+    } else {
+      const defText = d.resolvedDef || d.rawDef || "any";
+      bodyHtml = '<div class="viface-row"><span class="viface-eq">=</span><span class="viface-t">' + esc(defText) + "</span></div>";
+    }
+    return '<div class="viz"><div class="viface vtype-card"><div class="viface-head vtype-head"><span class="viface-kw">type</span><span class="viface-title">' + esc(typeTitle) + '</span><span class="viface-badge">' + esc(badgeTxt) + "</span></div>" + exprBanner + '<div class="viface-body">' + bodyHtml + "</div></div></div>";
   }
   function vizEventLoop(d) {
     if (!d) return null;
@@ -13228,6 +14593,7 @@ function __require(modId) {
     uf: vizUF,
     interface: vizInterface,
     object: vizInterface,
+    type: vizTypeAlias,
     eventloop: vizEventLoop
   });
   function renderPicker() {
@@ -13456,6 +14822,7 @@ function __require(modId) {
   var controls_exports = {};
   __export(controls_exports, {
     addCheckpointFunction: () => addCheckpointFunction,
+    applyTsConfig: () => applyTsConfig,
     blurEditor: () => blurEditor,
     btnExportMenu: () => btnExportMenu,
     btnExportVideo: () => btnExportVideo,
@@ -13481,6 +14848,7 @@ function __require(modId) {
     stepNext: () => stepNext,
     stepPrev: () => stepPrev,
     stopAuto: () => stopAuto,
+    syncTsConfigUI: () => syncTsConfigUI,
     togglePlay: () => togglePlay,
     videoExportStatus: () => videoExportStatus,
     videoSpeedBadge: () => videoSpeedBadge,
@@ -13578,10 +14946,12 @@ function __require(modId) {
     extractTsInterfaceMetadata(src);
     const diags = typecheckTS(src, appState.STRICT_TS);
     if (diags.length > 0) {
-      reportTypeErrors(diags);
-      return false;
-    }
-    if (appState.TYPE_ERROR_LINES.size || appState.RUNTIME_ERROR_LINES.size) {
+      if (!appState.TS_CONFIG.allowRunOnTypeError) {
+        reportTypeErrors(diags, false);
+        return false;
+      }
+      reportTypeErrors(diags, true);
+    } else if (appState.TYPE_ERROR_LINES.size || appState.RUNTIME_ERROR_LINES.size) {
       appState.TYPE_ERROR_LINES.clear();
       appState.RUNTIME_ERROR_LINES.clear();
     }
@@ -14082,6 +15452,29 @@ function __require(modId) {
   var staleTimer = null;
   function onSourceChanged() {
     recordEditorCursorLine();
+    const activeFile = appState.FILE_NAME || "";
+    if (activeFile === "tsconfig.json" || activeFile.endsWith("/tsconfig.json")) {
+      ensureVfsInitialized();
+      const rawJson = editor.value.replace(/\r/g, "");
+      VFS_NODES.set("tsconfig.json", {
+        path: "tsconfig.json",
+        name: "tsconfig.json",
+        type: "file",
+        parentPath: "",
+        content: rawJson
+      });
+      persistVfsToClientStorage();
+      notifyVfsStoreChanged();
+      const parsed = parseTsConfigJson(rawJson, appState.TS_CONFIG);
+      const syncTag = $("tsConfigSyncStatus");
+      if (!parsed.error) {
+        appState.TS_CONFIG = parsed.config;
+        syncTsConfigUI();
+        if (syncTag) syncTag.textContent = "✓ 已从编辑器同步";
+      } else if (syncTag) {
+        syncTag.textContent = "⚠ JSON 格式有误";
+      }
+    }
     appState.TYPE_ERROR_LINES.clear();
     appState.RUNTIME_ERROR_LINES.clear();
     hideHoverTip();
@@ -14143,12 +15536,90 @@ function __require(modId) {
       stepPrev();
     }
   });
+  function syncTsConfigUI() {
+    const cfg = appState.TS_CONFIG;
+    const preset = detectTsConfigPreset(cfg);
+    cfg.preset = preset;
+    const badge = $("checkerBadge");
+    if (badge) {
+      const labelMap = {
+        beginner: "⚙️ tsconfig · 新手宽松",
+        standard: "⚙️ tsconfig · 标准教学",
+        strict: "⚙️ tsconfig · 最严检查",
+        custom: "⚙️ tsconfig · 自定义"
+      };
+      badge.textContent = labelMap[preset] || "⚙️ tsconfig · 自定义";
+      if (badge.classList) {
+        badge.classList.remove("preset-standard", "preset-strict", "preset-custom");
+        if (preset === "standard") badge.classList.add("preset-standard");
+        else if (preset === "strict") badge.classList.add("preset-strict");
+        else if (preset === "custom") badge.classList.add("preset-custom");
+      }
+    }
+    const presetGroup = $("tsConfigPresetGroup");
+    if (presetGroup && presetGroup.querySelectorAll) {
+      const cards = presetGroup.querySelectorAll(".tsconfig-preset-card");
+      cards.forEach((card) => {
+        if (card.classList) {
+          card.classList.toggle("active", card.dataset.tsPreset === preset);
+        }
+      });
+    }
+    const setChk = (id, val) => {
+      const el = $(id);
+      if (el) el.checked = Boolean(val);
+    };
+    setChk("tsCfgAllowRun", cfg.allowRunOnTypeError);
+    setChk("tsCfgNoImplicitAny", cfg.noImplicitAny);
+    setChk("tsCfgStrictNullChecks", cfg.strictNullChecks);
+    setChk("tsCfgStrictFunctionTypes", cfg.strictFunctionTypes);
+    setChk("tsCfgNoImplicitReturns", cfg.noImplicitReturns);
+    setChk("tsCfgNoUnusedLocals", cfg.noUnusedLocals);
+    const previewEl = $("tsConfigJsonPreview");
+    if (previewEl) {
+      previewEl.textContent = serializeTsConfigToJson(cfg);
+    }
+  }
+  function applyTsConfig(nextCfg, writeToVfs = true) {
+    const normalized = {
+      ...nextCfg,
+      strict: Boolean(
+        nextCfg.noImplicitAny && nextCfg.strictNullChecks && nextCfg.strictFunctionTypes && nextCfg.noImplicitReturns
+      )
+    };
+    normalized.preset = detectTsConfigPreset(normalized);
+    appState.TS_CONFIG = normalized;
+    if (writeToVfs) {
+      ensureVfsInitialized();
+      const jsonText = serializeTsConfigToJson(normalized);
+      VFS_NODES.set("tsconfig.json", {
+        path: "tsconfig.json",
+        name: "tsconfig.json",
+        type: "file",
+        parentPath: "",
+        content: jsonText
+      });
+      persistVfsToClientStorage();
+      notifyVfsStoreChanged();
+      if (appState.FILE_NAME === "tsconfig.json" || appState.FILE_NAME.endsWith("/tsconfig.json")) {
+        editor.value = jsonText;
+        try {
+          syncActiveScriptTabSource(jsonText);
+        } catch (_) {
+        }
+      }
+    }
+    syncTsConfigUI();
+    appState.TYPE_ERROR_LINES.clear();
+    updateEditorChrome();
+  }
   (function initCheckerInfo() {
     const badge = $("checkerBadge");
     const modal = $("checkerModal");
     const close = $("checkerModalClose");
     if (!badge || !modal) return;
     const open = () => {
+      syncTsConfigUI();
       modal.hidden = false;
     };
     const hide = () => {
@@ -14172,6 +15643,79 @@ function __require(modId) {
         if (e.key === "Escape") hide();
       });
     }
+    const presetGroup = $("tsConfigPresetGroup");
+    if (presetGroup && presetGroup.addEventListener) {
+      presetGroup.addEventListener("click", (e) => {
+        const btn = closestElement(e, ".tsconfig-preset-card");
+        if (!btn || !btn.dataset.tsPreset) return;
+        const pName = btn.dataset.tsPreset;
+        if (pName === "beginner" || pName === "standard" || pName === "strict") {
+          const nextCfg = createTsConfigFromPreset(pName);
+          applyTsConfig(nextCfg, true);
+          const label = pName === "beginner" ? "新手宽松模式" : pName === "standard" ? "标准教学模式" : "最严工程模式";
+          say(`✓ 已切换 tsconfig 为「${label}」并同步至 /workspace/tsconfig.json`, "ok");
+        }
+      });
+    }
+    const toggleIds = [
+      "tsCfgAllowRun",
+      "tsCfgNoImplicitAny",
+      "tsCfgStrictNullChecks",
+      "tsCfgStrictFunctionTypes",
+      "tsCfgNoImplicitReturns",
+      "tsCfgNoUnusedLocals"
+    ];
+    const onToggleChange = () => {
+      const getChk = (id, fallback) => {
+        const el = $(id);
+        return el ? Boolean(el.checked) : fallback;
+      };
+      const cur = appState.TS_CONFIG;
+      const nextCfg = {
+        ...cur,
+        allowRunOnTypeError: getChk("tsCfgAllowRun", cur.allowRunOnTypeError),
+        noImplicitAny: getChk("tsCfgNoImplicitAny", cur.noImplicitAny),
+        strictNullChecks: getChk("tsCfgStrictNullChecks", cur.strictNullChecks),
+        strictFunctionTypes: getChk("tsCfgStrictFunctionTypes", cur.strictFunctionTypes),
+        noImplicitReturns: getChk("tsCfgNoImplicitReturns", cur.noImplicitReturns),
+        noUnusedLocals: getChk("tsCfgNoUnusedLocals", cur.noUnusedLocals)
+      };
+      applyTsConfig(nextCfg, true);
+    };
+    toggleIds.forEach((id) => {
+      const el = $(id);
+      if (el && el.addEventListener) {
+        el.addEventListener("change", onToggleChange);
+      }
+    });
+    const resetBtn = $("btnResetTsConfig");
+    if (resetBtn) {
+      resetBtn.onclick = () => {
+        applyTsConfig(createTsConfigFromPreset("beginner"), true);
+        say("✓ 已恢复 tsconfig 为默认「新手宽松模式」", "ok");
+      };
+    }
+    const openFileBtn = $("btnOpenTsConfigFile");
+    if (openFileBtn) {
+      openFileBtn.onclick = () => {
+        hide();
+        ensureVfsInitialized();
+        const jsonText = serializeTsConfigToJson(appState.TS_CONFIG);
+        VFS_NODES.set("tsconfig.json", {
+          path: "tsconfig.json",
+          name: "tsconfig.json",
+          type: "file",
+          parentPath: "",
+          content: jsonText
+        });
+        persistVfsToClientStorage();
+        notifyVfsStoreChanged();
+        uiHooks.setViewMode("script");
+        uiHooks.openVfsScriptFile("tsconfig.json", "tsconfig.json", jsonText);
+        say("📝 已在编辑器中打开 /workspace/tsconfig.json，修改后将自动生效", "ok");
+      };
+    }
+    syncTsConfigUI();
   })();
   var stepForward = stepNext;
   var stepBack = stepPrev;
@@ -14184,7 +15728,7 @@ function __require(modId) {
   function setStatus(msg, cls) {
     say(msg, cls);
   }
-  registerUiHooks({ stopAuto });
+  registerUiHooks({ stopAuto, syncTsConfigUI });
 
   // src/ui/share.ts
   var share_exports = {};
@@ -17073,20 +18617,26 @@ function __require(modId) {
     const { combinedTs } = buildTsTypecheckContext(doc, cell);
     const cellDiags = typecheckNotebookCellTS(doc, cell);
     if (cellDiags.length > 0) {
-      cell.status = "error";
-      const errText = cellDiags.map((d) => `${d.code} [第 ${d.line} 行]: ${d.message}`).join("\n");
-      cell.output = {
-        logs: [],
-        returnValue: null,
-        error: errText,
-        errorLine: cellDiags[0]?.line ?? 1
-      };
-      say(`✗ [Notebook] TypeScript 严格类型检查未通过 (共 ${cellDiags.length} 处错误)：`, "err");
+      if (!appState.TS_CONFIG.allowRunOnTypeError) {
+        cell.status = "error";
+        const errText = cellDiags.map((d) => `${d.code} [第 ${d.line} 行]: ${d.message}`).join("\n");
+        cell.output = {
+          logs: [],
+          returnValue: null,
+          error: errText,
+          errorLine: cellDiags[0]?.line ?? 1
+        };
+        say(`✗ [Notebook] TypeScript 严格类型检查未通过 (共 ${cellDiags.length} 处错误)：`, "err");
+        cellDiags.forEach((d) => {
+          say(`  • ${d.code} [第 ${d.line} 行]: ${d.message}`, "err", d.line);
+        });
+        uiHooks.renderNotebookUI();
+        return false;
+      }
+      say(`⚠ [Notebook] TypeScript 类型提示 (共 ${cellDiags.length} 处，当前 tsconfig 允许忽略类型错误继续运行)：`, "warn");
       cellDiags.forEach((d) => {
-        say(`  • ${d.code} [第 ${d.line} 行]: ${d.message}`, "err", d.line);
+        say(`  • ${d.code} [第 ${d.line} 行]: ${d.message}`, "warn", d.line);
       });
-      uiHooks.renderNotebookUI();
-      return false;
     }
     extractTsInterfaceMetadata(combinedTs);
     const { preambleJs, allNames: histNames } = buildTsPreambleFromHistory(doc);
@@ -17269,21 +18819,27 @@ function __require(modId) {
     const { combinedTs } = buildTsTypecheckContext(doc, cell);
     const cellDiags = typecheckNotebookCellTS(doc, cell);
     if (cellDiags.length > 0) {
-      cell.status = "error";
-      doc.debuggingCellId = null;
-      const errText = cellDiags.map((d) => `${d.code} [第 ${d.line} 行]: ${d.message}`).join("\n");
-      cell.output = {
-        logs: [],
-        returnValue: null,
-        error: errText,
-        errorLine: cellDiags[0]?.line ?? 1
-      };
-      say(`✗ [Notebook] TypeScript 严格类型检查未通过 (共 ${cellDiags.length} 处错误)：`, "err");
+      if (!appState.TS_CONFIG.allowRunOnTypeError) {
+        cell.status = "error";
+        doc.debuggingCellId = null;
+        const errText = cellDiags.map((d) => `${d.code} [第 ${d.line} 行]: ${d.message}`).join("\n");
+        cell.output = {
+          logs: [],
+          returnValue: null,
+          error: errText,
+          errorLine: cellDiags[0]?.line ?? 1
+        };
+        say(`✗ [Notebook] TypeScript 严格类型检查未通过 (共 ${cellDiags.length} 处错误)：`, "err");
+        cellDiags.forEach((d) => {
+          say(`  • ${d.code} [第 ${d.line} 行]: ${d.message}`, "err", d.line);
+        });
+        uiHooks.renderNotebookUI();
+        return false;
+      }
+      say(`⚠ [Notebook] TypeScript 类型提示 (共 ${cellDiags.length} 处，当前 tsconfig 允许忽略类型错误继续调试)：`, "warn");
       cellDiags.forEach((d) => {
-        say(`  • ${d.code} [第 ${d.line} 行]: ${d.message}`, "err", d.line);
+        say(`  • ${d.code} [第 ${d.line} 行]: ${d.message}`, "warn", d.line);
       });
-      uiHooks.renderNotebookUI();
-      return false;
     }
     extractTsInterfaceMetadata(combinedTs);
     const { preambleJs, allNames: histNames } = buildTsPreambleFromHistory(doc);

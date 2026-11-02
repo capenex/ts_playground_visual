@@ -19,6 +19,28 @@ export function isFrame(v: unknown): v is Frame {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
+export function isInaccessibleOrGlobalObject(val: unknown): boolean {
+  if (typeof val !== 'object' || val === null) return false;
+  try {
+    if (typeof globalThis !== 'undefined' && val === globalThis) return true;
+    void Reflect.get(val, '__isVirtualPromise');
+    return false;
+  } catch (_) {
+    return true;
+  }
+}
+
+export function isVirtualPromise(
+  val: unknown
+): val is { __isVirtualPromise: true; state?: string; value?: unknown; reason?: unknown } {
+  if (!isRecord(val)) return false;
+  try {
+    return Boolean(val.__isVirtualPromise);
+  } catch (_) {
+    return false;
+  }
+}
+
 export function defineHidden(obj: unknown, key: string, val: unknown): void {
   if (!obj || typeof obj !== 'object') return;
   try {
@@ -36,26 +58,32 @@ export function formatShortVal(val: unknown): string {
   if (val === null) return 'null';
   if (typeof val === 'string') return JSON.stringify(val.length > 16 ? val.slice(0, 14) + '…' : val);
   if (typeof val === 'number' || typeof val === 'boolean') return String(val);
+  if (isInaccessibleOrGlobalObject(val)) return '[HostObject]';
   if (Array.isArray(val)) return '[' + val.slice(0, 4).map(formatShortVal).join(', ') + (val.length > 4 ? ', …' : '') + ']';
   if (isMapLike(val)) return 'Map(' + val.size + ')';
   if (isSetLike(val)) return 'Set(' + val.size + ')';
   if (isRecord(val)) {
-    const keys = Object.keys(val);
-    if (keys.length > 0 && keys.length <= 4 && keys.every(k => val[k] === null || typeof val[k] !== 'object')) {
-      return '{ ' + keys.map((k: string): string => k + ': ' + formatShortVal(val[k])).join(', ') + ' }';
-    }
+    try {
+      const keys = Object.keys(val);
+      if (keys.length > 0 && keys.length <= 4 && keys.every(k => val[k] === null || typeof val[k] !== 'object')) {
+        return '{ ' + keys.map((k: string): string => k + ': ' + formatShortVal(val[k])).join(', ') + ' }';
+      }
+    } catch (_) {}
   }
   return '{…}';
 }
 
 export function cloneDeepBounded(val: unknown, depth = 0): unknown {
   if (!isRecord(val)) return val;
-  if (val.__isVirtualPromise) {
+  if (isInaccessibleOrGlobalObject(val)) return '[HostObject]';
+  if (isVirtualPromise(val)) {
     if (val.state === 'pending') return 'Promise <pending>';
     if (val.state === 'fulfilled') return 'Promise <fulfilled: ' + formatShortVal(val.value) + '>';
     return 'Promise <rejected: ' + formatShortVal(val.reason) + '>';
   }
-  if (depth >= 4) return String(val);
+  if (depth >= 4) {
+    try { return String(val); } catch (_) { return '[Object]'; }
+  }
   if (Array.isArray(val)) return val.slice(0, 40).map((x: unknown): unknown => cloneDeepBounded(x, depth + 1));
   if (isMapLike(val)) {
     const entries: Array<{ k: unknown; v: unknown }> = [];
@@ -74,18 +102,22 @@ export function cloneDeepBounded(val: unknown, depth = 0): unknown {
     return items;
   }
   const out: Record<string, unknown> = {};
-  const clsName =
-    typeof val.__cls__ === 'string' && val.__cls__
-      ? val.__cls__
-      : val.constructor && val.constructor !== Object && val.constructor.name
-      ? val.constructor.name
-      : '';
-  if (clsName) {
-    defineHidden(out, '__cls__', clsName);
-  }
-  Object.keys(val).slice(0, 20).forEach(k => {
-    out[k] = cloneDeepBounded(val[k], depth + 1);
-  });
+  try {
+    const clsName =
+      typeof val.__cls__ === 'string' && val.__cls__
+        ? val.__cls__
+        : val.constructor && val.constructor !== Object && val.constructor.name
+        ? val.constructor.name
+        : '';
+    if (clsName) {
+      defineHidden(out, '__cls__', clsName);
+    }
+    Object.keys(val).slice(0, 20).forEach(k => {
+      try {
+        out[k] = cloneDeepBounded(val[k], depth + 1);
+      } catch (_) {}
+    });
+  } catch (_) {}
   return out;
 }
 

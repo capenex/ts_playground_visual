@@ -160,20 +160,26 @@ export function runTsNotebookCell(
   const { combinedTs } = buildTsTypecheckContext(doc, cell);
   const cellDiags = typecheckNotebookCellTS(doc, cell);
   if (cellDiags.length > 0) {
-    cell.status = "error";
-    const errText = cellDiags.map((d) => `${d.code} [第 ${d.line} 行]: ${d.message}`).join("\n");
-    cell.output = {
-      logs: [],
-      returnValue: null,
-      error: errText,
-      errorLine: cellDiags[0]?.line ?? 1,
-    };
-    say(`✗ [Notebook] TypeScript 严格类型检查未通过 (共 ${cellDiags.length} 处错误)：`, "err");
+    if (!appState.TS_CONFIG.allowRunOnTypeError) {
+      cell.status = "error";
+      const errText = cellDiags.map((d) => `${d.code} [第 ${d.line} 行]: ${d.message}`).join("\n");
+      cell.output = {
+        logs: [],
+        returnValue: null,
+        error: errText,
+        errorLine: cellDiags[0]?.line ?? 1,
+      };
+      say(`✗ [Notebook] TypeScript 严格类型检查未通过 (共 ${cellDiags.length} 处错误)：`, "err");
+      cellDiags.forEach((d) => {
+        say(`  • ${d.code} [第 ${d.line} 行]: ${d.message}`, "err", d.line);
+      });
+      uiHooks.renderNotebookUI();
+      return false;
+    }
+    say(`⚠ [Notebook] TypeScript 类型提示 (共 ${cellDiags.length} 处，当前 tsconfig 允许忽略类型错误继续运行)：`, "warn");
     cellDiags.forEach((d) => {
-      say(`  • ${d.code} [第 ${d.line} 行]: ${d.message}`, "err", d.line);
+      say(`  • ${d.code} [第 ${d.line} 行]: ${d.message}`, "warn", d.line);
     });
-    uiHooks.renderNotebookUI();
-    return false;
   }
 
   extractTsInterfaceMetadata(combinedTs);
@@ -424,21 +430,27 @@ export function debugTsNotebookCell(
   const { combinedTs } = buildTsTypecheckContext(doc, cell);
   const cellDiags = typecheckNotebookCellTS(doc, cell);
   if (cellDiags.length > 0) {
-    cell.status = "error";
-    doc.debuggingCellId = null;
-    const errText = cellDiags.map((d) => `${d.code} [第 ${d.line} 行]: ${d.message}`).join("\n");
-    cell.output = {
-      logs: [],
-      returnValue: null,
-      error: errText,
-      errorLine: cellDiags[0]?.line ?? 1,
-    };
-    say(`✗ [Notebook] TypeScript 严格类型检查未通过 (共 ${cellDiags.length} 处错误)：`, "err");
+    if (!appState.TS_CONFIG.allowRunOnTypeError) {
+      cell.status = "error";
+      doc.debuggingCellId = null;
+      const errText = cellDiags.map((d) => `${d.code} [第 ${d.line} 行]: ${d.message}`).join("\n");
+      cell.output = {
+        logs: [],
+        returnValue: null,
+        error: errText,
+        errorLine: cellDiags[0]?.line ?? 1,
+      };
+      say(`✗ [Notebook] TypeScript 严格类型检查未通过 (共 ${cellDiags.length} 处错误)：`, "err");
+      cellDiags.forEach((d) => {
+        say(`  • ${d.code} [第 ${d.line} 行]: ${d.message}`, "err", d.line);
+      });
+      uiHooks.renderNotebookUI();
+      return false;
+    }
+    say(`⚠ [Notebook] TypeScript 类型提示 (共 ${cellDiags.length} 处，当前 tsconfig 允许忽略类型错误继续调试)：`, "warn");
     cellDiags.forEach((d) => {
-      say(`  • ${d.code} [第 ${d.line} 行]: ${d.message}`, "err", d.line);
+      say(`  • ${d.code} [第 ${d.line} 行]: ${d.message}`, "warn", d.line);
     });
-    uiHooks.renderNotebookUI();
-    return false;
   }
 
   extractTsInterfaceMetadata(combinedTs);
