@@ -186,6 +186,9 @@ export function importNotebookFromJson(jsonText: string, fileName: string): bool
 /* ── Switch View Mode ('script' | 'notebook') ── */
 export function setViewMode(mode: "script" | "notebook") {
   const next = mode === "notebook" ? "notebook" : "script";
+  if (next === "notebook") {
+    ensureNotebookDeferredInit();
+  }
   appState.VIEW_MODE = next;
   if (document.body && document.body.classList) {
     if (next === "notebook") document.body.classList.add("notebook-mode");
@@ -803,25 +806,20 @@ function initNotebookCellsEvents() {
 }
 
 /* ── Wire Up Notebook DOM Events, Single-File Multi-Tabs, Import Menu & Right VFS Sidebar ── */
-export function initNotebookUI() {
-  bindGlobalVfsApi();
-  ensureVfsInitialized();
+let notebookDeferredReady = false;
+let notebookIdleTimer: ReturnType<typeof setTimeout> | null = null;
 
-  const modeSwitch = $("modeSwitch");
-  if (modeSwitch && modeSwitch.addEventListener) {
-    modeSwitch.addEventListener("click", (e: MouseEvent) => {
-      const btn = closestElement(e, ".mode-tab");
-      if (!btn || !btn.dataset.mode) return;
-      setViewMode(btn.dataset.mode === "notebook" ? "notebook" : "script");
-    });
+function ensureNotebookDeferredInit() {
+  if (notebookDeferredReady) return;
+  notebookDeferredReady = true;
+  if (notebookIdleTimer !== null) {
+    clearTimeout(notebookIdleTimer);
+    notebookIdleTimer = null;
   }
 
-  initScriptTabsAndImportEvents();
-  initVfsSidebarEvents();
-
-  renderScriptTabsUI();
-  renderVfsTreeUI();
+  ensureVfsInitialized();
   renderImportSampleMenu();
+  renderVfsTreeUI();
 
   const nbWrap = $("notebookWrap");
   if (!nbWrap || !nbWrap.addEventListener) return;
@@ -866,6 +864,30 @@ export function initNotebookUI() {
   }
 
   initNotebookCellsEvents();
+}
+
+export function initNotebookUI() {
+  bindGlobalVfsApi();
+  notebookDeferredReady = false;
+
+  const modeSwitch = $("modeSwitch");
+  if (modeSwitch && modeSwitch.addEventListener) {
+    modeSwitch.addEventListener("click", (e: MouseEvent) => {
+      const btn = closestElement(e, ".mode-tab");
+      if (!btn || !btn.dataset.mode) return;
+      setViewMode(btn.dataset.mode === "notebook" ? "notebook" : "script");
+    });
+  }
+
+  initScriptTabsAndImportEvents();
+  initVfsSidebarEvents();
+  renderScriptTabsUI();
+
+  if (notebookIdleTimer !== null) clearTimeout(notebookIdleTimer);
+  notebookIdleTimer = setTimeout(() => {
+    notebookIdleTimer = null;
+    ensureNotebookDeferredInit();
+  }, 60);
 }
 
 /* ── TypeScript Advanced Interactive Tutorial Selector Modal ── */
@@ -968,6 +990,7 @@ export function renderTutorialModalUI(): void {
 }
 
 export function openTutorialModal(): void {
+  ensureNotebookDeferredInit();
   const modal = $("tutorialModal");
   if (!modal) return;
   renderTutorialModalUI();

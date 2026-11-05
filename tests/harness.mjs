@@ -260,6 +260,7 @@ export async function createSandboxedApp() {
   await esbuild.build({
     entryPoints: [path.join(SRC_DIR, 'main.ts')],
     bundle: true,
+    minify: true,
     format: 'iife',
     platform: 'browser',
     target: ['es2021'],

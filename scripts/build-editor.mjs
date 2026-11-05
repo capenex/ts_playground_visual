@@ -10,7 +10,7 @@ const APP_OUT = path.join(ROOT, 'js', 'app.bundle.js');
 await build({
   entryPoints: [path.join(ROOT, 'src', 'main.ts')],
   bundle: true,
-  minify: false,
+  minify: true,
   format: 'iife',
   target: ['chrome100', 'firefox100', 'safari16'],
   outfile: APP_OUT,

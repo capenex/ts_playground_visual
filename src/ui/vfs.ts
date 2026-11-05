@@ -31,10 +31,9 @@ registerVfsStorageAdapter({
 });
 
 let pendingVfsDeletePath: string | null = null;
+let vfsIdleTimer: ReturnType<typeof setTimeout> | null = null;
 
-export function renderVfsTreeUI() {
-  const treeEl = $("vfsTreeList");
-  if (!treeEl) return;
+function buildVfsTreeDom(treeEl: HTMLElement) {
   ensureVfsInitialized();
 
   const activePath = uiHooks.getActiveWorkspacePath();
@@ -128,6 +127,29 @@ export function renderVfsTreeUI() {
   }
 }
 
+export function renderVfsTreeUI(forceImmediate = false) {
+  const treeEl = $("vfsTreeList");
+  if (!treeEl) return;
+  const vfsSidebar = $("vfsSidebar");
+  const isSidebarHidden = Boolean(vfsSidebar && vfsSidebar.hidden);
+
+  if (isSidebarHidden && !forceImmediate) {
+    if (vfsIdleTimer !== null) clearTimeout(vfsIdleTimer);
+    vfsIdleTimer = setTimeout(() => {
+      vfsIdleTimer = null;
+      const latestTree = $("vfsTreeList");
+      if (latestTree) buildVfsTreeDom(latestTree);
+    }, 120);
+    return;
+  }
+
+  if (vfsIdleTimer !== null) {
+    clearTimeout(vfsIdleTimer);
+    vfsIdleTimer = null;
+  }
+  buildVfsTreeDom(treeEl);
+}
+
 subscribeVfsStore(() => {
   renderVfsTreeUI();
 });
@@ -172,6 +194,9 @@ export function initVfsSidebarEvents() {
     const isVisible = !vfsSidebar.hidden;
     if (b1 && b1.classList) b1.classList.toggle("active", isVisible);
     if (b2 && b2.classList) b2.classList.toggle("active", isVisible);
+    if (isVisible) {
+      renderVfsTreeUI(true);
+    }
   };
   if (b1) b1.onclick = toggleVfsSidebar;
   if (b2) b2.onclick = toggleVfsSidebar;

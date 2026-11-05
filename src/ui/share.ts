@@ -693,7 +693,6 @@ export function boot() {
     editor.value = initialSrc;
     setFileName(sampleKey + '.ts');
   }
-  updateEditorChrome();
   const initialStep = customStep !== null ? customStep : (SAMPLE_DEFAULT_STEP[sampleKey] || 0);
   generateTrace(initialStep);
 }
