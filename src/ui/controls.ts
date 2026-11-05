@@ -3,7 +3,7 @@
    ================================================================ */
 import { skipString } from "../compiler/comments";
 import { stripTypes, transpileEnums, detectUnsupportedSyntax } from "../compiler/transpile";
-import { collectNames, instrument, resolveEntry, blankJsLine, snapFnExpr } from "../compiler/instrumenter";
+import { collectNames, instrument, resolveEntry, blankJsLine, snapFnExpr, analyzeTimeComplexity, estimateInputSizeFromCall } from "../compiler/instrumenter";
 import { typecheckTS, extractTsInterfaceMetadata, parseTsConfigJson, serializeTsConfigToJson } from "../compiler/type-checker";
 import { say, clearLog, safeJSONStringify, resetTraceState } from "../runtime/event-loop";
 import { computeAndAppendNextStep, startDebug, initWatchedVars, runOnce, reportTypeErrors } from "../runtime/runner";
@@ -20,7 +20,16 @@ import {
   VIDEO_SPEED_OPTIONS,
 } from "../state";
 import { TsCompilerOptions } from "../types";
-import { discoverVars, renderPicker, renderStatic, selectStackFrame } from "../viz/memory-graph";
+import {
+  addCustomWatch,
+  discoverVars,
+  removeCustomWatch,
+  renderComplexityBar,
+  renderPicker,
+  renderStatic,
+  selectStackFrame,
+  toggleComplexityPopover,
+} from "../viz/memory-graph";
 import {
   updateEditorChrome,
   scrollCodeTo,
@@ -33,9 +42,12 @@ import {
 import { clearFlyLayer, positionStepViz } from "../viz/ast-view";
 import {
   $,
+  btnAddWatchEl,
   btnImportEl,
   callStackBarEl,
   closestElement,
+  complexityPopEl,
+  consoleEl,
   editor,
   eventTargetElement,
   eventTargetNode,
@@ -46,6 +58,7 @@ import {
   resizerEl,
   sidePanelEl,
   slotsEl,
+  watchExprInputEl,
 } from "./dom";
 
 export function stepPrev() {
@@ -186,10 +199,22 @@ export function rebuildDebugAtPosition(newTargetLine: number, targetVisits: numb
   stopAuto();
   clearFlyLayer();
   const prevWatched = new Set(appState.watched);
+  const baseComplexity = analyzeTimeComplexity(src, expr);
+  const inputSizeN = estimateInputSizeFromCall(src, expr);
+  appState.COMPLEXITY_REPORT = {
+    ...baseComplexity,
+    runtime: {
+      inputSizeN,
+      totalSteps: 0,
+      maxCallStackDepth: 1,
+      hotLines: [],
+    },
+  };
   appState.TRACE = {
     title: 'TypeScript Playground · Debug',
     code: originalLines,
     steps: [],
+    complexity: appState.COMPLEXITY_REPORT,
   };
   appState.DEBUG_SESSION = {
     active: true,
@@ -201,6 +226,10 @@ export function rebuildDebugAtPosition(newTargetLine: number, targetVisits: numb
     compiledFn,
     originalLines,
     callExpr: expr,
+    complexity: baseComplexity,
+    lineHits: Object.create(null),
+    maxStackDepth: 1,
+    inputSizeN,
   };
   appState.cur = 0;
 
@@ -548,12 +577,78 @@ if ($('btnExportTs')) {
 $<HTMLSelectElement>('sampleSel').onchange = () => uiHooks.loadSample($<HTMLSelectElement>('sampleSel').value);
 
 pickEl.addEventListener('click', (e: MouseEvent) => {
+  const delBtn = closestElement(e, '[data-del-watch]');
+  if (delBtn && delBtn.dataset.delWatch) {
+    e.stopPropagation();
+    removeCustomWatch(delBtn.dataset.delWatch);
+    return;
+  }
   const el = closestElement(e, '.chip-pick');
   if (!el || !el.dataset.id) return;
   const id = el.dataset.id;
   if (appState.watched.has(id)) appState.watched.delete(id); else appState.watched.add(id);
   renderPicker();
 });
+
+if (slotsEl && slotsEl.addEventListener) {
+  slotsEl.addEventListener('click', (e: MouseEvent) => {
+    const delBtn = closestElement(e, '[data-del-watch]');
+    if (delBtn && delBtn.dataset.delWatch) {
+      e.stopPropagation();
+      removeCustomWatch(delBtn.dataset.delWatch);
+    }
+  });
+}
+
+function submitCustomWatchInput(): void {
+  if (!watchExprInputEl) return;
+  const raw = watchExprInputEl.value.trim();
+  if (!raw) return;
+  if (addCustomWatch(raw)) {
+    watchExprInputEl.value = '';
+    say('✓ 已添加自定义 Watch 表达式: ' + raw, 'ok');
+  }
+}
+
+if (btnAddWatchEl && btnAddWatchEl.addEventListener) {
+  btnAddWatchEl.addEventListener('click', () => {
+    submitCustomWatchInput();
+  });
+}
+if (watchExprInputEl && watchExprInputEl.addEventListener) {
+  watchExprInputEl.addEventListener('keydown', (e: KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      e.stopPropagation();
+      submitCustomWatchInput();
+    }
+  });
+}
+
+if (consoleEl && consoleEl.addEventListener) {
+  consoleEl.addEventListener('click', () => {
+    toggleComplexityPopover();
+  });
+}
+
+if (complexityPopEl && complexityPopEl.addEventListener) {
+  complexityPopEl.addEventListener('click', (e: MouseEvent) => {
+    const closeBtn = closestElement(e, '[data-close-complexity]');
+    if (closeBtn) {
+      e.stopPropagation();
+      toggleComplexityPopover(false);
+      return;
+    }
+    const jumpRow = closestElement(e, '[data-jump-line]');
+    if (jumpRow && jumpRow.dataset.jumpLine) {
+      const ln = parseInt(jumpRow.dataset.jumpLine, 10);
+      if (ln > 0) {
+        scrollCodeTo(ln);
+        uiHooks.revealErrorLine(ln, true);
+      }
+    }
+  });
+}
 
 if (callStackBarEl) {
   callStackBarEl.addEventListener('click', (e: MouseEvent) => {
@@ -711,14 +806,18 @@ export function onSourceChanged() {
   }
   appState.TYPE_ERROR_LINES.clear();
   appState.RUNTIME_ERROR_LINES.clear();
+  appState.COMPLEXITY_REPORT = null;
   hideHoverTip();
   updateEditorChrome();
   if (appState.TRACE.steps.length || appState.DEBUG_SESSION.active) {
     if (staleTimer) clearTimeout(staleTimer);
     staleTimer = setTimeout(() => {
       resetTraceState();
+      renderComplexityBar(null);
       clearLog('源码已修改，当前调试会话已重置 · 可点击「🐞 Debug 调试」或左下「运行到下一个检查点」重新开始');
     }, 300);
+  } else {
+    renderComplexityBar(null);
   }
 }
 editor.addEventListener('input', onSourceChanged);

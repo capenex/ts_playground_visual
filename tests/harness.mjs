@@ -294,6 +294,7 @@ export async function createSandboxedApp() {
     'vfsBtnNewFile', 'vfsBtnNewFolder', 'vfsBtnUpload', 'vfsTreeList',
     'vfsFootStatus', 'btnOpenTsTutorials', 'tutorialModal',
     'tutorialModalClose', 'tutorialModalList', 'tutorialModalDetail',
+    'watchExprInput', 'btnAddWatch', 'complexityPop',
   ];
   domIds.forEach(getElement);
 
@@ -417,6 +418,8 @@ export function resetSandbox(sandbox) {
   sandbox.WATCH_PINNED = new Set();
   sandbox.PREV_LOCALS = null;
   sandbox.PREV_STRUCTS = new Map();
+  sandbox.CUSTOM_WATCHES = [];
+  sandbox.COMPLEXITY_REPORT = null;
   sandbox.TRACE = { steps: [], ast: null, root: null, declared: new Set(), builtins: new Set(), src: '' };
   sandbox.cur = 0;
 }

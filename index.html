@@ -183,10 +183,17 @@
     </div>
     <div class="call-stack-bar" id="callStackBar" role="navigation" aria-label="调用栈面包屑"></div>
     <div class="vars" id="vars"></div>
-    <div class="pane-title">WATCH</div>
+    <div class="pane-title watch-pane-title">
+      <span>WATCH</span>
+      <div class="watch-input-bar">
+        <input id="watchExprInput" type="text" placeholder="添加监听表达式，如 nums.slice(l, r+1) 或 dp[i]…" autocomplete="off" spellcheck="false" />
+        <button id="btnAddWatch" type="button" title="添加自定义监听表达式 (Enter)">＋ 监听</button>
+      </div>
+    </div>
     <div class="chips" id="pick"></div>
     <div class="slots" id="slots"></div>
-    <div class="console" id="console"><div><span class="p">›</span><span class="dim">开启 Debug 模式后当场计算并显示每步执行详情</span></div></div>
+    <div class="console complexity-bar" id="console" title="点击展开/收起算法时间与空间复杂度估算及热点行详情"><div><span class="p">›</span><span class="dim">⏱ 复杂度分析就绪 · 点击「▶ 运行」或「🐞 Debug 调试」查看时间/空间复杂度与热点行</span></div></div>
+    <div class="complexity-pop" id="complexityPop" hidden></div>
   </div>
 </div>
 

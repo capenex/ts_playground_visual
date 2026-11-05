@@ -2,7 +2,15 @@
    Sandbox Executor & Step-by-Step Trace Generator (src/runtime/runner.ts)
    ================================================================ */
 import { stripTypes, transpileEnums } from "../compiler/transpile";
-import { collectNames, instrument, resolveEntry, blankJsLine, snapFnExpr } from "../compiler/instrumenter";
+import {
+  collectNames,
+  instrument,
+  resolveEntry,
+  blankJsLine,
+  snapFnExpr,
+  analyzeTimeComplexity,
+  estimateInputSizeFromCall,
+} from "../compiler/instrumenter";
 import {
   typecheckWorkspaceModules,
   extractTsInterfaceMetadata,
@@ -12,7 +20,15 @@ import {
   ModuleGraphResult,
 } from "../compiler/type-checker";
 import { appState, MAX_EXEC_MS, MAX_STEPS, PAUSE_SIGNAL, RUN_TIMEOUT_MS, uiHooks } from "../state";
-import { Diag, Frame, InterfaceFieldMeta, StepAnim, StepSnapshot } from "../types";
+import {
+  ComplexityHotLine,
+  ComplexityReport,
+  Diag,
+  Frame,
+  InterfaceFieldMeta,
+  StepAnim,
+  StepSnapshot,
+} from "../types";
 import {
   say,
   logRunRoundHeader,
@@ -265,6 +281,35 @@ function evalSnapOrObject(snap: unknown): Record<string, unknown> {
   return {};
 }
 
+function buildComplexityWithRuntime(
+  baseReport: ComplexityReport,
+  inputSizeN: number | null,
+  totalSteps: number,
+  maxCallStackDepth: number,
+  lineHits: Record<number, number>,
+  sourceLines: string[]
+): ComplexityReport {
+  const hotLines: ComplexityHotLine[] = Object.keys(lineHits)
+    .map(k => {
+      const ln = Number(k);
+      const hits = lineHits[ln] || 0;
+      const snippet = (sourceLines[ln - 1] || '').trim().slice(0, 64);
+      return { line: ln, hits, code: snippet, snippet };
+    })
+    .filter(x => x.hits > 0 && x.line > 0)
+    .sort((a, b) => b.hits - a.hits || a.line - b.line)
+    .slice(0, 3);
+  return {
+    ...baseReport,
+    runtime: {
+      inputSizeN,
+      totalSteps,
+      maxCallStackDepth,
+      hotLines,
+    },
+  };
+}
+
 export function evalCall(
   js: string,
   call?: string,
@@ -275,6 +320,10 @@ export function evalCall(
   const budgetMs = o.budgetMs || 0;
   const entryLine = o.entryLine || 0;
   const logs: string[] = [];
+  const lineHits: Record<number, number> = Object.create(null);
+  let totalSteps = 0;
+  let curStackDepth = 1;
+  let maxStackDepth = 1;
   const handleCkpt = (args: unknown[]) => {
     const arr = Array.isArray(args) ? args : [];
     const isCondForm = arr.length > 0 && typeof arr[0] === 'boolean';
@@ -309,7 +358,11 @@ export function evalCall(
     _self?: unknown,
     file?: string
   ) {
-    if (line) lastLine = line;
+    totalSteps++;
+    if (line) {
+      lastLine = line;
+      lineHits[line] = (lineHits[line] || 0) + 1;
+    }
     if (file) lastFile = file;
     if (!budgetMs) return;
     if (expired) throw timeoutError();   // keep throwing: a user try/catch must not swallow the abort
@@ -324,6 +377,14 @@ export function evalCall(
   __t.__await = (val: unknown, fid: number, line: number, exprText: string) => ({ __isAwait: true, value: val, fid, line, expr: exprText });
   __t.__drain = evLoop.drainEventLoop;
   __t.__initGlobal = function (snapFn: (() => Record<string, unknown>) | null) { evLoop.loop.globalSnapFn = snapFn; };
+  __t.__enter = function () {
+    curStackDepth++;
+    if (curStackDepth > maxStackDepth) maxStackDepth = curStackDepth;
+    return curStackDepth;
+  };
+  __t.__leave = function () {
+    curStackDepth = Math.max(1, curStackDepth - 1);
+  };
   __t.__ckpt = handleCkpt;
   const body = stub + js + '\n;return (function(){ try { var __v = (' + expr + '); if (__t && __t.__drain) __v = __t.__drain(__v); return { ok:true, value:__v }; } catch (e) { return { ok:false, error: e && e.message ? e.message : String(e), stack: e && e.stack ? String(e.stack) : "", line: (e && e.__line) || 0, file: (e && e.__file) || "", timeout: Boolean(e && e.__timeout) }; } })();';
   const f = new Function('__t', 'console', body);
@@ -357,7 +418,7 @@ export function evalCall(
   if (r && r.ok && !r.line) r.line = lastLine || entryLine || 0;
   if (r && !r.ok) r.line = r.line || lastLine || entryLine || 0;
   if (r && !r.file && lastFile) r.file = lastFile;
-  return { ...r, logs, elapsedMs: Date.now() - t0 };
+  return { ...r, logs, elapsedMs: Date.now() - t0, totalSteps, maxStackDepth, lineHits };
 }
 
 export function runOnce(budgetMs?: number, sourceCode?: string) {
@@ -491,8 +552,23 @@ export function runOnce(budgetMs?: number, sourceCode?: string) {
       }
       return;
     }
+    const staticComplexity = analyzeTimeComplexity(src, call);
+    const inputSizeN = estimateInputSizeFromCall(src, call);
+    appState.COMPLEXITY_REPORT = buildComplexityWithRuntime(
+      staticComplexity,
+      inputSizeN,
+      r.totalSteps || 0,
+      r.maxStackDepth || 1,
+      r.lineHits || {},
+      originalLines
+    );
+    if (appState.TRACE) {
+      appState.TRACE.complexity = appState.COMPLEXITY_REPORT;
+    }
+    uiHooks.renderComplexityBar();
     const elapsed = ' (' + r.elapsedMs + 'ms)';
-    say('✓ 运行完成  →  ' + safeJSONStringify(r.value) + elapsed, 'ok');
+    const cBadge = ` · ⏱ 估算时间 ${appState.COMPLEXITY_REPORT.overallTime} / 空间 ${appState.COMPLEXITY_REPORT.overallSpace}`;
+    say('✓ 运行完成  →  ' + safeJSONStringify(r.value) + elapsed + cBadge, 'ok');
   } catch (e) {
     say('✗ ' + (e instanceof Error && e.message ? e.message : e), 'err');
   }
@@ -933,6 +1009,23 @@ export function computeAndAppendNextStep(opts: { silent?: boolean } = {}) {
 
   appState.TRACE.steps.push(stepObj);
 
+  const lineHits = appState.DEBUG_SESSION.lineHits || (appState.DEBUG_SESSION.lineHits = Object.create(null));
+  lineHits[stepObj.line] = (lineHits[stepObj.line] || 0) + 1;
+  const curDepth = Array.isArray(stepObj.callStack) && stepObj.callStack.length > 0 ? stepObj.callStack.length : 1;
+  const prevMaxDepth = appState.DEBUG_SESSION.maxStackDepth || 1;
+  appState.DEBUG_SESSION.maxStackDepth = Math.max(prevMaxDepth, curDepth);
+  if (appState.DEBUG_SESSION.complexity) {
+    appState.COMPLEXITY_REPORT = buildComplexityWithRuntime(
+      appState.DEBUG_SESSION.complexity,
+      appState.DEBUG_SESSION.inputSizeN ?? null,
+      appState.TRACE.steps.length,
+      appState.DEBUG_SESSION.maxStackDepth,
+      lineHits,
+      originalLines
+    );
+    appState.TRACE.complexity = appState.COMPLEXITY_REPORT;
+  }
+
   discoverVars().forEach((s: { id: string }) => {
     if (!appState.SEEN_VARS_EVER.has(s.id)) {
       appState.SEEN_VARS_EVER.add(s.id);
@@ -1059,12 +1152,23 @@ export function startDebug(initialStep = 0, sourceCode?: string) {
 
   uiHooks.stopAuto();
   uiHooks.clearFlyLayer();
+  const baseComplexity = analyzeTimeComplexity(src, expr);
+  const inputSizeN = estimateInputSizeFromCall(src, expr);
+  appState.COMPLEXITY_REPORT = buildComplexityWithRuntime(
+    baseComplexity,
+    inputSizeN,
+    0,
+    1,
+    {},
+    originalLines
+  );
   appState.TRACE = {
     title: graph.isMultiFile ? `TypeScript Multi-Module · ${entryFile}` : 'TypeScript Playground · Debug',
     code: originalLines,
     steps: [],
     entryFile,
     moduleSources,
+    complexity: appState.COMPLEXITY_REPORT,
   };
   appState.DEBUG_SESSION = {
     active: true,
@@ -1079,6 +1183,10 @@ export function startDebug(initialStep = 0, sourceCode?: string) {
     hasAsync,
     entryFile,
     moduleSources,
+    complexity: baseComplexity,
+    lineHits: Object.create(null),
+    maxStackDepth: 1,
+    inputSizeN,
   };
   appState.ACTIVE_DEBUG_FILE = entryFile;
   appState.cur = 0;
@@ -1115,6 +1223,11 @@ export function initWatchedVars() {
     appState.watched = new Set(filtered.length ? filtered : all);
   } else {
     appState.watched = new Set(all);
+  }
+  for (const expr of appState.CUSTOM_WATCHES) {
+    const wid = 'watch:' + expr;
+    appState.watched.add(wid);
+    appState.SEEN_VARS_EVER.add(wid);
   }
 }
 

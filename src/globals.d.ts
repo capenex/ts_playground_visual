@@ -57,6 +57,7 @@ export interface PlaygroundCMBridge {
     text: string;
     lines: string[];
     declared: Set<string>;
+    types?: Set<string>;
     builtins: Set<string>;
     liveErrors: Diag[];
     curLine: number;

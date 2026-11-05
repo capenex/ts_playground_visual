@@ -35,6 +35,7 @@ function init() {
 
   const setStepLine = StateEffect.define();
   const setDeclaredDeco = StateEffect.define();
+  const setTypeDeco = StateEffect.define();
   const setBuiltinDeco = StateEffect.define();
 
   const stepLineField = StateField.define({
@@ -66,6 +67,7 @@ function init() {
   });
 
   const declaredField = nameDecoField(setDeclaredDeco);
+  const typeField = nameDecoField(setTypeDeco);
   const builtinField = nameDecoField(setBuiltinDeco);
 
   const ckptMarkPlugin = ViewPlugin.fromClass(class {
@@ -766,6 +768,7 @@ function init() {
 
   let currentLang = 'ts';
   let declaredSignature = '';
+  let typeSignature = '';
   let builtinSignature = '';
   let lastDecoText = null;
   let diagSignature = '';
@@ -786,6 +789,7 @@ function init() {
         lintExtension,
         stepLineField,
         declaredField,
+        typeField,
         builtinField,
         ckptMarkPlugin,
         languageCompartment.of(languageExt('ts')),
@@ -973,14 +977,20 @@ function init() {
       }
     }
     const declared = payload.declared instanceof Set ? payload.declared : new Set(payload.declared || []);
+    const types = payload.types instanceof Set ? payload.types : new Set(payload.types || []);
     const builtins = payload.builtins instanceof Set ? payload.builtins : new Set(payload.builtins || []);
     const declSig = [...declared].sort().join(',');
+    const typeSig = [...types].sort().join(',');
     const builtinSig = [...builtins].sort().join(',');
     const textChanged = payload.text != null && payload.text !== lastDecoText;
     if (payload.text != null) lastDecoText = payload.text;
     if (declSig !== declaredSignature || textChanged) {
       declaredSignature = declSig;
       effects.push(setDeclaredDeco.of(buildNameDeco(declared, 'cm-declared')));
+    }
+    if (typeSig !== typeSignature || textChanged) {
+      typeSignature = typeSig;
+      effects.push(setTypeDeco.of(buildNameDeco(types, 'cm-type')));
     }
     if (builtinSig !== builtinSignature || textChanged) {
       builtinSignature = builtinSig;

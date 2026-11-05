@@ -14,7 +14,8 @@ import {
   splitTopLevelSemicolons,
   stripInlineCommentSafe,
 } from './comments';
-import { stripTypes } from './transpile';
+import { stripTypes, transpileEnums } from './transpile';
+import type { ComplexityClass, ComplexityReport, FunctionComplexityMeta } from '../types';
 
 export function isTraceableLine(t: string): boolean {
   if (!t) return false;
@@ -600,4 +601,370 @@ export function formatVal(v: unknown): string {
 
 export function __describeHeapVal(v: unknown): unknown {
   return v;
+}
+
+const COMPLEXITY_RANK: Record<ComplexityClass, number> = {
+  'O(1)': 0,
+  'O(log N)': 1,
+  'O(N)': 2,
+  'O(N log N)': 3,
+  'O(N²)': 4,
+  'O(N³)': 5,
+  'O(2^N)': 6,
+};
+
+export function compareComplexityClass(a: ComplexityClass, b: ComplexityClass): number {
+  return COMPLEXITY_RANK[a] - COMPLEXITY_RANK[b];
+}
+
+export function maxComplexityClass(a: ComplexityClass, b: ComplexityClass): ComplexityClass {
+  return compareComplexityClass(a, b) >= 0 ? a : b;
+}
+
+export function estimateInputSizeFromCall(callExpr: string, src?: string): number | null {
+  const c = String(callExpr || '').trim();
+  if (!c || c === 'undefined') return null;
+
+  const arrLit = c.match(/\[([^\][]+)\]/);
+  if (arrLit && arrLit[1]) {
+    const items = arrLit[1].split(',').map(x => x.trim()).filter(Boolean);
+    if (items.length > 0) return items.length;
+  }
+
+  const strMatches: string[] = [];
+  const strRe = /"([^"\\]*)"|'([^'\\]*)'/g;
+  let sm;
+  while ((sm = strRe.exec(c))) {
+    const sVal = sm[1] !== undefined ? sm[1] : (sm[2] || '');
+    if (sVal.length > 0) strMatches.push(sVal);
+  }
+  if (strMatches.length > 0) {
+    return Math.max(...strMatches.map(s => s.length));
+  }
+
+  const numMatch = c.match(/\(\s*(\d+)\s*(?:[,)]|$)/);
+  if (numMatch && numMatch[1]) {
+    const nVal = parseInt(numMatch[1], 10);
+    if (nVal > 0 && nVal <= 100000) return nVal;
+  }
+
+  if (src) {
+    const allArrs = [...src.matchAll(/\[([^\][\n]{3,})\]/g)];
+    let bestLen = 0;
+    for (const m of allArrs) {
+      if (m[1]) {
+        const count = m[1].split(',').filter(x => x.trim().length > 0).length;
+        if (count > bestLen) bestLen = count;
+      }
+    }
+    if (bestLen > 1) return bestLen;
+  }
+
+  return null;
+}
+
+function estimateSpaceFromBlock(bodyText: string, recursionBranches: number, hasLogRecursion: boolean): { space: ComplexityClass; spaceReason: string } {
+  const clean = blankStrings(bodyText);
+  if (
+    /Array\.from\s*\([^)]*=>\s*(?:new\s+Array|Array\.from|\[)/.test(clean) ||
+    /\.map\s*\([^)]*=>\s*(?:new\s+Array|Array\.from|\[[^\]]*\.(?:fill|map))/.test(clean) ||
+    /\b(?:dp|grid|mat|matrix|board|table)\s*:\s*[^=;]+\[\]\[\]/.test(bodyText)
+  ) {
+    return { space: 'O(N²)', spaceReason: '分配二维矩阵/DP 表空间 O(N²)' };
+  }
+  if (
+    /\bnew\s+(?:Map|Set|Array)\b/.test(clean) ||
+    /\.(?:slice|concat|filter|map|split)\s*\(/.test(clean) ||
+    /\b(?:const|let|var)\s+[A-Za-z_$][\w$]*\s*(?::\s*[^=]+)?=\s*\[\s*\]/.test(clean)
+  ) {
+    return { space: 'O(N)', spaceReason: '分配线性集合/数组空间 O(N)' };
+  }
+  if (recursionBranches >= 1) {
+    return hasLogRecursion
+      ? { space: 'O(log N)', spaceReason: '递归调用栈深 O(log N)' }
+      : { space: 'O(N)', spaceReason: '递归调用栈深 O(N)' };
+  }
+  return { space: 'O(1)', spaceReason: '原地常量级辅助空间 O(1)' };
+}
+
+function analyzeSingleFunctionBlock(
+  fnName: string,
+  startLine: number,
+  bodyLines: string[]
+): FunctionComplexityMeta {
+  const joined = bodyLines.join('\n');
+  const cleanJoined = blankStrings(joined);
+
+  let maxLoopDepth = 0;
+  let effectiveLoopDepth = 0;
+  let hasLogStep = false;
+  let hasSortCall = /\.\s*sort\s*\(/.test(cleanJoined);
+  let hasAmortizedInner = false;
+
+  const loopStack: Array<{ braceDepth: number; isLog: boolean; isAmortized: boolean; isConstantBound: boolean }> = [];
+  let braceDepth = 0;
+
+  for (let i = 0; i < bodyLines.length; i++) {
+    const raw = bodyLines[i] || '';
+    const clean = stripInlineCommentSafe(raw).trim();
+    if (!clean) continue;
+
+    const isFor = /^\s*for\s*\(/.test(clean);
+    const isWhile = /^\s*(?:while|do)\b/.test(clean);
+    const isIterMethod = /\.\s*(?:forEach|map|filter|reduce|some|every|find|findIndex)\s*\(/.test(clean);
+
+    if (isFor || isWhile) {
+      const lookahead = bodyLines.slice(i, Math.min(bodyLines.length, i + 10)).map(stripInlineCommentSafe).join(' ');
+      const isLogLoop =
+        /(?:\*=|\/=|>>=|<<=)\s*2\b/.test(lookahead) ||
+        /[A-Za-z_$][\w$]*\s*=\s*[A-Za-z_$][\w$]*\s*[*/]\s*2\b/.test(lookahead) ||
+        /\bmid\b[\s\S]{0,120}\b(?:lo|left|l|start)\s*=\s*mid\b|\b(?:hi|right|r|end)\s*=\s*mid\b/.test(lookahead) ||
+        /\bMath\.floor\s*\(\s*\([^)]+\)\s*\/\s*2\s*\)/.test(lookahead) ||
+        />>\s*1\b/.test(lookahead);
+
+      const constForBound = isFor && /;\s*[A-Za-z_$][\w$]*\s*<=\s*([0-9]+)\b|;\s*[A-Za-z_$][\w$]*\s*<\s*([0-9]+)\b/.exec(clean);
+      const boundNum = constForBound ? parseInt(constForBound[1] || constForBound[2] || '999', 10) : 999;
+      const isConstLoop = boundNum <= 8;
+
+      const isInnerWhile = isWhile && loopStack.length >= 1;
+      const isAmortizedTwoPtr =
+        isInnerWhile &&
+        (/\b(?:l|left|slow|start)\s*(?:\+\+|\+=\s*1)/.test(lookahead) ||
+          /\.(?:pop|shift)\s*\(\s*\)/.test(lookahead));
+
+      if (isLogLoop) hasLogStep = true;
+      if (isAmortizedTwoPtr) hasAmortizedInner = true;
+
+      loopStack.push({
+        braceDepth,
+        isLog: isLogLoop,
+        isAmortized: isAmortizedTwoPtr,
+        isConstantBound: isConstLoop,
+      });
+
+      const rawDepth = loopStack.filter(l => !l.isConstantBound).length;
+      const effDepth = loopStack.filter(l => !l.isConstantBound && !l.isAmortized).length;
+      if (rawDepth > maxLoopDepth) maxLoopDepth = rawDepth;
+      if (effDepth > effectiveLoopDepth) effectiveLoopDepth = effDepth;
+    } else if (isIterMethod) {
+      const curEff = loopStack.filter(l => !l.isConstantBound && !l.isAmortized).length + 1;
+      if (curEff > maxLoopDepth) maxLoopDepth = curEff;
+      if (curEff > effectiveLoopDepth) effectiveLoopDepth = curEff;
+    }
+
+    const noStr = blankStrings(clean);
+    for (let k = 0; k < noStr.length; k++) {
+      const ch = noStr[k];
+      if (ch === '{') braceDepth++;
+      else if (ch === '}') {
+        braceDepth = Math.max(0, braceDepth - 1);
+        while (loopStack.length > 0) {
+          const top = loopStack[loopStack.length - 1];
+          if (top && braceDepth <= top.braceDepth) {
+            loopStack.pop();
+          } else {
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  let recursionBranches = 0;
+  let hasHalvingRecursionArg = false;
+  let hasMemoization = /\b(?:memo|cache|dp)\b\s*(?:\.\s*(?:has|get)|\[)/.test(cleanJoined);
+
+  if (fnName && fnName !== '<top>') {
+    const bodyWithoutHeader = bodyLines.slice(1).map(stripInlineCommentSafe).join('\n');
+    const escapedFn = fnName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const callRe = new RegExp(`\\b${escapedFn}\\s*\\(([^)]*)\\)`, 'g');
+    let cm;
+    while ((cm = callRe.exec(bodyWithoutHeader))) {
+      recursionBranches++;
+      const argsTxt = cm[1] || '';
+      if (
+        /\b(?:mid|m|half)\b/.test(argsTxt) ||
+        /\/\s*2\b|>>\s*1\b|\.slice\s*\(/.test(argsTxt)
+      ) {
+        hasHalvingRecursionArg = true;
+      }
+    }
+  }
+
+  let timeComplexity: ComplexityClass = 'O(1)';
+  const reasons: string[] = [];
+
+  if (recursionBranches >= 2) {
+    if (hasHalvingRecursionArg) {
+      const hasLinearCombine = effectiveLoopDepth >= 1 || /\.(?:slice|concat|filter|map|reduce)\s*\(/.test(cleanJoined);
+      timeComplexity = hasLinearCombine ? 'O(N log N)' : 'O(N)';
+      reasons.push(
+        hasLinearCombine
+          ? `分治递归 (${recursionBranches} 分支折半) + 线性切分/合并 → O(N log N)`
+          : `二分递归遍历 (${recursionBranches} 分支折半) → O(N)`
+      );
+    } else if (hasMemoization) {
+      timeComplexity = effectiveLoopDepth >= 1 ? 'O(N²)' : 'O(N)';
+      reasons.push(`记忆化递归 (Memoization) 消除重复子问题 → ${timeComplexity}`);
+    } else {
+      timeComplexity = 'O(2^N)';
+      reasons.push(`多分支递归 (${recursionBranches} 路自调用且无折半/记忆化) → 指数级 O(2^N)`);
+    }
+  } else if (recursionBranches === 1) {
+    if (hasHalvingRecursionArg) {
+      timeComplexity = effectiveLoopDepth >= 1 ? 'O(N)' : 'O(log N)';
+      reasons.push(`单路折半递归 → ${timeComplexity}`);
+    } else {
+      timeComplexity = effectiveLoopDepth >= 1 ? 'O(N²)' : 'O(N)';
+      reasons.push(`线性递归调用 → ${timeComplexity}`);
+    }
+  } else {
+    if (effectiveLoopDepth >= 3) {
+      timeComplexity = 'O(N³)';
+      reasons.push(`检测到 ${effectiveLoopDepth} 层嵌套循环 → O(N³)`);
+    } else if (effectiveLoopDepth === 2) {
+      if (hasLogStep) {
+        timeComplexity = 'O(N log N)';
+        reasons.push('外层线性循环 + 内层对数折半步长 → O(N log N)');
+      } else {
+        timeComplexity = 'O(N²)';
+        reasons.push('双重嵌套循环遍历 → O(N²)');
+      }
+    } else if (effectiveLoopDepth === 1) {
+      if (hasLogStep && maxLoopDepth === 1) {
+        timeComplexity = 'O(log N)';
+        reasons.push('循环步长每次折半/倍增 (二分/倍增) → O(log N)');
+      } else if (hasAmortizedInner) {
+        timeComplexity = 'O(N)';
+        reasons.push('外层循环 + 内层双指针/单调栈均摊单调推进 → 均摊 O(N)');
+      } else {
+        timeComplexity = 'O(N)';
+        reasons.push('单层线性循环扫描 → O(N)');
+      }
+    } else {
+      timeComplexity = 'O(1)';
+      reasons.push('无随输入规模增长的循环或递归 → 常量时间 O(1)');
+    }
+  }
+
+  if (hasSortCall && compareComplexityClass(timeComplexity, 'O(N log N)') < 0) {
+    timeComplexity = 'O(N log N)';
+    reasons.push('包含 .sort() 排序调用 → O(N log N)');
+  }
+
+  const { space, spaceReason } = estimateSpaceFromBlock(
+    joined,
+    recursionBranches,
+    hasHalvingRecursionArg
+  );
+  reasons.push(spaceReason);
+
+  return {
+    fnName,
+    line: startLine,
+    timeComplexity,
+    spaceComplexity: space,
+    maxLoopDepth,
+    hasLogStep: hasLogStep || hasHalvingRecursionArg,
+    recursionBranches,
+    rationale: reasons.join(' · '),
+  };
+}
+
+export function analyzeTimeComplexity(src: string, jsOverride?: string): ComplexityReport {
+  const rawSrc = String(src || '').replace(/\r/g, '');
+  let js = jsOverride;
+  if (!js) {
+    const enums = transpileEnums(rawSrc);
+    js = stripTypes(enums.code);
+  }
+  const srcLines = rawSrc.split('\n');
+  const functions: FunctionComplexityMeta[] = [];
+
+  const fnOpenRe = /^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(/;
+  const methodOpenRe = /^\s*(?:public\s+|private\s+|protected\s+|static\s+|async\s+)*([A-Za-z_$][\w$]*)\s*\([^;]*\)\s*(?::\s*[^{]+)?\{/;
+  const arrowOpenRe = /^\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::\s*[^=]+)?=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*(?::\s*[^=]+)?=>\s*\{/;
+
+  let i = 0;
+  const coveredLines = new Set<number>();
+
+  while (i < srcLines.length) {
+    const lineText = stripInlineCommentSafe(srcLines[i] || '');
+    const fnMatch =
+      fnOpenRe.exec(lineText) ||
+      arrowOpenRe.exec(lineText) ||
+      (!/^\s*(?:if|for|while|switch|catch|function|class|interface|type)\b/.test(lineText) ? methodOpenRe.exec(lineText) : null);
+
+    if (fnMatch && fnMatch[1] && fnMatch[1] !== 'constructor') {
+      const fnName = fnMatch[1];
+      const startIdx = i;
+      let depth = 0;
+      let started = false;
+      let endIdx = i;
+      for (let k = i; k < srcLines.length; k++) {
+        const clean = blankStrings(stripInlineCommentSafe(srcLines[k] || ''));
+        for (let c = 0; c < clean.length; c++) {
+          if (clean[c] === '{') {
+            depth++;
+            started = true;
+          } else if (clean[c] === '}') {
+            depth--;
+          }
+        }
+        endIdx = k;
+        if (started && depth <= 0) break;
+      }
+      for (let k = startIdx; k <= endIdx; k++) coveredLines.add(k);
+      const blockLines = srcLines.slice(startIdx, endIdx + 1);
+      functions.push(analyzeSingleFunctionBlock(fnName, startIdx + 1, blockLines));
+      i = endIdx + 1;
+      continue;
+    }
+    i++;
+  }
+
+  const topLines = srcLines.filter((_, idx) => !coveredLines.has(idx));
+  const topMeta = analyzeSingleFunctionBlock('<top>', 1, topLines);
+
+  // Detect helper calls inside functions (e.g. mergeSort calling merge -> O(N log N))
+  const fnMap = new Map<string, FunctionComplexityMeta>();
+  functions.forEach(f => fnMap.set(f.fnName, f));
+  for (const fn of functions) {
+    if (fn.recursionBranches >= 2 && fn.hasLogStep && fn.timeComplexity === 'O(N)') {
+      for (const [otherName, otherMeta] of fnMap.entries()) {
+        if (otherName !== fn.fnName && compareComplexityClass(otherMeta.timeComplexity, 'O(N)') >= 0) {
+          const fnSrc = srcLines.slice(fn.line - 1).join('\n');
+          const callOtherRe = new RegExp(`\\b${otherName}\\s*\\(`);
+          if (callOtherRe.test(fnSrc)) {
+            fn.timeComplexity = 'O(N log N)';
+            fn.rationale = `分治递归调用线性子过程 ${otherName}() → O(N log N)`;
+          }
+        }
+      }
+    }
+  }
+
+  let overallTime: ComplexityClass = topMeta.timeComplexity;
+  let overallSpace: ComplexityClass = topMeta.spaceComplexity;
+  let dominantFn: FunctionComplexityMeta | null = null;
+
+  for (const fn of functions) {
+    if (compareComplexityClass(fn.timeComplexity, overallTime) >= 0) {
+      overallTime = fn.timeComplexity;
+      dominantFn = fn;
+    }
+    overallSpace = maxComplexityClass(overallSpace, fn.spaceComplexity);
+  }
+
+  const primaryRationale = dominantFn
+    ? `${dominantFn.fnName}(): ${dominantFn.rationale}`
+    : topMeta.rationale;
+
+  return {
+    overallTime,
+    overallSpace,
+    confidence: functions.length > 0 ? 'high' : 'medium',
+    rationale: primaryRationale,
+    functions,
+  };
 }

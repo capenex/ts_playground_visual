@@ -211,5 +211,53 @@ export async function runVizEditorSuite(sandbox) {
       sandbox.VIZ.type(stateType).includes('totalEnergyEv')
     ),
   );
+
+  // -------------------------------------------------------------------------
+  // 7. Custom Watch Expressions & Type-Driven Visualization
+  // -------------------------------------------------------------------------
+  resetSandbox(sandbox);
+  const watchSlice = sandbox.evaluateCustomWatch('nums.slice(l, r + 1)', { nums: [10, 20, 30, 40], l: 1, r: 2 });
+  check('evaluateCustomWatch classifies array slice expression as kind="array"',
+    Boolean(watchSlice && watchSlice.kind === 'array' && Array.isArray(watchSlice.items) && watchSlice.items.length === 2),
+  );
+
+  const watchScalar = sandbox.evaluateCustomWatch(
+    'l + r',
+    { l: 2, r: 5 },
+    { l: 1, r: 5 },
+  );
+  check('evaluateCustomWatch formats scalar expression with prev -> next delta',
+    Boolean(
+      watchScalar &&
+      watchScalar.kind === 'watch-scalar' &&
+      watchScalar.watchStatus === 'ok' &&
+      watchScalar.val === '7' &&
+      watchScalar.prevValStr === '6' &&
+      watchScalar.changed === true &&
+      sandbox.VIZ['watch-scalar'](watchScalar).includes('7')
+    ),
+  );
+
+  const watchUnready = sandbox.evaluateCustomWatch('dp[i]', {});
+  check('evaluateCustomWatch gracefully handles unready scope without throwing',
+    Boolean(watchUnready && watchUnready.kind === 'watch-scalar' && watchUnready.watchStatus === 'unready'),
+  );
+
+  const watchMutating = sandbox.evaluateCustomWatch('nums.push(99)', { nums: [1, 2, 3] });
+  check('evaluateCustomWatch blocks side-effecting expressions',
+    Boolean(watchMutating && watchMutating.watchStatus === 'error'),
+  );
+
+  sandbox.addCustomWatch('nums.slice(0, 2)');
+  sandbox.startDebug(0, 'const nums = [5, 10, 15];\nconst x = nums[0] + nums[1];\nx');
+  const slotsHtmlWithWatch = sandbox.slotsEl.innerHTML;
+  check('addCustomWatch renders custom watch card inside #slots during debug session',
+    slotsHtmlWithWatch.includes('nums.slice(0, 2)'),
+  );
+  const consoleBarHtml = sandbox.consoleEl.innerHTML;
+  check('bottom complexity bar renders time & space complexity with › prompt',
+    consoleBarHtml.includes('›') && consoleBarHtml.includes('O(1)'),
+  );
+  sandbox.removeCustomWatch('nums.slice(0, 2)');
 }
 

@@ -120,6 +120,8 @@
       varTypes: /* @__PURE__ */ new Map(),
       typeAliases: /* @__PURE__ */ new Map()
     },
+    CUSTOM_WATCHES: [],
+    COMPLEXITY_REPORT: null,
     DEBUG_SESSION: {
       active: false,
       finished: false,
@@ -236,6 +238,8 @@
     setCntStatus: () => {
     },
     syncTsConfigUI: () => {
+    },
+    renderComplexityBar: () => {
     }
   };
   function registerUiHooks(hooks) {
@@ -248,6 +252,7 @@
   __export(dom_exports, {
     $: () => $,
     bindDomGlobals: () => bindDomGlobals,
+    btnAddWatchEl: () => btnAddWatchEl,
     btnImportEl: () => btnImportEl,
     btnOpenTsTutorialsEl: () => btnOpenTsTutorialsEl,
     callStackBarEl: () => callStackBarEl,
@@ -255,6 +260,7 @@
     clearConsoleDom: () => clearConsoleDom,
     closestElement: () => closestElement,
     cntEl: () => cntEl,
+    complexityPopEl: () => complexityPopEl,
     consoleEl: () => consoleEl,
     ctlHint: () => ctlHint,
     dom: () => dom,
@@ -287,7 +293,8 @@
     tutorialModalDetailEl: () => tutorialModalDetailEl,
     tutorialModalEl: () => tutorialModalEl,
     tutorialModalListEl: () => tutorialModalListEl,
-    varsEl: () => varsEl
+    varsEl: () => varsEl,
+    watchExprInputEl: () => watchExprInputEl
   });
   var $ = (id) => document.getElementById(id);
   function isDomElement(val) {
@@ -354,6 +361,9 @@
   var tutorialModalCloseEl = $("tutorialModalClose");
   var tutorialModalListEl = $("tutorialModalList");
   var tutorialModalDetailEl = $("tutorialModalDetail");
+  var watchExprInputEl = $("watchExprInput");
+  var btnAddWatchEl = $("btnAddWatch");
+  var complexityPopEl = $("complexityPop");
   var dom = {
     $,
     editor,
@@ -381,7 +391,10 @@
     tutorialModalEl,
     tutorialModalCloseEl,
     tutorialModalListEl,
-    tutorialModalDetailEl
+    tutorialModalDetailEl,
+    watchExprInputEl,
+    btnAddWatchEl,
+    complexityPopEl
   };
   function renderConsoleLogEntry(entry) {
     if (!logEl || typeof document === "undefined" || !document.createElement) return;
@@ -2499,14 +2512,18 @@ runAsyncDemo()
   var instrumenter_exports = {};
   __export(instrumenter_exports, {
     __describeHeapVal: () => __describeHeapVal,
+    analyzeTimeComplexity: () => analyzeTimeComplexity,
     blankJsLine: () => blankJsLine,
     collectNames: () => collectNames,
+    compareComplexityClass: () => compareComplexityClass,
+    estimateInputSizeFromCall: () => estimateInputSizeFromCall,
     extractBindingNames: () => extractBindingNames,
     extractCall: () => extractCall,
     findTrailingTopLevelCall: () => findTrailingTopLevelCall,
     formatVal: () => formatVal,
     instrument: () => instrument,
     isTraceableLine: () => isTraceableLine,
+    maxComplexityClass: () => maxComplexityClass,
     resolveEntry: () => resolveEntry,
     snapFnExpr: () => snapFnExpr
   });
@@ -3064,6 +3081,299 @@ runAsyncDemo()
   }
   function __describeHeapVal(v) {
     return v;
+  }
+  var COMPLEXITY_RANK = {
+    "O(1)": 0,
+    "O(log N)": 1,
+    "O(N)": 2,
+    "O(N log N)": 3,
+    "O(N²)": 4,
+    "O(N³)": 5,
+    "O(2^N)": 6
+  };
+  function compareComplexityClass(a, b) {
+    return COMPLEXITY_RANK[a] - COMPLEXITY_RANK[b];
+  }
+  function maxComplexityClass(a, b) {
+    return compareComplexityClass(a, b) >= 0 ? a : b;
+  }
+  function estimateInputSizeFromCall(callExpr, src) {
+    const c = String(callExpr || "").trim();
+    if (!c || c === "undefined") return null;
+    const arrLit = c.match(/\[([^\][]+)\]/);
+    if (arrLit && arrLit[1]) {
+      const items = arrLit[1].split(",").map((x) => x.trim()).filter(Boolean);
+      if (items.length > 0) return items.length;
+    }
+    const strMatches = [];
+    const strRe = /"([^"\\]*)"|'([^'\\]*)'/g;
+    let sm;
+    while (sm = strRe.exec(c)) {
+      const sVal = sm[1] !== void 0 ? sm[1] : sm[2] || "";
+      if (sVal.length > 0) strMatches.push(sVal);
+    }
+    if (strMatches.length > 0) {
+      return Math.max(...strMatches.map((s) => s.length));
+    }
+    const numMatch = c.match(/\(\s*(\d+)\s*(?:[,)]|$)/);
+    if (numMatch && numMatch[1]) {
+      const nVal = parseInt(numMatch[1], 10);
+      if (nVal > 0 && nVal <= 1e5) return nVal;
+    }
+    if (src) {
+      const allArrs = [...src.matchAll(/\[([^\][\n]{3,})\]/g)];
+      let bestLen = 0;
+      for (const m of allArrs) {
+        if (m[1]) {
+          const count = m[1].split(",").filter((x) => x.trim().length > 0).length;
+          if (count > bestLen) bestLen = count;
+        }
+      }
+      if (bestLen > 1) return bestLen;
+    }
+    return null;
+  }
+  function estimateSpaceFromBlock(bodyText, recursionBranches, hasLogRecursion) {
+    const clean = blankStrings(bodyText);
+    if (/Array\.from\s*\([^)]*=>\s*(?:new\s+Array|Array\.from|\[)/.test(clean) || /\.map\s*\([^)]*=>\s*(?:new\s+Array|Array\.from|\[[^\]]*\.(?:fill|map))/.test(clean) || /\b(?:dp|grid|mat|matrix|board|table)\s*:\s*[^=;]+\[\]\[\]/.test(bodyText)) {
+      return { space: "O(N²)", spaceReason: "分配二维矩阵/DP 表空间 O(N²)" };
+    }
+    if (/\bnew\s+(?:Map|Set|Array)\b/.test(clean) || /\.(?:slice|concat|filter|map|split)\s*\(/.test(clean) || /\b(?:const|let|var)\s+[A-Za-z_$][\w$]*\s*(?::\s*[^=]+)?=\s*\[\s*\]/.test(clean)) {
+      return { space: "O(N)", spaceReason: "分配线性集合/数组空间 O(N)" };
+    }
+    if (recursionBranches >= 1) {
+      return hasLogRecursion ? { space: "O(log N)", spaceReason: "递归调用栈深 O(log N)" } : { space: "O(N)", spaceReason: "递归调用栈深 O(N)" };
+    }
+    return { space: "O(1)", spaceReason: "原地常量级辅助空间 O(1)" };
+  }
+  function analyzeSingleFunctionBlock(fnName, startLine, bodyLines) {
+    const joined = bodyLines.join("\n");
+    const cleanJoined = blankStrings(joined);
+    let maxLoopDepth = 0;
+    let effectiveLoopDepth = 0;
+    let hasLogStep = false;
+    let hasSortCall = /\.\s*sort\s*\(/.test(cleanJoined);
+    let hasAmortizedInner = false;
+    const loopStack = [];
+    let braceDepth = 0;
+    for (let i = 0; i < bodyLines.length; i++) {
+      const raw = bodyLines[i] || "";
+      const clean = stripInlineCommentSafe(raw).trim();
+      if (!clean) continue;
+      const isFor = /^\s*for\s*\(/.test(clean);
+      const isWhile = /^\s*(?:while|do)\b/.test(clean);
+      const isIterMethod = /\.\s*(?:forEach|map|filter|reduce|some|every|find|findIndex)\s*\(/.test(clean);
+      if (isFor || isWhile) {
+        const lookahead = bodyLines.slice(i, Math.min(bodyLines.length, i + 10)).map(stripInlineCommentSafe).join(" ");
+        const isLogLoop = /(?:\*=|\/=|>>=|<<=)\s*2\b/.test(lookahead) || /[A-Za-z_$][\w$]*\s*=\s*[A-Za-z_$][\w$]*\s*[*/]\s*2\b/.test(lookahead) || /\bmid\b[\s\S]{0,120}\b(?:lo|left|l|start)\s*=\s*mid\b|\b(?:hi|right|r|end)\s*=\s*mid\b/.test(lookahead) || /\bMath\.floor\s*\(\s*\([^)]+\)\s*\/\s*2\s*\)/.test(lookahead) || />>\s*1\b/.test(lookahead);
+        const constForBound = isFor && /;\s*[A-Za-z_$][\w$]*\s*<=\s*([0-9]+)\b|;\s*[A-Za-z_$][\w$]*\s*<\s*([0-9]+)\b/.exec(clean);
+        const boundNum = constForBound ? parseInt(constForBound[1] || constForBound[2] || "999", 10) : 999;
+        const isConstLoop = boundNum <= 8;
+        const isInnerWhile = isWhile && loopStack.length >= 1;
+        const isAmortizedTwoPtr = isInnerWhile && (/\b(?:l|left|slow|start)\s*(?:\+\+|\+=\s*1)/.test(lookahead) || /\.(?:pop|shift)\s*\(\s*\)/.test(lookahead));
+        if (isLogLoop) hasLogStep = true;
+        if (isAmortizedTwoPtr) hasAmortizedInner = true;
+        loopStack.push({
+          braceDepth,
+          isLog: isLogLoop,
+          isAmortized: isAmortizedTwoPtr,
+          isConstantBound: isConstLoop
+        });
+        const rawDepth = loopStack.filter((l) => !l.isConstantBound).length;
+        const effDepth = loopStack.filter((l) => !l.isConstantBound && !l.isAmortized).length;
+        if (rawDepth > maxLoopDepth) maxLoopDepth = rawDepth;
+        if (effDepth > effectiveLoopDepth) effectiveLoopDepth = effDepth;
+      } else if (isIterMethod) {
+        const curEff = loopStack.filter((l) => !l.isConstantBound && !l.isAmortized).length + 1;
+        if (curEff > maxLoopDepth) maxLoopDepth = curEff;
+        if (curEff > effectiveLoopDepth) effectiveLoopDepth = curEff;
+      }
+      const noStr = blankStrings(clean);
+      for (let k = 0; k < noStr.length; k++) {
+        const ch = noStr[k];
+        if (ch === "{") braceDepth++;
+        else if (ch === "}") {
+          braceDepth = Math.max(0, braceDepth - 1);
+          while (loopStack.length > 0) {
+            const top = loopStack[loopStack.length - 1];
+            if (top && braceDepth <= top.braceDepth) {
+              loopStack.pop();
+            } else {
+              break;
+            }
+          }
+        }
+      }
+    }
+    let recursionBranches = 0;
+    let hasHalvingRecursionArg = false;
+    let hasMemoization = /\b(?:memo|cache|dp)\b\s*(?:\.\s*(?:has|get)|\[)/.test(cleanJoined);
+    if (fnName && fnName !== "<top>") {
+      const bodyWithoutHeader = bodyLines.slice(1).map(stripInlineCommentSafe).join("\n");
+      const escapedFn = fnName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const callRe = new RegExp(`\\b${escapedFn}\\s*\\(([^)]*)\\)`, "g");
+      let cm;
+      while (cm = callRe.exec(bodyWithoutHeader)) {
+        recursionBranches++;
+        const argsTxt = cm[1] || "";
+        if (/\b(?:mid|m|half)\b/.test(argsTxt) || /\/\s*2\b|>>\s*1\b|\.slice\s*\(/.test(argsTxt)) {
+          hasHalvingRecursionArg = true;
+        }
+      }
+    }
+    let timeComplexity = "O(1)";
+    const reasons = [];
+    if (recursionBranches >= 2) {
+      if (hasHalvingRecursionArg) {
+        const hasLinearCombine = effectiveLoopDepth >= 1 || /\.(?:slice|concat|filter|map|reduce)\s*\(/.test(cleanJoined);
+        timeComplexity = hasLinearCombine ? "O(N log N)" : "O(N)";
+        reasons.push(
+          hasLinearCombine ? `分治递归 (${recursionBranches} 分支折半) + 线性切分/合并 → O(N log N)` : `二分递归遍历 (${recursionBranches} 分支折半) → O(N)`
+        );
+      } else if (hasMemoization) {
+        timeComplexity = effectiveLoopDepth >= 1 ? "O(N²)" : "O(N)";
+        reasons.push(`记忆化递归 (Memoization) 消除重复子问题 → ${timeComplexity}`);
+      } else {
+        timeComplexity = "O(2^N)";
+        reasons.push(`多分支递归 (${recursionBranches} 路自调用且无折半/记忆化) → 指数级 O(2^N)`);
+      }
+    } else if (recursionBranches === 1) {
+      if (hasHalvingRecursionArg) {
+        timeComplexity = effectiveLoopDepth >= 1 ? "O(N)" : "O(log N)";
+        reasons.push(`单路折半递归 → ${timeComplexity}`);
+      } else {
+        timeComplexity = effectiveLoopDepth >= 1 ? "O(N²)" : "O(N)";
+        reasons.push(`线性递归调用 → ${timeComplexity}`);
+      }
+    } else {
+      if (effectiveLoopDepth >= 3) {
+        timeComplexity = "O(N³)";
+        reasons.push(`检测到 ${effectiveLoopDepth} 层嵌套循环 → O(N³)`);
+      } else if (effectiveLoopDepth === 2) {
+        if (hasLogStep) {
+          timeComplexity = "O(N log N)";
+          reasons.push("外层线性循环 + 内层对数折半步长 → O(N log N)");
+        } else {
+          timeComplexity = "O(N²)";
+          reasons.push("双重嵌套循环遍历 → O(N²)");
+        }
+      } else if (effectiveLoopDepth === 1) {
+        if (hasLogStep && maxLoopDepth === 1) {
+          timeComplexity = "O(log N)";
+          reasons.push("循环步长每次折半/倍增 (二分/倍增) → O(log N)");
+        } else if (hasAmortizedInner) {
+          timeComplexity = "O(N)";
+          reasons.push("外层循环 + 内层双指针/单调栈均摊单调推进 → 均摊 O(N)");
+        } else {
+          timeComplexity = "O(N)";
+          reasons.push("单层线性循环扫描 → O(N)");
+        }
+      } else {
+        timeComplexity = "O(1)";
+        reasons.push("无随输入规模增长的循环或递归 → 常量时间 O(1)");
+      }
+    }
+    if (hasSortCall && compareComplexityClass(timeComplexity, "O(N log N)") < 0) {
+      timeComplexity = "O(N log N)";
+      reasons.push("包含 .sort() 排序调用 → O(N log N)");
+    }
+    const { space, spaceReason } = estimateSpaceFromBlock(
+      joined,
+      recursionBranches,
+      hasHalvingRecursionArg
+    );
+    reasons.push(spaceReason);
+    return {
+      fnName,
+      line: startLine,
+      timeComplexity,
+      spaceComplexity: space,
+      maxLoopDepth,
+      hasLogStep: hasLogStep || hasHalvingRecursionArg,
+      recursionBranches,
+      rationale: reasons.join(" · ")
+    };
+  }
+  function analyzeTimeComplexity(src, jsOverride) {
+    const rawSrc = String(src || "").replace(/\r/g, "");
+    let js = jsOverride;
+    if (!js) {
+      const enums = transpileEnums(rawSrc);
+      js = stripTypes(enums.code);
+    }
+    const srcLines = rawSrc.split("\n");
+    const functions = [];
+    const fnOpenRe = /^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(/;
+    const methodOpenRe = /^\s*(?:public\s+|private\s+|protected\s+|static\s+|async\s+)*([A-Za-z_$][\w$]*)\s*\([^;]*\)\s*(?::\s*[^{]+)?\{/;
+    const arrowOpenRe = /^\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::\s*[^=]+)?=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*(?::\s*[^=]+)?=>\s*\{/;
+    let i = 0;
+    const coveredLines = /* @__PURE__ */ new Set();
+    while (i < srcLines.length) {
+      const lineText = stripInlineCommentSafe(srcLines[i] || "");
+      const fnMatch = fnOpenRe.exec(lineText) || arrowOpenRe.exec(lineText) || (!/^\s*(?:if|for|while|switch|catch|function|class|interface|type)\b/.test(lineText) ? methodOpenRe.exec(lineText) : null);
+      if (fnMatch && fnMatch[1] && fnMatch[1] !== "constructor") {
+        const fnName = fnMatch[1];
+        const startIdx = i;
+        let depth = 0;
+        let started = false;
+        let endIdx = i;
+        for (let k = i; k < srcLines.length; k++) {
+          const clean = blankStrings(stripInlineCommentSafe(srcLines[k] || ""));
+          for (let c = 0; c < clean.length; c++) {
+            if (clean[c] === "{") {
+              depth++;
+              started = true;
+            } else if (clean[c] === "}") {
+              depth--;
+            }
+          }
+          endIdx = k;
+          if (started && depth <= 0) break;
+        }
+        for (let k = startIdx; k <= endIdx; k++) coveredLines.add(k);
+        const blockLines = srcLines.slice(startIdx, endIdx + 1);
+        functions.push(analyzeSingleFunctionBlock(fnName, startIdx + 1, blockLines));
+        i = endIdx + 1;
+        continue;
+      }
+      i++;
+    }
+    const topLines = srcLines.filter((_, idx) => !coveredLines.has(idx));
+    const topMeta = analyzeSingleFunctionBlock("<top>", 1, topLines);
+    const fnMap = /* @__PURE__ */ new Map();
+    functions.forEach((f) => fnMap.set(f.fnName, f));
+    for (const fn of functions) {
+      if (fn.recursionBranches >= 2 && fn.hasLogStep && fn.timeComplexity === "O(N)") {
+        for (const [otherName, otherMeta] of fnMap.entries()) {
+          if (otherName !== fn.fnName && compareComplexityClass(otherMeta.timeComplexity, "O(N)") >= 0) {
+            const fnSrc = srcLines.slice(fn.line - 1).join("\n");
+            const callOtherRe = new RegExp(`\\b${otherName}\\s*\\(`);
+            if (callOtherRe.test(fnSrc)) {
+              fn.timeComplexity = "O(N log N)";
+              fn.rationale = `分治递归调用线性子过程 ${otherName}() → O(N log N)`;
+            }
+          }
+        }
+      }
+    }
+    let overallTime = topMeta.timeComplexity;
+    let overallSpace = topMeta.spaceComplexity;
+    let dominantFn = null;
+    for (const fn of functions) {
+      if (compareComplexityClass(fn.timeComplexity, overallTime) >= 0) {
+        overallTime = fn.timeComplexity;
+        dominantFn = fn;
+      }
+      overallSpace = maxComplexityClass(overallSpace, fn.spaceComplexity);
+    }
+    const primaryRationale = dominantFn ? `${dominantFn.fnName}(): ${dominantFn.rationale}` : topMeta.rationale;
+    return {
+      overallTime,
+      overallSpace,
+      confidence: functions.length > 0 ? "high" : "medium",
+      rationale: primaryRationale,
+      functions
+    };
   }
 
   // src/compiler/type-checker.ts
@@ -10719,10 +11029,12 @@ runAsyncDemo()
       originalLines: [],
       callExpr: "undefined"
     };
+    appState.COMPLEXITY_REPORT = null;
     appState.RUNTIME_ERROR_LINES.clear();
     appState.cur = 0;
-    appState.watched = /* @__PURE__ */ new Set();
-    appState.SEEN_VARS_EVER = /* @__PURE__ */ new Set();
+    const customWatchIds = (appState.CUSTOM_WATCHES || []).map((e) => "watch:" + String(e).trim());
+    appState.watched = new Set(customWatchIds);
+    appState.SEEN_VARS_EVER = new Set(customWatchIds);
     appState.layoutSpan = /* @__PURE__ */ Object.create(null);
     uiHooks.renderPicker();
     uiHooks.renderStatic(0);
@@ -12031,6 +12343,91 @@ runAsyncDemo()
       return void 0;
     }
   }
+  function watchIdForExpr(expr) {
+    return "watch:" + expr.trim();
+  }
+  function isCustomWatchId(id) {
+    return id.startsWith("watch:");
+  }
+  function watchExprFromId(id) {
+    return id.startsWith("watch:") ? id.slice(6) : id;
+  }
+  function evaluateCustomWatch(expr, v, prevV, noteForEnrich) {
+    const cleanExpr = stripTypes(expr).trim();
+    const baseCard = {
+      kind: "watch-scalar",
+      watchExpr: expr,
+      watchStatus: "unready",
+      val: void 0,
+      runtimeType: "unready"
+    };
+    if (!cleanExpr) {
+      baseCard.watchStatus = "error";
+      baseCard.watchError = "表达式为空";
+      return baseCard;
+    }
+    if (/\.\s*(push|pop|shift|unshift|splice|set|add|delete|clear|fill|sort|reverse)\s*\(/.test(cleanExpr) || /(?:\+\+|--|(?<![=!<>])=(?!=))/.test(cleanExpr)) {
+      baseCard.watchStatus = "error";
+      baseCard.watchError = "Watch 仅支持纯读取表达式，禁止副作用修改";
+      return baseCard;
+    }
+    if (!v || Object.keys(v).length === 0) {
+      baseCard.watchStatus = "unready";
+      baseCard.watchError = "当前作用域未就绪";
+      return baseCard;
+    }
+    let val;
+    try {
+      const keys = Object.keys(v).filter((k) => /^[A-Za-z_$][\w$]*$/.test(k) && !RESERVED_WORDS.has(k));
+      const vals = keys.map((k) => v[k]);
+      const fn = new Function(...keys, "return (" + cleanExpr + ");");
+      const thisCtx = Object.prototype.hasOwnProperty.call(v, "this") ? v.this : void 0;
+      val = fn.call(thisCtx, ...vals);
+    } catch (e) {
+      const msg = e instanceof Error && e.message ? e.message : String(e);
+      const isUnready = e instanceof ReferenceError || e instanceof TypeError || /is not defined|Cannot read properties of undefined|Cannot read properties of null/i.test(msg);
+      baseCard.watchStatus = isUnready ? "unready" : "error";
+      baseCard.watchError = isUnready ? "当前作用域未就绪" : msg;
+      return baseCard;
+    }
+    let prevVal = void 0;
+    let hasPrev = false;
+    if (prevV && Object.keys(prevV).length > 0) {
+      try {
+        const pKeys = Object.keys(prevV).filter((k) => /^[A-Za-z_$][\w$]*$/.test(k) && !RESERVED_WORDS.has(k));
+        const pVals = pKeys.map((k) => prevV[k]);
+        const pFn = new Function(...pKeys, "return (" + cleanExpr + ");");
+        const pThis = Object.prototype.hasOwnProperty.call(prevV, "this") ? prevV.this : void 0;
+        prevVal = pFn.call(pThis, ...pVals);
+        hasPrev = true;
+      } catch {
+        hasPrev = false;
+      }
+    }
+    const classified = classifyValue(expr, val);
+    if (classified) {
+      const tmpDs = { [expr]: classified };
+      populateInterfaceSchemas(tmpDs);
+      enrichFromNote(tmpDs, v, noteForEnrich || "");
+      const enriched = tmpDs[expr] || classified;
+      enriched.watchExpr = expr;
+      enriched.watchStatus = "ok";
+      return enriched;
+    }
+    const runtimeType = val === null ? "null" : typeof val;
+    const valStr = formatShortVal(val);
+    const prevValStr = hasPrev ? formatShortVal(prevVal) : void 0;
+    const changed = Boolean(hasPrev && prevValStr !== void 0 && prevValStr !== valStr);
+    return {
+      kind: "watch-scalar",
+      watchExpr: expr,
+      watchStatus: "ok",
+      val: valStr,
+      prevValStr,
+      changed,
+      runtimeType
+    };
+  }
   function splitLogicalClauses(condExpr) {
     const clauses = [];
     let depth = 0, start = 0;
@@ -12241,12 +12638,9 @@ runAsyncDemo()
         return Math.min(1, n / 7);
       case "interface":
       case "object":
-        return Math.min(1, n / 6);
+        return Math.min(0.35, n / 18);
       case "type": {
-        if (d.unionBranches && d.unionBranches.some((b) => b.isObject)) {
-          return Math.min(1, Math.max(0.5, d.unionBranches.length / 3));
-        }
-        return Math.min(1, Math.max(n, d.unionBranches ? d.unionBranches.length : 2) / 6);
+        return Math.min(0.35, Math.max(n, d.unionBranches ? d.unionBranches.length : 1) / 16);
       }
       case "set":
         return Math.min(1, n / 9);
@@ -12258,6 +12652,8 @@ runAsyncDemo()
         return n >= 5 ? 0.36 : 0.26;
       case "stack":
         return Math.min(0.35, n / 16);
+      case "watch-scalar":
+        return 0.22;
       default:
         return Math.min(1, n / 10);
     }
@@ -12278,7 +12674,9 @@ runAsyncDemo()
       const span = decideSpan(s.id, p);
       return { s, d, kind, p, span, idx };
     });
-    const oneColItems = meta.filter((m) => m.span === 1);
+    const oneColItems = meta.filter(
+      (m) => m.span === 1 && m.kind !== "interface" && m.kind !== "object" && m.kind !== "type" && m.kind !== "watch-scalar"
+    );
     if (oneColItems.length % 2 === 1) {
       let promote = oneColItems[0];
       if (promote) {
@@ -12322,7 +12720,16 @@ runAsyncDemo()
       _DISCOVER_CACHE.scannedSteps = steps.length;
       if (changed) _DISCOVER_CACHE.list = [..._DISCOVER_CACHE.map.values()];
     }
-    return _DISCOVER_CACHE.list;
+    if (!appState.CUSTOM_WATCHES || appState.CUSTOM_WATCHES.length === 0) {
+      return _DISCOVER_CACHE.list;
+    }
+    const customVars = appState.CUSTOM_WATCHES.map((expr) => ({
+      id: watchIdForExpr(expr),
+      name: expr,
+      kind: "watch-scalar",
+      isCustomWatch: true
+    }));
+    return [..._DISCOVER_CACHE.list, ...customVars];
   }
   var VIZ = {};
   function getActiveFrame(st) {
@@ -12526,12 +12933,33 @@ function __require(modId) {
     if (isRecord(snap)) return snap;
     return {};
   }
+  function buildComplexityWithRuntime(baseReport, inputSizeN, totalSteps, maxCallStackDepth, lineHits, sourceLines) {
+    const hotLines = Object.keys(lineHits).map((k) => {
+      const ln = Number(k);
+      const hits = lineHits[ln] || 0;
+      const snippet = (sourceLines[ln - 1] || "").trim().slice(0, 64);
+      return { line: ln, hits, code: snippet, snippet };
+    }).filter((x) => x.hits > 0 && x.line > 0).sort((a, b) => b.hits - a.hits || a.line - b.line).slice(0, 3);
+    return {
+      ...baseReport,
+      runtime: {
+        inputSizeN,
+        totalSteps,
+        maxCallStackDepth,
+        hotLines
+      }
+    };
+  }
   function evalCall(js, call, opts) {
     const o = opts || {};
     const expr = stripTypes(call || "undefined");
     const budgetMs = o.budgetMs || 0;
     const entryLine = o.entryLine || 0;
     const logs = [];
+    const lineHits = /* @__PURE__ */ Object.create(null);
+    let totalSteps = 0;
+    let curStackDepth = 1;
+    let maxStackDepth = 1;
     const handleCkpt = (args) => {
       const arr = Array.isArray(args) ? args : [];
       const isCondForm = arr.length > 0 && typeof arr[0] === "boolean";
@@ -12557,7 +12985,11 @@ function __require(modId) {
       __file: lastFile
     });
     const __t = function(line, _note, _snap, _self, file) {
-      if (line) lastLine = line;
+      totalSteps++;
+      if (line) {
+        lastLine = line;
+        lineHits[line] = (lineHits[line] || 0) + 1;
+      }
       if (file) lastFile = file;
       if (!budgetMs) return;
       if (expired) throw timeoutError();
@@ -12573,6 +13005,14 @@ function __require(modId) {
     __t.__drain = evLoop.drainEventLoop;
     __t.__initGlobal = function(snapFn) {
       evLoop.loop.globalSnapFn = snapFn;
+    };
+    __t.__enter = function() {
+      curStackDepth++;
+      if (curStackDepth > maxStackDepth) maxStackDepth = curStackDepth;
+      return curStackDepth;
+    };
+    __t.__leave = function() {
+      curStackDepth = Math.max(1, curStackDepth - 1);
     };
     __t.__ckpt = handleCkpt;
     const body = stub + js + "\n;return (function(){ try { var __v = (" + expr + '); if (__t && __t.__drain) __v = __t.__drain(__v); return { ok:true, value:__v }; } catch (e) { return { ok:false, error: e && e.message ? e.message : String(e), stack: e && e.stack ? String(e.stack) : "", line: (e && e.__line) || 0, file: (e && e.__file) || "", timeout: Boolean(e && e.__timeout) }; } })();';
@@ -12610,7 +13050,7 @@ function __require(modId) {
     if (r && r.ok && !r.line) r.line = lastLine || entryLine || 0;
     if (r && !r.ok) r.line = r.line || lastLine || entryLine || 0;
     if (r && !r.file && lastFile) r.file = lastFile;
-    return { ...r, logs, elapsedMs: Date.now() - t0 };
+    return { ...r, logs, elapsedMs: Date.now() - t0, totalSteps, maxStackDepth, lineHits };
   }
   function runOnce(budgetMs, sourceCode) {
     const budget = typeof budgetMs === "number" && budgetMs > 0 ? budgetMs : RUN_TIMEOUT_MS;
@@ -12730,8 +13170,23 @@ function __require(modId) {
         }
         return;
       }
+      const staticComplexity = analyzeTimeComplexity(src, call);
+      const inputSizeN = estimateInputSizeFromCall(src, call);
+      appState.COMPLEXITY_REPORT = buildComplexityWithRuntime(
+        staticComplexity,
+        inputSizeN,
+        r.totalSteps || 0,
+        r.maxStackDepth || 1,
+        r.lineHits || {},
+        originalLines
+      );
+      if (appState.TRACE) {
+        appState.TRACE.complexity = appState.COMPLEXITY_REPORT;
+      }
+      uiHooks.renderComplexityBar();
       const elapsed = " (" + r.elapsedMs + "ms)";
-      say("✓ 运行完成  →  " + safeJSONStringify(r.value) + elapsed, "ok");
+      const cBadge = ` · ⏱ 估算时间 ${appState.COMPLEXITY_REPORT.overallTime} / 空间 ${appState.COMPLEXITY_REPORT.overallSpace}`;
+      say("✓ 运行完成  →  " + safeJSONStringify(r.value) + elapsed + cBadge, "ok");
     } catch (e) {
       say("✗ " + (e instanceof Error && e.message ? e.message : e), "err");
     }
@@ -13148,6 +13603,22 @@ function __require(modId) {
       stepObj.returnValue = retVal;
     }
     appState.TRACE.steps.push(stepObj);
+    const lineHits = appState.DEBUG_SESSION.lineHits || (appState.DEBUG_SESSION.lineHits = /* @__PURE__ */ Object.create(null));
+    lineHits[stepObj.line] = (lineHits[stepObj.line] || 0) + 1;
+    const curDepth = Array.isArray(stepObj.callStack) && stepObj.callStack.length > 0 ? stepObj.callStack.length : 1;
+    const prevMaxDepth = appState.DEBUG_SESSION.maxStackDepth || 1;
+    appState.DEBUG_SESSION.maxStackDepth = Math.max(prevMaxDepth, curDepth);
+    if (appState.DEBUG_SESSION.complexity) {
+      appState.COMPLEXITY_REPORT = buildComplexityWithRuntime(
+        appState.DEBUG_SESSION.complexity,
+        appState.DEBUG_SESSION.inputSizeN ?? null,
+        appState.TRACE.steps.length,
+        appState.DEBUG_SESSION.maxStackDepth,
+        lineHits,
+        originalLines
+      );
+      appState.TRACE.complexity = appState.COMPLEXITY_REPORT;
+    }
     discoverVars().forEach((s) => {
       if (!appState.SEEN_VARS_EVER.has(s.id)) {
         appState.SEEN_VARS_EVER.add(s.id);
@@ -13253,12 +13724,23 @@ function __require(modId) {
     }
     uiHooks.stopAuto();
     uiHooks.clearFlyLayer();
+    const baseComplexity = analyzeTimeComplexity(src, expr);
+    const inputSizeN = estimateInputSizeFromCall(src, expr);
+    appState.COMPLEXITY_REPORT = buildComplexityWithRuntime(
+      baseComplexity,
+      inputSizeN,
+      0,
+      1,
+      {},
+      originalLines
+    );
     appState.TRACE = {
       title: graph.isMultiFile ? `TypeScript Multi-Module · ${entryFile}` : "TypeScript Playground · Debug",
       code: originalLines,
       steps: [],
       entryFile,
-      moduleSources
+      moduleSources,
+      complexity: appState.COMPLEXITY_REPORT
     };
     appState.DEBUG_SESSION = {
       active: true,
@@ -13272,7 +13754,11 @@ function __require(modId) {
       callExpr: expr,
       hasAsync,
       entryFile,
-      moduleSources
+      moduleSources,
+      complexity: baseComplexity,
+      lineHits: /* @__PURE__ */ Object.create(null),
+      maxStackDepth: 1,
+      inputSizeN
     };
     appState.ACTIVE_DEBUG_FILE = entryFile;
     appState.cur = 0;
@@ -13304,6 +13790,11 @@ function __require(modId) {
       appState.watched = new Set(filtered.length ? filtered : all);
     } else {
       appState.watched = new Set(all);
+    }
+    for (const expr of appState.CUSTOM_WATCHES) {
+      const wid = "watch:" + expr;
+      appState.watched.add(wid);
+      appState.SEEN_VARS_EVER.add(wid);
     }
   }
   var runTrace = startDebug;
@@ -13544,6 +14035,7 @@ function __require(modId) {
   __export(highlight_exports, {
     HIGHLIGHT_BUILTINS: () => HIGHLIGHT_BUILTINS,
     collectDeclaredNames: () => collectDeclaredNames,
+    collectDeclaredTypeNames: () => collectDeclaredTypeNames,
     collectHighlightBuiltins: () => collectHighlightBuiltins,
     findExprSpan: () => findExprSpan,
     formatHoverVal: () => formatHoverVal,
@@ -13598,9 +14090,33 @@ function __require(modId) {
     "clearTimeout"
   ]);
   var DECLARED_NAMES_CACHE = { src: null, names: /* @__PURE__ */ new Set() };
+  var DECLARED_TYPES_CACHE = { src: null, names: /* @__PURE__ */ new Set() };
+  function collectDeclaredTypeNames(src) {
+    const text = String(src == null ? "" : src);
+    if (DECLARED_TYPES_CACHE.src === text) return DECLARED_TYPES_CACHE.names;
+    const typeNames = /* @__PURE__ */ new Set();
+    const rawClean = blankStrings(text);
+    const typeDeclRe = /\b(?:class|interface|type|enum)\s+([A-Za-z_$][\w$]*)/g;
+    let m;
+    while (m = typeDeclRe.exec(rawClean)) {
+      if (m[1] && !RESERVED_WORDS.has(m[1])) typeNames.add(m[1]);
+    }
+    const typeImportRe = /^\s*import\s+type\s+(.+?)\s+from\s+['"][^'"]+['"]/gm;
+    while (m = typeImportRe.exec(text)) {
+      const clause = m[1] || "";
+      const idRe = /\b([A-Za-z_$][\w$]*)\b/g;
+      let im;
+      while (im = idRe.exec(clause)) {
+        if (im[1] && im[1] !== "as" && !RESERVED_WORDS.has(im[1])) typeNames.add(im[1]);
+      }
+    }
+    DECLARED_TYPES_CACHE = { src: text, names: typeNames };
+    return typeNames;
+  }
   function collectDeclaredNames(src) {
     const text = String(src == null ? "" : src);
     if (DECLARED_NAMES_CACHE.src === text) return DECLARED_NAMES_CACHE.names;
+    const typeNames = collectDeclaredTypeNames(text);
     const names = /* @__PURE__ */ new Set();
     let js = text;
     try {
@@ -13622,59 +14138,94 @@ function __require(modId) {
         if (im[1]) names.add(im[1]);
       }
     }
-    const esmImpRe = /^\s*import\s+(?:type\s+)?(.+?)\s+from\s+['"][^'"]+['"]/gm;
+    const esmImpRe = /^\s*import\s+(?!type\b)(.+?)\s+from\s+['"][^'"]+['"]/gm;
     while (m = esmImpRe.exec(text)) {
-      const clause = (m[1] || "").replace(/\btype\b/g, " ");
+      const clause = (m[1] || "").replace(/\btype\s+[A-Za-z_$][\w$]*/g, " ");
       const idRe = /\b([A-Za-z_$][\w$]*)\b/g;
       let im;
       while (im = idRe.exec(clause)) {
         if (im[1] && im[1] !== "as") names.add(im[1]);
       }
     }
-    const typeRe = /\b(?:function|class|interface|type|enum)\s+([A-Za-z_$][\w$]*)/g;
+    const fnRe = /\bfunction\s+([A-Za-z_$][\w$]*)/g;
     const rawClean = blankStrings(text);
-    while (m = typeRe.exec(rawClean)) {
+    while (m = fnRe.exec(rawClean)) {
       if (m[1]) names.add(m[1]);
     }
     const fnAssign = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:function\b|\(|[A-Za-z_$][\w$]*\s*=>)/g;
     while (m = fnAssign.exec(js)) {
       if (m[1]) names.add(m[1]);
     }
+    typeNames.forEach((tName) => names.delete(tName));
     DECLARED_NAMES_CACHE = { src: text, names };
     return names;
   }
   function collectHighlightBuiltins(declared) {
     const out = /* @__PURE__ */ new Set();
+    const typeNames = DECLARED_TYPES_CACHE.names;
     Array.from(HIGHLIGHT_BUILTINS).forEach((name) => {
-      if (!declared.has(name)) out.add(name);
+      if (!declared.has(name) && !typeNames.has(name)) out.add(name);
     });
     return out;
   }
-  function hl(t, declared) {
-    const re = /(\/\/.*$)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)|\b(function|const|let|var|new|class|extends|typeof|instanceof|import|export|from|async|await|interface|type|as|satisfies)\b|\b(for|if|else|return|while|do|switch|case|break|continue|try|catch|finally|throw|yield)\b|\b(number|string|boolean|void|any|unknown|never|Math|Map|Set|Array|Object|JSON|Number|String|Boolean|Promise|Record|Error)\b|\b(true|false|null|undefined|\d+(?:\.\d+)?)\b|(\b[A-Za-z_$][\w$]*)(?=\s*\()|(?<=\.)([A-Za-z_$][\w$]*)\b|([{,][ \t]*)([A-Za-z_$][\w$]*)(?=[ \t]*:)|(^[ \t]*)([A-Za-z_$][\w$]*)(?=[ \t]*:)|\b([A-Za-z_$][\w$]*)\b|(===|!==|>=|<=|=>|&&|\|\||\+\+|--)/g;
+  function hl(t, declared, customTypes) {
+    const typeSet = customTypes || DECLARED_TYPES_CACHE.names;
+    const re = /(\/\/.*$)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)|\b(function|const|let|var|new|class|extends|implements|typeof|instanceof|import|export|from|async|await|interface|type|enum|as|satisfies)\b|\b(for|if|else|return|while|do|switch|case|break|continue|try|catch|finally|throw|yield)\b|\b(number|string|boolean|void|any|unknown|never|bigint|symbol|object|Omit|Pick|Partial|Required|Readonly|Record|Exclude|Extract|NonNullable|ReturnType|Parameters|Math|Map|Set|Array|Object|JSON|Number|String|Boolean|Promise|Error)\b|\b(true|false|null|undefined|\d+(?:\.\d+)?)\b|(\b[A-Za-z_$][\w$]*)(?=\s*\()|(?<=\.)([A-Za-z_$][\w$]*)\b|([{,][ \t]*)([A-Za-z_$][\w$]*)(?=[ \t]*\??:)|(^[ \t]*)([A-Za-z_$][\w$]*)(?=[ \t]*\??:)|\b([A-Za-z_$][\w$]*)\b|(===|!==|>=|<=|=>|&&|\|\||\+\+|--)/g;
     let out = "", last = 0, m;
+    let prevKeyword = "";
     while (m = re.exec(t)) {
-      out += esc(t.slice(last, m.index));
-      if (m[1]) out += '<span class="com">' + esc(m[1]) + "</span>";
-      else if (m[2]) out += '<span class="str">' + esc(m[2]) + "</span>";
-      else if (m[3]) out += '<span class="kw">' + esc(m[3]) + "</span>";
-      else if (m[4]) out += '<span class="ctl">' + esc(m[4]) + "</span>";
-      else if (m[5]) out += '<span class="' + (HIGHLIGHT_BUILTINS.has(m[5]) ? "bi" : "typ") + '">' + esc(m[5]) + "</span>";
-      else if (m[6]) out += '<span class="num">' + esc(m[6]) + "</span>";
-      else if (m[7]) {
+      const gap = t.slice(last, m.index);
+      if (gap.trim()) prevKeyword = "";
+      out += esc(gap);
+      if (m[1]) {
+        out += '<span class="com">' + esc(m[1]) + "</span>";
+        prevKeyword = "";
+      } else if (m[2]) {
+        out += '<span class="str">' + esc(m[2]) + "</span>";
+        prevKeyword = "";
+      } else if (m[3]) {
+        out += '<span class="kw">' + esc(m[3]) + "</span>";
+        prevKeyword = m[3];
+      } else if (m[4]) {
+        out += '<span class="ctl">' + esc(m[4]) + "</span>";
+        prevKeyword = "";
+      } else if (m[5]) {
+        out += '<span class="' + (HIGHLIGHT_BUILTINS.has(m[5]) ? "bi" : "typ") + '">' + esc(m[5]) + "</span>";
+        prevKeyword = "";
+      } else if (m[6]) {
+        out += '<span class="num">' + esc(m[6]) + "</span>";
+        prevKeyword = "";
+      } else if (m[7]) {
         const id = m[7];
         const isMethod = m.index > 0 && t[m.index - 1] === ".";
-        if (!isMethod && HIGHLIGHT_BUILTINS.has(id)) out += '<span class="bi">' + esc(id) + "</span>";
+        if (!isMethod && (prevKeyword === "new" || prevKeyword === "class" || typeSet && typeSet.has(id))) {
+          out += '<span class="typ">' + esc(id) + "</span>";
+        } else if (!isMethod && HIGHLIGHT_BUILTINS.has(id)) out += '<span class="bi">' + esc(id) + "</span>";
         else if (!declared || isMethod || declared.has(id)) out += '<span class="fn">' + esc(id) + "</span>";
         else out += esc(id);
-      } else if (m[8]) out += '<span class="prop">' + esc(m[8]) + "</span>";
-      else if (m[9]) out += esc(m[9]) + '<span class="prop">' + esc(m[10]) + "</span>";
-      else if (m[11]) out += esc(m[11]) + '<span class="prop">' + esc(m[12]) + "</span>";
-      else if (m[13]) {
-        if (!declared || declared.has(m[13])) out += '<span class="prop">' + esc(m[13]) + "</span>";
-        else if (HIGHLIGHT_BUILTINS.has(m[13])) out += '<span class="bi">' + esc(m[13]) + "</span>";
-        else out += esc(m[13]);
-      } else if (m[14]) out += '<span class="op">' + esc(m[14]) + "</span>";
+        prevKeyword = "";
+      } else if (m[8]) {
+        out += '<span class="prop">' + esc(m[8]) + "</span>";
+        prevKeyword = "";
+      } else if (m[9]) {
+        out += esc(m[9]) + '<span class="prop">' + esc(m[10]) + "</span>";
+        prevKeyword = "";
+      } else if (m[11]) {
+        out += esc(m[11]) + '<span class="prop">' + esc(m[12]) + "</span>";
+        prevKeyword = "";
+      } else if (m[13]) {
+        const id = m[13];
+        const isDeclTypePos = prevKeyword === "interface" || prevKeyword === "type" || prevKeyword === "class" || prevKeyword === "enum" || prevKeyword === "extends" || prevKeyword === "implements";
+        if (isDeclTypePos || typeSet && typeSet.has(id)) {
+          out += '<span class="typ">' + esc(id) + "</span>";
+        } else if (!declared || declared.has(id)) out += '<span class="prop">' + esc(id) + "</span>";
+        else if (HIGHLIGHT_BUILTINS.has(id)) out += '<span class="bi">' + esc(id) + "</span>";
+        else out += esc(id);
+        prevKeyword = "";
+      } else if (m[14]) {
+        out += '<span class="op">' + esc(m[14]) + "</span>";
+        prevKeyword = "";
+      }
       last = m.index + m[0].length;
     }
     out += esc(t.slice(last));
@@ -13778,6 +14329,7 @@ function __require(modId) {
   function updateEditorChrome() {
     const text = editor.value.replace(/\r\n?/g, "\n");
     const lines = text.split("\n");
+    const types = collectDeclaredTypeNames(text);
     const declared = collectDeclaredNames(text);
     const builtins = collectHighlightBuiltins(declared);
     const liveErrors = liveTypeDiags(text);
@@ -13811,6 +14363,7 @@ function __require(modId) {
         text,
         lines,
         declared,
+        types,
         builtins,
         liveErrors,
         curLine,
@@ -14145,6 +14698,7 @@ function __require(modId) {
   __export(memory_graph_exports, {
     POINTER_VAR_NAMES: () => POINTER_VAR_NAMES,
     VIZ: () => VIZ,
+    addCustomWatch: () => addCustomWatch,
     allocateSlotSpans: () => allocateSlotSpans,
     build1DFocalSlice: () => build1DFocalSlice,
     classifyValue: () => classifyValue,
@@ -14156,9 +14710,11 @@ function __require(modId) {
     discoverVars: () => discoverVars,
     drawArrows: () => drawArrows,
     enrichFromNote: () => enrichFromNote,
+    evaluateCustomWatch: () => evaluateCustomWatch,
     formatFnTypeHtml: () => formatFnTypeHtml,
     formatShortVal: () => formatShortVal,
     getActiveFrame: () => getActiveFrame,
+    isCustomWatchId: () => isCustomWatchId,
     isFrame: () => isFrame,
     isInaccessibleOrGlobalObject: () => isInaccessibleOrGlobalObject,
     isMapLike: () => isMapLike,
@@ -14170,8 +14726,10 @@ function __require(modId) {
     normalizeTree: () => normalizeTree,
     populateInterfaceSchemas: () => populateInterfaceSchemas,
     pressure: () => pressure,
+    removeCustomWatch: () => removeCustomWatch,
     renderAsyncQueues: () => renderAsyncQueues,
     renderCallStack: () => renderCallStack,
+    renderComplexityBar: () => renderComplexityBar,
     renderMemory: () => renderMemory,
     renderPicker: () => renderPicker,
     renderSlots: () => renderSlots,
@@ -14182,6 +14740,7 @@ function __require(modId) {
     selectStackFrame: () => selectStackFrame,
     snapshot: () => snapshot,
     splitLogicalClauses: () => splitLogicalClauses,
+    toggleComplexityPopover: () => toggleComplexityPopover,
     truncMap: () => truncMap,
     updateControlButtons: () => updateControlButtons,
     vizArray: () => vizArray,
@@ -14198,7 +14757,10 @@ function __require(modId) {
     vizString: () => vizString,
     vizTree: () => vizTree,
     vizTypeAlias: () => vizTypeAlias,
-    vizUF: () => vizUF
+    vizUF: () => vizUF,
+    vizWatchScalar: () => vizWatchScalar,
+    watchExprFromId: () => watchExprFromId,
+    watchIdForExpr: () => watchIdForExpr
   });
   function selectStackFrame(frameIdx) {
     const st = appState.TRACE.steps[appState.cur];
@@ -14578,6 +15140,18 @@ function __require(modId) {
     }).join("") : '<span class="vel-empty">暂无 Promise 实例</span>';
     return `<div class="viz"><div class="veventloop"><div class="vel-header"><span class="vel-phase ${ph.cls}">${esc(ph.label)}</span>` + (d.activeTask ? `<span class="vel-active">${esc(d.activeTask)}</span>` : "") + `<span class="vel-clock">⏱ 虚拟时钟 ${nowMs}ms</span></div><div class="vel-grid"><div class="vel-lane"><div class="vel-lane-title">Async 协程状态</div><div class="vel-lane-body">` + coroHtml + '</div></div><div class="vel-lane"><div class="vel-lane-title">Microtask 微任务队列 (FIFO)</div><div class="vel-lane-body">' + microHtml + '</div></div><div class="vel-lane"><div class="vel-lane-title">Macrotask 宏任务 / 定时器</div><div class="vel-lane-body">' + macroHtml + '</div></div><div class="vel-lane"><div class="vel-lane-title">Promise 状态表</div><div class="vel-lane-body vel-pgrid">' + promHtml + "</div></div></div></div></div>";
   }
+  function vizWatchScalar(d) {
+    if (!d) return '<div class="vempty">empty</div>';
+    if (d.watchStatus === "unready") {
+      return '<div class="viz"><div class="vwatch-scalar unready"><span class="vw-badge">未就绪</span><span class="vw-dim">' + esc(d.watchError || "当前作用域尚未初始化该表达式所需变量") + "</span></div></div>";
+    }
+    if (d.watchStatus === "error") {
+      return '<div class="viz"><div class="vwatch-scalar err"><span class="vw-badge err">异常</span><span class="vw-err">' + esc(d.watchError || "表达式求值失败") + "</span></div></div>";
+    }
+    const hasDelta = Boolean(d.changed && d.prevValStr !== void 0 && d.prevValStr !== String(d.val));
+    const deltaHtml = hasDelta ? `<span class="vw-prev">${esc(d.prevValStr)}</span><span class="vw-arrow">→</span>` : "";
+    return '<div class="viz"><div class="vwatch-scalar' + (d.changed ? " changed" : "") + '">' + deltaHtml + '<span class="vw-val">' + esc(d.val) + "</span>" + (d.runtimeType ? '<span class="vw-type">' + esc(d.runtimeType) + "</span>" : "") + "</div></div>";
+  }
   Object.assign(VIZ, {
     array: vizArray,
     map: vizMap,
@@ -14594,32 +15168,67 @@ function __require(modId) {
     interface: vizInterface,
     object: vizInterface,
     type: vizTypeAlias,
-    eventloop: vizEventLoop
+    eventloop: vizEventLoop,
+    "watch-scalar": vizWatchScalar
   });
+  function addCustomWatch(rawExpr) {
+    const expr = String(rawExpr || "").trim();
+    if (!expr) return false;
+    if (!appState.CUSTOM_WATCHES.includes(expr)) {
+      appState.CUSTOM_WATCHES.push(expr);
+    }
+    const wid = watchIdForExpr(expr);
+    appState.watched.add(wid);
+    appState.SEEN_VARS_EVER.add(wid);
+    renderPicker();
+    return true;
+  }
+  function removeCustomWatch(rawExprOrId) {
+    const expr = isCustomWatchId(rawExprOrId) ? watchExprFromId(rawExprOrId) : String(rawExprOrId || "").trim();
+    const wid = watchIdForExpr(expr);
+    appState.CUSTOM_WATCHES = appState.CUSTOM_WATCHES.filter((x) => x !== expr);
+    appState.watched.delete(wid);
+    appState.SEEN_VARS_EVER.delete(wid);
+    delete appState.layoutSpan[wid];
+    renderPicker();
+  }
   function renderPicker() {
     const vars = discoverVars();
     if (!vars.length) {
-      pickEl.innerHTML = '<span class="vempty">无结构变量</span>';
+      pickEl.innerHTML = '<span class="vempty">无结构变量 · 可在上方输入表达式添加自定义监听</span>';
       renderSlots();
       return;
     }
-    pickEl.innerHTML = vars.map(
-      (s) => '<div class="chip-pick' + (appState.watched.has(s.id) ? " on" : "") + '" data-id="' + esc(s.id) + '">' + esc(s.name) + "</div>"
-    ).join("");
+    pickEl.innerHTML = vars.map((s) => {
+      const isCustom = Boolean(s.isCustomWatch || isCustomWatchId(s.id));
+      const delBtn = isCustom ? `<span class="chip-del" data-del-watch="${esc(s.id)}" title="移除自定义监听 ${esc(s.name)}">×</span>` : "";
+      return '<div class="chip-pick' + (appState.watched.has(s.id) ? " on" : "") + (isCustom ? " custom-watch" : "") + '" data-id="' + esc(s.id) + '">' + (isCustom ? '<span class="chip-fx">ƒ</span>' : "") + "<span>" + esc(s.name) + "</span>" + delBtn + "</div>";
+    }).join("");
     renderSlots();
   }
   function renderSlots() {
     const stepAtCur = appState.TRACE.steps[appState.cur];
+    const prevStep = appState.cur > 0 ? appState.TRACE.steps[appState.cur - 1] : null;
     const st = stepAtCur || {};
     const activeFrame = stepAtCur ? getActiveFrame(stepAtCur) : null;
+    const prevFrame = prevStep ? getActiveFrame(prevStep) : null;
     const ds = Object.assign({}, activeFrame && activeFrame.ds || st.ds || {});
     if (st.ds && st.ds.eventLoop && !ds.eventLoop) ds.eventLoop = st.ds.eventLoop;
+    const curV = activeFrame && activeFrame.v || st.v || {};
+    const prevV = prevFrame && prevFrame.v || prevStep && prevStep.v || null;
+    const rawNote = st.rawNote || st.note || "";
+    for (const expr of appState.CUSTOM_WATCHES) {
+      const wid = watchIdForExpr(expr);
+      if (appState.watched.has(wid)) {
+        ds[wid] = evaluateCustomWatch(expr, curV, prevV, rawNote);
+      }
+    }
     const vars = discoverVars().filter((s) => appState.watched.has(s.id) && ds[s.id] !== void 0);
     if (slotsEl && slotsEl.classList && slotsEl.classList.toggle) {
       slotsEl.classList.toggle("single-col", slotsEl.clientWidth > 0 && slotsEl.clientWidth < 420);
     }
     if (!vars.length) {
-      slotsEl.innerHTML = '<div class="slot" style="grid-column:1/-1"><div class="vempty">' + (appState.TRACE.steps.length ? "点选变量以关注（或本步暂无结构）" : "生成轨迹后显示结构可视化") + "</div></div>";
+      slotsEl.innerHTML = '<div class="slot" style="grid-column:1/-1"><div class="vempty">' + (appState.TRACE.steps.length ? "点选变量以关注，或在 WATCH 栏输入表达式（如 nums.slice(l, r+1)）" : "生成轨迹后显示结构可视化 · 支持上方输入自定义表达式监听") + "</div></div>";
       return;
     }
     const allocated = allocateSlotSpans(vars, ds);
@@ -14635,10 +15244,12 @@ function __require(modId) {
           sizeTag = `<span class="size-tag">共 ${d.total} 项</span>`;
         }
       }
-      const isHotSlot = d && (d.hot !== void 0 || d.mark != null);
+      const isCustom = Boolean(s.isCustomWatch || isCustomWatchId(s.id));
+      const isHotSlot = d && (d.hot !== void 0 || d.mark != null || d.changed);
       const kindPrefix = d && d.isClass ? "class" : "interface";
-      const kindBadge = kind === "interface" && d && d.interfaceName && d.interfaceName !== "object" && !d.isSchema ? `${kindPrefix} · ${d.interfaceName}` : kind === "interface" && d && d.isClass ? "class" : kind;
-      return '<div class="slot' + (span === 2 ? " span-2" : "") + (isHotSlot ? " pulse" : "") + '" data-var="' + esc(s.name) + '"><div class="name"><span>' + esc(s.name) + '</span><span class="kind">' + esc(kindBadge) + "</span>" + sizeTag + winTag + "</div>" + body + "</div>";
+      const kindBadge = kind === "watch-scalar" ? `watch · ${d && d.runtimeType || "expr"}` : kind === "interface" && d && d.interfaceName && d.interfaceName !== "object" && !d.isSchema ? `${kindPrefix} · ${d.interfaceName}` : kind === "interface" && d && d.isClass ? "class" : isCustom ? `watch · ${kind}` : kind;
+      const closeBtn = isCustom ? `<button type="button" class="slot-watch-del" data-del-watch="${esc(s.id)}" title="移除监听表达式 ${esc(s.name)}">×</button>` : "";
+      return '<div class="slot' + (span === 2 ? " span-2" : "") + (isHotSlot ? " pulse" : "") + (isCustom ? " custom-watch-slot" : "") + '" data-var="' + esc(s.name) + '"><div class="name"><span>' + (isCustom ? "ƒ " : "") + esc(s.name) + '</span><span class="kind">' + esc(kindBadge) + "</span>" + sizeTag + winTag + closeBtn + "</div>" + body + "</div>";
     }).join("");
   }
   function updateControlButtons() {
@@ -14719,6 +15330,67 @@ function __require(modId) {
     const genHtml = genPrefix ? formatTypeTokensHtml(genPrefix) : "";
     return `${genHtml}<span class="ft-punct">(</span>${formattedParams}<span class="ft-punct">)</span> <span class="ft-arrow">=&gt;</span> ` + formatTypeTokensHtml(right);
   }
+  function ensureComplexityReport(st) {
+    if (appState.COMPLEXITY_REPORT) return appState.COMPLEXITY_REPORT;
+    if (appState.TRACE && appState.TRACE.complexity) {
+      appState.COMPLEXITY_REPORT = appState.TRACE.complexity;
+      return appState.COMPLEXITY_REPORT;
+    }
+    const src = uiHooks.getEditorSource();
+    if (!src || !src.trim()) return null;
+    const callExpr = appState.DEBUG_SESSION.callExpr || "undefined";
+    const base = analyzeTimeComplexity(src, callExpr);
+    const inputSizeN = estimateInputSizeFromCall(src, callExpr);
+    const stepsCount = appState.TRACE && appState.TRACE.steps ? appState.TRACE.steps.length : 0;
+    const maxDepth = appState.DEBUG_SESSION.maxStackDepth || (st && Array.isArray(st.callStack) ? st.callStack.length : 1);
+    appState.COMPLEXITY_REPORT = {
+      ...base,
+      runtime: {
+        inputSizeN,
+        totalSteps: stepsCount,
+        maxCallStackDepth: maxDepth,
+        hotLines: []
+      }
+    };
+    return appState.COMPLEXITY_REPORT;
+  }
+  function renderComplexityBar(st) {
+    if (!consoleEl) return;
+    const activeStep = st !== void 0 ? st : appState.TRACE.steps[appState.cur] || null;
+    const report = ensureComplexityReport(activeStep);
+    if (!report) {
+      consoleEl.innerHTML = '<div class="cbar-row"><span class="p">›</span><span class="dim">⏱ 复杂度分析就绪 · 点击「▶ 运行」或「🐞 Debug 调试」查看时间/空间复杂度</span></div>';
+      if (complexityPopEl) complexityPopEl.hidden = true;
+      return;
+    }
+    const rt = report.runtime;
+    const stepsShown = activeStep ? appState.cur + 1 : rt ? rt.totalSteps : 0;
+    const totalKnown = appState.TRACE && appState.TRACE.steps.length || (rt ? rt.totalSteps : 0);
+    const stepStr = activeStep ? `步数 ${stepsShown}/${totalKnown}${appState.DEBUG_SESSION.finished ? "" : "+"}` : rt && rt.totalSteps > 0 ? `共 ${rt.totalSteps} 步` : "静态估算";
+    const nStr = rt && rt.inputSizeN !== null && rt.inputSizeN > 0 ? `N=${rt.inputSizeN} · ` : "";
+    const depthNum = activeStep && Array.isArray(activeStep.callStack) && activeStep.callStack.length > 0 ? activeStep.callStack.length : rt ? rt.maxCallStackDepth : 1;
+    const hotTop = rt && rt.hotLines && rt.hotLines[0] ? rt.hotLines[0] : null;
+    const hotStr = hotTop ? `🔥 L${hotTop.line}×${hotTop.hits}` : "";
+    const statusAddon = activeStep && activeStep.error ? `<span class="cbar-err">✗ L${activeStep.line} 报错</span>` : activeStep && activeStep.isCheckpoint ? `<span class="cbar-ckpt">◉ 断点 L${activeStep.line}</span>` : "";
+    consoleEl.innerHTML = '<div class="cbar-row" data-toggle-complexity="1"><span class="p">›</span><span class="cbar-pill time" title="估算时间复杂度">⏱ 时间 <b>' + esc(report.overallTime) + '</b></span><span class="cbar-pill space" title="估算空间复杂度">📦 空间 <b>' + esc(report.overallSpace) + '</b></span><span class="cbar-stat">' + esc(nStr + stepStr) + " · 栈深 " + depthNum + "</span>" + (hotStr ? '<span class="cbar-hot" title="最热执行代码行">' + esc(hotStr) + "</span>" : "") + statusAddon + '<span class="cbar-more" title="点击展开/收起复杂度推导依据与热点行详情">详情 ▾</span></div>';
+    if (complexityPopEl) {
+      const fnRows = report.functions.length ? report.functions.map(
+        (fn) => '<div class="cpop-fn-row"><span class="cpop-fn-name">' + esc(fn.fnName) + '<span class="cpop-fn-line">:L' + fn.line + '</span></span><span class="cpop-fn-badges"><span class="cbar-pill time">T: ' + esc(fn.timeComplexity) + '</span><span class="cbar-pill space">S: ' + esc(fn.spaceComplexity) + '</span></span><div class="cpop-fn-reason">' + esc(fn.rationale) + "</div></div>"
+      ).join("") : '<div class="cpop-empty">仅顶层脚本语句（无命名函数声明）</div>';
+      const hotRows = rt && rt.hotLines && rt.hotLines.length ? rt.hotLines.map(
+        (h) => '<div class="cpop-hot-row" data-jump-line="' + h.line + '" title="点击跳转到第 ' + h.line + ' 行"><span class="cpop-hot-line">第 ' + h.line + ' 行</span><span class="cpop-hot-hits">执行 ' + h.hits + ' 次</span><code class="cpop-hot-code">' + esc(h.code || h.snippet || "") + "</code></div>"
+      ).join("") : '<div class="cpop-empty">运行或单步调试后自动统计高频执行行</div>';
+      complexityPopEl.innerHTML = '<div class="cpop-head"><span>⏱ 算法时间/空间复杂度分析 &amp; 运行热点</span><button type="button" class="cpop-close" data-close-complexity="1">✕</button></div><div class="cpop-summary"><div class="cpop-main-badges"><span class="cbar-pill time lg">时间复杂度: <b>' + esc(report.overallTime) + '</b></span><span class="cbar-pill space lg">空间复杂度: <b>' + esc(report.overallSpace) + "</b></span>" + (rt && rt.inputSizeN !== null && rt.inputSizeN > 0 ? '<span class="cbar-pill neutral">估算输入规模 N = ' + rt.inputSizeN + "</span>" : "") + '</div><div class="cpop-rationale">' + esc(report.rationale) + '</div></div><div class="cpop-section-title">函数级复杂度拆解</div><div class="cpop-fn-list">' + fnRows + '</div><div class="cpop-section-title">🔥 运行时热点行 (Top 3)</div><div class="cpop-hot-list">' + hotRows + "</div>";
+    }
+  }
+  function toggleComplexityPopover(force) {
+    if (!complexityPopEl) return;
+    const nextHidden = typeof force === "boolean" ? !force : !complexityPopEl.hidden;
+    complexityPopEl.hidden = nextHidden;
+    if (!nextHidden) {
+      renderComplexityBar();
+    }
+  }
   function renderStatic(i, withAnim = false) {
     hideHoverTip();
     const st = appState.TRACE.steps[i];
@@ -14726,7 +15398,7 @@ function __require(modId) {
     if (!st) {
       renderCallStack(null);
       varsEl.innerHTML = "";
-      consoleEl.innerHTML = '<div><span class="p">›</span><span class="dim">开启 Debug 模式后当场计算并显示每步执行详情</span></div>';
+      renderComplexityBar(null);
       cntEl.textContent = "未在调试";
       cntEl.className = "";
       updateControlButtons();
@@ -14774,17 +15446,7 @@ function __require(modId) {
     } else {
       varsEl.innerHTML = '<div class="vempty">（本帧无原始类型局部变量）</div>';
     }
-    let animDesc = "";
-    const fileTag = st.file && appState.TRACE.moduleSources && Object.keys(appState.TRACE.moduleSources).length > 1 ? `${st.file} · ` : "";
-    if (st.error) {
-      animDesc = `<div class="anim-desc" style="color:var(--red)">runtime error · 已停止在报错行 (${esc(fileTag)}第 ${st.line} 行)</div>`;
-    } else if (st.anim) {
-      if (st.anim.type === "assign") animDesc = `<div class="anim-desc">${esc(fileTag)}assign · ${esc(st.anim.from)} → ${esc(st.anim.to)} = ${esc(st.anim.val)}</div>`;
-      else if (st.anim.type === "compare") animDesc = `<div class="anim-desc">${esc(fileTag)}compare · ${esc(st.anim.lhs)} ${esc(st.anim.op)} ${esc(st.anim.rhs)} ⇒ ${esc(st.anim.result)}</div>`;
-      else if (st.anim.type === "call") animDesc = `<div class="anim-desc">${esc(fileTag)}call · ${esc(st.anim.fn)}(${esc((st.anim.argVals || []).join(", "))})</div>`;
-      else if (st.anim.type === "checkpoint") animDesc = `<div class="anim-desc" style="color:var(--cyan)">${esc(fileTag)}checkpoint · ${esc(st.anim.argVals && st.anim.argVals[0] ? st.anim.argVals[0] : "检查点已命中")}</div>`;
-    }
-    consoleEl.innerHTML = '<div><span class="p">›</span>' + (fileTag ? '<span class="dim">[' + esc(st.file || "") + "] </span>" : "") + esc(st.note || "") + "</div>" + animDesc;
+    renderComplexityBar(st);
     if (st.error) {
       cntEl.textContent = "✗ 运行时报错";
       cntEl.className = "err";
@@ -14816,7 +15478,7 @@ function __require(modId) {
   }
   function scheduleArrowRedraw() {
   }
-  registerUiHooks({ renderPicker, renderStatic });
+  registerUiHooks({ renderPicker, renderStatic, renderComplexityBar });
 
   // src/ui/controls.ts
   var controls_exports = {};
@@ -14980,10 +15642,22 @@ function __require(modId) {
     stopAuto();
     clearFlyLayer();
     const prevWatched = new Set(appState.watched);
+    const baseComplexity = analyzeTimeComplexity(src, expr);
+    const inputSizeN = estimateInputSizeFromCall(src, expr);
+    appState.COMPLEXITY_REPORT = {
+      ...baseComplexity,
+      runtime: {
+        inputSizeN,
+        totalSteps: 0,
+        maxCallStackDepth: 1,
+        hotLines: []
+      }
+    };
     appState.TRACE = {
       title: "TypeScript Playground · Debug",
       code: originalLines,
-      steps: []
+      steps: [],
+      complexity: appState.COMPLEXITY_REPORT
     };
     appState.DEBUG_SESSION = {
       active: true,
@@ -14994,7 +15668,11 @@ function __require(modId) {
       returnValue: void 0,
       compiledFn,
       originalLines,
-      callExpr: expr
+      callExpr: expr,
+      complexity: baseComplexity,
+      lineHits: /* @__PURE__ */ Object.create(null),
+      maxStackDepth: 1,
+      inputSizeN
     };
     appState.cur = 0;
     let visitsSeen = 0;
@@ -15322,6 +16000,12 @@ function __require(modId) {
   }
   $("sampleSel").onchange = () => uiHooks.loadSample($("sampleSel").value);
   pickEl.addEventListener("click", (e) => {
+    const delBtn = closestElement(e, "[data-del-watch]");
+    if (delBtn && delBtn.dataset.delWatch) {
+      e.stopPropagation();
+      removeCustomWatch(delBtn.dataset.delWatch);
+      return;
+    }
     const el = closestElement(e, ".chip-pick");
     if (!el || !el.dataset.id) return;
     const id = el.dataset.id;
@@ -15329,6 +16013,61 @@ function __require(modId) {
     else appState.watched.add(id);
     renderPicker();
   });
+  if (slotsEl && slotsEl.addEventListener) {
+    slotsEl.addEventListener("click", (e) => {
+      const delBtn = closestElement(e, "[data-del-watch]");
+      if (delBtn && delBtn.dataset.delWatch) {
+        e.stopPropagation();
+        removeCustomWatch(delBtn.dataset.delWatch);
+      }
+    });
+  }
+  function submitCustomWatchInput() {
+    if (!watchExprInputEl) return;
+    const raw = watchExprInputEl.value.trim();
+    if (!raw) return;
+    if (addCustomWatch(raw)) {
+      watchExprInputEl.value = "";
+      say("✓ 已添加自定义 Watch 表达式: " + raw, "ok");
+    }
+  }
+  if (btnAddWatchEl && btnAddWatchEl.addEventListener) {
+    btnAddWatchEl.addEventListener("click", () => {
+      submitCustomWatchInput();
+    });
+  }
+  if (watchExprInputEl && watchExprInputEl.addEventListener) {
+    watchExprInputEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        e.stopPropagation();
+        submitCustomWatchInput();
+      }
+    });
+  }
+  if (consoleEl && consoleEl.addEventListener) {
+    consoleEl.addEventListener("click", () => {
+      toggleComplexityPopover();
+    });
+  }
+  if (complexityPopEl && complexityPopEl.addEventListener) {
+    complexityPopEl.addEventListener("click", (e) => {
+      const closeBtn = closestElement(e, "[data-close-complexity]");
+      if (closeBtn) {
+        e.stopPropagation();
+        toggleComplexityPopover(false);
+        return;
+      }
+      const jumpRow = closestElement(e, "[data-jump-line]");
+      if (jumpRow && jumpRow.dataset.jumpLine) {
+        const ln = parseInt(jumpRow.dataset.jumpLine, 10);
+        if (ln > 0) {
+          scrollCodeTo(ln);
+          uiHooks.revealErrorLine(ln, true);
+        }
+      }
+    });
+  }
   if (callStackBarEl) {
     callStackBarEl.addEventListener("click", (e) => {
       const btn = closestElement(e, ".cs-crumb");
@@ -15477,14 +16216,18 @@ function __require(modId) {
     }
     appState.TYPE_ERROR_LINES.clear();
     appState.RUNTIME_ERROR_LINES.clear();
+    appState.COMPLEXITY_REPORT = null;
     hideHoverTip();
     updateEditorChrome();
     if (appState.TRACE.steps.length || appState.DEBUG_SESSION.active) {
       if (staleTimer) clearTimeout(staleTimer);
       staleTimer = setTimeout(() => {
         resetTraceState();
+        renderComplexityBar(null);
         clearLog("源码已修改，当前调试会话已重置 · 可点击「🐞 Debug 调试」或左下「运行到下一个检查点」重新开始");
       }, 300);
+    } else {
+      renderComplexityBar(null);
     }
   }
   editor.addEventListener("input", onSourceChanged);

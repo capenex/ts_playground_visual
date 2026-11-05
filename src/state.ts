@@ -2,6 +2,7 @@
    Centralized pure runtime & domain state management (src/state.ts)
    ================================================================ */
 import type {
+  ComplexityReport,
   ConsoleLogEntry,
   DebugSession,
   InterfaceSchemaMeta,
@@ -116,6 +117,8 @@ export interface AppState {
   ENTRY_FILE_PATH: string;
   ACTIVE_DEBUG_FILE: string;
   CURRENT_TS_META: TsMeta;
+  CUSTOM_WATCHES: string[];
+  COMPLEXITY_REPORT: ComplexityReport | null;
   DEBUG_SESSION: DebugSession;
 }
 
@@ -152,6 +155,8 @@ export const appState: AppState = {
     varTypes: new Map<string, string>(),
     typeAliases: new Map<string, TypeAliasMeta>(),
   },
+  CUSTOM_WATCHES: [],
+  COMPLEXITY_REPORT: null,
   DEBUG_SESSION: {
     active: false,
     finished: false,
@@ -259,6 +264,7 @@ export interface RuntimeUiHooks {
   renderNotebookUI: (focusActiveEditor?: boolean) => void;
   setCntStatus: (text: string, cls?: string) => void;
   syncTsConfigUI: () => void;
+  renderComplexityBar: () => void;
 }
 
 export const uiHooks: RuntimeUiHooks = {
@@ -287,6 +293,7 @@ export const uiHooks: RuntimeUiHooks = {
   renderNotebookUI: () => {},
   setCntStatus: () => {},
   syncTsConfigUI: () => {},
+  renderComplexityBar: () => {},
 };
 
 export function registerUiHooks(hooks: Partial<RuntimeUiHooks>): void {

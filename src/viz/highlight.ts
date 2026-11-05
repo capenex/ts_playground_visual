@@ -23,13 +23,38 @@ export const HIGHLIGHT_BUILTINS = new Set([
 ]);
 
 let DECLARED_NAMES_CACHE: { src: string | null; names: Set<string> } = { src: null, names: new Set() };
+let DECLARED_TYPES_CACHE: { src: string | null; names: Set<string> } = { src: null, names: new Set() };
 
-/* All names the current buffer actually declares: const/let/var (incl. destructuring),
-   function & arrow params, loop/catch bindings, function/class/interface/type names. */
+/* Custom type/interface/class/enum names declared in the buffer (colored like built-in types). */
+export function collectDeclaredTypeNames(src: string | null | undefined): Set<string> {
+  const text = String(src == null ? '' : src);
+  if (DECLARED_TYPES_CACHE.src === text) return DECLARED_TYPES_CACHE.names;
+  const typeNames = new Set<string>();
+  const rawClean = blankStrings(text);
+  const typeDeclRe = /\b(?:class|interface|type|enum)\s+([A-Za-z_$][\w$]*)/g;
+  let m: RegExpExecArray | null;
+  while ((m = typeDeclRe.exec(rawClean))) {
+    if (m[1] && !RESERVED_WORDS.has(m[1])) typeNames.add(m[1]);
+  }
+  const typeImportRe = /^\s*import\s+type\s+(.+?)\s+from\s+['"][^'"]+['"]/gm;
+  while ((m = typeImportRe.exec(text))) {
+    const clause = m[1] || '';
+    const idRe = /\b([A-Za-z_$][\w$]*)\b/g;
+    let im: RegExpExecArray | null;
+    while ((im = idRe.exec(clause))) {
+      if (im[1] && im[1] !== 'as' && !RESERVED_WORDS.has(im[1])) typeNames.add(im[1]);
+    }
+  }
+  DECLARED_TYPES_CACHE = { src: text, names: typeNames };
+  return typeNames;
+}
+
+/* All variable/function/parameter names the current buffer declares (excluding type/interface/class names). */
 export function collectDeclaredNames(src: string | null | undefined): Set<string> {
   const text = String(src == null ? '' : src);
   if (DECLARED_NAMES_CACHE.src === text) return DECLARED_NAMES_CACHE.names;
 
+  const typeNames = collectDeclaredTypeNames(text);
   const names = new Set<string>();
   let js = text;
   try { js = stripTypes(text); } catch (_) { js = text; }
@@ -46,20 +71,22 @@ export function collectDeclaredNames(src: string | null | undefined): Set<string
       if (im[1]) names.add(im[1]);
     }
   }
-  const esmImpRe = /^\s*import\s+(?:type\s+)?(.+?)\s+from\s+['"][^'"]+['"]/gm;
+  const esmImpRe = /^\s*import\s+(?!type\b)(.+?)\s+from\s+['"][^'"]+['"]/gm;
   while ((m = esmImpRe.exec(text))) {
-    const clause = (m[1] || '').replace(/\btype\b/g, ' ');
+    const clause = (m[1] || '').replace(/\btype\s+[A-Za-z_$][\w$]*/g, ' ');
     const idRe = /\b([A-Za-z_$][\w$]*)\b/g;
     let im: RegExpExecArray | null;
     while ((im = idRe.exec(clause))) {
       if (im[1] && im[1] !== 'as') names.add(im[1]);
     }
   }
-  const typeRe = /\b(?:function|class|interface|type|enum)\s+([A-Za-z_$][\w$]*)/g;
+  const fnRe = /\bfunction\s+([A-Za-z_$][\w$]*)/g;
   const rawClean = blankStrings(text);
-  while ((m = typeRe.exec(rawClean))) { if (m[1]) names.add(m[1]); }
+  while ((m = fnRe.exec(rawClean))) { if (m[1]) names.add(m[1]); }
   const fnAssign = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:function\b|\(|[A-Za-z_$][\w$]*\s*=>)/g;
   while ((m = fnAssign.exec(js))) { if (m[1]) names.add(m[1]); }
+
+  typeNames.forEach(tName => names.delete(tName));
 
   DECLARED_NAMES_CACHE = { src: text, names };
   return names;
@@ -67,40 +94,58 @@ export function collectDeclaredNames(src: string | null | undefined): Set<string
 
 export function collectHighlightBuiltins(declared: Set<string>): Set<string> {
   const out = new Set<string>();
+  const typeNames = DECLARED_TYPES_CACHE.names;
   Array.from(HIGHLIGHT_BUILTINS).forEach((name: string) => {
-    if (!declared.has(name)) out.add(name);
+    if (!declared.has(name) && !typeNames.has(name)) out.add(name);
   });
   return out;
 }
 
-export function hl(t: string, declared?: Set<string> | null): string {
-  const re = /(\/\/.*$)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)|\b(function|const|let|var|new|class|extends|typeof|instanceof|import|export|from|async|await|interface|type|as|satisfies)\b|\b(for|if|else|return|while|do|switch|case|break|continue|try|catch|finally|throw|yield)\b|\b(number|string|boolean|void|any|unknown|never|Math|Map|Set|Array|Object|JSON|Number|String|Boolean|Promise|Record|Error)\b|\b(true|false|null|undefined|\d+(?:\.\d+)?)\b|(\b[A-Za-z_$][\w$]*)(?=\s*\()|(?<=\.)([A-Za-z_$][\w$]*)\b|([{,][ \t]*)([A-Za-z_$][\w$]*)(?=[ \t]*:)|(^[ \t]*)([A-Za-z_$][\w$]*)(?=[ \t]*:)|\b([A-Za-z_$][\w$]*)\b|(===|!==|>=|<=|=>|&&|\|\||\+\+|--)/g;
+export function hl(t: string, declared?: Set<string> | null, customTypes?: Set<string> | null): string {
+  const typeSet = customTypes || DECLARED_TYPES_CACHE.names;
+  const re = /(\/\/.*$)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)|\b(function|const|let|var|new|class|extends|implements|typeof|instanceof|import|export|from|async|await|interface|type|enum|as|satisfies)\b|\b(for|if|else|return|while|do|switch|case|break|continue|try|catch|finally|throw|yield)\b|\b(number|string|boolean|void|any|unknown|never|bigint|symbol|object|Omit|Pick|Partial|Required|Readonly|Record|Exclude|Extract|NonNullable|ReturnType|Parameters|Math|Map|Set|Array|Object|JSON|Number|String|Boolean|Promise|Error)\b|\b(true|false|null|undefined|\d+(?:\.\d+)?)\b|(\b[A-Za-z_$][\w$]*)(?=\s*\()|(?<=\.)([A-Za-z_$][\w$]*)\b|([{,][ \t]*)([A-Za-z_$][\w$]*)(?=[ \t]*\??:)|(^[ \t]*)([A-Za-z_$][\w$]*)(?=[ \t]*\??:)|\b([A-Za-z_$][\w$]*)\b|(===|!==|>=|<=|=>|&&|\|\||\+\+|--)/g;
   let out = '', last = 0, m;
+  let prevKeyword = '';
   while ((m = re.exec(t))) {
-    out += esc(t.slice(last, m.index));
-    if (m[1]) out += '<span class="com">' + esc(m[1]) + '</span>';
-    else if (m[2]) out += '<span class="str">' + esc(m[2]) + '</span>';
-    else if (m[3]) out += '<span class="kw">' + esc(m[3]) + '</span>';
-    else if (m[4]) out += '<span class="ctl">' + esc(m[4]) + '</span>';
-    else if (m[5]) out += '<span class="' + (HIGHLIGHT_BUILTINS.has(m[5]) ? 'bi' : 'typ') + '">' + esc(m[5]) + '</span>';
-    else if (m[6]) out += '<span class="num">' + esc(m[6]) + '</span>';
+    const gap = t.slice(last, m.index);
+    if (gap.trim()) prevKeyword = '';
+    out += esc(gap);
+    if (m[1]) { out += '<span class="com">' + esc(m[1]) + '</span>'; prevKeyword = ''; }
+    else if (m[2]) { out += '<span class="str">' + esc(m[2]) + '</span>'; prevKeyword = ''; }
+    else if (m[3]) { out += '<span class="kw">' + esc(m[3]) + '</span>'; prevKeyword = m[3]; }
+    else if (m[4]) { out += '<span class="ctl">' + esc(m[4]) + '</span>'; prevKeyword = ''; }
+    else if (m[5]) { out += '<span class="' + (HIGHLIGHT_BUILTINS.has(m[5]) ? 'bi' : 'typ') + '">' + esc(m[5]) + '</span>'; prevKeyword = ''; }
+    else if (m[6]) { out += '<span class="num">' + esc(m[6]) + '</span>'; prevKeyword = ''; }
     else if (m[7]) {
       const id = m[7];
       const isMethod = m.index > 0 && t[m.index - 1] === '.';
-      if (!isMethod && HIGHLIGHT_BUILTINS.has(id)) out += '<span class="bi">' + esc(id) + '</span>';
+      if (!isMethod && (prevKeyword === 'new' || prevKeyword === 'class' || (typeSet && typeSet.has(id)))) {
+        out += '<span class="typ">' + esc(id) + '</span>';
+      } else if (!isMethod && HIGHLIGHT_BUILTINS.has(id)) out += '<span class="bi">' + esc(id) + '</span>';
       else if (!declared || isMethod || declared.has(id)) out += '<span class="fn">' + esc(id) + '</span>';
       else out += esc(id);
+      prevKeyword = '';
     }
-    else if (m[8]) out += '<span class="prop">' + esc(m[8]) + '</span>';
-    else if (m[9]) out += esc(m[9]) + '<span class="prop">' + esc(m[10]) + '</span>';
-    else if (m[11]) out += esc(m[11]) + '<span class="prop">' + esc(m[12]) + '</span>';
+    else if (m[8]) { out += '<span class="prop">' + esc(m[8]) + '</span>'; prevKeyword = ''; }
+    else if (m[9]) { out += esc(m[9]) + '<span class="prop">' + esc(m[10]) + '</span>'; prevKeyword = ''; }
+    else if (m[11]) { out += esc(m[11]) + '<span class="prop">' + esc(m[12]) + '</span>'; prevKeyword = ''; }
     else if (m[13]) {
-      // Declared and built-in names get distinct colors; anything else stays plain white.
-      if (!declared || declared.has(m[13])) out += '<span class="prop">' + esc(m[13]) + '</span>';
-      else if (HIGHLIGHT_BUILTINS.has(m[13])) out += '<span class="bi">' + esc(m[13]) + '</span>';
-      else out += esc(m[13]);
+      const id = m[13];
+      const isDeclTypePos =
+        prevKeyword === 'interface' ||
+        prevKeyword === 'type' ||
+        prevKeyword === 'class' ||
+        prevKeyword === 'enum' ||
+        prevKeyword === 'extends' ||
+        prevKeyword === 'implements';
+      if (isDeclTypePos || (typeSet && typeSet.has(id))) {
+        out += '<span class="typ">' + esc(id) + '</span>';
+      } else if (!declared || declared.has(id)) out += '<span class="prop">' + esc(id) + '</span>';
+      else if (HIGHLIGHT_BUILTINS.has(id)) out += '<span class="bi">' + esc(id) + '</span>';
+      else out += esc(id);
+      prevKeyword = '';
     }
-    else if (m[14]) out += '<span class="op">' + esc(m[14]) + '</span>';
+    else if (m[14]) { out += '<span class="op">' + esc(m[14]) + '</span>'; prevKeyword = ''; }
     last = m.index + m[0].length;
   }
   out += esc(t.slice(last));
@@ -227,6 +272,7 @@ export function hlActiveLine(rawLine: string, anim?: StepAnim | null, declared?:
 export function updateEditorChrome() {
   const text = editor.value.replace(/\r\n?/g, '\n');
   const lines = text.split('\n');
+  const types = collectDeclaredTypeNames(text);
   const declared = collectDeclaredNames(text);
   const builtins = collectHighlightBuiltins(declared);
   const liveErrors = liveTypeDiags(text);
@@ -261,6 +307,7 @@ export function updateEditorChrome() {
       text,
       lines,
       declared,
+      types,
       builtins,
       liveErrors,
       curLine,

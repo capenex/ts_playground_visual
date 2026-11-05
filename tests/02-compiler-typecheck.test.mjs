@@ -287,5 +287,76 @@ checkpoint("窗口达标", r, sum, best);
 
   // Restore default beginner preset
   resetSandbox(sandbox);
+
+  // -------------------------------------------------------------------------
+  // 9. Algorithm Time & Space Complexity Analyzer (analyzeTimeComplexity)
+  // -------------------------------------------------------------------------
+  const binSearchSrc = `
+function binarySearch(nums: number[], target: number): number {
+  let l = 0, r = nums.length - 1;
+  while (l <= r) {
+    const mid = (l + r) >> 1;
+    if (nums[mid] === target) return mid;
+    if (nums[mid] < target) l = mid + 1;
+    else r = mid - 1;
+  }
+  return -1;
+}
+binarySearch([1, 3, 5, 7, 9], 5);`;
+  const binReport = sandbox.analyzeTimeComplexity(binSearchSrc, 'binarySearch([1, 3, 5, 7, 9], 5)');
+  assertEq('analyzeTimeComplexity identifies O(log N) for binary search', binReport.overallTime, 'O(log N)');
+
+  const slideWinSrc = `
+function maxSubArrayLen(nums: number[], k: number): number {
+  let l = 0, sum = 0, best = 0;
+  for (let r = 0; r < nums.length; r++) {
+    sum += nums[r];
+    while (sum > k) {
+      sum -= nums[l];
+      l++;
+    }
+    if (r - l + 1 > best) best = r - l + 1;
+  }
+  return best;
+}
+maxSubArrayLen([1, 2, 3, 4, 5], 6);`;
+  const slideReport = sandbox.analyzeTimeComplexity(slideWinSrc, 'maxSubArrayLen([1, 2, 3, 4, 5], 6)');
+  assertEq('analyzeTimeComplexity recognizes amortized O(N) for two-pointer sliding window', slideReport.overallTime, 'O(N)');
+
+  const bubbleSrc = `
+function bubble(arr: number[]): number[] {
+  for (let i = 0; i < arr.length; i++) {
+    for (let j = 0; j < arr.length - i - 1; j++) {
+      if (arr[j] > arr[j + 1]) {
+        const t = arr[j]; arr[j] = arr[j + 1]; arr[j + 1] = t;
+      }
+    }
+  }
+  return arr;
+}
+bubble([5, 3, 1, 4, 2]);`;
+  const bubbleReport = sandbox.analyzeTimeComplexity(bubbleSrc, 'bubble([5, 3, 1, 4, 2])');
+  assertEq('analyzeTimeComplexity identifies O(N²) for nested quadratic loops', bubbleReport.overallTime, 'O(N²)');
+
+  const mergeSortSrc = `
+function mergeSort(arr: number[]): number[] {
+  if (arr.length <= 1) return arr;
+  const mid = arr.length >> 1;
+  const left = mergeSort(arr.slice(0, mid));
+  const right = mergeSort(arr.slice(mid));
+  return left.concat(right);
+}
+mergeSort([4, 2, 1, 3]);`;
+  const mergeReport = sandbox.analyzeTimeComplexity(mergeSortSrc, 'mergeSort([4, 2, 1, 3])');
+  assertEq('analyzeTimeComplexity identifies O(N log N) for 2-way divide-and-conquer recursion', mergeReport.overallTime, 'O(N log N)');
+
+  const fibSrc = `
+function fib(n: number): number {
+  if (n <= 1) return n;
+  return fib(n - 1) + fib(n - 2);
+}
+fib(6);`;
+  const fibReport = sandbox.analyzeTimeComplexity(fibSrc, 'fib(6)');
+  assertEq('analyzeTimeComplexity identifies O(2^N) for unmemoized branching recursion', fibReport.overallTime, 'O(2^N)');
 }
 

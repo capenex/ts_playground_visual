@@ -446,10 +446,12 @@ export function resetTraceState() {
     originalLines: [],
     callExpr: 'undefined',
   };
+  appState.COMPLEXITY_REPORT = null;
   appState.RUNTIME_ERROR_LINES.clear();
   appState.cur = 0;
-  appState.watched = new Set();
-  appState.SEEN_VARS_EVER = new Set();
+  const customWatchIds = (appState.CUSTOM_WATCHES || []).map(e => 'watch:' + String(e).trim());
+  appState.watched = new Set(customWatchIds);
+  appState.SEEN_VARS_EVER = new Set(customWatchIds);
   appState.layoutSpan = Object.create(null);
   uiHooks.renderPicker();
   uiHooks.renderStatic(0);

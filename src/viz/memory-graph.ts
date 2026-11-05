@@ -2,13 +2,24 @@
    Call Stack & Data Structure Card Renderers (src/viz/memory-graph.ts)
    ================================================================ */
 import { formatFunctionTypeSignature } from "../compiler/tc-types";
+import { analyzeTimeComplexity, estimateInputSizeFromCall } from "../compiler/instrumenter";
 import { appState, esc, registerUiHooks, uiHooks } from "../state";
-import { Frame, StepSnapshot } from "../types";
-import { $, callStackBarEl, callStackHintEl, cntEl, consoleEl, pickEl, slotsEl, varsEl } from "../ui/dom";
+import { ComplexityReport, Frame, StepAnim, StepSnapshot } from "../types";
+import { $, callStackBarEl, callStackHintEl, cntEl, complexityPopEl, consoleEl, pickEl, slotsEl, varsEl } from "../ui/dom";
 import { isRecord, safeJSONStringify } from "../utils/format";
 import { hideHoverTip, updateEditorChrome, scrollCodeTo } from "./highlight";
 import { playStepAnimation } from "./ast-view";
-import { allocateSlotSpans, discoverVars, DiscoveredVar, getActiveFrame, VIZ } from "./memory-normalizers";
+import {
+  allocateSlotSpans,
+  discoverVars,
+  DiscoveredVar,
+  evaluateCustomWatch,
+  getActiveFrame,
+  isCustomWatchId,
+  VIZ,
+  watchExprFromId,
+  watchIdForExpr,
+} from "./memory-normalizers";
 
 export * from "./memory-normalizers";
 
@@ -527,40 +538,114 @@ export function vizEventLoop(d: Frame | null | undefined) {
     '</div></div>';
 }
 
+export function vizWatchScalar(d: Frame | null | undefined) {
+  if (!d) return '<div class="vempty">empty</div>';
+  if (d.watchStatus === 'unready') {
+    return '<div class="viz"><div class="vwatch-scalar unready">' +
+      '<span class="vw-badge">未就绪</span>' +
+      '<span class="vw-dim">' + esc(d.watchError || '当前作用域尚未初始化该表达式所需变量') + '</span>' +
+      '</div></div>';
+  }
+  if (d.watchStatus === 'error') {
+    return '<div class="viz"><div class="vwatch-scalar err">' +
+      '<span class="vw-badge err">异常</span>' +
+      '<span class="vw-err">' + esc(d.watchError || '表达式求值失败') + '</span>' +
+      '</div></div>';
+  }
+  const hasDelta = Boolean(d.changed && d.prevValStr !== undefined && d.prevValStr !== String(d.val));
+  const deltaHtml = hasDelta
+    ? `<span class="vw-prev">${esc(d.prevValStr)}</span><span class="vw-arrow">→</span>`
+    : '';
+  return '<div class="viz"><div class="vwatch-scalar' + (d.changed ? ' changed' : '') + '">' +
+    deltaHtml +
+    '<span class="vw-val">' + esc(d.val) + '</span>' +
+    (d.runtimeType ? '<span class="vw-type">' + esc(d.runtimeType) + '</span>' : '') +
+    '</div></div>';
+}
+
 Object.assign(VIZ, {
   array: vizArray, map: vizMap, set: vizSet, stack: vizStack,
   string: vizString, grid: vizGrid, list: vizList,
   heap: vizHeap, queue: vizQueue, tree: vizTree, graph: vizGraph, uf: vizUF,
   interface: vizInterface, object: vizInterface, type: vizTypeAlias,
   eventloop: vizEventLoop,
+  'watch-scalar': vizWatchScalar,
 });
+
+export function addCustomWatch(rawExpr: string): boolean {
+  const expr = String(rawExpr || '').trim();
+  if (!expr) return false;
+  if (!appState.CUSTOM_WATCHES.includes(expr)) {
+    appState.CUSTOM_WATCHES.push(expr);
+  }
+  const wid = watchIdForExpr(expr);
+  appState.watched.add(wid);
+  appState.SEEN_VARS_EVER.add(wid);
+  renderPicker();
+  return true;
+}
+
+export function removeCustomWatch(rawExprOrId: string): void {
+  const expr = isCustomWatchId(rawExprOrId) ? watchExprFromId(rawExprOrId) : String(rawExprOrId || '').trim();
+  const wid = watchIdForExpr(expr);
+  appState.CUSTOM_WATCHES = appState.CUSTOM_WATCHES.filter(x => x !== expr);
+  appState.watched.delete(wid);
+  appState.SEEN_VARS_EVER.delete(wid);
+  delete appState.layoutSpan[wid];
+  renderPicker();
+}
 
 export function renderPicker() {
   const vars = discoverVars();
   if (!vars.length) {
-    pickEl.innerHTML = '<span class="vempty">无结构变量</span>';
+    pickEl.innerHTML = '<span class="vempty">无结构变量 · 可在上方输入表达式添加自定义监听</span>';
     renderSlots();
     return;
   }
-  pickEl.innerHTML = vars.map((s: DiscoveredVar) =>
-    '<div class="chip-pick' + (appState.watched.has(s.id) ? ' on' : '') + '" data-id="' + esc(s.id) + '">' + esc(s.name) + '</div>'
-  ).join('');
+  pickEl.innerHTML = vars.map((s: DiscoveredVar) => {
+    const isCustom = Boolean(s.isCustomWatch || isCustomWatchId(s.id));
+    const delBtn = isCustom
+      ? `<span class="chip-del" data-del-watch="${esc(s.id)}" title="移除自定义监听 ${esc(s.name)}">×</span>`
+      : '';
+    return '<div class="chip-pick' +
+      (appState.watched.has(s.id) ? ' on' : '') +
+      (isCustom ? ' custom-watch' : '') +
+      '" data-id="' + esc(s.id) + '">' +
+      (isCustom ? '<span class="chip-fx">ƒ</span>' : '') +
+      '<span>' + esc(s.name) + '</span>' +
+      delBtn +
+      '</div>';
+  }).join('');
   renderSlots();
 }
 
 export function renderSlots() {
   const stepAtCur = appState.TRACE.steps[appState.cur];
+  const prevStep = appState.cur > 0 ? appState.TRACE.steps[appState.cur - 1] : null;
   const st: Partial<StepSnapshot> = stepAtCur || {};
   const activeFrame = stepAtCur ? getActiveFrame(stepAtCur) : null;
-  const ds = Object.assign({}, (activeFrame && activeFrame.ds) || st.ds || {});
+  const prevFrame = prevStep ? getActiveFrame(prevStep) : null;
+  const ds: Record<string, StepAnim> = Object.assign({}, (activeFrame && activeFrame.ds) || st.ds || {});
   if (st.ds && st.ds.eventLoop && !ds.eventLoop) ds.eventLoop = st.ds.eventLoop;
+
+  const curV = (activeFrame && activeFrame.v) || st.v || {};
+  const prevV = (prevFrame && prevFrame.v) || (prevStep && prevStep.v) || null;
+  const rawNote = st.rawNote || st.note || '';
+
+  for (const expr of appState.CUSTOM_WATCHES) {
+    const wid = watchIdForExpr(expr);
+    if (appState.watched.has(wid)) {
+      ds[wid] = evaluateCustomWatch(expr, curV, prevV, rawNote);
+    }
+  }
+
   const vars = discoverVars().filter((s: DiscoveredVar) => appState.watched.has(s.id) && ds[s.id] !== undefined);
   if (slotsEl && slotsEl.classList && slotsEl.classList.toggle) {
     slotsEl.classList.toggle('single-col', slotsEl.clientWidth > 0 && slotsEl.clientWidth < 420);
   }
   if (!vars.length) {
     slotsEl.innerHTML = '<div class="slot" style="grid-column:1/-1"><div class="vempty">' +
-      (appState.TRACE.steps.length ? '点选变量以关注（或本步暂无结构）' : '生成轨迹后显示结构可视化') +
+      (appState.TRACE.steps.length ? '点选变量以关注，或在 WATCH 栏输入表达式（如 nums.slice(l, r+1)）' : '生成轨迹后显示结构可视化 · 支持上方输入自定义表达式监听') +
       '</div></div>';
     return;
   }
@@ -577,13 +662,19 @@ export function renderSlots() {
         sizeTag = `<span class="size-tag">共 ${d.total} 项</span>`;
       }
     }
-    const isHotSlot = d && (d.hot !== undefined || d.mark != null);
+    const isCustom = Boolean(s.isCustomWatch || isCustomWatchId(s.id));
+    const isHotSlot = d && (d.hot !== undefined || d.mark != null || d.changed);
     const kindPrefix = (d && d.isClass) ? 'class' : 'interface';
-    const kindBadge = (kind === 'interface' && d && d.interfaceName && d.interfaceName !== 'object' && !d.isSchema)
-      ? `${kindPrefix} · ${d.interfaceName}`
-      : (kind === 'interface' && d && d.isClass ? 'class' : kind);
-    return '<div class="slot' + (span === 2 ? ' span-2' : '') + (isHotSlot ? ' pulse' : '') + '" data-var="' + esc(s.name) + '">' +
-      '<div class="name"><span>' + esc(s.name) + '</span><span class="kind">' + esc(kindBadge) + '</span>' + sizeTag + winTag + '</div>' +
+    const kindBadge = kind === 'watch-scalar'
+      ? `watch · ${(d && d.runtimeType) || 'expr'}`
+      : (kind === 'interface' && d && d.interfaceName && d.interfaceName !== 'object' && !d.isSchema)
+        ? `${kindPrefix} · ${d.interfaceName}`
+        : (kind === 'interface' && d && d.isClass ? 'class' : (isCustom ? `watch · ${kind}` : kind));
+    const closeBtn = isCustom
+      ? `<button type="button" class="slot-watch-del" data-del-watch="${esc(s.id)}" title="移除监听表达式 ${esc(s.name)}">×</button>`
+      : '';
+    return '<div class="slot' + (span === 2 ? ' span-2' : '') + (isHotSlot ? ' pulse' : '') + (isCustom ? ' custom-watch-slot' : '') + '" data-var="' + esc(s.name) + '">' +
+      '<div class="name"><span>' + (isCustom ? 'ƒ ' : '') + esc(s.name) + '</span><span class="kind">' + esc(kindBadge) + '</span>' + sizeTag + winTag + closeBtn + '</div>' +
       body + '</div>';
   }).join('');
 }
@@ -679,6 +770,125 @@ export function formatFnTypeHtml(sig: string): string {
   );
 }
 
+function ensureComplexityReport(st?: StepSnapshot | null): ComplexityReport | null {
+  if (appState.COMPLEXITY_REPORT) return appState.COMPLEXITY_REPORT;
+  if (appState.TRACE && appState.TRACE.complexity) {
+    appState.COMPLEXITY_REPORT = appState.TRACE.complexity;
+    return appState.COMPLEXITY_REPORT;
+  }
+  const src = uiHooks.getEditorSource();
+  if (!src || !src.trim()) return null;
+  const callExpr = appState.DEBUG_SESSION.callExpr || 'undefined';
+  const base = analyzeTimeComplexity(src, callExpr);
+  const inputSizeN = estimateInputSizeFromCall(src, callExpr);
+  const stepsCount = appState.TRACE && appState.TRACE.steps ? appState.TRACE.steps.length : 0;
+  const maxDepth = appState.DEBUG_SESSION.maxStackDepth || (st && Array.isArray(st.callStack) ? st.callStack.length : 1);
+  appState.COMPLEXITY_REPORT = {
+    ...base,
+    runtime: {
+      inputSizeN,
+      totalSteps: stepsCount,
+      maxCallStackDepth: maxDepth,
+      hotLines: [],
+    },
+  };
+  return appState.COMPLEXITY_REPORT;
+}
+
+export function renderComplexityBar(st?: StepSnapshot | null): void {
+  if (!consoleEl) return;
+  const activeStep = st !== undefined ? st : (appState.TRACE.steps[appState.cur] || null);
+  const report = ensureComplexityReport(activeStep);
+
+  if (!report) {
+    consoleEl.innerHTML =
+      '<div class="cbar-row"><span class="p">›</span><span class="dim">⏱ 复杂度分析就绪 · 点击「▶ 运行」或「🐞 Debug 调试」查看时间/空间复杂度</span></div>';
+    if (complexityPopEl) complexityPopEl.hidden = true;
+    return;
+  }
+
+  const rt = report.runtime;
+  const stepsShown = activeStep ? (appState.cur + 1) : (rt ? rt.totalSteps : 0);
+  const totalKnown = (appState.TRACE && appState.TRACE.steps.length) || (rt ? rt.totalSteps : 0);
+  const stepStr = activeStep
+    ? `步数 ${stepsShown}/${totalKnown}${appState.DEBUG_SESSION.finished ? '' : '+'}`
+    : (rt && rt.totalSteps > 0 ? `共 ${rt.totalSteps} 步` : '静态估算');
+  const nStr = rt && rt.inputSizeN !== null && rt.inputSizeN > 0 ? `N=${rt.inputSizeN} · ` : '';
+  const depthNum = activeStep && Array.isArray(activeStep.callStack) && activeStep.callStack.length > 0
+    ? activeStep.callStack.length
+    : (rt ? rt.maxCallStackDepth : 1);
+  const hotTop = rt && rt.hotLines && rt.hotLines[0] ? rt.hotLines[0] : null;
+  const hotStr = hotTop ? `🔥 L${hotTop.line}×${hotTop.hits}` : '';
+  const statusAddon = activeStep && activeStep.error
+    ? `<span class="cbar-err">✗ L${activeStep.line} 报错</span>`
+    : (activeStep && activeStep.isCheckpoint
+      ? `<span class="cbar-ckpt">◉ 断点 L${activeStep.line}</span>`
+      : '');
+
+  consoleEl.innerHTML =
+    '<div class="cbar-row" data-toggle-complexity="1">' +
+      '<span class="p">›</span>' +
+      '<span class="cbar-pill time" title="估算时间复杂度">⏱ 时间 <b>' + esc(report.overallTime) + '</b></span>' +
+      '<span class="cbar-pill space" title="估算空间复杂度">📦 空间 <b>' + esc(report.overallSpace) + '</b></span>' +
+      '<span class="cbar-stat">' + esc(nStr + stepStr) + ' · 栈深 ' + depthNum + '</span>' +
+      (hotStr ? '<span class="cbar-hot" title="最热执行代码行">' + esc(hotStr) + '</span>' : '') +
+      statusAddon +
+      '<span class="cbar-more" title="点击展开/收起复杂度推导依据与热点行详情">详情 ▾</span>' +
+    '</div>';
+
+  if (complexityPopEl) {
+    const fnRows = report.functions.length
+      ? report.functions.map(fn =>
+          '<div class="cpop-fn-row">' +
+            '<span class="cpop-fn-name">' + esc(fn.fnName) + '<span class="cpop-fn-line">:L' + fn.line + '</span></span>' +
+            '<span class="cpop-fn-badges">' +
+              '<span class="cbar-pill time">T: ' + esc(fn.timeComplexity) + '</span>' +
+              '<span class="cbar-pill space">S: ' + esc(fn.spaceComplexity) + '</span>' +
+            '</span>' +
+            '<div class="cpop-fn-reason">' + esc(fn.rationale) + '</div>' +
+          '</div>'
+        ).join('')
+      : '<div class="cpop-empty">仅顶层脚本语句（无命名函数声明）</div>';
+
+    const hotRows = rt && rt.hotLines && rt.hotLines.length
+      ? rt.hotLines.map(h =>
+          '<div class="cpop-hot-row" data-jump-line="' + h.line + '" title="点击跳转到第 ' + h.line + ' 行">' +
+            '<span class="cpop-hot-line">第 ' + h.line + ' 行</span>' +
+            '<span class="cpop-hot-hits">执行 ' + h.hits + ' 次</span>' +
+            '<code class="cpop-hot-code">' + esc(h.code || h.snippet || '') + '</code>' +
+          '</div>'
+        ).join('')
+      : '<div class="cpop-empty">运行或单步调试后自动统计高频执行行</div>';
+
+    complexityPopEl.innerHTML =
+      '<div class="cpop-head">' +
+        '<span>⏱ 算法时间/空间复杂度分析 &amp; 运行热点</span>' +
+        '<button type="button" class="cpop-close" data-close-complexity="1">✕</button>' +
+      '</div>' +
+      '<div class="cpop-summary">' +
+        '<div class="cpop-main-badges">' +
+          '<span class="cbar-pill time lg">时间复杂度: <b>' + esc(report.overallTime) + '</b></span>' +
+          '<span class="cbar-pill space lg">空间复杂度: <b>' + esc(report.overallSpace) + '</b></span>' +
+          (rt && rt.inputSizeN !== null && rt.inputSizeN > 0 ? '<span class="cbar-pill neutral">估算输入规模 N = ' + rt.inputSizeN + '</span>' : '') +
+        '</div>' +
+        '<div class="cpop-rationale">' + esc(report.rationale) + '</div>' +
+      '</div>' +
+      '<div class="cpop-section-title">函数级复杂度拆解</div>' +
+      '<div class="cpop-fn-list">' + fnRows + '</div>' +
+      '<div class="cpop-section-title">🔥 运行时热点行 (Top 3)</div>' +
+      '<div class="cpop-hot-list">' + hotRows + '</div>';
+  }
+}
+
+export function toggleComplexityPopover(force?: boolean): void {
+  if (!complexityPopEl) return;
+  const nextHidden = typeof force === 'boolean' ? !force : !complexityPopEl.hidden;
+  complexityPopEl.hidden = nextHidden;
+  if (!nextHidden) {
+    renderComplexityBar();
+  }
+}
+
 export function renderStatic(i: number, withAnim = false) {
   hideHoverTip();
   const st = appState.TRACE.steps[i];
@@ -686,7 +896,7 @@ export function renderStatic(i: number, withAnim = false) {
   if (!st) {
     renderCallStack(null);
     varsEl.innerHTML = '';
-    consoleEl.innerHTML = '<div><span class="p">›</span><span class="dim">开启 Debug 模式后当场计算并显示每步执行详情</span></div>';
+    renderComplexityBar(null);
     cntEl.textContent = '未在调试';
     cntEl.className = '';
     updateControlButtons();
@@ -773,19 +983,7 @@ export function renderStatic(i: number, withAnim = false) {
     varsEl.innerHTML = '<div class="vempty">（本帧无原始类型局部变量）</div>';
   }
 
-  let animDesc = '';
-  const fileTag = st.file && appState.TRACE.moduleSources && Object.keys(appState.TRACE.moduleSources).length > 1
-    ? `${st.file} · `
-    : '';
-  if (st.error) {
-    animDesc = `<div class="anim-desc" style="color:var(--red)">runtime error · 已停止在报错行 (${esc(fileTag)}第 ${st.line} 行)</div>`;
-  } else if (st.anim) {
-    if (st.anim.type === 'assign') animDesc = `<div class="anim-desc">${esc(fileTag)}assign · ${esc(st.anim.from)} → ${esc(st.anim.to)} = ${esc(st.anim.val)}</div>`;
-    else if (st.anim.type === 'compare') animDesc = `<div class="anim-desc">${esc(fileTag)}compare · ${esc(st.anim.lhs)} ${esc(st.anim.op)} ${esc(st.anim.rhs)} ⇒ ${esc(st.anim.result)}</div>`;
-    else if (st.anim.type === 'call') animDesc = `<div class="anim-desc">${esc(fileTag)}call · ${esc(st.anim.fn)}(${esc((st.anim.argVals || []).join(', '))})</div>`;
-    else if (st.anim.type === 'checkpoint') animDesc = `<div class="anim-desc" style="color:var(--cyan)">${esc(fileTag)}checkpoint · ${esc((st.anim.argVals && st.anim.argVals[0]) ? st.anim.argVals[0] : '检查点已命中')}</div>`;
-  }
-  consoleEl.innerHTML = '<div><span class="p">›</span>' + (fileTag ? '<span class="dim">[' + esc(st.file || '') + '] </span>' : '') + esc(st.note || '') + '</div>' + animDesc;
+  renderComplexityBar(st);
 
   if (st.error) {
     cntEl.textContent = '✗ 运行时报错';
@@ -820,5 +1018,5 @@ export const renderAsyncQueues = vizEventLoop;
 export function drawArrows(): void {}
 export function scheduleArrowRedraw(): void {}
 
-registerUiHooks({ renderPicker, renderStatic });
+registerUiHooks({ renderPicker, renderStatic, renderComplexityBar });
 

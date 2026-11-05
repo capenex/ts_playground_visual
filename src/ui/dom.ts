@@ -93,6 +93,9 @@ export const tutorialModalEl = $('tutorialModal');
 export const tutorialModalCloseEl = $<HTMLButtonElement>('tutorialModalClose');
 export const tutorialModalListEl = $('tutorialModalList');
 export const tutorialModalDetailEl = $('tutorialModalDetail');
+export const watchExprInputEl = $<HTMLInputElement>('watchExprInput');
+export const btnAddWatchEl = $<HTMLButtonElement>('btnAddWatch');
+export const complexityPopEl = $('complexityPop');
 
 export const dom = {
   $,
@@ -122,6 +125,9 @@ export const dom = {
   tutorialModalCloseEl,
   tutorialModalListEl,
   tutorialModalDetailEl,
+  watchExprInputEl,
+  btnAddWatchEl,
+  complexityPopEl,
 };
 
 export function renderConsoleLogEntry(entry: ConsoleLogEntry): void {

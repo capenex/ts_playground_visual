@@ -176,7 +176,58 @@ export interface StepAnim {
   delay?: number;
   reactions?: number;
   valStr?: string;
+  watchExpr?: string;
+  watchStatus?: 'ok' | 'unready' | 'error';
+  watchError?: string;
+  prevValStr?: string;
+  changed?: boolean;
+  runtimeType?: string;
   [key: string]: unknown;
+}
+
+export type ComplexityClass =
+  | 'O(1)'
+  | 'O(log N)'
+  | 'O(N)'
+  | 'O(N log N)'
+  | 'O(N²)'
+  | 'O(N³)'
+  | 'O(2^N)';
+
+export interface FunctionComplexityMeta {
+  fnName: string;
+  line: number;
+  timeComplexity: ComplexityClass;
+  spaceComplexity: ComplexityClass;
+  maxLoopDepth: number;
+  hasLogStep: boolean;
+  recursionBranches: number;
+  rationale: string;
+}
+
+export interface ComplexityHotLine {
+  line: number;
+  hits: number;
+  file?: string;
+  code?: string;
+  snippet?: string;
+}
+
+export interface ComplexityRuntimeStats {
+  inputSizeN: number | null;
+  totalSteps: number;
+  maxCallStackDepth: number;
+  hotLines: ComplexityHotLine[];
+}
+
+export interface ComplexityReport {
+  overallTime: ComplexityClass;
+  overallSpace: ComplexityClass;
+  confidence: 'high' | 'medium' | 'low';
+  rationale: string;
+  functions: FunctionComplexityMeta[];
+  runtime?: ComplexityRuntimeStats;
+  runtimeStats?: ComplexityRuntimeStats;
 }
 
 export type Frame = StepAnim;
@@ -245,6 +296,7 @@ export interface TraceData {
   steps: StepSnapshot[];
   returnValue?: unknown;
   tsMeta?: TsMeta;
+  complexity?: ComplexityReport | null;
 }
 
 export interface DebugSession {
@@ -263,6 +315,11 @@ export interface DebugSession {
   hasAsync?: boolean;
   tsMeta?: TsMeta;
   rawStepCount?: number;
+  complexity?: ComplexityReport | null;
+  lineHits?: Record<number, number>;
+  maxStackDepth?: number;
+  maxCallStackDepth?: number;
+  inputSizeN?: number | null;
 }
 
 export interface LangBuffer {

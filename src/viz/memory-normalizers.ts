@@ -738,6 +738,106 @@ export function safeEvalExpr(expr: string | null | undefined, v: StepAnim | null
   }
 }
 
+export function watchIdForExpr(expr: string): string {
+  return 'watch:' + expr.trim();
+}
+
+export function isCustomWatchId(id: string): boolean {
+  return id.startsWith('watch:');
+}
+
+export function watchExprFromId(id: string): string {
+  return id.startsWith('watch:') ? id.slice(6) : id;
+}
+
+export function evaluateCustomWatch(
+  expr: string,
+  v: Record<string, unknown> | null | undefined,
+  prevV?: Record<string, unknown> | null,
+  noteForEnrich?: string
+): StepAnim {
+  const cleanExpr = stripTypes(expr).trim();
+  const baseCard: StepAnim = {
+    kind: 'watch-scalar',
+    watchExpr: expr,
+    watchStatus: 'unready',
+    val: undefined,
+    runtimeType: 'unready',
+  };
+  if (!cleanExpr) {
+    baseCard.watchStatus = 'error';
+    baseCard.watchError = '表达式为空';
+    return baseCard;
+  }
+  if (/\.\s*(push|pop|shift|unshift|splice|set|add|delete|clear|fill|sort|reverse)\s*\(/.test(cleanExpr) ||
+      /(?:\+\+|--|(?<![=!<>])=(?!=))/.test(cleanExpr)) {
+    baseCard.watchStatus = 'error';
+    baseCard.watchError = 'Watch 仅支持纯读取表达式，禁止副作用修改';
+    return baseCard;
+  }
+  if (!v || Object.keys(v).length === 0) {
+    baseCard.watchStatus = 'unready';
+    baseCard.watchError = '当前作用域未就绪';
+    return baseCard;
+  }
+
+  let val: unknown;
+  try {
+    const keys = Object.keys(v).filter(k => /^[A-Za-z_$][\w$]*$/.test(k) && !RESERVED_WORDS.has(k));
+    const vals = keys.map(k => v[k]);
+    const fn = new Function(...keys, 'return (' + cleanExpr + ');');
+    const thisCtx = Object.prototype.hasOwnProperty.call(v, 'this') ? v.this : undefined;
+    val = fn.call(thisCtx, ...vals);
+  } catch (e) {
+    const msg = e instanceof Error && e.message ? e.message : String(e);
+    const isUnready = e instanceof ReferenceError || e instanceof TypeError || /is not defined|Cannot read properties of undefined|Cannot read properties of null/i.test(msg);
+    baseCard.watchStatus = isUnready ? 'unready' : 'error';
+    baseCard.watchError = isUnready ? '当前作用域未就绪' : msg;
+    return baseCard;
+  }
+
+  let prevVal: unknown = undefined;
+  let hasPrev = false;
+  if (prevV && Object.keys(prevV).length > 0) {
+    try {
+      const pKeys = Object.keys(prevV).filter(k => /^[A-Za-z_$][\w$]*$/.test(k) && !RESERVED_WORDS.has(k));
+      const pVals = pKeys.map(k => prevV[k]);
+      const pFn = new Function(...pKeys, 'return (' + cleanExpr + ');');
+      const pThis = Object.prototype.hasOwnProperty.call(prevV, 'this') ? prevV.this : undefined;
+      prevVal = pFn.call(pThis, ...pVals);
+      hasPrev = true;
+    } catch {
+      hasPrev = false;
+    }
+  }
+
+  // Try structural classification first (array, grid, tree, list, map, set, stack, queue, heap, object/interface, string)
+  const classified = classifyValue(expr, val);
+  if (classified) {
+    const tmpDs: Record<string, StepAnim> = { [expr]: classified };
+    populateInterfaceSchemas(tmpDs);
+    enrichFromNote(tmpDs, v, noteForEnrich || '');
+    const enriched = tmpDs[expr] || classified;
+    enriched.watchExpr = expr;
+    enriched.watchStatus = 'ok';
+    return enriched;
+  }
+
+  const runtimeType = val === null ? 'null' : typeof val;
+  const valStr = formatShortVal(val);
+  const prevValStr = hasPrev ? formatShortVal(prevVal) : undefined;
+  const changed = Boolean(hasPrev && prevValStr !== undefined && prevValStr !== valStr);
+  return {
+    kind: 'watch-scalar',
+    watchExpr: expr,
+    watchStatus: 'ok',
+    val: valStr,
+    prevValStr,
+    changed,
+    runtimeType,
+  };
+}
+
 export function splitLogicalClauses(condExpr: string) {
   const clauses: Array<{ expr: string; opAfter: string | null }> = [];
   let depth = 0, start = 0;
@@ -949,18 +1049,16 @@ export function pressure(d: Frame | null | undefined) {
     case 'list': return Math.min(1, n / 7);
     case 'map': return Math.min(1, n / 7);
     case 'interface':
-    case 'object': return Math.min(1, n / 6);
+    case 'object': return Math.min(0.35, n / 18);
     case 'type': {
-      if (d.unionBranches && d.unionBranches.some(b => b.isObject)) {
-        return Math.min(1, Math.max(0.5, d.unionBranches.length / 3));
-      }
-      return Math.min(1, Math.max(n, d.unionBranches ? d.unionBranches.length : 2) / 6);
+      return Math.min(0.35, Math.max(n, d.unionBranches ? d.unionBranches.length : 1) / 16);
     }
     case 'set': return Math.min(1, n / 9);
     case 'string': return Math.min(1, n / 18);
     case 'tree': return n >= 6 ? 0.38 : 0.28;
     case 'graph': return n >= 5 ? 0.36 : 0.26;
     case 'stack': return Math.min(0.35, n / 16);
+    case 'watch-scalar': return 0.22;
     default: return Math.min(1, n / 10);
   }
 }
@@ -977,6 +1075,7 @@ export interface DiscoveredVar {
   id: string;
   name: string;
   kind?: string;
+  isCustomWatch?: boolean;
 }
 
 export function allocateSlotSpans(vars: DiscoveredVar[], ds: Record<string, StepAnim>) {
@@ -988,7 +1087,9 @@ export function allocateSlotSpans(vars: DiscoveredVar[], ds: Record<string, Step
     return { s, d, kind, p, span, idx };
   });
 
-  const oneColItems = meta.filter(m => m.span === 1);
+  const oneColItems = meta.filter(
+    m => m.span === 1 && m.kind !== 'interface' && m.kind !== 'object' && m.kind !== 'type' && m.kind !== 'watch-scalar'
+  );
   if (oneColItems.length % 2 === 1) {
     let promote = oneColItems[0];
     if (promote) {
@@ -1035,7 +1136,16 @@ export function discoverVars(): DiscoveredVar[] {
     _DISCOVER_CACHE.scannedSteps = steps.length;
     if (changed) _DISCOVER_CACHE.list = [..._DISCOVER_CACHE.map.values()];
   }
-  return _DISCOVER_CACHE.list;
+  if (!appState.CUSTOM_WATCHES || appState.CUSTOM_WATCHES.length === 0) {
+    return _DISCOVER_CACHE.list;
+  }
+  const customVars: DiscoveredVar[] = appState.CUSTOM_WATCHES.map(expr => ({
+    id: watchIdForExpr(expr),
+    name: expr,
+    kind: 'watch-scalar',
+    isCustomWatch: true,
+  }));
+  return [..._DISCOVER_CACHE.list, ...customVars];
 }
 
 export const VIZ: Record<string, (d: Frame | null | undefined) => string | null> = {};
