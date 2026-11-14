@@ -33,6 +33,7 @@ export const TS_CONFIG_PRESETS: Record<'beginner' | 'standard' | 'strict', TsCom
     strictFunctionTypes: true,
     noImplicitReturns: false,
     noUnusedLocals: false,
+    noUncheckedIndexedAccess: false,
     allowRunOnTypeError: true,
   },
   standard: {
@@ -43,6 +44,7 @@ export const TS_CONFIG_PRESETS: Record<'beginner' | 'standard' | 'strict', TsCom
     strictFunctionTypes: true,
     noImplicitReturns: true,
     noUnusedLocals: false,
+    noUncheckedIndexedAccess: false,
     allowRunOnTypeError: false,
   },
   strict: {
@@ -53,6 +55,7 @@ export const TS_CONFIG_PRESETS: Record<'beginner' | 'standard' | 'strict', TsCom
     strictFunctionTypes: true,
     noImplicitReturns: true,
     noUnusedLocals: true,
+    noUncheckedIndexedAccess: true,
     allowRunOnTypeError: false,
   },
 };
@@ -74,6 +77,7 @@ export function detectTsConfigPreset(cfg: Omit<TsCompilerOptions, 'preset'>): Ts
       cfg.strictFunctionTypes === p.strictFunctionTypes &&
       cfg.noImplicitReturns === p.noImplicitReturns &&
       cfg.noUnusedLocals === p.noUnusedLocals &&
+      cfg.noUncheckedIndexedAccess === p.noUncheckedIndexedAccess &&
       cfg.allowRunOnTypeError === p.allowRunOnTypeError
     ) {
       return key;

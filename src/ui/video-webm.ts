@@ -16,6 +16,14 @@ const btnExportVideo = $<HTMLButtonElement>('btnExportVideo');
 const btnExportVideoLabel = $('btnExportVideoLabel');
 const videoExportStatus = $('videoExportStatus');
 
+interface RequestFrameTrack extends MediaStreamTrack {
+  requestFrame?: () => void;
+}
+
+function hasRequestFrame(track: MediaStreamTrack | undefined): track is RequestFrameTrack {
+  return Boolean(track && 'requestFrame' in track && typeof track.requestFrame === 'function');
+}
+
 
 /* Fast offline 1920x1080 60fps encoding via WebCodecs VideoEncoder + deterministic WebM muxer */
 export async function encodeVideoFastWebCodecs(
@@ -215,9 +223,7 @@ export async function exportVideo(speedMult = appState.VIDEO_EXPORT_SPEED) {
 
     if (ctx) renderVideoFrameToCanvas(ctx, 0, 0, mult);
     const stream = canvas.captureStream(VIDEO_FPS);
-    const videoTrack = (stream.getVideoTracks && stream.getVideoTracks()[0]) as
-      | (MediaStreamTrack & { requestFrame?: () => void })
-      | undefined;
+    const videoTrack = stream.getVideoTracks ? stream.getVideoTracks()[0] : undefined;
     const recorderOpts: MediaRecorderOptions = { videoBitsPerSecond: 8_000_000 };
     if (mimeType) recorderOpts.mimeType = mimeType;
     const recorder = new MediaRecorder(stream, recorderOpts);
@@ -246,7 +252,7 @@ export async function exportVideo(speedMult = appState.VIDEO_EXPORT_SPEED) {
         const now = performance.now();
         const elapsedStep = now - stepStart;
         if (elapsedStep >= stepDurationMs) break;
-        if (videoTrack && typeof videoTrack.requestFrame === 'function') {
+        if (hasRequestFrame(videoTrack) && videoTrack.requestFrame) {
           try { videoTrack.requestFrame(); } catch (_) {}
         }
         const waitMs = Math.max(1, Math.min(frameIntervalMs, stepDurationMs - elapsedStep));

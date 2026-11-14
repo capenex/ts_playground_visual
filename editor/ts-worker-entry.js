@@ -617,6 +617,7 @@ const BASE_COMPILER_OPTIONS = {
   strictFunctionTypes: true,
   noImplicitReturns: false,
   noUnusedLocals: false,
+  noUncheckedIndexedAccess: false,
   noEmit: true,
   skipLibCheck: true,
   noLib: false,
@@ -632,6 +633,7 @@ function buildCompilerOptions(tsConfig) {
     strictFunctionTypes: tsConfig.strictFunctionTypes !== undefined ? Boolean(tsConfig.strictFunctionTypes) : true,
     noImplicitReturns: Boolean(tsConfig.noImplicitReturns),
     noUnusedLocals: Boolean(tsConfig.noUnusedLocals),
+    noUncheckedIndexedAccess: Boolean(tsConfig.noUncheckedIndexedAccess),
   };
 }
 

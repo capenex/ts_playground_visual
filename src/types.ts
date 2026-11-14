@@ -71,6 +71,7 @@ export interface TsCompilerOptions {
   strictFunctionTypes: boolean;
   noImplicitReturns: boolean;
   noUnusedLocals: boolean;
+  noUncheckedIndexedAccess: boolean;
   allowRunOnTypeError: boolean;
 }
 

@@ -109,7 +109,7 @@ export function runToNextCheckpoint() {
     const firstSt = appState.TRACE.steps[0];
     if (firstSt && (firstSt.isCheckpoint || firstSt.error || appState.DEBUG_SESSION.finished)) {
       if (firstSt.isCheckpoint) {
-        say('◉ 已到达检查点 [第 ' + firstSt.line + ' 行] · ' + (firstSt.note || ''), 'ok');
+        say('◉ 检查点 L' + firstSt.line + (firstSt.note ? ' · ' + firstSt.note : ''), 'ok');
       }
       return;
     }
@@ -146,9 +146,9 @@ export function runToNextCheckpoint() {
   if (finalSt && finalSt.error) {
     // Already logged by computeAndAppendNextStep
   } else if (finalSt && finalSt.isCheckpoint) {
-    say('◉ 已运行到检查点 [第 ' + finalSt.line + ' 行] · ' + (finalSt.note || ''), 'ok');
+    say('◉ 检查点 L' + finalSt.line + (finalSt.note ? ' · ' + finalSt.note : ''), 'ok');
   } else if (appState.DEBUG_SESSION.finished) {
-    say('✓ 已运行至程序结束（后续无更多检查点）  →  ' + safeJSONStringify(appState.DEBUG_SESSION.returnValue), 'ok');
+    say('✓ 运行结束 → ' + safeJSONStringify(appState.DEBUG_SESSION.returnValue), 'ok');
   }
 }
 
@@ -156,7 +156,7 @@ export function rebuildDebugAtPosition(newTargetLine: number, targetVisits: numb
   const src = editor.value.replace(/\r/g, '');
   const unsupported = detectUnsupportedSyntax(src);
   if (unsupported.length) {
-    unsupported.forEach(x => say('✗ 第 ' + x.line + ' 行：暂不支持 ' + x.feature + ' —— ' + x.hint, 'err', x.line));
+    unsupported.forEach(x => say('✗ L' + x.line + ': 不支持 ' + x.feature + ' (' + x.hint + ')', 'err', x.line));
     return false;
   }
   extractTsInterfaceMetadata(src);
@@ -175,7 +175,7 @@ export function rebuildDebugAtPosition(newTargetLine: number, targetVisits: numb
   const originalLines = src.split('\n');
   const enums = transpileEnums(src);
   if (enums.error) {
-    say('✗ 第 ' + enums.error.line + ' 行：' + enums.error.message, 'err', enums.error.line);
+    say('✗ L' + enums.error.line + ': ' + enums.error.message, 'err', enums.error.line);
     return false;
   }
   const js0 = stripTypes(enums.code);
@@ -347,7 +347,7 @@ export function addCheckpointFunction(preferredLine?: number) {
     const keepLine = Math.max(1, Math.min(lines.length, Math.min(removedLine, lines.length)));
     appState.lastEditorCursorLine = keepLine;
     scrollCodeTo(keepLine);
-    say('· 已移除第 ' + removedLine + ' 行的 checkpoint() 检查点函数 (Alt+C)', 'dim');
+    say('· 移除 checkpoint() @ L' + removedLine, 'dim');
     return;
   }
 
@@ -376,7 +376,7 @@ export function addCheckpointFunction(preferredLine?: number) {
     startDebug(0);
   }
   scrollCodeTo(insertedLineNum);
-  say('✓ 已在第 ' + insertedLineNum + ' 行添加检查点函数 checkpoint()（可按 Alt+C 随时增删该行检查点）', 'ok');
+  say('✓ checkpoint() @ L' + insertedLineNum, 'ok');
 }
 
 export function go(i: number) {
@@ -385,7 +385,13 @@ export function go(i: number) {
 }
 
 export function stopAuto() {
-  if (appState.timer) { clearInterval(appState.timer); appState.timer = null; $('auto').textContent = '▶ 自动'; }
+  if (appState.timer) {
+    clearInterval(appState.timer);
+    appState.timer = null;
+    const autoBtn = $('auto');
+    autoBtn.textContent = '⏯';
+    autoBtn.title = '自动播放';
+  }
 }
 
 $('prev').onclick = () => stepPrev();
@@ -404,7 +410,9 @@ $('auto').onclick = async () => {
     if (!ok) return;
   }
   if (appState.cur >= appState.TRACE.steps.length - 1 && appState.DEBUG_SESSION.finished) return;
-  $('auto').textContent = '⏸ 暂停';
+  const autoBtn = $('auto');
+  autoBtn.textContent = '⏸';
+  autoBtn.title = '暂停自动播放';
   appState.timer = setInterval(() => {
     if (appState.cur >= appState.TRACE.steps.length - 1 && appState.DEBUG_SESSION.finished) { stopAuto(); return; }
     stepNext(true);
@@ -521,7 +529,7 @@ export function loadImportedSource(text: string | null | undefined, name?: strin
   appState.lastEditorCursorLine = -1;
   resetTraceState();
   updateEditorChrome();
-  clearLog('✓ 已导入 ' + appState.FILE_NAME + ' · ' + src.split('\n').length + ' 行 · 点「🐞 Debug 调试」或「▶ 运行」开始');
+  clearLog('✓ 导入 ' + appState.FILE_NAME + ' (' + src.split('\n').length + '行)');
 }
 
 if (btnImportEl && fileInputEl) {
@@ -567,7 +575,7 @@ if ($('btnExportTs')) {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      say('✓ 已导出文件 ' + name + '（' + editor.value.split('\n').length + ' 行）', 'ok');
+      say('✓ 导出 ' + name + ' (' + editor.value.split('\n').length + '行)', 'ok');
     } catch (e) {
       say('✗ 导出失败: ' + (e instanceof Error && e.message ? e.message : e), 'err');
     }
@@ -606,7 +614,7 @@ function submitCustomWatchInput(): void {
   if (!raw) return;
   if (addCustomWatch(raw)) {
     watchExprInputEl.value = '';
-    say('✓ 已添加自定义 Watch 表达式: ' + raw, 'ok');
+    say('✓ Watch: ' + raw, 'ok');
   }
 }
 
@@ -814,7 +822,7 @@ export function onSourceChanged() {
     staleTimer = setTimeout(() => {
       resetTraceState();
       renderComplexityBar(null);
-      clearLog('源码已修改，当前调试会话已重置 · 可点击「🐞 Debug 调试」或左下「运行到下一个检查点」重新开始');
+      clearLog('源码已变更，调试重置');
     }, 300);
   } else {
     renderComplexityBar(null);
@@ -823,7 +831,7 @@ export function onSourceChanged() {
 editor.addEventListener('input', onSourceChanged);
 editor.addEventListener('scroll', () => { clearFlyLayer(); hideHoverTip(); syncScroll(); });
 
-/* ── hover inspector wiring: editor tokens + LOCALS/WATCH cards ── */
+/* ── hover inspector wiring: editor tokens only ── */
 if (editor && editor.addEventListener) {
   editor.addEventListener('mousemove', (e: MouseEvent) => {
     if (!appState.TRACE.steps.length || (e && e.buttons)) { hideHoverTip(); return; }
@@ -834,14 +842,6 @@ if (editor && editor.addEventListener) {
   });
   editor.addEventListener('mouseleave', hideHoverTip);
   editor.addEventListener('mousedown', hideHoverTip);
-}
-if (sidePanelEl && sidePanelEl.addEventListener) {
-  sidePanelEl.addEventListener('mousemove', (e: MouseEvent) => {
-    const card = closestElement(e, '[data-var]');
-    if (!card || !card.getAttribute) { hideHoverTip(); return; }
-    hoverTipForName(card.getAttribute('data-var'), e.clientX, e.clientY);
-  });
-  sidePanelEl.addEventListener('mouseleave', hideHoverTip);
 }
 
 /* the floating capsule follows its line when the window is resized */
@@ -904,6 +904,7 @@ export function syncTsConfigUI(): void {
   setChk('tsCfgStrictFunctionTypes', cfg.strictFunctionTypes);
   setChk('tsCfgNoImplicitReturns', cfg.noImplicitReturns);
   setChk('tsCfgNoUnusedLocals', cfg.noUnusedLocals);
+  setChk('tsCfgNoUncheckedIndexedAccess', cfg.noUncheckedIndexedAccess);
 
   const previewEl = $('tsConfigJsonPreview');
   if (previewEl) {
@@ -986,8 +987,8 @@ export function applyTsConfig(nextCfg: TsCompilerOptions, writeToVfs = true): vo
       if (pName === 'beginner' || pName === 'standard' || pName === 'strict') {
         const nextCfg = createTsConfigFromPreset(pName);
         applyTsConfig(nextCfg, true);
-        const label = pName === 'beginner' ? '新手宽松模式' : (pName === 'standard' ? '标准教学模式' : '最严工程模式');
-        say(`✓ 已切换 tsconfig 为「${label}」并同步至 /workspace/tsconfig.json`, 'ok');
+        const label = pName === 'beginner' ? '新手宽松' : (pName === 'standard' ? '标准教学' : '最严工程');
+        say(`✓ tsconfig: ${label}`, 'ok');
       }
     });
   }
@@ -999,6 +1000,7 @@ export function applyTsConfig(nextCfg: TsCompilerOptions, writeToVfs = true): vo
     'tsCfgStrictFunctionTypes',
     'tsCfgNoImplicitReturns',
     'tsCfgNoUnusedLocals',
+    'tsCfgNoUncheckedIndexedAccess',
   ];
   const onToggleChange = () => {
     const getChk = (id: string, fallback: boolean) => {
@@ -1014,6 +1016,7 @@ export function applyTsConfig(nextCfg: TsCompilerOptions, writeToVfs = true): vo
       strictFunctionTypes: getChk('tsCfgStrictFunctionTypes', cur.strictFunctionTypes),
       noImplicitReturns: getChk('tsCfgNoImplicitReturns', cur.noImplicitReturns),
       noUnusedLocals: getChk('tsCfgNoUnusedLocals', cur.noUnusedLocals),
+      noUncheckedIndexedAccess: getChk('tsCfgNoUncheckedIndexedAccess', cur.noUncheckedIndexedAccess),
     };
     applyTsConfig(nextCfg, true);
   };
@@ -1028,7 +1031,7 @@ export function applyTsConfig(nextCfg: TsCompilerOptions, writeToVfs = true): vo
   if (resetBtn) {
     resetBtn.onclick = () => {
       applyTsConfig(createTsConfigFromPreset('beginner'), true);
-      say('✓ 已恢复 tsconfig 为默认「新手宽松模式」', 'ok');
+      say('✓ tsconfig 已重置', 'ok');
     };
   }
 
@@ -1049,7 +1052,7 @@ export function applyTsConfig(nextCfg: TsCompilerOptions, writeToVfs = true): vo
       notifyVfsStoreChanged();
       uiHooks.setViewMode('script');
       uiHooks.openVfsScriptFile('tsconfig.json', 'tsconfig.json', jsonText);
-      say('📝 已在编辑器中打开 /workspace/tsconfig.json，修改后将自动生效', 'ok');
+      say('📝 已打开 tsconfig.json', 'ok');
     };
   }
 

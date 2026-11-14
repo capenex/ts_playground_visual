@@ -441,6 +441,15 @@ export function checkPass2Statements(
     origInfo: VarEnvInfo;
     remainingTypes: string[];
   }> = [];
+  const blockNarrowStack: Array<{
+    startDepth: number;
+    condStr: string;
+    saved: Map<string, VarEnvInfo | undefined>;
+    sawExitInBlock: boolean;
+    allowEarlyExit: boolean;
+    isElse?: boolean;
+  }> = [];
+  let lastClosedIf: { condStr: string } | null = null;
   let currentClass: string | null = null;
   let classStartBraceDepth = 0;
   let braceDepth = 0;
@@ -448,6 +457,141 @@ export function checkPass2Statements(
   let inInterfaceBlock = false;
   let inInterfaceDepth = 0;
   let inEnumBlock = false;
+
+  const applyNullComparisonNarrowing = (
+    clauseStr: string,
+    forEarlyExit: boolean,
+    savedMap?: Map<string, VarEnvInfo | undefined>
+  ) => {
+    const c = clauseStr.trim();
+    const saveVar = (vName: string) => {
+      if (savedMap && !savedMap.has(vName)) {
+        savedMap.set(vName, env.has(vName) ? env.get(vName) : undefined);
+      }
+    };
+    const eqM = c.match(/^([A-Za-z_$][\w$]*)\s*(===|!==|==|!=)\s*(null|undefined)$/);
+    const eqRevM = !eqM ? c.match(/^(null|undefined)\s*(===|!==|==|!=)\s*([A-Za-z_$][\w$]*)$/) : null;
+    if ((eqM && eqM[1] && eqM[2] && eqM[3]) || (eqRevM && eqRevM[1] && eqRevM[2] && eqRevM[3])) {
+      const varName = eqM ? eqM[1] : (eqRevM ? eqRevM[3] : '');
+      const op = eqM ? eqM[2] : (eqRevM ? eqRevM[2] : '');
+      const nullKind = eqM ? eqM[3] : (eqRevM ? eqRevM[1] : '');
+      if (varName && op && nullKind && env.has(varName)) {
+        const curInfo = env.get(varName) || { type: 'any' };
+        const isLoose = op === '!=' || op === '==';
+        const isNotEq = op === '!==' || op === '!=';
+        if ((!forEarlyExit && isNotEq) || (forEarlyExit && !isNotEq)) {
+          saveVar(varName);
+          let nextT = isLoose
+            ? stripNullableFromType(stripNullableFromType(curInfo.type, 'null'), 'undefined')
+            : stripNullableFromType(curInfo.type, nullKind);
+          env.set(varName, { ...curInfo, type: nextT });
+        } else if (!forEarlyExit && !isNotEq) {
+          saveVar(varName);
+          const parts = splitTopLevelUnion(resolveAlias(curInfo.type));
+          if (isLoose) {
+            const matched = parts.filter(u => u === 'null' || u === 'undefined');
+            if (matched.length > 0) env.set(varName, { ...curInfo, type: matched.join('|') });
+          } else if (parts.includes(nullKind)) {
+            env.set(varName, { ...curInfo, type: nullKind });
+          }
+        }
+      }
+      return;
+    }
+    const negM = c.match(/^!\s*([A-Za-z_$][\w$]*)$/);
+    if (negM && negM[1] && env.has(negM[1])) {
+      const varName = negM[1];
+      if (forEarlyExit) {
+        saveVar(varName);
+        const curInfo = env.get(varName) || { type: 'any' };
+        const nextT = stripNullableFromType(stripNullableFromType(curInfo.type, 'null'), 'undefined');
+        env.set(varName, { ...curInfo, type: nextT });
+      }
+      return;
+    }
+    if (/^[A-Za-z_$][\w$]*$/.test(c) && env.has(c) && !forEarlyExit) {
+      const curInfo = env.get(c) || { type: 'any' };
+      const parts = splitTopLevelUnion(curInfo.type);
+      if (parts.includes('null') || parts.includes('undefined')) {
+        saveVar(c);
+        const nextT = stripNullableFromType(stripNullableFromType(curInfo.type, 'null'), 'undefined');
+        env.set(c, { ...curInfo, type: nextT });
+      }
+    }
+  };
+
+  const applyClauseNarrowing = (
+    clauseStr: string,
+    forEarlyExit: boolean,
+    savedMap?: Map<string, VarEnvInfo | undefined>
+  ) => {
+    const c = clauseStr.trim();
+    const saveVar = (vName: string) => {
+      if (savedMap && !savedMap.has(vName)) {
+        savedMap.set(vName, env.has(vName) ? env.get(vName) : undefined);
+      }
+    };
+    const predCallM = c.match(/^(!)?\s*([A-Za-z_$][\w$]*)\s*\(\s*([A-Za-z_$][\w$]*)\s*\)$/);
+    if (predCallM && predCallM[2] && predCallM[3]) {
+      const isNegated = Boolean(predCallM[1]);
+      const fnName = predCallM[2];
+      const argVar = predCallM[3];
+      const sig = fns.get(fnName);
+      if (sig && sig.rawReturnType && env.has(argVar)) {
+        const pm = sig.rawReturnType.match(/^([A-Za-z_$][\w$]*)\s+is\s+([\s\S]+)$/);
+        if (pm && pm[2]) {
+          const targetT = resolveAlias(pm[2].trim());
+          const curInfo = env.get(argVar) || { type: 'any' };
+          if ((!forEarlyExit && !isNegated) || (forEarlyExit && isNegated)) {
+            saveVar(argVar);
+            env.set(argVar, { ...curInfo, type: targetT });
+          } else if ((forEarlyExit && !isNegated) || (!forEarlyExit && isNegated)) {
+            const rem = splitTopLevelUnion(resolveAlias(curInfo.type)).filter(u => u !== targetT);
+            if (rem.length > 0) {
+              saveVar(argVar);
+              env.set(argVar, { ...curInfo, type: rem.join('|') });
+            }
+          }
+        }
+      }
+    }
+    const typeofM = c.match(/^typeof\s+([A-Za-z_$][\w$]*)\s*(===|!==)\s*["'](string|number|boolean|bigint|symbol|undefined|object|function)["']$/);
+    if (typeofM && typeofM[1] && typeofM[2] && typeofM[3] && env.has(typeofM[1])) {
+      const varName = typeofM[1];
+      const op = typeofM[2];
+      const primT = typeofM[3];
+      const curInfo = env.get(varName) || { type: 'any' };
+      if ((!forEarlyExit && op === '===') || (forEarlyExit && op === '!==')) {
+        saveVar(varName);
+        env.set(varName, { ...curInfo, type: primT });
+      } else if ((forEarlyExit && op === '===') || (!forEarlyExit && op === '!==')) {
+        const rem = splitTopLevelUnion(resolveAlias(curInfo.type)).filter(u => u !== primT);
+        if (rem.length > 0) {
+          saveVar(varName);
+          env.set(varName, { ...curInfo, type: rem.join('|') });
+        }
+      }
+    }
+    applyNullComparisonNarrowing(c, forEarlyExit, savedMap);
+  };
+
+  const applyConditionNarrowing = (
+    condStr: string,
+    forEarlyExit: boolean,
+    savedMap?: Map<string, VarEnvInfo | undefined>
+  ) => {
+    const clauses = forEarlyExit ? condStr.split('||') : condStr.split('&&');
+    clauses.forEach(clause => {
+      applyClauseNarrowing(clause, forEarlyExit, savedMap);
+    });
+  };
+
+  const applyClauseNarrowingEarlyExit = (
+    clause: string,
+    savedMap?: Map<string, VarEnvInfo | undefined>
+  ) => {
+    applyClauseNarrowing(clause, true, savedMap);
+  };
 
   for (let i = 0; i < lines.length; i++) {
     const lineNum = i + 1;
@@ -1118,7 +1262,34 @@ export function checkPass2Statements(
             env.set(sw.expr, sw.origInfo);
           }
         }
+        while (blockNarrowStack.length > 0) {
+          const topNarrow = blockNarrowStack[blockNarrowStack.length - 1];
+          if (!topNarrow || braceDepth > topNarrow.startDepth) break;
+          blockNarrowStack.pop();
+          topNarrow.saved.forEach((prevInfo, varName) => {
+            if (prevInfo !== undefined) env.set(varName, prevInfo);
+            else env.delete(varName);
+          });
+          if (!topNarrow.isElse) {
+            if (/^\s*\}\s*else\b/.test(trimmed)) {
+              lastClosedIf = { condStr: topNarrow.condStr };
+            } else {
+              lastClosedIf = (topNarrow.sawExitInBlock || !topNarrow.allowEarlyExit) ? null : { condStr: topNarrow.condStr };
+              if (topNarrow.sawExitInBlock && topNarrow.allowEarlyExit) {
+                topNarrow.condStr.split('||').forEach(clause => {
+                  applyClauseNarrowingEarlyExit(clause);
+                });
+              }
+            }
+          }
+        }
         if (currentFn && braceDepth <= fnStartBraceDepth) {
+          while (blockNarrowStack.length > 0) {
+            const top = blockNarrowStack[blockNarrowStack.length - 1];
+            if (!top || top.startDepth < fnStartBraceDepth) break;
+            blockNarrowStack.pop();
+          }
+          lastClosedIf = null;
           const isGenRet = /^Generator<|^AsyncGenerator<|^IterableIterator<|^Iterator</.test(currentFn.returnType);
           if (!currentFn.hasExplicitReturnType && !isGenRet) {
             const collected = (currentFn.inferredReturnTypes || []).filter(Boolean);
@@ -1197,7 +1368,28 @@ export function checkPass2Statements(
     }
 
     if (/^(?:\}[\s);,]*|\}\s*,\s*[\s\S]+\)\s*;?|\}\s*else\s*\{?|else\s*\{?|try\s*\{?|\}\s*finally\s*\{?|finally\s*\{?|do\s*\{?)$/.test(trimmed)) {
+      if (/^(?:\}\s*)?else\s*\{$/.test(trimmed) && lastClosedIf) {
+        const elseSaved = new Map<string, VarEnvInfo | undefined>();
+        const elseCond = lastClosedIf.condStr;
+        lastClosedIf = null;
+        elseCond.split('||').forEach(clause => {
+          applyClauseNarrowingEarlyExit(clause, elseSaved);
+        });
+        blockNarrowStack.push({
+          startDepth: Math.max(0, braceDepth - 1),
+          condStr: elseCond,
+          saved: elseSaved,
+          sawExitInBlock: false,
+          allowEarlyExit: false,
+          isElse: true,
+        });
+      } else if (!/^\}[\s);,]*$/.test(trimmed)) {
+        lastClosedIf = null;
+      }
       continue;
+    }
+    if (!/^(?:\}\s*)?else\b/.test(trimmed)) {
+      lastClosedIf = null;
     }
 
     const forOfInM = trimmed.match(/^for\s*\(\s*(?:(const|let|var)\s+)?(.+?)\s+(of|in)\s+([\s\S]+?)\)\s*\{?$/);
@@ -1694,6 +1886,10 @@ export function checkPass2Statements(
 
     const retM = trimmed.match(/^return(?:\s+([\s\S]+?))?;?$/);
     if (retM) {
+      const topNarrow = blockNarrowStack[blockNarrowStack.length - 1];
+      if (topNarrow && !topNarrow.isElse && braceDepth === topNarrow.startDepth + 1) {
+        topNarrow.sawExitInBlock = true;
+      }
       const retExpr = retM[1] ? retM[1].trim() : '';
       const retT = retExpr ? inferType(retExpr, lineNum) : 'void';
       if (currentFn) {
@@ -1730,6 +1926,10 @@ export function checkPass2Statements(
 
     const throwM = trimmed.match(/^throw\s+([\s\S]+?);?$/);
     if (throwM && throwM[1]) {
+      const topNarrow = blockNarrowStack[blockNarrowStack.length - 1];
+      if (topNarrow && !topNarrow.isElse && braceDepth === topNarrow.startDepth + 1) {
+        topNarrow.sawExitInBlock = true;
+      }
       if (currentFn) currentFn.hasValueReturn = true;
       inferType(throwM[1].trim(), lineNum);
       continue;
@@ -1820,48 +2020,12 @@ export function checkPass2Statements(
       continue;
     }
 
-    const applyClauseNarrowing = (clauseStr: string, forEarlyExit: boolean) => {
-      const c = clauseStr.trim();
-      const predCallM = c.match(/^(!)?\s*([A-Za-z_$][\w$]*)\s*\(\s*([A-Za-z_$][\w$]*)\s*\)$/);
-      if (predCallM && predCallM[2] && predCallM[3]) {
-        const isNegated = Boolean(predCallM[1]);
-        const fnName = predCallM[2];
-        const argVar = predCallM[3];
-        const sig = fns.get(fnName);
-        if (sig && sig.rawReturnType && env.has(argVar)) {
-          const pm = sig.rawReturnType.match(/^([A-Za-z_$][\w$]*)\s+is\s+([\s\S]+)$/);
-          if (pm && pm[2]) {
-            const targetT = resolveAlias(pm[2].trim());
-            const curInfo = env.get(argVar) || { type: 'any' };
-            if ((!forEarlyExit && !isNegated) || (forEarlyExit && isNegated)) {
-              env.set(argVar, { ...curInfo, type: targetT });
-            } else if ((forEarlyExit && !isNegated) || (!forEarlyExit && isNegated)) {
-              const rem = splitTopLevelUnion(resolveAlias(curInfo.type)).filter(u => u !== targetT);
-              if (rem.length > 0) env.set(argVar, { ...curInfo, type: rem.join('|') });
-            }
-          }
-        }
-      }
-      const typeofM = c.match(/^typeof\s+([A-Za-z_$][\w$]*)\s*(===|!==)\s*["'](string|number|boolean|bigint|symbol|undefined|object|function)["']$/);
-      if (typeofM && typeofM[1] && typeofM[2] && typeofM[3] && env.has(typeofM[1])) {
-        const varName = typeofM[1];
-        const op = typeofM[2];
-        const primT = typeofM[3];
-        const curInfo = env.get(varName) || { type: 'any' };
-        if ((!forEarlyExit && op === '===') || (forEarlyExit && op === '!==')) {
-          env.set(varName, { ...curInfo, type: primT });
-        } else if ((forEarlyExit && op === '===') || (!forEarlyExit && op === '!==')) {
-          const rem = splitTopLevelUnion(resolveAlias(curInfo.type)).filter(u => u !== primT);
-          if (rem.length > 0) env.set(varName, { ...curInfo, type: rem.join('|') });
-        }
-      }
-    };
-
     const inlineIfThrow = trimmed.match(/^if\s*\((.+?)\)\s*throw\s+([\s\S]+?);?$/);
     if (inlineIfThrow && inlineIfThrow[1] && inlineIfThrow[2]) {
       if (currentFn) currentFn.hasValueReturn = true;
       inferType(inlineIfThrow[1].trim(), lineNum);
       inferType(inlineIfThrow[2].trim(), lineNum);
+      inlineIfThrow[1].trim().split('||').forEach(clause => applyClauseNarrowingEarlyExit(clause));
       continue;
     }
 
@@ -1872,17 +2036,13 @@ export function checkPass2Statements(
       const retExpr = inlineIfRet[3] ? inlineIfRet[3].trim() : '';
       inferType(condStr, lineNum);
       if (actionKw.startsWith('return')) {
-        const savedInlineNarrow = new Map<string, VarEnvInfo>();
-        condStr.split('&&').forEach(clause => {
-          const cm = clause.trim().match(/^([A-Za-z_$][\w$]*)\s*!==\s*(null|undefined)$/);
-          if (cm && cm[1] && cm[2] && env.has(cm[1])) {
-            const curInfo = env.get(cm[1]) || { type: 'any' };
-            savedInlineNarrow.set(cm[1], curInfo);
-            env.set(cm[1], { ...curInfo, type: stripNullableFromType(curInfo.type, cm[2]) });
-          }
-        });
+        const savedInlineNarrow = new Map<string, VarEnvInfo | undefined>();
+        applyConditionNarrowing(condStr, false, savedInlineNarrow);
         const retT = retExpr ? inferType(retExpr, lineNum) : 'void';
-        savedInlineNarrow.forEach((prevInfo, k) => env.set(k, prevInfo));
+        savedInlineNarrow.forEach((prevInfo, k) => {
+          if (prevInfo !== undefined) env.set(k, prevInfo);
+          else env.delete(k);
+        });
         if (currentFn) {
           if (retExpr) currentFn.hasValueReturn = true;
           const expectedRet = currentFn.returnType;
@@ -1892,17 +2052,7 @@ export function checkPass2Statements(
         }
       }
       condStr.split('||').forEach(clause => {
-        const cm = clause.trim().match(/^([A-Za-z_$][\w$]*)\s*===\s*(null|undefined)$/);
-        const cmRev = !cm ? clause.trim().match(/^(null|undefined)\s*===\s*([A-Za-z_$][\w$]*)$/) : null;
-        const negM = (!cm && !cmRev) ? clause.trim().match(/^!\s*([A-Za-z_$][\w$]*)$/) : null;
-        const varName = cm ? cm[1] : (cmRev ? cmRev[2] : (negM ? negM[1] : null));
-        if (varName && env.has(varName)) {
-          const curInfo = env.get(varName) || { type: 'any' };
-          let nextT = stripNullableFromType(curInfo.type, 'null');
-          nextT = stripNullableFromType(nextT, 'undefined');
-          env.set(varName, { ...curInfo, type: nextT });
-        }
-        applyClauseNarrowing(clause, true);
+        applyClauseNarrowingEarlyExit(clause);
       });
       continue;
     }
@@ -1915,8 +2065,28 @@ export function checkPass2Statements(
         const condStr = trimmed.slice(openIdx + 1, closeIdx).trim();
         inferType(condStr, lineNum);
         const tail = trimmed.slice(closeIdx + 1).trim();
+        const isBlockHeader = tail === '{';
+        const allowEarlyExit = !/^(?:}\s*)?while\b/.test(trimmed);
+        const savedNarrow = new Map<string, VarEnvInfo | undefined>();
+        applyConditionNarrowing(condStr, false, savedNarrow);
+
+        condStr.split('&&').forEach(clause => {
+          const propCm = clause.trim().match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+)\s*(!==|!=)\s*(null|undefined)$/);
+          if (propCm && propCm[1] && propCm[2] && propCm[3] && i + 1 < lines.length) {
+            const propExpr = propCm[1];
+            const nextTrim = stripInlineCommentSafe(lines[i + 1]).trim();
+            const nextDecl = nextTrim.match(/^(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+)\s*;?$/);
+            if (nextDecl && nextDecl[2] === propExpr) {
+              let propT = stripNullableFromType(inferType(propExpr, lineNum), propCm[3]);
+              if (propCm[2] === '!=') propT = stripNullableFromType(propT, 'null');
+              env.set('__narrowed_prop_' + propExpr, { type: propT });
+            }
+          }
+        });
+
         if (tail && tail !== '{') {
           const bodyInner = (tail.startsWith('{') && tail.endsWith('}')) ? tail.slice(1, -1).trim() : tail;
+          const bodyHasExit = /\b(?:return\b|throw\b)/.test(bodyInner);
           if (/\b(?:return\s+[^;}\s]|throw\b)/.test(bodyInner) && currentFn) {
             currentFn.hasValueReturn = true;
           }
@@ -1934,35 +2104,34 @@ export function checkPass2Statements(
                   addDiag(lineNum, 'TS2322', `不能将类型 "${rhsT}" 分配给类型 "${lhsT}" ("${lhs}")`);
                 }
               }
+            } else {
+              inferType(stmt, lineNum);
             }
           });
+          savedNarrow.forEach((prevInfo, varName) => {
+            if (prevInfo !== undefined) env.set(varName, prevInfo);
+            else env.delete(varName);
+          });
+          if (bodyHasExit && /^(?:if)\s*\(/.test(trimmed)) {
+            condStr.split('||').forEach(clause => applyClauseNarrowingEarlyExit(clause));
+          }
+        } else if (isBlockHeader) {
+          blockNarrowStack.push({
+            startDepth: Math.max(0, braceDepth - 1),
+            condStr,
+            saved: savedNarrow,
+            sawExitInBlock: false,
+            allowEarlyExit,
+          });
         }
-        condStr.split('&&').forEach(clause => {
-          const cm = clause.trim().match(/^([A-Za-z_$][\w$]*)\s*!==\s*(null|undefined)$/);
-          if (cm && cm[1] && cm[2] && env.has(cm[1])) {
-            const curInfo = env.get(cm[1]) || { type: 'any' };
-            env.set(cm[1], { ...curInfo, type: stripNullableFromType(curInfo.type, cm[2]) });
-          }
-          applyClauseNarrowing(clause, false);
-          const propCm = clause.trim().match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+)\s*!==\s*(null|undefined)$/);
-          if (propCm && propCm[1] && propCm[2] && i + 1 < lines.length) {
-            const propExpr = propCm[1];
-            const nextTrim = stripInlineCommentSafe(lines[i + 1]).trim();
-            const nextDecl = nextTrim.match(/^(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+)\s*;?$/);
-            if (nextDecl && nextDecl[2] === propExpr) {
-              const propT = stripNullableFromType(inferType(propExpr, lineNum), propCm[2]);
-              env.set('__narrowed_prop_' + propExpr, { type: propT });
-            }
-          }
-        });
-        if (/^if\s*\(/.test(trimmed) && i + 1 < lines.length && /^\s*(?:return|break|continue)\b/.test(lines[i + 1] ?? '')) {
+
+        if (/^if\s*\(/.test(trimmed) && !tail && i + 1 < lines.length && /^\s*(?:return|break|continue|throw)\b/.test(lines[i + 1] ?? '')) {
+          savedNarrow.forEach((prevInfo, varName) => {
+            if (prevInfo !== undefined) env.set(varName, prevInfo);
+            else env.delete(varName);
+          });
           condStr.split('||').forEach(clause => {
-            const cm = clause.trim().match(/^([A-Za-z_$][\w$]*)\s*===\s*(null|undefined)$/);
-            if (cm && cm[1] && cm[2] && env.has(cm[1])) {
-              const curInfo = env.get(cm[1]) || { type: 'any' };
-              env.set(cm[1], { ...curInfo, type: stripNullableFromType(curInfo.type, cm[2]) });
-            }
-            applyClauseNarrowing(clause, true);
+            applyClauseNarrowingEarlyExit(clause);
           });
         }
         continue;

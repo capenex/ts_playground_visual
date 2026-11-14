@@ -38,7 +38,7 @@ import { resetTraceState, say } from "../runtime/event-loop";
 import { appState, esc, registerUiHooks } from "../state";
 import type { NotebookCell, NotebookDocument } from "../types";
 import { buildStepVizRow, clearFlyLayer } from "../viz/ast-view";
-import { collectDeclaredNames, hl, hlActiveLine } from "../viz/highlight";
+import { collectDeclaredNames, collectDeclaredTypeNames, hl, hlActiveLine } from "../viz/highlight";
 import { stopAuto } from "./controls";
 import {
   $,
@@ -121,7 +121,7 @@ export function cutNotebookCell() {
   if (!cell) return;
   setClipboardCell({ ...cell, output: null, executionCount: null, status: "idle" });
   deleteNotebookCell(cell.id);
-  say("✂ 已剪切当前单元格", "dim");
+  say("✂ 已剪切", "dim");
 }
 
 export function copyNotebookCell() {
@@ -129,13 +129,13 @@ export function copyNotebookCell() {
   const cell = getActiveCell(doc);
   if (!cell) return;
   setClipboardCell({ ...cell, output: null, executionCount: null, status: "idle" });
-  say("📋 已复制当前单元格", "dim");
+  say("📋 已复制", "dim");
 }
 
 export function pasteNotebookCell() {
   const clip = getClipboardCell();
   if (!clip) {
-    say("⚠ 剪贴板中暂无已复制的单元格", "dim");
+    say("⚠ 剪贴板为空", "dim");
     return;
   }
   const doc = getActiveNotebook();
@@ -152,7 +152,7 @@ export function pasteNotebookCell() {
   doc.activeCellId = pasted.id;
   appState.ACTIVE_NB_CELL_ID = pasted.id;
   renderNotebookUI(true);
-  say("📄 已在下方粘贴单元格", "ok");
+  say("📄 已粘贴", "ok");
 }
 
 /* ── Export & Import Standard .ipynb JSON ── */
@@ -168,7 +168,7 @@ export function exportActiveNotebookIpynb() {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-  say(`💾 已导出笔记本文件 ${a.download}`, "ok");
+  say(`💾 已导出 ${a.download}`, "ok");
 }
 
 export function importNotebookFromJson(jsonText: string, fileName: string): boolean {
@@ -179,7 +179,7 @@ export function importNotebookFromJson(jsonText: string, fileName: string): bool
   store.activeDocId = newDoc.id;
   setViewMode("notebook");
   renderNotebookUI();
-  say(`✓ 已导入 Jupyter 笔记本 ${newDoc.title}（共 ${newDoc.cells.length} 个单元格）`, "ok");
+  say(`✓ 已导入 ${newDoc.title} (${newDoc.cells.length} 格)`, "ok");
   return true;
 }
 
@@ -244,6 +244,7 @@ function renderCellCodeHighlight(
   const doc = getActiveNotebook();
   const lines = cell.source.replace(/\r\n?/g, "\n").split("\n");
   const { combinedTs } = buildTsTypecheckContext(doc, cell);
+  const customTypes = collectDeclaredTypeNames(combinedTs);
   const declared = collectDeclaredNames(combinedTs);
 
   const liveByLine = new Map<number, { line: number; code: string; message: string }>();
@@ -268,7 +269,7 @@ function renderCellCodeHighlight(
         Boolean(diag) ||
         (cell.status === "error" && cell.output && cell.output.errorLine === ln) ||
         Boolean(isCur && st && st.error);
-      const inner = isCur ? hlActiveLine(t, st && st.anim, declared) : hl(t, declared);
+      const inner = isCur ? hlActiveLine(t, st && st.anim, declared) : hl(t, declared, customTypes);
       const errBadge = diag
         ? `<span class="ln-err-badge" title="${esc((diag.code ? diag.code + ": " : "") + (diag.message || ""))}">✗ ${esc(diag.code || "TS")}</span>`
         : "";
@@ -314,17 +315,17 @@ export function renderNotebookUI(focusActiveEditor = false) {
         .map((d) => {
           const isAct = d.id === doc.id;
           return (
-            `<div class="nb-tab${isAct ? " active" : ""}" role="tab" tabindex="0" aria-selected="${isAct ? "true" : "false"}" data-doc-id="${esc(d.id)}" title="单击或按 Enter/Space 切换 · 双击可重命名笔记本">` +
+            `<div class="nb-tab${isAct ? " active" : ""}" role="tab" tabindex="0" aria-selected="${isAct ? "true" : "false"}" data-doc-id="${esc(d.id)}" title="单击切换 · 双击重命名">` +
             `<span class="nb-tab-icon" aria-hidden="true"></span>` +
             `<span class="nb-tab-title">${esc(d.title)}</span>` +
             (store.docs.length > 1
-              ? `<button type="button" class="nb-tab-close" data-close-doc="${esc(d.id)}" title="关闭标签页">×</button>`
+              ? `<button type="button" class="nb-tab-close" data-close-doc="${esc(d.id)}" title="关闭">×</button>`
               : "") +
             `</div>`
           );
         })
         .join("") +
-      `<button type="button" class="nb-tab-add" id="nbBtnNewTab" title="新建空白 Notebook 标签页">＋</button>`;
+      `<button type="button" class="nb-tab-add" id="nbBtnNewTab" title="新建 Notebook">＋</button>`;
   }
 
   const exportTag = $("fileExportTag");
@@ -381,8 +382,8 @@ export function renderNotebookUI(focusActiveEditor = false) {
           `<button type="button" class="nb-act-btn danger" data-cell-act="del" data-cell-id="${esc(cell.id)}" title="删除单元格">🗑</button>` +
           `</div>` +
           (isRendered
-            ? `<div class="nb-md-preview" data-cell-act="edit-md" data-cell-id="${esc(cell.id)}" title="双击编辑 Markdown">${renderMarkdownHtml(cell.source)}</div>`
-            : `<textarea class="nb-cell-textarea md-textarea" data-cell-id="${esc(cell.id)}" style="height:${mdEditorHeight}px" spellcheck="false" placeholder="# 输入 Markdown 标题或算法推导说明，按 Shift+Enter 渲染预览">${esc(cell.source)}</textarea>`) +
+            ? `<div class="nb-md-preview" data-cell-act="edit-md" data-cell-id="${esc(cell.id)}" title="双击编辑">${renderMarkdownHtml(cell.source)}</div>`
+            : `<textarea class="nb-cell-textarea md-textarea" data-cell-id="${esc(cell.id)}" style="height:${mdEditorHeight}px" spellcheck="false" placeholder="# Markdown（Shift+Enter 预览）">${esc(cell.source)}</textarea>`) +
           `</div>` +
           `</div>` +
           `</div>`
@@ -415,17 +416,17 @@ export function renderNotebookUI(focusActiveEditor = false) {
         `<div class="nb-cell-gutter">${gutterHtml}</div>` +
         `<div class="nb-cell-code-box" style="height:${editorHeight}px">` +
         `<pre class="nb-cell-hl" aria-hidden="true">${hlHtml}</pre>` +
-        `<textarea class="nb-cell-textarea" data-cell-id="${esc(cell.id)}" style="height:${editorHeight}px" spellcheck="false" autocomplete="off" placeholder="// 输入 TypeScript 代码，Shift+Enter 运行，点右上 🐞 单步调试">${esc(cell.source)}</textarea>` +
+        `<textarea class="nb-cell-textarea" data-cell-id="${esc(cell.id)}" style="height:${editorHeight}px" spellcheck="false" autocomplete="off" placeholder="// 输入 TypeScript 代码">${esc(cell.source)}</textarea>` +
         `</div>` +
         `<div class="nb-cell-actions">` +
-        `<button type="button" class="nb-act-btn run-act" data-cell-act="run" data-cell-id="${esc(cell.id)}" title="运行此单元格 (Shift+Enter)">▶</button>` +
-        `<button type="button" class="nb-act-btn debug-act${isDebugging ? " active" : ""}" data-cell-act="debug" data-cell-id="${esc(cell.id)}" title="单步可视化调试此单元格 (Ctrl+Shift+Enter)">🐞</button>` +
-        `<button type="button" class="nb-act-btn" data-cell-act="dup" data-cell-id="${esc(cell.id)}" title="复制并向下克隆单元格">⧉</button>` +
-        `<button type="button" class="nb-act-btn" data-cell-act="up" data-cell-id="${esc(cell.id)}" ${idx === 0 ? "disabled" : ""} title="上移单元格">↑</button>` +
-        `<button type="button" class="nb-act-btn" data-cell-act="down" data-cell-id="${esc(cell.id)}" ${idx === doc.cells.length - 1 ? "disabled" : ""} title="下移单元格">↓</button>` +
-        `<button type="button" class="nb-act-btn" data-cell-act="ins-above" data-cell-id="${esc(cell.id)}" title="在上方插入单元格">⤒</button>` +
-        `<button type="button" class="nb-act-btn" data-cell-act="ins-below" data-cell-id="${esc(cell.id)}" title="在下方插入单元格">⤓</button>` +
-        `<button type="button" class="nb-act-btn danger" data-cell-act="del" data-cell-id="${esc(cell.id)}" title="删除单元格">🗑</button>` +
+        `<button type="button" class="nb-act-btn run-act" data-cell-act="run" data-cell-id="${esc(cell.id)}" title="运行 (Shift+Enter)">▶</button>` +
+        `<button type="button" class="nb-act-btn debug-act${isDebugging ? " active" : ""}" data-cell-act="debug" data-cell-id="${esc(cell.id)}" title="单步调试 (Ctrl+Shift+Enter)">🐞</button>` +
+        `<button type="button" class="nb-act-btn" data-cell-act="dup" data-cell-id="${esc(cell.id)}" title="复制并下移">⧉</button>` +
+        `<button type="button" class="nb-act-btn" data-cell-act="up" data-cell-id="${esc(cell.id)}" ${idx === 0 ? "disabled" : ""} title="上移">↑</button>` +
+        `<button type="button" class="nb-act-btn" data-cell-act="down" data-cell-id="${esc(cell.id)}" ${idx === doc.cells.length - 1 ? "disabled" : ""} title="下移">↓</button>` +
+        `<button type="button" class="nb-act-btn" data-cell-act="ins-above" data-cell-id="${esc(cell.id)}" title="上方插入">⤒</button>` +
+        `<button type="button" class="nb-act-btn" data-cell-act="ins-below" data-cell-id="${esc(cell.id)}" title="下方插入">⤓</button>` +
+        `<button type="button" class="nb-act-btn danger" data-cell-act="del" data-cell-id="${esc(cell.id)}" title="删除">🗑</button>` +
         `</div>` +
         `</div>` +
         (stepVizHtml ? `<div class="nb-cell-stepviz">${stepVizHtml}</div>` : "") +
@@ -436,8 +437,8 @@ export function renderNotebookUI(focusActiveEditor = false) {
     })
     .join("") +
     `<div class="nb-bottom-add-bar">` +
-    `<button type="button" class="nb-add-chip" id="nbBottomAddCode">＋ 代码单元格 (Code)</button>` +
-    `<button type="button" class="nb-add-chip" id="nbBottomAddMd">＋ 文档单元格 (Markdown)</button>` +
+    `<button type="button" class="nb-add-chip" id="nbBottomAddCode">＋ Code</button>` +
+    `<button type="button" class="nb-add-chip" id="nbBottomAddMd">＋ Markdown</button>` +
     `</div>`;
 
   if (cellsContainer.querySelectorAll) {
@@ -596,7 +597,7 @@ function initNotebookTabsEvents() {
         if (oldPath !== `notebooks/${targetDoc.title}`) {
           VFS_NODES.delete(oldPath);
         }
-        say(`✓ 笔记本已重命名为 ${targetDoc.title}`, "ok");
+        say(`✓ 已重命名 ${targetDoc.title}`, "ok");
       }
       renderNotebookUI();
       renderVfsTreeUI();
@@ -764,6 +765,20 @@ function initNotebookCellsEvents() {
     }
   });
 
+  cellsList.addEventListener(
+    "scroll",
+    (e: Event) => {
+      const ta = eventTargetTextArea(e);
+      if (!ta || !ta.classList || !ta.classList.contains("nb-cell-textarea")) return;
+      const codeBox = closestElement(ta, ".nb-cell-code-box");
+      const hlPre = codeBox && codeBox.querySelector ? codeBox.querySelector(".nb-cell-hl") : null;
+      if (hlPre && "scrollLeft" in hlPre) {
+        hlPre.scrollLeft = ta.scrollLeft;
+      }
+    },
+    true
+  );
+
   cellsList.addEventListener("keydown", (e: KeyboardEvent) => {
     const ta = eventTargetTextArea(e);
     if (!ta || !ta.classList || !ta.classList.contains("nb-cell-textarea")) return;
@@ -843,7 +858,7 @@ function ensureNotebookDeferredInit() {
     resetTraceState();
     syncNotebookGlobalsToSidePanel(doc);
     renderNotebookUI();
-    say("■ 已退出当前单元格单步调试，恢复显示 Notebook 全局上下文", "dim");
+    say("■ 已退出单元格调试", "dim");
   });
   bindBtn("nbBtnRestart", () => restartNotebookKernel(false));
   bindBtn("nbBtnRunAll", () => runAllNotebookCells());
@@ -979,12 +994,12 @@ export function renderTutorialModalUI(): void {
     `<p class="tutorial-detail-summary">${esc(current.summary)}</p>` +
     `<div class="tutorial-hl-list">${highlightsHtml}</div>` +
     `</div>` +
-    `<div class="tutorial-detail-cells-title">课程单元格结构预览（共 ${current.cells.length} 个单元格，含 🐞 单步可视化调试练习）</div>` +
+    `<div class="tutorial-detail-cells-title">课程结构（${current.cells.length} 格）</div>` +
     `<div class="tutorial-detail-cells">${cellsPreviewHtml}</div>` +
     `<div class="tutorial-detail-foot">` +
-    `<button type="button" class="tutorial-btn secondary" data-tutorial-act="import-all" title="将全部 6 门 TypeScript 进阶教学课程一次性导入到 Notebook 标签栏">📚 一键导入全部 6 门课程</button>` +
+    `<button type="button" class="tutorial-btn secondary" data-tutorial-act="import-all" title="导入全部 6 门课程">📚 导入全部 6 门</button>` +
     `<button type="button" class="tutorial-btn primary" data-tutorial-act="import-one" data-tutorial-id="${esc(current.id)}">` +
-    (alreadyInWorkspace ? "📓 切换到此教学 Notebook" : "📥 导入并打开此教学 Notebook") +
+    (alreadyInWorkspace ? "📓 切换到此 Notebook" : "📥 导入并打开") +
     `</button>` +
     `</div>`;
 }
@@ -1031,8 +1046,8 @@ export function importTutorialNotebook(tutorialId: string): boolean {
   renderVfsTreeUI();
   say(
     isNew
-      ? `🎓 已导入并打开 TS 进阶教学《${item.title}》（共 ${targetDoc.cells.length} 个单元格，可按 Shift+Enter 逐格运行或点 🐞 单步调试）`
-      : `🎓 已切换到 TS 进阶教学《${item.title}》`,
+      ? `🎓 已导入《${item.title}》`
+      : `🎓 已切换到《${item.title}》`,
     "ok"
   );
   return true;
@@ -1071,7 +1086,7 @@ export function importAllTutorialNotebooks(): number {
   renderNotebookUI();
   renderVfsTreeUI();
   say(
-    `🎓 已导入全部 ${TS_NOTEBOOK_TUTORIALS.length} 门 TypeScript 进阶教学 Notebook（新增 ${importedCount} 门），可在上方标签栏自由切换`,
+    `🎓 已导入 ${TS_NOTEBOOK_TUTORIALS.length} 门课程（新增 ${importedCount}）`,
     "ok"
   );
   return importedCount;
@@ -1158,7 +1173,7 @@ export function importSampleIntoNotebook(code: string, sampleKey: string): void 
   doc.cells.push(newCell);
   doc.activeCellId = newCell.id;
   renderNotebookUI(true);
-  say(`✓ 已将示例 ${sampleKey} 导入到当前 Notebook 新单元格`, "ok");
+  say(`✓ 已导入示例 ${sampleKey}`, "ok");
 }
 
 registerUiHooks({

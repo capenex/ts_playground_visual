@@ -105,8 +105,8 @@ export function syncNotebookGlobalsToSidePanel(doc = getActiveNotebook()): void 
     line: 1,
     note:
       doc.execCounter > 0
-        ? `Notebook 会话上下文 · 已累计执行 ${doc.execCounter} 个单元格`
-        : "Notebook 会话就绪 · 运行任意单元格后在此同步显示全局变量与数据结构",
+        ? `NB [${doc.execCounter}]`
+        : "NB 就绪",
     v,
     ds,
     callStack: [
@@ -145,7 +145,7 @@ export function syncNotebookGlobalsToSidePanel(doc = getActiveNotebook()): void 
   uiHooks.renderPicker();
   uiHooks.renderStatic(0, false);
   uiHooks.setCntStatus(
-    doc.execCounter > 0 ? `Notebook [${doc.execCounter}] · 全局上下文` : "Notebook 就绪",
+    doc.execCounter > 0 ? `NB [${doc.execCounter}]` : "NB 就绪",
     ""
   );
 }
@@ -169,16 +169,16 @@ export function runTsNotebookCell(
         error: errText,
         errorLine: cellDiags[0]?.line ?? 1,
       };
-      say(`✗ [Notebook] TypeScript 严格类型检查未通过 (共 ${cellDiags.length} 处错误)：`, "err");
+      say(`✗ [NB] 类型错误 (${cellDiags.length} 处)：`, "err");
       cellDiags.forEach((d) => {
-        say(`  • ${d.code} [第 ${d.line} 行]: ${d.message}`, "err", d.line);
+        say(`  • ${d.code} [L${d.line}]: ${d.message}`, "err", d.line);
       });
       uiHooks.renderNotebookUI();
       return false;
     }
-    say(`⚠ [Notebook] TypeScript 类型提示 (共 ${cellDiags.length} 处，当前 tsconfig 允许忽略类型错误继续运行)：`, "warn");
+    say(`⚠ [NB] 类型警告 (${cellDiags.length} 处)：`, "warn");
     cellDiags.forEach((d) => {
-      say(`  • ${d.code} [第 ${d.line} 行]: ${d.message}`, "warn", d.line);
+      say(`  • ${d.code} [L${d.line}]: ${d.message}`, "warn", d.line);
     });
   }
 
@@ -358,9 +358,9 @@ export function runTsNotebookCell(
     doc.executedHistory.push({ cellId: cell.id, execCount: cell.executionCount, source: rawSrc });
 
     say(
-      `✓ [Cell ${cell.executionCount}] 执行完成 (${elapsedMs}ms)` +
-        (logs.length ? ` · 输出: ${logs.join(" | ")}` : "") +
-        (rvStr ? `  →  ${rvStr}` : ""),
+      `✓ [Cell ${cell.executionCount}] (${elapsedMs}ms)` +
+        (logs.length ? ` · ${logs.join(" | ")}` : "") +
+        (rvStr ? ` → ${rvStr}` : ""),
       "ok"
     );
     syncNotebookGlobalsToSidePanel(doc);
@@ -377,7 +377,7 @@ export function runTsNotebookCell(
       returnValue: null,
       error: msg,
     };
-    say(`✗ [Cell ${cell.executionCount}] 运行时报错: ${msg}`, "err");
+    say(`✗ [Cell ${cell.executionCount}] ${msg}`, "err");
     uiHooks.renderNotebookUI();
     return false;
   }
@@ -440,14 +440,14 @@ export function debugTsNotebookCell(
         error: errText,
         errorLine: cellDiags[0]?.line ?? 1,
       };
-      say(`✗ [Notebook] TypeScript 严格类型检查未通过 (共 ${cellDiags.length} 处错误)：`, "err");
+      say(`✗ [NB] 类型错误 (${cellDiags.length} 处)：`, "err");
       cellDiags.forEach((d) => {
-        say(`  • ${d.code} [第 ${d.line} 行]: ${d.message}`, "err", d.line);
+        say(`  • ${d.code} [L${d.line}]: ${d.message}`, "err", d.line);
       });
       uiHooks.renderNotebookUI();
       return false;
     }
-    say(`⚠ [Notebook] TypeScript 类型提示 (共 ${cellDiags.length} 处，当前 tsconfig 允许忽略类型错误继续调试)：`, "warn");
+    say(`⚠ [NB] 类型警告 (${cellDiags.length} 处)：`, "warn");
     cellDiags.forEach((d) => {
       say(`  • ${d.code} [第 ${d.line} 行]: ${d.message}`, "warn", d.line);
     });
@@ -552,7 +552,7 @@ export function debugTsNotebookCell(
   uiHooks.renderStatic(appState.cur, false);
   uiHooks.renderNotebookUI();
 
-  say(`✓ [Cell ${cell.executionCount}] 已开启单步调试 · 可使用底部「下一步 ›」或「⏭ 运行到下一个检查点」逐步推导`, "ok");
+  say(`✓ [Cell ${cell.executionCount}] Debug 就绪`, "ok");
   return true;
 }
 
@@ -567,7 +567,7 @@ export async function debugNotebookCell(cellId?: string): Promise<boolean> {
 
   const rawSrc = cell.source.replace(/\r\n?/g, "\n");
   if (!rawSrc.trim()) {
-    say("⚠ 当前单元格为空，请先输入代码后再启动单步调试", "dim");
+    say("⚠ 单元格为空", "dim");
     return false;
   }
 
@@ -596,14 +596,14 @@ export async function restartNotebookKernel(silent = false): Promise<void> {
   syncNotebookGlobalsToSidePanel(doc);
   uiHooks.renderNotebookUI();
   if (!silent) {
-    say(`↻ 已重启 [${doc.title}] 内核并清空所有跨单元格变量与计数`, "ok");
+    say(`↻ 已重启 [${doc.title}]`, "ok");
   }
 }
 
 export async function runAllNotebookCells(): Promise<void> {
   const doc = getActiveNotebook();
   await restartNotebookKernel(true);
-  say(`⏩ 开始顺序执行 [${doc.title}] 的全部单元格…`, "dim");
+  say(`⏩ 运行全部 [${doc.title}]`, "dim");
   for (const cell of doc.cells) {
     if (cell.type === "markdown") {
       cell.markdownRendered = true;
@@ -612,7 +612,7 @@ export async function runAllNotebookCells(): Promise<void> {
     if (!cell.source.trim()) continue;
     const ok = await runNotebookCell(cell.id, false);
     if (!ok) {
-      say(`⚠ 顺序执行在单元格 [${cell.executionCount || " "}] 处因报错中断`, "err");
+      say(`⚠ [${cell.executionCount || " "}] 出错中断`, "err");
       break;
     }
   }

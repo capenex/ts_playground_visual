@@ -285,7 +285,135 @@ checkpoint("窗口达标", r, sum, best);
     { err: null, noImplicitAny: true, strictNullChecks: false, allowRun: true, preset: 'custom' },
   );
 
-  // Restore default beginner preset
+  // Restore default beginner preset (including VFS tsconfig.json)
+  sandbox.applyTsConfig(sandbox.createTsConfigFromPreset('beginner'), true);
+  resetSandbox(sandbox);
+
+  // -------------------------------------------------------------------------
+  // 8b. noUncheckedIndexedAccess Config Serialization & Typechecker Support
+  // -------------------------------------------------------------------------
+  assertEq('TS_CONFIG presets set expected noUncheckedIndexedAccess defaults',
+    {
+      beginner: sandbox.createTsConfigFromPreset('beginner').noUncheckedIndexedAccess,
+      standard: sandbox.createTsConfigFromPreset('standard').noUncheckedIndexedAccess,
+      strict: sandbox.createTsConfigFromPreset('strict').noUncheckedIndexedAccess,
+    },
+    { beginner: false, standard: false, strict: true },
+  );
+
+  const strictSerialized = sandbox.serializeTsConfigToJson(sandbox.createTsConfigFromPreset('strict'));
+  check('serializeTsConfigToJson explicitly outputs "noUncheckedIndexedAccess": true for strict preset',
+    strictSerialized.includes('"noUncheckedIndexedAccess": true'),
+  );
+
+  const parsedStrictFlagOnly = sandbox.parseTsConfigJson(
+    '{"compilerOptions":{"strict":true},"playgroundOptions":{"allowRunOnTypeError":false}}',
+    sandbox.createTsConfigFromPreset('beginner'),
+  );
+  assertEq('parseTsConfigJson keeps noUncheckedIndexedAccess independent when only strict=true is set',
+    {
+      err: parsedStrictFlagOnly.error,
+      strict: parsedStrictFlagOnly.config.strict,
+      noUncheckedIndexedAccess: parsedStrictFlagOnly.config.noUncheckedIndexedAccess,
+    },
+    { err: null, strict: true, noUncheckedIndexedAccess: false },
+  );
+
+  const parsedUncheckedTrue = sandbox.parseTsConfigJson(
+    '{"compilerOptions":{"strict":true,"noUncheckedIndexedAccess":true}}',
+    sandbox.createTsConfigFromPreset('standard'),
+  );
+  assertEq('parseTsConfigJson parses explicit noUncheckedIndexedAccess=true',
+    parsedUncheckedTrue.config.noUncheckedIndexedAccess,
+    true,
+  );
+
+  // When noUncheckedIndexedAccess is false (standard preset), indexed reads stay non-undefined
+  sandbox.applyTsConfig(sandbox.createTsConfigFromPreset('standard'), false);
+  const uncheckedOffSrc = [
+    'interface Item { name: string }',
+    'interface Dict { [k: string]: Item; fixed: string }',
+    'const nums: number[] = [1, 2, 3];',
+    'const n: number = nums[0];',
+    'const pair: [number, string] = [1, "ok"];',
+    'const dynIdx = 0;',
+    'const dynVal: number | string = pair[dynIdx];',
+    'const rec: Record<string, number> = { a: 1 };',
+    'const rv: number = rec["a"];',
+    'const dict: Dict = { fixed: "ok" };',
+    'const itemName: string = dict["k"].name;',
+    'n + rv + itemName.length + dynVal.toString().length',
+  ].join('\n');
+  assertEq('standard preset (noUncheckedIndexedAccess=false) allows unchecked array/record/index-sig/tuple reads',
+    sandbox.typecheckTS(uncheckedOffSrc).length,
+    0,
+  );
+
+  // Enable noUncheckedIndexedAccess=true (strict preset)
+  sandbox.applyTsConfig(sandbox.createTsConfigFromPreset('strict'), false);
+
+  check('noUncheckedIndexedAccess=true flags assigning arr[0] directly to number (TS2322)',
+    sandbox.typecheckTS('const nums: number[] = [1, 2];\nconst n: number = nums[0];\nn').some((d) => d.code === 'TS2322'),
+  );
+  check('noUncheckedIndexedAccess=true flags direct property access users[0].name (TS18048)',
+    sandbox.typecheckTS('interface U { name: string }\nconst users: U[] = [];\nusers[0].name').some((d) => d.code === 'TS18048'),
+  );
+  assertEq('noUncheckedIndexedAccess=true allows optional chaining users[0]?.name',
+    sandbox.typecheckTS('interface U { name: string }\nconst users: U[] = [];\nconst nm: string | undefined = users[0]?.name;\nnm').length,
+    0,
+  );
+  check('noUncheckedIndexedAccess=true flags out-of-bounds tuple index pair[2] (TS2493)',
+    sandbox.typecheckTS('const pair: [number, string] = [1, "a"];\nconst x = pair[2];\nx').some((d) => d.code === 'TS2493'),
+  );
+  assertEq('noUncheckedIndexedAccess=true keeps in-bounds tuple literal index pair[0] as number',
+    sandbox.typecheckTS('const pair: [number, string] = [1, "a"];\nconst x: number = pair[0];\nx').length,
+    0,
+  );
+  check('noUncheckedIndexedAccess=true flags dynamic tuple index assigned to non-undefined union (TS2322)',
+    sandbox.typecheckTS('const pair: [number, string] = [1, "a"];\nconst idx: number = 0;\nconst v: number | string = pair[idx];\nv').some((d) => d.code === 'TS2322'),
+  );
+  check('noUncheckedIndexedAccess=true flags Record<string, number>[k] assigned to number (TS2322)',
+    sandbox.typecheckTS('const rec: Record<string, number> = { a: 1 };\nconst v: number = rec["a"];\nv').some((d) => d.code === 'TS2322'),
+  );
+  check('noUncheckedIndexedAccess=true flags index-signature obj[k].name without guard (TS18048)',
+    sandbox.typecheckTS('interface Item { name: string }\ninterface Dict { [k: string]: Item; fixed: string }\nconst d: Dict = { fixed: "x" };\nconst k: string = "a";\nd[k].name').some((d) => d.code === 'TS18048'),
+  );
+  assertEq('noUncheckedIndexedAccess=true keeps explicit non-index property d["fixed"] non-undefined',
+    sandbox.typecheckTS('interface Dict { [k: string]: number; fixed: string }\nconst d: Dict = { fixed: "x" };\nconst f: string = d["fixed"];\nf').length,
+    0,
+  );
+
+  const narrowedValidSrc = [
+    'function sumSafe(nums: number[]): number {',
+    '  const a = nums[0];',
+    '  let total = 0;',
+    '  if (a !== undefined) {',
+    '    total += a;',
+    '  }',
+    '  const b = nums[1];',
+    '  if (b != null) {',
+    '    const n: number = b;',
+    '    total += n;',
+    '  }',
+    '  const c = nums[2];',
+    '  if (c === undefined) {',
+    '    return total;',
+    '  }',
+    '  const d = nums[3] ?? 0;',
+    '  const opt = nums[4]?.toFixed(1);',
+    '  return total + c + d + (opt ? opt.length : 0);',
+    '}',
+    'sumSafe([1, 2, 3, 4, 5]);',
+  ].join('\n');
+  assertEq('noUncheckedIndexedAccess=true supports !== undefined, != null, early-return, ??, and ?. narrowing',
+    sandbox.typecheckTS(narrowedValidSrc).length,
+    0,
+  );
+  check('narrowing inside if (x !== undefined) does not leak outside the if block',
+    sandbox.typecheckTS('const nums: number[] = [1];\nconst x = nums[0];\nif (x !== undefined) { const ok: number = x; ok }\nconst bad: number = x;\nbad').some((d) => d.code === 'TS2322'),
+  );
+
+  sandbox.applyTsConfig(sandbox.createTsConfigFromPreset('beginner'), true);
   resetSandbox(sandbox);
 
   // -------------------------------------------------------------------------

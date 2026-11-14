@@ -20,7 +20,7 @@
 ## 1. 核心架构设计原则
 
 1. **严格的数据与视图分离（Data / UI Separation）**
-   - **纯逻辑层零 DOM 依赖**：在 `src/**/*.ts` 的 **34 个 TypeScript 模块**中，**23 个核心数据/编译器/运行时/内核/工具模块（22 个纯逻辑实现模块 + 1 个环境声明模块，占比 67.6%）完全不包含任何浏览器 DOM 引用**（无 `document`、`window`、`HTMLElement`、`localStorage`），可在纯 Node.js 环境（如 `test-pipeline.mjs`）直接导入并执行单元测试。
+   - **纯逻辑层零 DOM 依赖**：在 `src/**/*.ts` 的 **39 个 TypeScript 模块**中，**24 个核心数据/编译器/运行时/内核/工具/布局模块（23 个纯逻辑实现模块 + 1 个环境声明模块，占比 61.5%）完全不包含任何浏览器 DOM 引用**（无 `document`、`window`、`HTMLElement`、`localStorage`），可在纯 Node.js 环境（如 `test-pipeline.mjs`）直接导入并执行单元测试。
    - **DOM 操作完全收敛至 `src/ui/*` 与 `src/viz/*`**：所有 DOM 节点查询统一由 `src/ui/dom.ts` 强类型惰性注册表（`getEl` / `mustEl`）管理，严禁任何隐式 HTML `id` 全局变量。
 2. **单向无环依赖图（Strict Unidirectional DAG）**
    - 全仓模块构成严格的 7 层单向有向无环图（DAG），通过 `test-pipeline.mjs` 中的 **Tarjan 强连通分量（SCC）算法**门禁强制保证 **0 直接循环依赖** 与 **0 多节点传递循环依赖**。
@@ -31,7 +31,7 @@
 
 ---
 
-## 2. 34 模块七层单向架构全景
+## 2. 39 模块七层单向架构全景
 
 ### 2.1 分层拓扑图
 
@@ -45,9 +45,13 @@
                 ▼                                              ▼
 ┌───────────────────────────────────────────────┐ ┌────────────────────────────┐
 │ Layer 6: 可视化渲染与纯归一化层 (src/viz/*)     │ │ Layer 5: Notebook 纯内核层  │
-│   ast-view.ts · highlight.ts · memory-graph.ts│ │   notebook-model.ts (0 DOM)│
-│   memory-normalizers.ts [0 DOM]               │ │   notebook-kernel.ts(0 DOM)│
-└───────────────┬───────────────────────────────┘ └────────────┬───────────────┘
+│   [9 modules: 2x 0 DOM + 7x DOM]              │ │   notebook-model.ts (0 DOM)│
+│   memory-normalizers.ts [0 DOM] ·             │ │   notebook-kernel.ts(0 DOM)│
+│   svg-layout.ts [0 DOM] · ast-view.ts ·       │ └────────────┬───────────────┘
+│   highlight.ts · viz-collections.ts ·         │              │
+│   viz-topology.ts · viz-runtime-panels.ts ·   │              │
+│   viz-complexity.ts · memory-graph.ts         │              │
+└───────────────┬───────────────────────────────┘              │
                 │                                              │
                 ▼                                              ▼
 ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -77,7 +81,7 @@
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 2.2 全量 34 个模块职责矩阵
+### 2.2 全量 39 个模块职责矩阵
 
 | 层级 | 模块路径 | DOM 依赖 | 核心职责说明 |
 | :--- | :--- | :---: | :--- |
@@ -104,9 +108,14 @@
 | **L5 Notebook 内核层** | `src/notebook/notebook-model.ts` | **0 DOM** | Jupyter `.ipynb` v4 序列化/反序列化、Cell 增删改移、Markdown 纯渲染器（`renderMarkdown`） |
 | **L5 Notebook 内核层** | `src/notebook/notebook-kernel.ts` | **0 DOM** | 跨 Cell 共享作用域状态机（`NotebookKernel`），支持 TypeScript 顶层声明重写、跨格静态类型检查与单格步进调试 |
 | **L6 可视化与归一化** | `src/viz/memory-normalizers.ts` | **0 DOM** | 7 类算法数据结构（2D Matrix、Tree、Graph、LinkedList、Stack/Queue、HashMap、DP）纯数据归一化 |
+| **L6 可视化与归一化** | `src/viz/svg-layout.ts` | **0 DOM** | 自适应二叉树与通用有向/无向图纯 SVG 确定性防重叠布局引擎（`computeTreeLayout` / `computeGraphLayout`） |
 | **L6 可视化与归一化** | `src/viz/ast-view.ts` | DOM | 交互式 AST 语法树、作用域链与复杂度估算徽章渲染 |
 | **L6 可视化与归一化** | `src/viz/highlight.ts` | DOM | 源码行级步进高亮、内联变量气泡提示（Tooltip）与 CodeMirror 装饰器同步 |
-| **L6 可视化与归一化** | `src/viz/memory-graph.ts` | DOM | 栈帧面板、堆内存卡片、SVG 拓扑连线及对象生命周期脉冲动画渲染 |
+| **L6 可视化与归一化** | `src/viz/viz-collections.ts` | DOM | 线性与关联集合卡片渲染器（`vizArray`、`vizQueue`、`vizHeap`、`vizUF`、`vizMap`、`vizSet`、`vizStack`、`vizString`、`vizGrid`） |
+| **L6 可视化与归一化** | `src/viz/viz-topology.ts` | DOM | 链表、树、图、接口与类型别名拓扑卡片渲染及缩放/平移交互委托（`vizList`、`vizTree`、`vizGraph`、`vizInterface`、`vizTypeAlias`、`bindTopologyInteractions`） |
+| **L6 可视化与归一化** | `src/viz/viz-runtime-panels.ts` | DOM | 调用栈面包屑、事件循环面板、自定义监听标量卡片、控制按钮状态与函数签名格式化（`selectStackFrame`、`renderCallStack`、`vizEventLoop`、`vizWatchScalar` 等） |
+| **L6 可视化与归一化** | `src/viz/viz-complexity.ts` | DOM | 底部时间/空间复杂度摘要条与热点执行行详情弹窗渲染（`renderComplexityBar`、`toggleComplexityPopover`） |
+| **L6 可视化与归一化** | `src/viz/memory-graph.ts` | DOM | L6 可视化总装协调入口：`VIZ` 注册表绑定、`renderPicker`/`renderSlots`/`renderStatic` 调度与全量向下兼容重导出 |
 | **L7 UI 视图与入口** | `src/ui/dom.ts` | DOM | 强类型 DOM 节点惰性查询注册表（`getEl` / `mustEl`）与动态元素工厂 |
 | **L7 UI 视图与入口** | `src/ui/controls.ts` | DOM | 播放控制栏、步进/断点跳转、主题/布局切换、输出与诊断面板更新 |
 | **L7 UI 视图与入口** | `src/ui/vfs.ts` | DOM | VFS 侧边栏文件树渲染、上传/下载交互与 `localStorage` 持久化桥接 |

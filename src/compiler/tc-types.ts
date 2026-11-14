@@ -31,6 +31,7 @@ export function formatTsConfigCacheKey(cfg: TsCompilerOptions = appState.TS_CONF
     cfg.strictFunctionTypes ? 1 : 0,
     cfg.noImplicitReturns ? 1 : 0,
     cfg.noUnusedLocals ? 1 : 0,
+    cfg.noUncheckedIndexedAccess ? 1 : 0,
     cfg.allowRunOnTypeError ? 1 : 0,
   ].join('');
 }
@@ -42,7 +43,7 @@ export function serializeTsConfigToJson(cfg: TsCompilerOptions = appState.TS_CON
       : cfg.preset === 'standard'
       ? '标准教学模式 (Standard) — 检查显式类型与空值安全、允许省略参数类型'
       : cfg.preset === 'strict'
-      ? '最严生产模式 (Strictest) — 全开 strict / noImplicitAny / noUnusedLocals'
+      ? '最严生产模式 (Strictest) — 全开 strict / noImplicitAny / noUnusedLocals / noUncheckedIndexedAccess'
       : '自定义模式 (Custom)';
   return [
     `{`,
@@ -55,7 +56,8 @@ export function serializeTsConfigToJson(cfg: TsCompilerOptions = appState.TS_CON
     `    "strictNullChecks": ${cfg.strictNullChecks},`,
     `    "strictFunctionTypes": ${cfg.strictFunctionTypes},`,
     `    "noImplicitReturns": ${cfg.noImplicitReturns},`,
-    `    "noUnusedLocals": ${cfg.noUnusedLocals}`,
+    `    "noUnusedLocals": ${cfg.noUnusedLocals},`,
+    `    "noUncheckedIndexedAccess": ${cfg.noUncheckedIndexedAccess}`,
     `  },`,
     `  "playgroundOptions": {`,
     `    "preset": "${cfg.preset}",`,
@@ -152,6 +154,10 @@ export function parseTsConfigJson(
       typeof co.noUnusedLocals === 'boolean'
         ? co.noUnusedLocals
         : base.noUnusedLocals;
+    const noUncheckedIndexedAccess =
+      typeof co.noUncheckedIndexedAccess === 'boolean'
+        ? co.noUncheckedIndexedAccess
+        : base.noUncheckedIndexedAccess;
     const allowRunOnTypeError =
       typeof po.allowRunOnTypeError === 'boolean'
         ? po.allowRunOnTypeError
@@ -166,6 +172,7 @@ export function parseTsConfigJson(
       strictFunctionTypes,
       noImplicitReturns,
       noUnusedLocals,
+      noUncheckedIndexedAccess,
       allowRunOnTypeError,
     };
     const detectedPreset = detectTsConfigPreset(mergedWithoutPreset);
@@ -1227,6 +1234,25 @@ export function stripTupleElementLabel(elemStr: string): string {
     return `${prefix}${m[3].trim()}${optSuffix}`;
   }
   return s.replace(/^readonly\s+/, '').trim();
+}
+
+/** Extract element type from `T[]` or `(T)[]`, returning null for non-array types. */
+export function extractArrayElemType(arrType: string): string | null {
+  const parenM = arrType.match(/^\((.+)\)\[\]$/);
+  if (parenM && parenM[1]) return parenM[1];
+  if (arrType.endsWith('[]')) return arrType.slice(0, -2);
+  return null;
+}
+
+/** Parse top-level `Record<K, V>` arguments, returning null if not a Record type. */
+export function parseRecordTypeArgs(t: string): { keyType: string; valType: string } | null {
+  if (!t.startsWith('Record<') || !t.endsWith('>')) return null;
+  const args = splitTopLevelDecl(t.slice(7, -1));
+  if (args.length !== 2) return null;
+  return {
+    keyType: (args[0] || 'string').trim(),
+    valType: (args[1] || 'any').trim(),
+  };
 }
 
 export function splitTopLevelUnion(typeStr: string): string[] {

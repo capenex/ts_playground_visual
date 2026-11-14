@@ -88,8 +88,8 @@ export async function runVizEditorSuite(sandbox) {
   const cmEntryPath = path.join(ROOT, 'editor', 'cm-entry.js');
   const appCssPath = path.join(ROOT, 'css', 'app.css');
   check('editor/cm.bundle.js exists and is built', fs.existsSync(cmBundlePath) && fs.statSync(cmBundlePath).size > 50000);
-  const cmEntrySrc = fs.readFileSync(cmEntryPath, 'utf8');
-  const appCssSrc = fs.readFileSync(appCssPath, 'utf8');
+  const cmEntrySrc = fs.readFileSync(cmEntryPath, 'utf8').replace(/\r\n/g, '\n');
+  const appCssSrc = fs.readFileSync(appCssPath, 'utf8').replace(/\r\n/g, '\n');
   check('editor/cm-entry.js has zero @codemirror/lang-python or PY_COMPLETIONS',
     !cmEntrySrc.includes('@codemirror/lang-python') && !cmEntrySrc.includes('PY_COMPLETIONS'),
   );
@@ -259,5 +259,378 @@ export async function runVizEditorSuite(sandbox) {
     consoleBarHtml.includes('›') && consoleBarHtml.includes('O(1)'),
   );
   sandbox.removeCustomWatch('nums.slice(0, 2)');
+
+  // -------------------------------------------------------------------------
+  // 8. Adaptive SVG Tree/Graph Layout Anti-Overlap & Modularized Viz Exports
+  // -------------------------------------------------------------------------
+  const extractCircleCoords = (svgHtml) => {
+    const coords = [];
+    const circleRe = /<circle\b[^>]*>/g;
+    let m;
+    while ((m = circleRe.exec(String(svgHtml || ''))) !== null) {
+      const tag = m[0];
+      const cxMatch = tag.match(/\bcx="(-?[\d.]+)"/);
+      const cyMatch = tag.match(/\bcy="(-?[\d.]+)"/);
+      if (cxMatch && cyMatch) {
+        coords.push({ x: Number(cxMatch[1]), y: Number(cyMatch[1]) });
+      }
+    }
+    return coords;
+  };
+
+  const hasNoOverlap = (coords, minDist = 18) => {
+    for (let i = 0; i < coords.length; i++) {
+      for (let j = i + 1; j < coords.length; j++) {
+        const dx = coords[i].x - coords[j].x;
+        const dy = coords[i].y - coords[j].y;
+        if (Math.hypot(dx, dy) < minDist) return false;
+      }
+    }
+    return true;
+  };
+
+  // 8a. Deep skewed tree (depth 8 -> 9 nodes, previously truncated at depth > 5)
+  const deepSkewedNodes = Array.from({ length: 9 }, (_, i) => ({
+    val: i + 1,
+    left: null,
+    right: i < 8 ? i + 1 : null,
+  }));
+  const deepTreeHtml = sandbox.VIZ.tree({ kind: 'tree', nodes: deepSkewedNodes, root: 0, hot: 8 });
+  const deepCoords = extractCircleCoords(deepTreeHtml);
+  check('VIZ.tree renders all 9 nodes of a depth-8 right-skewed tree without depth>5 truncation',
+    typeof deepTreeHtml === 'string' &&
+    deepTreeHtml.includes('vsvg-wrap') &&
+    deepTreeHtml.includes('vsvg-toolbar') &&
+    deepCoords.length === 9 &&
+    hasNoOverlap(deepCoords),
+  );
+
+  // 8b. Wide balanced tree (15 nodes, 4 levels) renders without node overlap
+  const balancedNodes = Array.from({ length: 15 }, (_, i) => ({
+    val: i + 1,
+    left: 2 * i + 1 < 15 ? 2 * i + 1 : null,
+    right: 2 * i + 2 < 15 ? 2 * i + 2 : null,
+  }));
+  const balancedTreeHtml = sandbox.VIZ.tree({ kind: 'tree', nodes: balancedNodes, root: 0 });
+  const balancedCoords = extractCircleCoords(balancedTreeHtml);
+  check('VIZ.tree renders 15-node balanced tree with non-overlapping node coordinates',
+    typeof balancedTreeHtml === 'string' &&
+    balancedCoords.length === 15 &&
+    hasNoOverlap(balancedCoords),
+  );
+
+  // 8c. Graph without preset x/y coordinates (including self-loop) renders deterministically without NaN or overlap
+  const coordlessGraph = {
+    kind: 'graph',
+    nodes: [
+      { id: 'A', label: 'A' },
+      { id: 'B', label: 'B' },
+      { id: 'C', label: 'C' },
+      { id: 'D', label: 'D' },
+      { id: 'E', label: 'E' },
+    ],
+    edges: [['A', 'B'], ['B', 'C'], ['C', 'D'], ['D', 'E'], ['E', 'A'], ['A', 'A']],
+    hot: 'C',
+  };
+  const graphHtml = sandbox.VIZ.graph(coordlessGraph);
+  const graphCoords = extractCircleCoords(graphHtml);
+  check('VIZ.graph lays out coordinate-less graph nodes without NaN or overlapping circles',
+    typeof graphHtml === 'string' &&
+    !graphHtml.includes('NaN') &&
+    !graphHtml.includes('undefined') &&
+    graphHtml.includes('vsvg-toolbar') &&
+    graphCoords.length === 5 &&
+    hasNoOverlap(graphCoords),
+  );
+
+  // 8d. Modularized viz exports backward-compatibility on global sandbox
+  const expectedVizExports = [
+    'truncMap', 'vizArray', 'vizQueue', 'vizHeap', 'vizUF', 'vizMap', 'vizSet', 'vizStack', 'vizString', 'vizGrid',
+    'vizList', 'vizTree', 'vizGraph', 'vizInterface', 'vizTypeAlias', 'bindTopologyInteractions',
+    'selectStackFrame', 'renderCallStack', 'vizEventLoop', 'vizWatchScalar', 'updateControlButtons', 'formatFnTypeHtml',
+    'renderComplexityBar', 'toggleComplexityPopover',
+    'addCustomWatch', 'removeCustomWatch', 'renderPicker', 'renderSlots', 'renderStatic',
+    'renderMemory', 'renderAsyncQueues', 'drawArrows', 'scheduleArrowRedraw',
+  ];
+  const missingExports = expectedVizExports.filter((name) => typeof sandbox[name] !== 'function');
+  check('memory-graph.ts re-exports all split viz module functions cleanly',
+    missingExports.length === 0,
+    missingExports.length ? `missing: ${missingExports.join(', ')}` : '',
+  );
+
+  if (sandbox.slotsEl) {
+    sandbox.bindTopologyInteractions(sandbox.slotsEl);
+    sandbox.bindTopologyInteractions(sandbox.slotsEl);
+    check('bindTopologyInteractions is safe and idempotent when called repeatedly', true);
+  }
+
+  // -------------------------------------------------------------------------
+  // 9. Video Frame Canvas Renderer (`renderVideoFrameToCanvas`, `tokenizeCodeForCanvas`, `drawVizCardOnCanvas`)
+  // -------------------------------------------------------------------------
+  const createRecordingCanvasCtx = () => {
+    const texts = [];
+    const arcCalls = [];
+    const bezierCalls = [];
+    const quadCalls = [];
+    const lineToCalls = [];
+    const fillRectCalls = [];
+    return {
+      texts,
+      arcCalls,
+      bezierCalls,
+      quadCalls,
+      lineToCalls,
+      fillRectCalls,
+      fillStyle: '#000',
+      strokeStyle: '#000',
+      lineWidth: 1,
+      font: '12px monospace',
+      save() {},
+      restore() {},
+      scale() {},
+      beginPath() {},
+      closePath() {},
+      moveTo() {},
+      lineTo(x, y) { lineToCalls.push({ x, y }); },
+      arcTo() {},
+      rect() {},
+      clip() {},
+      fill() {},
+      stroke() {},
+      clearRect() {},
+      strokeRect() {},
+      fillRect(x, y, w, h) { fillRectCalls.push({ x, y, w, h }); },
+      quadraticCurveTo(cpx, cpy, x, y) { quadCalls.push({ cpx, cpy, x, y }); },
+      bezierCurveTo(cp1x, cp1y, cp2x, cp2y, x, y) { bezierCalls.push({ cp1x, cp1y, cp2x, cp2y, x, y }); },
+      arc(x, y, r) { arcCalls.push({ x, y, r }); },
+      setLineDash() {},
+      fillText(txt, x, y) { texts.push({ txt: String(txt), x, y }); },
+      measureText(txt) { return { width: String(txt || '').length * 7.5 }; },
+      createLinearGradient() { return { addColorStop() {} }; },
+    };
+  };
+
+  // 9a. tokenizeCodeForCanvas highlights TS keywords, types, strings, numbers, comments & calls
+  const codeToks = sandbox.tokenizeCodeForCanvas('const x: Record<string, number> = fn("ok", 42); // note');
+  const findTok = (sub) => codeToks.find((t) => t.text === sub);
+  check('tokenizeCodeForCanvas distinguishes TS keywords, types, strings, numbers, calls, and comments',
+    Boolean(
+      findTok('const')?.color === '#ff7b72' &&
+      findTok('Record')?.color === '#4ec9b0' &&
+      findTok('string')?.color === '#4ec9b0' &&
+      findTok('"ok"')?.color === '#9ece6a' &&
+      findTok('42')?.color === '#ffb454' &&
+      findTok('fn')?.color === '#79c0ff' &&
+      findTok('// note')?.color === '#637488'
+    ),
+  );
+
+  // 9b. renderVideoFrameToCanvas renders Tree + Graph (self-loop + bidirectional) + Grid (viewCells + deps) + List
+  resetSandbox(sandbox);
+  sandbox.TRACE.code = [
+    'interface CalcJob { id: string; count: number; }',
+    'const arr: number[] = [10, 20, 30];',
+    'checkpoint("mid", arr[1]);',
+    'const bad: number = "oops";',
+  ];
+  sandbox.TRACE.steps = [
+    {
+      line: 3,
+      note: '◉ checkpoint(mid, 20)',
+      isCheckpoint: true,
+      anim: { type: 'checkpoint', fn: 'checkpoint', args: ['"mid"', 'arr[1]'], argVals: ['mid', '20'] },
+      callStack: [{ label: 'solve()', line: 3 }],
+      v: { l: 0, r: 2, mid: 1 },
+      ds: {
+        bt: {
+          kind: 'tree',
+          root: 0,
+          hot: 2,
+          nodes: [
+            { val: 1, left: 1, right: 2 },
+            { val: 2, left: null, right: null },
+            { val: 3, left: null, right: null },
+          ],
+        },
+        g: {
+          kind: 'graph',
+          directed: true,
+          hot: 'B',
+          mark: 'A',
+          nodes: [
+            { id: 'A', label: 'A' },
+            { id: 'B', label: 'B' },
+            { id: 'C', label: 'C' },
+          ],
+          edges: [
+            { from: 'A', to: 'B', label: '3' },
+            { from: 'B', to: 'A', label: '5' },
+            { from: 'B', to: 'C' },
+            { from: 'A', to: 'A' },
+          ],
+        },
+        dp: {
+          kind: 'grid',
+          cells: [[1, 2], [3, 4]],
+          totalRows: 12,
+          totalCols: 12,
+          rowIndices: [0, 5, 6],
+          colIndices: [0, 4, 5],
+          viewCells: [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
+          mark: [6, 5],
+          deps: [[5, 4], [5, 5]],
+        },
+        head: {
+          kind: 'list',
+          items: [10, 20, 30],
+          total: 3,
+          hot: 1,
+          pointers: { 0: ['head'], 1: ['slow', 'cur'] },
+        },
+      },
+    },
+  ];
+  sandbox.appState.watched = new sandbox.Set(['bt', 'g', 'dp', 'head']);
+  const ctxTopo = createRecordingCanvasCtx();
+  let renderTopoOk = false;
+  try {
+    sandbox.renderVideoFrameToCanvas(ctxTopo, 0, 0.5, 1);
+    renderTopoOk = true;
+  } catch (e) {
+    renderTopoOk = false;
+    console.error('renderVideoFrameToCanvas topo error:', e);
+  }
+  const topoTextAll = ctxTopo.texts.map((t) => t.txt).join('\n');
+  check('renderVideoFrameToCanvas draws tree, graph (with self-loop/bidirectional bezier), viewCells grid, and list with pointers',
+    renderTopoOk &&
+    ctxTopo.arcCalls.length >= 6 &&
+    ctxTopo.bezierCalls.length >= 1 &&
+    ctxTopo.quadCalls.length >= 1 &&
+    topoTextAll.includes('r\\c') &&
+    topoTextAll.includes('head') &&
+    topoTextAll.includes('slow,cur') &&
+    topoTextAll.includes('null') &&
+    topoTextAll.includes('◉ CHECKPOINT'),
+  );
+
+  // 9c. renderVideoFrameToCanvas renders Interface, TypeAlias, EventLoop, Array(win+pointers), Queue, Heap, UF, Stack, Map, Set
+  resetSandbox(sandbox);
+  sandbox.TRACE.code = [
+    'interface CalcJob { id: string; count?: number; }',
+    'const nums: number[] = [4, 7, 9, 12];',
+  ];
+  sandbox.TRACE.steps = [
+    {
+      line: 2,
+      note: 'arr[1] = 20',
+      anim: { type: 'assign', to: 'l', from: '1', val: '1' },
+      callStack: [{ label: 'main()', line: 2 }],
+      v: { l: 0, r: 2 },
+      ds: {
+        CalcJob: {
+          kind: 'interface',
+          interfaceName: 'CalcJob',
+          isClass: false,
+          isSchema: false,
+          hot: 'id',
+          fields: [
+            { k: 'id', declaredType: 'string', v: '456', optional: false },
+            { k: 'count', declaredType: 'number', v: 7, optional: true },
+          ],
+        },
+        JobState: {
+          kind: 'type',
+          interfaceName: 'JobState',
+          aliasKind: 'union',
+          unionBranches: [
+            { raw: "'idle'", isObject: false },
+            { raw: "'done'", isObject: false },
+          ],
+        },
+        eventLoop: {
+          kind: 'eventloop',
+          phase: 'microtask',
+          now: 12,
+          activeTask: 'flushMicrotasks',
+          coroutines: [{ name: 'fetchJob', status: 'suspended', line: 5, awaitingExpr: 'p' }],
+          microtasks: [{ label: 'then#1', line: 8 }],
+          macrotasks: [{ label: 'timeout#1', due: 50, delay: 50 }],
+          promises: [{ id: 1, label: 'p', state: 'fulfilled', value: 42 }],
+        },
+        nums: {
+          kind: 'array',
+          items: [4, 7, 9, 12],
+          total: 4,
+          hot: 1,
+          win: [0, 2],
+          pointers: { 0: ['l'], 2: ['r'] },
+        },
+        q: { kind: 'queue', items: [1, 2, 3], total: 3, hot: 0 },
+        pq: { kind: 'heap', items: [1, 5, 8], total: 3, hot: 0 },
+        uf: { kind: 'uf', items: [0, 0, 1], total: 3, hot: 2 },
+        stk: { kind: 'stack', items: [11, 22], total: 2, hot: 1 },
+        mp: { kind: 'map', entries: [{ k: 'a', v: 1 }], hot: 'a' },
+        st: { kind: 'set', items: ['x', 'y'], hot: 'x' },
+      },
+    },
+  ];
+  sandbox.appState.watched = new sandbox.Set(['CalcJob', 'JobState', 'eventLoop', 'nums', 'q', 'pq', 'uf', 'stk', 'mp', 'st']);
+  const ctxRich = createRecordingCanvasCtx();
+  let renderRichOk = false;
+  try {
+    sandbox.renderVideoFrameToCanvas(ctxRich, 0, 0.25, 2);
+    renderRichOk = true;
+  } catch (e) {
+    renderRichOk = false;
+    console.error('renderVideoFrameToCanvas rich error:', e);
+  }
+  const richTextAll = ctxRich.texts.map((t) => t.txt).join('\n');
+  check('renderVideoFrameToCanvas renders Interface, TypeAlias, EventLoop 4 lanes, and collections cleanly',
+    renderRichOk &&
+    richTextAll.includes('CalcJob') &&
+    richTextAll.includes('JobState') &&
+    richTextAll.includes('Microtask') &&
+    richTextAll.includes('Macrotask') &&
+    richTextAll.includes('Promise') &&
+    richTextAll.includes('[0..2]'),
+  );
+
+  // 9d. Direct drawVizCardOnCanvas checks for event_loop alias & watch-scalar
+  const ctxCard = createRecordingCanvasCtx();
+  sandbox.drawVizCardOnCanvas(
+    ctxCard,
+    0,
+    0,
+    520,
+    200,
+    { name: 'loopAlias' },
+    {
+      kind: 'event_loop',
+      phase: 'macrotask',
+      now: 100,
+      coroutines: [],
+      microtasks: [],
+      macrotasks: [{ label: 'cb', due: 100, delay: 100 }],
+      promises: [],
+    },
+    'event_loop',
+  );
+  sandbox.drawVizCardOnCanvas(
+    ctxCard,
+    0,
+    210,
+    260,
+    100,
+    { name: 'l + r', isCustomWatch: true },
+    { kind: 'watch-scalar', watchStatus: 'ok', val: '7', prevValStr: '6', changed: true, runtimeType: 'number' },
+    'watch-scalar',
+  );
+  const cardTextAll = ctxCard.texts.map((t) => t.txt).join('\n');
+  check('drawVizCardOnCanvas supports event_loop alias and watch-scalar delta',
+    cardTextAll.includes('Macrotask · 宏任务触发') &&
+    cardTextAll.includes('⏱ 100ms') &&
+    cardTextAll.includes('6') &&
+    cardTextAll.includes('7'),
+  );
 }
 

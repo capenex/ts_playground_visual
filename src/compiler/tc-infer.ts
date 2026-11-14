@@ -13,11 +13,13 @@ import {
 } from "./comments";
 import { extractBindingNames } from "./instrumenter";
 import {
+  extractArrayElemType,
   FnSigInfo,
   inferLiteralType,
   isTsAssignable,
   normalizeTsType,
   parseObjectLiteralEntries,
+  parseRecordTypeArgs,
   parseTypeParams,
   PropShapeInfo,
   splitTopLevelDecl,
@@ -81,6 +83,146 @@ export function createTypeInferEngine(ctx: TypeCheckContext, evalEngine: TypeEva
     getClassMethodSig,
     isTypeCompatible,
   } = evalEngine;
+
+  function appendUndefinedIfUnchecked(t: string): string {
+    if (!ctx.tsConfig.noUncheckedIndexedAccess) return t;
+    if (!t || t === 'any' || t === 'unknown' || t === 'never') return t;
+    if (splitTopLevelUnion(t).includes('undefined')) return t;
+    return `${t}|undefined`;
+  }
+
+  function resolveMemberProp(
+    lookupType: string,
+    prop: string,
+    lineNum: number
+  ): string {
+    if (prop === 'length' && (lookupType.endsWith('[]') || lookupType.startsWith('[') || lookupType === 'string')) {
+      return 'number';
+    }
+    if (prop === 'size' && (lookupType.startsWith('Map<') || lookupType.startsWith('Set<'))) {
+      return 'number';
+    }
+    const recArgs = parseRecordTypeArgs(lookupType);
+    if (recArgs) {
+      return appendUndefinedIfUnchecked(evaluateType(recArgs.valType, activeTypeParams));
+    }
+    const shape = getInterfaceShape(lookupType);
+    if (shape) {
+      if (shape.has(prop)) {
+        const pInfo = shape.get(prop);
+        if (!pInfo) return 'any';
+        if (pInfo.optional && pInfo.type !== 'any' && !splitTopLevelUnion(pInfo.type).includes('undefined')) {
+          return `${pInfo.type}|undefined`;
+        }
+        return pInfo.type;
+      }
+      if (getClassMethodSig(lookupType, prop)) return 'function';
+      if (shape.has('__index__')) {
+        return appendUndefinedIfUnchecked((shape.get('__index__') || { type: 'any' }).type);
+      }
+      addDiag(lineNum, 'TS2339', `类型 "${lookupType}" 上不存在属性 "${prop}"`);
+      return 'any';
+    }
+    if (prop === 'length' || prop === 'size' || prop === 'val') return 'number';
+    return 'any';
+  }
+
+  function resolveMethodCallOnType(
+    objType: string,
+    objName: string,
+    method: string,
+    explicitTypeArgs: string[],
+    args: string[],
+    argTypes: string[],
+    lineNum: number
+  ): string {
+    const mapM = objType.match(/^Map<([^,]+),(.+)>$/);
+    if (mapM && mapM[1] && mapM[2]) {
+      const kt = mapM[1], vt = mapM[2];
+      if (method === 'get' || method === 'has' || method === 'delete') {
+        if (argTypes[0] && !isExpressionAssignable(args[0], argTypes[0], kt, lineNum)) {
+          addDiag(lineNum, 'TS2345', `"${objName}.${method}" 的键参数类型 "${argTypes[0]}" 不能赋给类型 "${kt}"`);
+        }
+        return method === 'get' ? `${vt}|undefined` : 'boolean';
+      }
+      if (method === 'set') {
+        if (argTypes[0] && !isExpressionAssignable(args[0], argTypes[0], kt, lineNum)) {
+          addDiag(lineNum, 'TS2345', `"${objName}.set" 的键参数类型 "${argTypes[0]}" 不能赋给类型 "${kt}"`);
+        }
+        if (argTypes[1] && !isExpressionAssignable(args[1], argTypes[1], vt, lineNum)) {
+          addDiag(lineNum, 'TS2345', `"${objName}.set" 的值参数类型 "${argTypes[1]}" 不能赋给类型 "${vt}"`);
+        }
+        return objType;
+      }
+    }
+
+    const setM = objType.match(/^Set<(.+)>$/);
+    if (setM && setM[1]) {
+      const vt = setM[1];
+      if (method === 'add' || method === 'has' || method === 'delete') {
+        if (argTypes[0] && !isExpressionAssignable(args[0], argTypes[0], vt, lineNum)) {
+          addDiag(lineNum, 'TS2345', `"${objName}.${method}" 的参数类型 "${argTypes[0]}" 不能赋给类型 "${vt}"`);
+        }
+        return method === 'add' ? objType : 'boolean';
+      }
+    }
+
+    const arrElem = extractArrayElemType(objType);
+    if (arrElem !== null) {
+      if (method === 'push' || method === 'unshift') {
+        argTypes.forEach((at, idx) => {
+          if (!isExpressionAssignable(args[idx], at, arrElem, lineNum)) {
+            addDiag(lineNum, 'TS2345', `数组 "${objName}.${method}" 的参数类型 "${at}" 不能赋给元素类型 "${arrElem}"`);
+          }
+        });
+        return 'number';
+      }
+      if (method === 'pop' || method === 'shift') return arrElem;
+      if (method === 'includes') return 'boolean';
+      if (method === 'slice' || method === 'concat' || method === 'filter') return objType;
+      if (method === 'join') return 'string';
+    }
+
+    if (objType === 'string') {
+      if (method === 'slice' || method === 'substring' || method === 'trim' || method === 'toLowerCase' || method === 'toUpperCase') return 'string';
+      if (method === 'includes' || method === 'startsWith' || method === 'endsWith') return 'boolean';
+      if (method === 'indexOf' || method === 'charCodeAt') return 'number';
+    }
+
+    if (objType === 'number') {
+      if (method === 'toFixed' || method === 'toString' || method === 'toPrecision' || method === 'toExponential') return 'string';
+    }
+
+    if (objType === '__FsPromises__' || (objName.endsWith('.promises') && inferType(objName.slice(0, -9).trim(), lineNum) === '__FsModule__')) {
+      if (method === 'readFile') return 'Promise<string>';
+      if (method === 'writeFile' || method === 'appendFile' || method === 'mkdir' || method === 'unlink' || method === 'rm' || method === 'access' || method === 'copyFile' || method === 'rename') return 'Promise<void>';
+      if (method === 'readdir') return 'Promise<string[]>';
+      if (method === 'exists') return 'Promise<boolean>';
+      if (method === 'stat') return 'Promise<any>';
+    }
+
+    if (objType === '__FsModule__') {
+      if (method === 'readFileSync') return 'string';
+      if (method === 'writeFileSync' || method === 'appendFileSync' || method === 'mkdirSync' || method === 'unlinkSync' || method === 'rmSync' || method === 'copyFileSync' || method === 'renameSync') return 'void';
+      if (method === 'readdirSync') return 'string[]';
+      if (method === 'existsSync') return 'boolean';
+      if (method === 'statSync') return 'any';
+    }
+
+    const classMethodSig = getClassMethodSig(objType, method);
+    if (classMethodSig) {
+      return instantiateAndCheckCall(classMethodSig, explicitTypeArgs, args, argTypes, `方法 "${objName}.${method}"`, lineNum);
+    }
+    const objShape = getInterfaceShape(objType);
+    if (objShape && objShape.has(method)) {
+      const propType = (objShape.get(method) || { type: '' }).type || '';
+      const arrowPos = propType.lastIndexOf('=>');
+      if (arrowPos > 0) {
+        return resolveAlias(propType.slice(arrowPos + 2).trim());
+      }
+    }
+    return 'any';
+  }
 
   function isExpressionAssignable(expr: string | null | undefined, actualType: string, expectedType: string, lineNum: number): boolean {
     const e = evaluateType(expectedType, activeTypeParams);
@@ -311,6 +453,10 @@ export function createTypeInferEngine(ctx: TypeCheckContext, evalEngine: TypeEva
       const awaitedT = inferType(s.slice(5).trim(), lineNum);
       return evaluateType(`Awaited<${awaitedT}>`, activeTypeParams);
     }
+    if (/^typeof\b/.test(s) && (s[6] === ' ' || s[6] === '\t' || s[6] === '(')) {
+      inferType(s.slice(6).trim(), lineNum);
+      return 'string';
+    }
 
     const promiseCtor = s.match(/^new\s+Promise\s*(?:<\s*([\s\S]+?)\s*>)?\s*\(/);
     if (promiseCtor) {
@@ -502,14 +648,26 @@ export function createTypeInferEngine(ctx: TypeCheckContext, evalEngine: TypeEva
       if (qIdx > 0 && cIdx > qIdx) {
         const condExpr = s.slice(0, qIdx).trim();
         inferType(condExpr, lineNum);
-        const eqNullM = condExpr.match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*(===|!==)\s*(null|undefined)$/);
+        const eqNullM = condExpr.match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*(===|!==|==|!=)\s*(null|undefined)$/);
+        const eqNullRevM = !eqNullM
+          ? condExpr.match(/^(null|undefined)\s*(===|!==|==|!=)\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)$/)
+          : null;
+        const condVar = eqNullM ? eqNullM[1] : (eqNullRevM ? eqNullRevM[3] : undefined);
+        const condOp = eqNullM ? eqNullM[2] : (eqNullRevM ? eqNullRevM[2] : undefined);
+        const condNullKind = eqNullM ? eqNullM[3] : (eqNullRevM ? eqNullRevM[1] : undefined);
+        const truthyVar = (!condVar && /^[A-Za-z_$][\w$]*$/.test(condExpr) && env.has(condExpr)) ? condExpr : undefined;
         let savedNarrow: {
           key: string;
           prev: VarEnvInfo | undefined;
         } | null = null;
-        const applyNarrow = (targetExpr: string, nullKind: string) => {
+        const applyNarrow = (targetExpr: string, op: string, nullKind: string) => {
           const baseT = inferType(targetExpr, lineNum);
-          const narrowedT = stripNullableFromType(baseT, nullKind);
+          let narrowedT = baseT;
+          if (op === '!=' || op === '==' || op === 'truthy') {
+            narrowedT = stripNullableFromType(stripNullableFromType(baseT, 'null'), 'undefined');
+          } else {
+            narrowedT = stripNullableFromType(baseT, nullKind);
+          }
           savedNarrow = { key: targetExpr, prev: env.get(targetExpr) };
           env.set(targetExpr, { type: narrowedT, isConst: false, line: lineNum, declaredType: narrowedT });
         };
@@ -519,12 +677,15 @@ export function createTypeInferEngine(ctx: TypeCheckContext, evalEngine: TypeEva
           else env.delete(savedNarrow.key);
           savedNarrow = null;
         };
-        if (eqNullM && eqNullM[1] && eqNullM[3] && eqNullM[2] === '!==') applyNarrow(eqNullM[1], eqNullM[3]);
+        const isNotNullOp = condOp === '!==' || condOp === '!=';
+        const isNullOp = condOp === '===' || condOp === '==';
+        if (condVar && condOp && condNullKind && isNotNullOp) applyNarrow(condVar, condOp, condNullKind);
+        else if (truthyVar) applyNarrow(truthyVar, 'truthy', 'undefined');
         const t1 = inferType(s.slice(qIdx + 1, cIdx), lineNum);
-        if (eqNullM && eqNullM[2] === '!==') restoreNarrow();
-        if (eqNullM && eqNullM[1] && eqNullM[3] && eqNullM[2] === '===') applyNarrow(eqNullM[1], eqNullM[3]);
+        if ((condVar && isNotNullOp) || truthyVar) restoreNarrow();
+        if (condVar && condOp && condNullKind && isNullOp) applyNarrow(condVar, condOp, condNullKind);
         const t2 = inferType(s.slice(cIdx + 1), lineNum);
-        if (eqNullM && eqNullM[2] === '===') restoreNarrow();
+        if (condVar && isNullOp) restoreNarrow();
         if (t1 === t2) return t1;
         if (isTsAssignable(t1, t2)) return t2;
         if (isTsAssignable(t2, t1)) return t1;
@@ -540,16 +701,44 @@ export function createTypeInferEngine(ctx: TypeCheckContext, evalEngine: TypeEva
         if (ch === '(' || ch === '[' || ch === '{') d++;
         else if (ch === ')' || ch === ']' || ch === '}') d--;
         else if (d === 0 && ((ch === '|' && s[i + 1] === '|') || (ch === '?' && s[i + 1] === '?'))) {
+          const isNullish = ch === '?';
           const leftT = inferType(s.slice(0, i), lineNum);
           const rightT = inferType(s.slice(i + 2), lineNum);
-          if (leftT.endsWith('|undefined')) {
-            const baseL = leftT.replace(/\|undefined$/, '');
+          const leftParts = splitTopLevelUnion(leftT);
+          if (leftParts.includes('undefined') || (isNullish && leftParts.includes('null'))) {
+            let baseL = stripNullableFromType(leftT, 'undefined');
+            if (isNullish) baseL = stripNullableFromType(baseL, 'null');
             if (isTsAssignable(rightT, baseL)) return baseL;
+            if (baseL && baseL !== 'never' && rightT !== 'any') return `${baseL}|${rightT}`;
           }
           return rightT !== 'any' ? rightT : leftT;
         } else if (d === 0 && ch === '&' && s[i + 1] === '&') {
-          inferType(s.slice(0, i), lineNum);
-          inferType(s.slice(i + 2), lineNum);
+          const lhsPart = s.slice(0, i).trim();
+          const rhsPart = s.slice(i + 2).trim();
+          inferType(lhsPart, lineNum);
+          const guardEqM = lhsPart.match(/^([A-Za-z_$][\w$]*)\s*(!==|!=)\s*(null|undefined)$/);
+          const guardRevM = !guardEqM ? lhsPart.match(/^(null|undefined)\s*(!==|!=)\s*([A-Za-z_$][\w$]*)$/) : null;
+          const guardTypeofM = (!guardEqM && !guardRevM)
+            ? lhsPart.match(/^typeof\s+([A-Za-z_$][\w$]*)\s*!==\s*["']undefined["']$/)
+            : null;
+          const guardTruthy = (!guardEqM && !guardRevM && !guardTypeofM && /^[A-Za-z_$][\w$]*$/.test(lhsPart) && env.has(lhsPart))
+            ? lhsPart
+            : null;
+          const gVar = guardEqM ? guardEqM[1] : (guardRevM ? guardRevM[3] : (guardTypeofM ? guardTypeofM[1] : guardTruthy));
+          const gSaved = gVar && env.has(gVar) ? env.get(gVar) : undefined;
+          if (gVar && gSaved) {
+            let narrowed = gSaved.type;
+            if (guardEqM && guardEqM[2] === '!==' && guardEqM[3]) narrowed = stripNullableFromType(narrowed, guardEqM[3]);
+            else if (guardRevM && guardRevM[2] === '!==' && guardRevM[1]) narrowed = stripNullableFromType(narrowed, guardRevM[1]);
+            else {
+              narrowed = stripNullableFromType(stripNullableFromType(narrowed, 'null'), 'undefined');
+            }
+            env.set(gVar, { ...gSaved, type: narrowed });
+          }
+          inferType(rhsPart, lineNum);
+          if (gVar && gSaved !== undefined) {
+            env.set(gVar, gSaved);
+          }
           return 'boolean';
         }
       }
@@ -630,11 +819,27 @@ export function createTypeInferEngine(ctx: TypeCheckContext, evalEngine: TypeEva
           if (ch === '+') {
             if (lt === 'string' || rt === 'string') return 'string';
             if (lt === 'number' && rt === 'number') return 'number';
+            if (ctx.tsConfig.strictNullChecks && !splitTopLevelUnion(lt).includes('string') && !splitTopLevelUnion(rt).includes('string')) {
+              const ltParts = splitTopLevelUnion(lt);
+              const rtParts = splitTopLevelUnion(rt);
+              if (ltParts.includes('undefined')) addDiag(lineNum, 'TS18048', `"${lhs}" 可能为 "undefined"`);
+              else if (ltParts.includes('null')) addDiag(lineNum, 'TS18047', `"${lhs}" 可能为 "null"`);
+              if (rtParts.includes('undefined')) addDiag(lineNum, 'TS18048', `"${rhs}" 可能为 "undefined"`);
+              else if (rtParts.includes('null')) addDiag(lineNum, 'TS18047', `"${rhs}" 可能为 "null"`);
+            }
             if ((lt === 'number' && rt === 'boolean') || (lt === 'boolean' && rt === 'number') || lt.endsWith('[]') || rt.endsWith('[]')) {
               addDiag(lineNum, 'TS2365', `运算符 "+" 不能应用于类型 "${lt}" 和 "${rt}"`);
             }
             return lt === 'number' || rt === 'number' ? 'number' : 'any';
           } else {
+            if (ctx.tsConfig.strictNullChecks) {
+              const ltParts = splitTopLevelUnion(lt);
+              const rtParts = splitTopLevelUnion(rt);
+              if (ltParts.includes('undefined')) addDiag(lineNum, 'TS18048', `"${lhs}" 可能为 "undefined"`);
+              else if (ltParts.includes('null')) addDiag(lineNum, 'TS18047', `"${lhs}" 可能为 "null"`);
+              if (rtParts.includes('undefined')) addDiag(lineNum, 'TS18048', `"${rhs}" 可能为 "undefined"`);
+              else if (rtParts.includes('null')) addDiag(lineNum, 'TS18047', `"${rhs}" 可能为 "null"`);
+            }
             const badL = lt === 'string' || lt === 'boolean' || lt.endsWith('[]');
             const badR = rt === 'string' || rt === 'boolean' || rt.endsWith('[]');
             if (badL || badR) {
@@ -748,87 +953,12 @@ export function createTypeInferEngine(ctx: TypeCheckContext, evalEngine: TypeEva
             }
           }
           const objType = stripNullableFromType(stripNullableFromType(rawObjType, 'null'), 'undefined');
-
-          const mapM = objType.match(/^Map<([^,]+),(.+)>$/);
-          if (mapM && mapM[1] && mapM[2]) {
-            const kt = mapM[1], vt = mapM[2];
-            if (method === 'get' || method === 'has' || method === 'delete') {
-              if (argTypes[0] && !isExpressionAssignable(args[0], argTypes[0], kt, lineNum)) {
-                addDiag(lineNum, 'TS2345', `"${objName}.${method}" 的键参数类型 "${argTypes[0]}" 不能赋给类型 "${kt}"`);
-              }
-              return method === 'get' ? `${vt}|undefined` : 'boolean';
+          const methodRet = resolveMethodCallOnType(objType, objName, method, explicitTypeArgs, args, argTypes, lineNum);
+          if (methodRet !== 'any' || objType.startsWith('Map<') || objType.startsWith('Set<') || extractArrayElemType(objType) !== null || objType === 'string' || objType === 'number' || objType === '__FsPromises__' || objType === '__FsModule__' || getClassMethodSig(objType, method) || (getInterfaceShape(objType)?.has(method))) {
+            if (isOptChain && methodRet !== 'any' && methodRet !== 'void' && !splitTopLevelUnion(methodRet).includes('undefined')) {
+              return `${methodRet}|undefined`;
             }
-            if (method === 'set') {
-              if (argTypes[0] && !isExpressionAssignable(args[0], argTypes[0], kt, lineNum)) {
-                addDiag(lineNum, 'TS2345', `"${objName}.set" 的键参数类型 "${argTypes[0]}" 不能赋给类型 "${kt}"`);
-              }
-              if (argTypes[1] && !isExpressionAssignable(args[1], argTypes[1], vt, lineNum)) {
-                addDiag(lineNum, 'TS2345', `"${objName}.set" 的值参数类型 "${argTypes[1]}" 不能赋给类型 "${vt}"`);
-              }
-              return objType;
-            }
-          }
-
-          const setM = objType.match(/^Set<(.+)>$/);
-          if (setM && setM[1]) {
-            const vt = setM[1];
-            if (method === 'add' || method === 'has' || method === 'delete') {
-              if (argTypes[0] && !isExpressionAssignable(args[0], argTypes[0], vt, lineNum)) {
-                addDiag(lineNum, 'TS2345', `"${objName}.${method}" 的参数类型 "${argTypes[0]}" 不能赋给类型 "${vt}"`);
-              }
-              return method === 'add' ? objType : 'boolean';
-            }
-          }
-
-          if (objType.endsWith('[]')) {
-            const elemT = objType.slice(0, -2);
-            if (method === 'push' || method === 'unshift') {
-              argTypes.forEach((at, idx) => {
-                if (!isExpressionAssignable(args[idx], at, elemT, lineNum)) {
-                  addDiag(lineNum, 'TS2345', `数组 "${objName}.${method}" 的参数类型 "${at}" 不能赋给元素类型 "${elemT}"`);
-                }
-              });
-              return 'number';
-            }
-            if (method === 'pop' || method === 'shift') return elemT;
-            if (method === 'includes') return 'boolean';
-            if (method === 'slice' || method === 'concat' || method === 'filter') return objType;
-            if (method === 'join') return 'string';
-          }
-
-          if (objType === 'string') {
-            if (method === 'slice' || method === 'substring' || method === 'trim' || method === 'toLowerCase' || method === 'toUpperCase') return 'string';
-            if (method === 'includes' || method === 'startsWith' || method === 'endsWith') return 'boolean';
-            if (method === 'indexOf' || method === 'charCodeAt') return 'number';
-          }
-
-          if (objType === '__FsPromises__' || (objName.endsWith('.promises') && inferType(objName.slice(0, -9).trim(), lineNum) === '__FsModule__')) {
-            if (method === 'readFile') return 'Promise<string>';
-            if (method === 'writeFile' || method === 'appendFile' || method === 'mkdir' || method === 'unlink' || method === 'rm' || method === 'access' || method === 'copyFile' || method === 'rename') return 'Promise<void>';
-            if (method === 'readdir') return 'Promise<string[]>';
-            if (method === 'exists') return 'Promise<boolean>';
-            if (method === 'stat') return 'Promise<any>';
-          }
-
-          if (objType === '__FsModule__') {
-            if (method === 'readFileSync') return 'string';
-            if (method === 'writeFileSync' || method === 'appendFileSync' || method === 'mkdirSync' || method === 'unlinkSync' || method === 'rmSync' || method === 'copyFileSync' || method === 'renameSync') return 'void';
-            if (method === 'readdirSync') return 'string[]';
-            if (method === 'existsSync') return 'boolean';
-            if (method === 'statSync') return 'any';
-          }
-
-          const classMethodSig = getClassMethodSig(objType, method);
-          if (classMethodSig) {
-            return instantiateAndCheckCall(classMethodSig, explicitTypeArgs, args, argTypes, `方法 "${objName}.${method}"`, lineNum);
-          }
-          const objShape = getInterfaceShape(objType);
-          if (objShape && objShape.has(method)) {
-            const propType = (objShape.get(method) || { type: '' }).type || '';
-            const arrowPos = propType.lastIndexOf('=>');
-            if (arrowPos > 0) {
-              return resolveAlias(propType.slice(arrowPos + 2).trim());
-            }
+            return methodRet;
           }
         }
 
@@ -845,55 +975,186 @@ export function createTypeInferEngine(ctx: TypeCheckContext, evalEngine: TypeEva
       }
     }
 
-    const bracketOpen = s.indexOf('[');
-    if (bracketOpen > 0 && s.endsWith(']')) {
-      let curBase = s.slice(0, bracketOpen).trim();
-      const isOptBracket = curBase.endsWith('?.');
-      if (isOptBracket) curBase = curBase.slice(0, -2).trim();
-      let curType = inferType(curBase, lineNum);
-      if (curType === 'unknown') {
-        addDiag(lineNum, 'TS18046', `"${curBase}" 的类型为 "unknown"`);
-        return 'any';
+    let firstBracketPos = -1;
+    {
+      let d = 0;
+      for (let i = 0; i < s.length; i++) {
+        const ch = s[i];
+        if (ch === '"' || ch === "'" || ch === '`') { i = skipString(s, i) - 1; continue; }
+        if (ch === '(' || ch === '{') d++;
+        else if (ch === ')' || ch === '}') d = Math.max(0, d - 1);
+        else if (ch === '[' && d === 0) { firstBracketPos = i; break; }
       }
-      if (!isOptBracket && !curBase.endsWith('!')) {
-        const uParts = splitTopLevelUnion(curType);
-        if (uParts.includes('undefined')) addDiag(lineNum, 'TS18048', `"${curBase}" 可能为 "undefined"`);
-        else if (uParts.includes('null')) addDiag(lineNum, 'TS18047', `"${curBase}" 可能为 "null"`);
+    }
+    if (firstBracketPos >= 0) {
+      let curBase = '';
+      let pos = firstBracketPos;
+      let isOptOnFirst = false;
+      if (firstBracketPos === 0) {
+        const endLit = findBalancedParen(s, 0);
+        if (endLit > 0 && endLit < s.length - 1) {
+          curBase = s.slice(0, endLit + 1);
+          pos = endLit + 1;
+        }
+      } else {
+        curBase = s.slice(0, firstBracketPos).trim();
+        if (curBase.endsWith('?.')) {
+          isOptOnFirst = true;
+          curBase = curBase.slice(0, -2).trim();
+        }
       }
-      curType = stripNullableFromType(stripNullableFromType(curType, 'null'), 'undefined');
-      let pos = bracketOpen;
-      while (pos < s.length && s[pos] === '[') {
-        const closeB = findBalancedParen(s, pos);
-        if (closeB < 0) break;
-        const idxExpr = s.slice(pos + 1, closeB).trim();
-        const idxType = inferType(idxExpr, lineNum);
-        const litIdx = inferLiteralType(idxExpr);
-        if (idxType === 'string' || idxType === 'boolean') {
-          if (curType.endsWith('[]') || curType === 'string') {
-            addDiag(lineNum, 'TS2538', `数组或字符串的索引类型必须为 "number"，不能使用类型 "${idxType}"`);
+      if (curBase) {
+        const curBaseHadBang = curBase.endsWith('!') && !curBase.endsWith('!=');
+        let curType = inferType(curBase, lineNum);
+        let hadOptChain = false;
+        let prevHadBang = curBaseHadBang;
+        let prefixLabel = curBase;
+
+        while (pos < s.length) {
+          if (s[pos] === '!' && s[pos + 1] !== '=') {
+            curType = stripNullableFromType(stripNullableFromType(curType, 'null'), 'undefined');
+            hadOptChain = false;
+            prevHadBang = true;
+            pos++;
+            continue;
+          }
+          let stepOpt = isOptOnFirst;
+          isOptOnFirst = false;
+          if (s[pos] === '?' && s[pos + 1] === '.') {
+            stepOpt = true;
+            pos += 2;
+          } else if (s[pos] === '.') {
+            pos += 1;
+          } else if (s[pos] !== '[') {
+            break;
+          }
+
+          if (s[pos] === '[') {
+            const closeB = findBalancedParen(s, pos);
+            if (closeB < 0) break;
+            if (curType === 'unknown') {
+              addDiag(lineNum, 'TS18046', `"${prefixLabel}" 的类型为 "unknown"`);
+              return 'any';
+            }
+            if (stepOpt) {
+              hadOptChain = true;
+            } else if (!hadOptChain && !prevHadBang) {
+              const uParts = splitTopLevelUnion(curType);
+              if (uParts.includes('undefined')) addDiag(lineNum, 'TS18048', `"${prefixLabel}" 可能为 "undefined"`);
+              else if (uParts.includes('null')) addDiag(lineNum, 'TS18047', `"${prefixLabel}" 可能为 "null"`);
+            }
+            prevHadBang = false;
+            const baseIndexedT = stripNullableFromType(stripNullableFromType(curType, 'null'), 'undefined');
+            const idxExpr = s.slice(pos + 1, closeB).trim();
+            const idxType = inferType(idxExpr, lineNum);
+            const litIdx = inferLiteralType(idxExpr);
+            if (idxType === 'string' || idxType === 'boolean') {
+              if (baseIndexedT.endsWith('[]') || baseIndexedT === 'string' || (baseIndexedT.startsWith('[') && baseIndexedT.endsWith(']'))) {
+                addDiag(lineNum, 'TS2538', `数组、元组或字符串的索引类型必须为 "number"，不能使用类型 "${idxType}"`);
+              }
+            }
+            const arrElem = extractArrayElemType(baseIndexedT);
+            const recArgs = parseRecordTypeArgs(baseIndexedT);
+            const shape = getInterfaceShape(baseIndexedT);
+            if (arrElem !== null) {
+              curType = appendUndefinedIfUnchecked(arrElem);
+            } else if (baseIndexedT.startsWith('[') && baseIndexedT.endsWith(']')) {
+              const rawElems = splitTopLevelDecl(baseIndexedT.slice(1, -1)).map(el => stripTupleElementLabel(el)).filter(Boolean);
+              const restIdx = rawElems.findIndex(el => el.startsWith('...'));
+              if (litIdx && /^\d+$/.test(litIdx)) {
+                const idxNum = Number(litIdx);
+                if (restIdx >= 0 && idxNum >= restIdx) {
+                  curType = appendUndefinedIfUnchecked(resolveIndexedAccess(baseIndexedT, litIdx, new Map<string, string>(), 0));
+                } else if (idxNum < rawElems.length) {
+                  curType = resolveIndexedAccess(baseIndexedT, litIdx, new Map<string, string>(), 0);
+                } else {
+                  addDiag(lineNum, 'TS2493', `元组类型 "${baseIndexedT}" 的长度为 ${rawElems.length}，不存在索引 ${idxNum}`);
+                  curType = 'undefined';
+                }
+              } else {
+                curType = appendUndefinedIfUnchecked(resolveIndexedAccess(baseIndexedT, 'number', new Map<string, string>(), 0));
+              }
+            } else if (baseIndexedT === 'string') {
+              curType = 'string';
+            } else if (recArgs) {
+              curType = appendUndefinedIfUnchecked(evaluateType(recArgs.valType, activeTypeParams));
+            } else if (shape) {
+              const cleanLit = litIdx ? litIdx.replace(/^["']|["']$/g, '') : '';
+              if (cleanLit && shape.has(cleanLit)) {
+                const pInfo = shape.get(cleanLit);
+                if (!pInfo) {
+                  curType = 'any';
+                } else if (pInfo.optional && pInfo.type !== 'any' && !splitTopLevelUnion(pInfo.type).includes('undefined')) {
+                  curType = `${pInfo.type}|undefined`;
+                } else {
+                  curType = pInfo.type;
+                }
+              } else if (shape.has(`[${idxExpr}]`)) {
+                curType = (shape.get(`[${idxExpr}]`) || { type: 'any' }).type;
+              } else if (shape.has('__index__')) {
+                curType = appendUndefinedIfUnchecked((shape.get('__index__') || { type: 'any' }).type);
+              } else if (litIdx) {
+                curType = resolveIndexedAccess(baseIndexedT, litIdx, new Map<string, string>(), 0);
+              } else {
+                curType = 'any';
+              }
+            } else if (activeTypeParams.has(baseIndexedT) && activeTypeParams.has(idxType)) {
+              curType = `${baseIndexedT}[${idxType}]`;
+            } else {
+              curType = 'any';
+            }
+            pos = closeB + 1;
+            prefixLabel = s.slice(0, pos);
+          } else {
+            const idInfo = readIdent(s, pos);
+            if (!idInfo) break;
+            const prop = idInfo.name;
+            pos = idInfo.end;
+            let propBang = false;
+            while (pos < s.length && s[pos] === '!' && s[pos + 1] !== '=') {
+              propBang = true;
+              pos++;
+            }
+            if (curType === 'unknown') {
+              addDiag(lineNum, 'TS18046', `"${prefixLabel}" 的类型为 "unknown"`);
+              return 'any';
+            }
+            if (stepOpt) {
+              hadOptChain = true;
+            } else if (!hadOptChain && !prevHadBang) {
+              const uParts = splitTopLevelUnion(curType);
+              if (uParts.includes('undefined')) addDiag(lineNum, 'TS18048', `"${prefixLabel}" 可能为 "undefined"`);
+              else if (uParts.includes('null')) addDiag(lineNum, 'TS18047', `"${prefixLabel}" 可能为 "null"`);
+            }
+            const lookupType = stripNullableFromType(stripNullableFromType(curType, 'null'), 'undefined');
+            if (s[pos] === '(') {
+              const closeP = findBalancedParen(s, pos);
+              if (closeP < 0) break;
+              const argsRaw = s.slice(pos + 1, closeP).trim();
+              const args = argsRaw ? splitTopLevel(argsRaw).map(a => a.trim()) : [];
+              const argTypes = args.map(a => inferType(a, lineNum));
+              curType = resolveMethodCallOnType(lookupType, prefixLabel, prop, [], args, argTypes, lineNum);
+              pos = closeP + 1;
+            } else {
+              curType = resolveMemberProp(lookupType, prop, lineNum);
+            }
+            if (propBang) {
+              curType = stripNullableFromType(stripNullableFromType(curType, 'null'), 'undefined');
+              hadOptChain = false;
+              prevHadBang = true;
+            } else {
+              prevHadBang = false;
+            }
+            prefixLabel = s.slice(0, pos);
           }
         }
-        const shape = getInterfaceShape(curType);
-        if (curType.endsWith('[]')) {
-          curType = curType.slice(0, -2);
-        } else if (curType.startsWith('[') && curType.endsWith(']') && litIdx && /^\d+$/.test(litIdx)) {
-          curType = resolveIndexedAccess(curType, litIdx, new Map<string, string>(), 0);
-        } else if (curType === 'string') {
-          curType = 'string';
-        } else if (litIdx && shape) {
-          curType = resolveIndexedAccess(curType, litIdx, new Map<string, string>(), 0);
-        } else if (shape && shape.has(`[${idxExpr}]`)) {
-          curType = (shape.get(`[${idxExpr}]`) || { type: 'any' }).type;
-        } else if (shape && shape.has('__index__')) {
-          curType = (shape.get('__index__') || { type: 'any' }).type;
-        } else if (activeTypeParams.has(curType) && activeTypeParams.has(idxType)) {
-          curType = `${curType}[${idxType}]`;
-        } else {
-          curType = 'any';
+        if (pos === s.length) {
+          if (hadOptChain && curType !== 'any' && curType !== 'void' && !splitTopLevelUnion(curType).includes('undefined')) {
+            curType = `${curType}|undefined`;
+          }
+          return curType;
         }
-        pos = closeB + 1;
       }
-      if (pos === s.length) return curType;
     }
 
     if (/^[A-Za-z_$][\w$]*!*(?:(?:\?\.|\.)[A-Za-z_$][\w$]*!*)+$/.test(s)) {
@@ -940,7 +1201,7 @@ export function createTypeInferEngine(ctx: TypeCheckContext, evalEngine: TypeEva
           }
           if (tok.optChainBefore) {
             hadOptChain = true;
-          } else if (!tokens[pIdx - 1]?.hasBang) {
+          } else if (!hadOptChain && !tokens[pIdx - 1]?.hasBang) {
             const cParts = splitTopLevelUnion(curType);
             if (cParts.includes('undefined')) {
               addDiag(lineNum, 'TS18048', `"${prefixLabel}" 可能为 "undefined"`);
@@ -949,30 +1210,7 @@ export function createTypeInferEngine(ctx: TypeCheckContext, evalEngine: TypeEva
             }
           }
           const lookupType = stripNullableFromType(stripNullableFromType(curType, 'null'), 'undefined');
-          if (prop === 'length' && (lookupType.endsWith('[]') || lookupType.startsWith('[') || lookupType === 'string')) {
-            curType = 'number';
-            continue;
-          }
-          if (prop === 'size' && (lookupType.startsWith('Map<') || lookupType.startsWith('Set<'))) {
-            curType = 'number';
-            continue;
-          }
-          const shape = getInterfaceShape(lookupType);
-          if (shape) {
-            if (shape.has(prop)) {
-              curType = (shape.get(prop) || { type: 'any' }).type;
-            } else if (getClassMethodSig(lookupType, prop)) {
-              curType = 'function';
-            } else if (shape.has('__index__')) {
-              curType = (shape.get('__index__') || { type: 'any' }).type;
-            } else {
-              addDiag(lineNum, 'TS2339', `类型 "${lookupType}" 上不存在属性 "${prop}"`);
-              return 'any';
-            }
-          } else {
-            if (prop === 'length' || prop === 'size' || prop === 'val') curType = 'number';
-            else curType = 'any';
-          }
+          curType = resolveMemberProp(lookupType, prop, lineNum);
           if (tok.hasBang) {
             curType = stripNullableFromType(stripNullableFromType(curType, 'null'), 'undefined');
             hadOptChain = false;

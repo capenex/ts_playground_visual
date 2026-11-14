@@ -3,11 +3,13 @@
    ================================================================ */
 import { findBalancedParen, skipString } from "./comments";
 import {
+  extractArrayElemType,
   FnSigInfo,
   isLiteralOfPrimitive,
   isTsAssignable,
   matchTemplateLiteralType,
   normalizeTsType,
+  parseRecordTypeArgs,
   parseTopLevelConditional,
   PropShapeInfo,
   splitTopLevelDecl,
@@ -251,18 +253,50 @@ export function createTypeEvalEngine(ctx: TypeCheckContext): TypeEvalEngine {
       });
       return out.length ? out.join('|') : 'never';
     }
-    if (objT.endsWith('[]') && (keyT === 'number' || /^[+-]?\d+$/.test(keyT))) {
-      return objT.slice(0, -2);
+    const arrElem = extractArrayElemType(objT);
+    if (arrElem !== null && (keyT === 'number' || /^[+-]?\d+$/.test(keyT))) {
+      return arrElem;
     }
     if (objT.startsWith('[') && objT.endsWith(']')) {
       const elems = splitTopLevelDecl(objT.slice(1, -1)).map(s => stripTupleElementLabel(s)).filter(Boolean);
+      const restIdx = elems.findIndex(el => el.startsWith('...'));
+      const unwrapTupleElem = (el: string): string => {
+        if (el.startsWith('...')) {
+          const inner = el.slice(3).trim();
+          return extractArrayElemType(inner) ?? inner;
+        }
+        if (el.endsWith('?')) {
+          const base = el.slice(0, -1).trim();
+          return splitTopLevelUnion(base).includes('undefined') ? base : `${base}|undefined`;
+        }
+        return el;
+      };
       if (keyT === 'number') {
-        return Array.from(new Set(elems)).join('|') || 'never';
+        const unionOut: string[] = [];
+        elems.forEach(el => {
+          const u = unwrapTupleElem(el);
+          splitTopLevelUnion(u).forEach(part => {
+            if (part && !unionOut.includes(part)) unionOut.push(part);
+          });
+        });
+        return unionOut.length ? unionOut.join('|') : 'never';
       }
       if (/^\d+$/.test(keyT)) {
         const idx = Number(keyT);
-        return idx < elems.length ? (elems[idx] || 'undefined') : 'undefined';
+        if (restIdx >= 0 && idx >= restIdx) {
+          const restEl = elems[restIdx];
+          return restEl ? unwrapTupleElem(restEl) : 'undefined';
+        }
+        if (idx < elems.length) {
+          const el = elems[idx];
+          return el ? unwrapTupleElem(el) : 'undefined';
+        }
+        return 'undefined';
       }
+    }
+    const recArgs = parseRecordTypeArgs(objT);
+    if (recArgs) {
+      return evaluateType(recArgs.valType, typeEnv, depth + 1);
     }
     const shape = getInterfaceShape(objT);
     if (shape) {

@@ -62,17 +62,17 @@ export function reportTypeErrors(diags: Array<Diag>, warnOnly = false) {
   );
   uiHooks.updateEditorChrome();
   if (warnOnly) {
-    say(`⚠ TypeScript 类型提示 (共 ${diags.length} 处，当前 tsconfig 允许忽略类型错误继续运行)：`, 'warn');
+    say(`⚠ 类型警告 (${diags.length} 处)：`, 'warn');
     diags.forEach(d => {
       const filePrefix = d.file && d.file !== activeFile ? `${d.file} · ` : '';
-      say(`  • ${d.code} [${filePrefix}第 ${d.line} 行]: ${d.message || d.msg || ''}`, 'warn', d.line);
+      say(`  • ${d.code} [${filePrefix}L${d.line}]: ${d.message || d.msg || ''}`, 'warn', d.line);
     });
     return;
   }
-  say(`✗ TypeScript 严格类型检查未通过 (共 ${diags.length} 处错误)：`, 'err');
+  say(`✗ 类型错误 (${diags.length} 处)：`, 'err');
   diags.forEach(d => {
     const filePrefix = d.file && d.file !== activeFile ? `${d.file} · ` : '';
-    say(`  • ${d.code} [${filePrefix}第 ${d.line} 行]: ${d.message || d.msg || ''}`, 'err', d.line);
+    say(`  • ${d.code} [${filePrefix}L${d.line}]: ${d.message || d.msg || ''}`, 'err', d.line);
   });
   const firstDiag = diags[0];
   if (firstDiag) {
@@ -501,7 +501,7 @@ export function runOnce(budgetMs?: number, sourceCode?: string) {
       instrumented = false;
     }
   }
-  if (!instrumented) say('⚠ 本次运行未能启用死循环熔断（插桩/编译回退），请留意可能的死循环', 'dim');
+  if (!instrumented) say('⚠ 未启用超时熔断', 'dim');
 
   try {
     const r = evalCall(code, call, { budgetMs: budget, instrumented, entryLine });
@@ -524,8 +524,8 @@ export function runOnce(budgetMs?: number, sourceCode?: string) {
       }
       const fileTag = (targetFile && targetFile !== entryFile) ? targetFile + ' · ' : '';
       say(
-        '✗ 运行超过 ' + (budget / 1000) + 's 仍未结束，已强制终止（疑似死循环 / 计算量过大）' +
-          (line ? ' · 位置：' + fileTag + '第 ' + line + ' 行' + (snippet ? ' · ' + snippet : '') : ' · 未能定位到具体行'),
+        '✗ 运行超时 (>' + (budget / 1000) + 's，已熔断)' +
+          (line ? ' · ' + fileTag + 'L' + line + (snippet ? ' · ' + snippet : '') : ''),
         'err',
         line || undefined
       );
@@ -545,7 +545,7 @@ export function runOnce(budgetMs?: number, sourceCode?: string) {
         appState.RUNTIME_ERROR_LINES.add(line);
         uiHooks.updateEditorChrome();
         const filePrefix = (targetFile && targetFile !== entryFile) ? '[' + targetFile + '] ' : '';
-        say('✗ ' + filePrefix + '第 ' + line + ' 行运行时报错: ' + r.error, 'err', line);
+        say('✗ ' + filePrefix + 'L' + line + ' 报错: ' + r.error, 'err', line);
         uiHooks.revealErrorLine(line);
       } else {
         say('✗ 调用失败: ' + r.error, 'err');
@@ -567,8 +567,8 @@ export function runOnce(budgetMs?: number, sourceCode?: string) {
     }
     uiHooks.renderComplexityBar();
     const elapsed = ' (' + r.elapsedMs + 'ms)';
-    const cBadge = ` · ⏱ 估算时间 ${appState.COMPLEXITY_REPORT.overallTime} / 空间 ${appState.COMPLEXITY_REPORT.overallSpace}`;
-    say('✓ 运行完成  →  ' + safeJSONStringify(r.value) + elapsed + cBadge, 'ok');
+    const cBadge = ` · ${appState.COMPLEXITY_REPORT.overallTime} / ${appState.COMPLEXITY_REPORT.overallSpace}`;
+    say('✓ 运行完成 → ' + safeJSONStringify(r.value) + elapsed + cBadge, 'ok');
   } catch (e) {
     say('✗ ' + (e instanceof Error && e.message ? e.message : e), 'err');
   }
@@ -619,7 +619,7 @@ export function computeAndAppendNextStep(opts: { silent?: boolean } = {}) {
   if (targetIdx >= MAX_STEPS) {
     appState.DEBUG_SESSION.finished = true;
     appState.DEBUG_SESSION.crashed = true;
-    appState.DEBUG_SESSION.error = '已达单次调试上限，自动熔断以防死循环';
+    appState.DEBUG_SESSION.error = '已达步数上限，已熔断';
     say('✗ ' + appState.DEBUG_SESSION.error, 'err');
     return false;
   }
@@ -687,7 +687,7 @@ export function computeAndAppendNextStep(opts: { silent?: boolean } = {}) {
     if (line) curLineTracker = line;
     const idx = count++;
     if ((idx & 63) === 63 && Date.now() - t0 > MAX_EXEC_MS) {
-      throw new Error('执行超时 (>' + MAX_EXEC_MS + 'ms)，自动熔断以防页面卡死');
+      throw new Error('执行超时 (>' + MAX_EXEC_MS + 'ms)，已熔断');
     }
     const topFrame = liveCallStack[liveCallStack.length - 1];
     const stepFile = file || (topFrame && topFrame.file) || entryFile;
@@ -895,7 +895,7 @@ export function computeAndAppendNextStep(opts: { silent?: boolean } = {}) {
       appState.DEBUG_SESSION.error = errMsg;
       appState.DEBUG_SESSION.errorLine = callLine;
       appState.DEBUG_SESSION.errorFile = entryFile;
-      say('✗ 运行时错误 [第 ' + callLine + ' 行]: ' + errMsg + '（已停止在报错处）', 'err');
+      say('✗ 运行时报错 [L' + callLine + ']: ' + errMsg, 'err');
       return true;
     }
     // If the file only defines interface/type schemas without executable steps yet, synthesize an inspection step
@@ -1037,9 +1037,9 @@ export function computeAndAppendNextStep(opts: { silent?: boolean } = {}) {
 
   if (runtimeErr) {
     const fileLabel = stepObj.file && stepObj.file !== entryFile ? `${stepObj.file} · ` : '';
-    say('✗ 运行时错误 [' + fileLabel + '第 ' + stepObj.line + ' 行]: ' + stepObj.error + '（已运行到报错为止）', 'err');
+    say('✗ 运行时报错 [' + fileLabel + 'L' + stepObj.line + ']: ' + stepObj.error, 'err');
   } else if (!paused && !opts.silent) {
-    say('✓ 调试运行完成  →  ' + safeJSONStringify(retVal), 'ok');
+    say('✓ 调试完成 → ' + safeJSONStringify(retVal), 'ok');
   }
 
   return true;
@@ -1206,8 +1206,8 @@ export function startDebug(initialStep = 0, sourceCode?: string) {
   uiHooks.renderStatic(appState.cur, false);
 
   if (!appState.DEBUG_SESSION.crashed) {
-    const multiBadge = graph.isMultiFile ? `（共加载 ${graph.order.length} 个模块）` : '';
-    say('✓ 编译通过' + multiBadge + ' · 已进入 Debug 模式（每走一步当场计算，可随时步进或运行到下一个检查点）', 'ok');
+    const multiBadge = graph.isMultiFile ? ` (${graph.order.length} 模块)` : '';
+    say('✓ Debug 就绪' + multiBadge, 'ok');
   }
   return true;
 }
