@@ -44,11 +44,12 @@ let _TYPECHECK_CACHE: {
   src: string | null;
   strict: boolean | null;
   configKey: string | null;
+  isTsx?: boolean | null;
   diags: Diag[];
   fnTypes?: Map<string, string>;
   varTypes?: Map<string, string>;
   typeAliases?: Map<string, TypeAliasMeta>;
-} = { src: null, strict: null, configKey: null, diags: [] };
+} = { src: null, strict: null, configKey: null, isTsx: null, diags: [] };
 
 export function collectPass1Declarations(
   ctx: TypeCheckContext,
@@ -357,10 +358,11 @@ export function collectPass1Declarations(
         const tempEnv = new Map<string, string>();
         fnTParams.forEach(tp => tempEnv.set(tp.name, tp.name));
         const retType = retM ? resolveAlias(rawRetType, tempEnv) : defaultRet;
-        const { params, minArgs } = parseParamList(paramStr, lineNum, Boolean(ctx.tsConfig.noImplicitAny));
+        const { params, minArgs, extraBindings } = parseParamList(paramStr, lineNum, Boolean(ctx.tsConfig.noImplicitAny));
         fns.set(fnName, {
           name: fnName,
           params,
+          extraBindings,
           minArgs,
           returnType: retType,
           rawReturnType: rawRetType,
@@ -457,6 +459,146 @@ export function checkPass2Statements(
   let inInterfaceBlock = false;
   let inInterfaceDepth = 0;
   let inEnumBlock = false;
+  let inJsxOpenTag = false;
+  let jsxDepth = 0;
+  let parenDepth = 0;
+  const jsxAttrBraceStack: number[] = [];
+  const jsxChildBraceStack: number[] = [];
+  const parenArrowScopeStack: Array<{
+    endParenDepth: number;
+    saved: Map<string, VarEnvInfo | undefined>;
+  }> = [];
+
+  const updateParenDepthForLine = (lineStr: string) => {
+    for (let k = 0; k < lineStr.length; k++) {
+      const ch = lineStr[k];
+      if (ch === '"' || ch === "'" || ch === '`') { k = skipString(lineStr, k) - 1; continue; }
+      if (ch === '/' && lineStr[k + 1] === '/') break;
+      if (ch === '(') parenDepth++;
+      else if (ch === ')') parenDepth = Math.max(0, parenDepth - 1);
+    }
+    while (parenArrowScopeStack.length > 0) {
+      const top = parenArrowScopeStack[parenArrowScopeStack.length - 1];
+      if (!top || parenDepth > top.endParenDepth) break;
+      parenArrowScopeStack.pop();
+      top.saved.forEach((prevInfo, k) => {
+        if (prevInfo !== undefined) env.set(k, prevInfo);
+        else env.delete(k);
+      });
+    }
+  };
+
+  const tryPushParenArrowScope = (lineStr: string, beforeParenDepth: number) => {
+    const m = lineStr.match(/\(([^()]*)\)\s*(?::\s*[^=]+?)?\s*=>\s*\(\s*$/);
+    if (!m) return;
+    const rawParams = (m[1] || '').trim();
+    const { params, extraBindings } = parseParamList(rawParams, 1, false);
+    const saved = new Map<string, VarEnvInfo | undefined>();
+    params.forEach((p) => {
+      if (!p.name.startsWith('__destructured_')) {
+        saved.set(p.name, env.get(p.name));
+        env.set(p.name, { type: p.type, isConst: false, declaredType: p.type });
+      }
+    });
+    extraBindings.forEach((b) => {
+      saved.set(b.name, env.get(b.name));
+      env.set(b.name, { type: b.type, isConst: false, declaredType: b.type });
+    });
+    if (saved.size > 0) {
+      // endParenDepth is one below the paren opened by `=> (`
+      const targetEnd = Math.max(0, beforeParenDepth + (lineStr.match(/\(/g)?.length || 1) - (lineStr.match(/\)/g)?.length || 0) - 1);
+      parenArrowScopeStack.push({ endParenDepth: targetEnd, saved });
+    }
+  };
+
+  const evalInlineBracesInLine = (lineStr: string, startIdx: number, ln: number): { nextIdx: number; unclosed: boolean } => {
+    let d = 1;
+    let k = startIdx + 1;
+    while (k < lineStr.length && d > 0) {
+      const ch = lineStr[k];
+      if (ch === '"' || ch === "'" || ch === '`') { k = skipString(lineStr, k); continue; }
+      if (ch === '{') d++;
+      else if (ch === '}') d--;
+      k++;
+    }
+    if (d === 0) {
+      const inner = lineStr.slice(startIdx + 1, k - 1).trim();
+      if (inner && !inner.startsWith('/*')) {
+        inferType(inner, ln);
+      }
+      return { nextIdx: k, unclosed: false };
+    }
+    return { nextIdx: lineStr.length, unclosed: true };
+  };
+
+  const scanJsxOpenTagSegment = (lineStr: string, startIdx: number, ln: number): { ended: boolean; selfClosing: boolean; restIdx: number; unclosedAttrBraceAt: number } => {
+    let k = startIdx;
+    while (k < lineStr.length) {
+      const ch = lineStr[k];
+      if (ch === '"' || ch === "'" || ch === '`') { k = skipString(lineStr, k); continue; }
+      if (ch === '{') {
+        const res = evalInlineBracesInLine(lineStr, k, ln);
+        if (res.unclosed) {
+          return { ended: false, selfClosing: false, restIdx: lineStr.length, unclosedAttrBraceAt: k };
+        }
+        k = res.nextIdx;
+        continue;
+      }
+      if (ch === '/' && lineStr[k + 1] === '>') {
+        return { ended: true, selfClosing: true, restIdx: k + 2, unclosedAttrBraceAt: -1 };
+      }
+      if (ch === '>') {
+        return { ended: true, selfClosing: false, restIdx: k + 1, unclosedAttrBraceAt: -1 };
+      }
+      k++;
+    }
+    return { ended: false, selfClosing: false, restIdx: lineStr.length, unclosedAttrBraceAt: -1 };
+  };
+
+  const scanJsxChildrenSegment = (lineStr: string, startIdx: number, ln: number) => {
+    let k = startIdx;
+    while (k < lineStr.length) {
+      const ch = lineStr[k];
+      if (ch === '{') {
+        const res = evalInlineBracesInLine(lineStr, k, ln);
+        k = res.nextIdx;
+        continue;
+      }
+      if (ch === '<') {
+        if (lineStr[k + 1] === '/') {
+          jsxDepth = Math.max(0, jsxDepth - 1);
+          const gt = lineStr.indexOf('>', k + 2);
+          k = gt >= 0 ? gt + 1 : lineStr.length;
+          continue;
+        }
+        if (lineStr.slice(k, k + 2) === '<>') {
+          jsxDepth++;
+          k += 2;
+          continue;
+        }
+        if (/^<[A-Za-z_$]/.test(lineStr.slice(k))) {
+          const tagRes = scanJsxOpenTagSegment(lineStr, k + 1, ln);
+          if (!tagRes.ended) {
+            inJsxOpenTag = true;
+            if (tagRes.unclosedAttrBraceAt >= 0) {
+              jsxAttrBraceStack.push(braceDepth);
+              for (let j = tagRes.unclosedAttrBraceAt; j < lineStr.length; j++) {
+                const c2 = lineStr[j];
+                if (c2 === '"' || c2 === "'" || c2 === '`') { j = skipString(lineStr, j) - 1; continue; }
+                if (c2 === '{') braceDepth++;
+                else if (c2 === '}') braceDepth = Math.max(0, braceDepth - 1);
+              }
+            }
+            return;
+          }
+          if (!tagRes.selfClosing) jsxDepth++;
+          k = tagRes.restIdx;
+          continue;
+        }
+      }
+      k++;
+    }
+  };
 
   const applyNullComparisonNarrowing = (
     clauseStr: string,
@@ -606,6 +748,125 @@ export function checkPass2Statements(
 
     let trimmed = stripInlineCommentSafe(rawLine).trim();
     if (!trimmed || trimmed.startsWith('@')) continue;
+
+    if (ctx.isTsx) {
+      const parenBefore = parenDepth;
+      const isArrowParenOpen = /\(([^()]*)\)\s*(?::\s*[^=]+?)?\s*=>\s*\(\s*$/.test(trimmed);
+
+      if (inJsxOpenTag && jsxAttrBraceStack.length === 0) {
+        const tagRes = scanJsxOpenTagSegment(trimmed, 0, lineNum);
+        if (!tagRes.ended) {
+          if (tagRes.unclosedAttrBraceAt >= 0) {
+            const baseD = braceDepth;
+            jsxAttrBraceStack.push(baseD);
+            inJsxOpenTag = false;
+            const attrTail = trimmed.slice(tagRes.unclosedAttrBraceAt + 1);
+            const attrCbM = attrTail.match(/(?:async\s*)?(?:<[^>]*>\s*)?\(([^()]*)\)\s*(?::\s*([^{=]+?))?\s*=>\s*\{$/);
+            if (attrCbM) {
+              const { params: cbParams, minArgs: cbMin, extraBindings: cbExtra } = parseParamList((attrCbM[1] || '').trim(), lineNum, false);
+              fnScopeStack.push({
+                fn: currentFn,
+                startDepth: fnStartBraceDepth,
+                prevEnv: new Map(env),
+                prevTypeParams: new Map(activeTypeParams),
+              });
+              currentFn = {
+                name: '<callback>',
+                params: cbParams,
+                extraBindings: cbExtra,
+                minArgs: cbMin,
+                returnType: 'any',
+                rawReturnType: 'any',
+                typeParams: [],
+                line: lineNum,
+                hasValueReturn: false,
+                hasExplicitReturnType: false,
+                isAsync: false,
+                inferredReturnTypes: [],
+              };
+              cbParams.forEach(p => env.set(p.name, { type: p.type, isConst: false, line: lineNum, declaredType: p.type }));
+              cbExtra.forEach(b => env.set(b.name, { type: b.type, isConst: false, line: lineNum, declaredType: b.type }));
+              fnStartBraceDepth = baseD + 1;
+            } else if (isArrowParenOpen) {
+              tryPushParenArrowScope(trimmed, parenBefore);
+            }
+            for (let k = tagRes.unclosedAttrBraceAt; k < trimmed.length; k++) {
+              const ch = trimmed[k];
+              if (ch === '"' || ch === "'" || ch === '`') { k = skipString(trimmed, k) - 1; continue; }
+              if (ch === '{') braceDepth++;
+              else if (ch === '}') braceDepth = Math.max(0, braceDepth - 1);
+            }
+            updateParenDepthForLine(trimmed);
+          }
+          continue;
+        }
+        inJsxOpenTag = false;
+        if (!tagRes.selfClosing) jsxDepth++;
+        if (tagRes.restIdx < trimmed.length) {
+          scanJsxChildrenSegment(trimmed, tagRes.restIdx, lineNum);
+        }
+        updateParenDepthForLine(trimmed);
+        continue;
+      }
+
+      if (jsxAttrBraceStack.length === 0) {
+        const isJsxTagStart =
+          trimmed.startsWith('</') ||
+          trimmed.startsWith('<>') ||
+          (/^<[A-Za-z_$][\w$.:-]*(?=[\s/>]|$)/.test(trimmed) &&
+            !/^<[A-Za-z_$][\w$]*\s*(?:,|\bextends\b)/.test(trimmed) &&
+            !/^<[A-Za-z_$][\w$]*>\s*\(/.test(trimmed));
+
+        if (isJsxTagStart) {
+          scanJsxChildrenSegment(trimmed, 0, lineNum);
+          updateParenDepthForLine(trimmed);
+          continue;
+        }
+
+        if (jsxDepth > 0 && jsxChildBraceStack.length === 0) {
+          if (trimmed.startsWith('{')) {
+            const res = evalInlineBracesInLine(trimmed, 0, lineNum);
+            if (res.unclosed) {
+              jsxChildBraceStack.push(braceDepth);
+              if (isArrowParenOpen) {
+                tryPushParenArrowScope(trimmed, parenBefore);
+              }
+              for (let k = 0; k < trimmed.length; k++) {
+                const ch = trimmed[k];
+                if (ch === '"' || ch === "'" || ch === '`') { k = skipString(trimmed, k) - 1; continue; }
+                if (ch === '{') braceDepth++;
+                else if (ch === '}') braceDepth = Math.max(0, braceDepth - 1);
+              }
+            }
+            updateParenDepthForLine(trimmed);
+            continue;
+          }
+          updateParenDepthForLine(trimmed);
+          continue;
+        }
+
+        if (jsxChildBraceStack.length > 0 && /^[)\]}]+/.test(trimmed)) {
+          for (let k = 0; k < trimmed.length; k++) {
+            const ch = trimmed[k];
+            if (ch === '"' || ch === "'" || ch === '`') { k = skipString(trimmed, k) - 1; continue; }
+            if (ch === '{') braceDepth++;
+            else if (ch === '}') braceDepth = Math.max(0, braceDepth - 1);
+          }
+          while (jsxChildBraceStack.length > 0) {
+            const top = jsxChildBraceStack[jsxChildBraceStack.length - 1];
+            if (top === undefined || braceDepth > top) break;
+            jsxChildBraceStack.pop();
+          }
+          updateParenDepthForLine(trimmed);
+          continue;
+        }
+      }
+
+      if (isArrowParenOpen) {
+        tryPushParenArrowScope(trimmed, parenBefore);
+      }
+      updateParenDepthForLine(trimmed);
+    }
 
     if (/^import\b/.test(trimmed)) {
       const impMatch = trimmed.replace(/;$/, '').trim().match(/^import\s+(?:type\s+)?([\s\S]+?)\s+from\s+(['"])([^'"]+)\2\s*$/);
@@ -1039,10 +1300,11 @@ export function checkPass2Statements(
         const hasCbRet = Boolean(callbackArrowOpen[4]);
         const cbRawRet = callbackArrowOpen[4] ? callbackArrowOpen[4].trim() : (isAsyncCb ? 'Promise<any>' : 'any');
         const cbRet = callbackArrowOpen[4] ? resolveAlias(cbRawRet) : cbRawRet;
-        const { params: cbParams, minArgs: cbMin } = parseParamList(cbParamStr, lineNum, false);
+        const { params: cbParams, minArgs: cbMin, extraBindings: cbExtra } = parseParamList(cbParamStr, lineNum, false);
         activeFn = {
           name: '<callback>',
           params: cbParams,
+          extraBindings: cbExtra,
           minArgs: cbMin,
           returnType: cbRet,
           rawReturnType: cbRawRet,
@@ -1098,7 +1360,7 @@ export function checkPass2Statements(
           rawRetType = isCtorOrSetter ? 'void' : (validMethodOpen[3] ? validMethodOpen[3].trim() : (isAsyncFn ? 'Promise<any>' : 'any'));
           retType = isCtorOrSetter ? 'void' : resolveAlias(rawRetType);
         }
-        const { params, minArgs } = parseParamList(
+        const { params, minArgs, extraBindings } = parseParamList(
           paramStr,
           lineNum,
           Boolean(ctx.tsConfig.noImplicitAny) && Boolean(fnOpen || validMethodOpen)
@@ -1141,6 +1403,7 @@ export function checkPass2Statements(
         activeFn = {
           name: fName,
           params,
+          extraBindings,
           minArgs,
           returnType: retType,
           rawReturnType: rawRetType,
@@ -1159,6 +1422,9 @@ export function checkPass2Statements(
       }
       activeFn.params.forEach(p => {
         env.set(p.name, { type: p.type, isConst: false, line: activeFn.line, declaredType: p.type });
+      });
+      activeFn.extraBindings?.forEach(b => {
+        env.set(b.name, { type: b.type, isConst: false, line: activeFn.line, declaredType: b.type });
       });
       fnStartBraceDepth = braceDepth;
       let openBraceIdx = -1;
@@ -1356,6 +1622,19 @@ export function checkPass2Statements(
           clsTParams.forEach((tp: { name: string }) => activeTypeParams.delete(tp.name));
           currentClass = null;
           env.delete('this');
+        }
+        if (ctx.isTsx) {
+          while (jsxAttrBraceStack.length > 0) {
+            const topAttr = jsxAttrBraceStack[jsxAttrBraceStack.length - 1];
+            if (topAttr === undefined || braceDepth > topAttr) break;
+            jsxAttrBraceStack.pop();
+            inJsxOpenTag = true;
+          }
+          while (jsxChildBraceStack.length > 0) {
+            const topChild = jsxChildBraceStack[jsxChildBraceStack.length - 1];
+            if (topChild === undefined || braceDepth > topChild) break;
+            jsxChildBraceStack.pop();
+          }
         }
       }
     }
@@ -1680,7 +1959,7 @@ export function checkPass2Statements(
               if (parsedArrow) {
                 const arrowTParams = parsedArrow.typeParamStr ? parseTypeParams(parsedArrow.typeParamStr) : [];
                 const rawParamItems = parsedArrow.paramStr ? splitTopLevelDecl(parsedArrow.paramStr) : [];
-                const { params: aParams, minArgs: aMin } = parseParamList(parsedArrow.paramStr, lineNum, false);
+                const { params: aParams, minArgs: aMin, extraBindings: aExtra } = parseParamList(parsedArrow.paramStr, lineNum, false);
                 const ctxFn = parseTopLevelFnType(rawDeclStr || declT, lineNum);
                 if (ctxFn) {
                   aParams.forEach((p, idx) => {
@@ -1705,6 +1984,11 @@ export function checkPass2Statements(
                   boundNames.add(p.name);
                   savedEnv.set(p.name, env.get(p.name));
                   env.set(p.name, { type: p.type, isConst: false, line: lineNum, declaredType: p.type });
+                });
+                aExtra.forEach(b => {
+                  boundNames.add(b.name);
+                  savedEnv.set(b.name, env.get(b.name));
+                  env.set(b.name, { type: b.type, isConst: false, line: lineNum, declaredType: b.type });
                 });
 
                 const rawBody = parsedArrow.bodyStr.trim();
@@ -2302,15 +2586,18 @@ function syncContextFunctionTypesToMeta(ctx: TypeCheckContext): void {
   });
 }
 
-export function typecheckTS(src: string, strict = appState.STRICT_TS) {
+export function typecheckTS(src: string, strict = appState.STRICT_TS, fileName?: string) {
   extractTsInterfaceMetadata(src);
   if (!strict) return [];
+  const effectiveFile = fileName || appState.FILE_NAME || 'main.ts';
+  const isTsx = appState.VIEW_MODE === 'studio' || /\.(?:tsx|jsx)$/i.test(effectiveFile);
   const configKey = formatTsConfigCacheKey(appState.TS_CONFIG);
   if (
     typeof src === 'string' &&
     _TYPECHECK_CACHE.src === src &&
     _TYPECHECK_CACHE.strict === strict &&
-    _TYPECHECK_CACHE.configKey === configKey
+    _TYPECHECK_CACHE.configKey === configKey &&
+    _TYPECHECK_CACHE.isTsx === isTsx
   ) {
     if (appState.CURRENT_TS_META) {
       if (_TYPECHECK_CACHE.fnTypes) {
@@ -2335,7 +2622,7 @@ export function typecheckTS(src: string, strict = appState.STRICT_TS) {
     return _TYPECHECK_CACHE.diags.map((d: Diag) => ({ ...d }));
   }
 
-  const ctx = createTypeCheckContext(src, appState.TS_CONFIG);
+  const ctx = createTypeCheckContext(src, appState.TS_CONFIG, isTsx);
   const evalEngine = createTypeEvalEngine(ctx);
   const inferEngine = createTypeInferEngine(ctx, evalEngine);
 
@@ -2348,6 +2635,7 @@ export function typecheckTS(src: string, strict = appState.STRICT_TS) {
   if (
     _TS_WORKER_STATE.lastSrc === src &&
     _TS_WORKER_STATE.lastConfigKey === configKey &&
+    _TS_WORKER_STATE.lastIsTsx === isTsx &&
     Array.isArray(_TS_WORKER_STATE.lastDiags)
   ) {
     _TS_WORKER_STATE.lastDiags.forEach((wd: { line: number; code: string; message?: string }) => {
@@ -2356,7 +2644,7 @@ export function typecheckTS(src: string, strict = appState.STRICT_TS) {
       }
     });
   } else {
-    requestTsWorkerCheck(src, strict);
+    requestTsWorkerCheck(src, strict, effectiveFile, isTsx);
   }
 
   if (typeof src === 'string') {
@@ -2364,6 +2652,7 @@ export function typecheckTS(src: string, strict = appState.STRICT_TS) {
       src,
       strict,
       configKey,
+      isTsx,
       diags: diagnostics.map(d => ({ ...d })),
       fnTypes: appState.CURRENT_TS_META?.fnTypes ? new Map(appState.CURRENT_TS_META.fnTypes) : undefined,
       varTypes: appState.CURRENT_TS_META?.varTypes ? new Map(appState.CURRENT_TS_META.varTypes) : undefined,
@@ -2505,7 +2794,7 @@ export function typecheckWorkspaceModules(
 
   const graph = buildModuleGraph(entryFile, entrySource, fileMap);
   if (!graph.isMultiFile) {
-    const singleDiags: Diag[] = typecheckTS(entrySource, strict).map(d => ({
+    const singleDiags: Diag[] = typecheckTS(entrySource, strict, graph.entryFile).map(d => ({
       ...d,
       file: ('file' in d && d.file) ? d.file : graph.entryFile,
     }));
@@ -2560,12 +2849,13 @@ export function typecheckWorkspaceModules(
     const modNode = graph.modules.get(modFile);
     if (!modNode) continue;
 
-    const ctx = createTypeCheckContext(modNode.rawSource, activeTsConfig);
+    const isTsxMod = appState.VIEW_MODE === 'studio' || /\.(?:tsx|jsx)$/i.test(modFile);
+    const ctx = createTypeCheckContext(modNode.rawSource, activeTsConfig, isTsxMod);
     const evalEngine = createTypeEvalEngine(ctx);
     const inferEngine = createTypeInferEngine(ctx, evalEngine);
 
     for (const imp of modNode.imports) {
-      if (imp.isBuiltinFs || !imp.resolvedPath) continue;
+      if (imp.isBuiltinFs || imp.isVirtualModule || !imp.resolvedPath) continue;
       const depCtx = checkedContexts.get(imp.resolvedPath);
       const depNode = graph.modules.get(imp.resolvedPath);
       if (!depCtx || !depNode) continue;
@@ -2631,8 +2921,11 @@ const _TS_WORKER_STATE: {
   failed: boolean;
   reqId: number;
   pendingSrc: string | null;
+  pendingFileName: string | null;
+  pendingIsTsx: boolean;
   lastSrc: string | null;
   lastConfigKey: string | null;
+  lastIsTsx: boolean | null;
   lastDiags: Array<{ line: number; code: string; message?: string }> | null;
   timer: ReturnType<typeof setTimeout> | null;
 } = {
@@ -2640,8 +2933,11 @@ const _TS_WORKER_STATE: {
   failed: false,
   reqId: 0,
   pendingSrc: null,
+  pendingFileName: null,
+  pendingIsTsx: false,
   lastSrc: null,
   lastConfigKey: null,
+  lastIsTsx: null,
   lastDiags: null,
   timer: null,
 };
@@ -2659,10 +2955,11 @@ export function ensureTsWorker() {
       if (!data || data.type !== 'checkResult') return;
       _TS_WORKER_STATE.lastSrc = data.src;
       _TS_WORKER_STATE.lastConfigKey = typeof data.configKey === 'string' ? data.configKey : null;
+      _TS_WORKER_STATE.lastIsTsx = typeof data.isTsx === 'boolean' ? data.isTsx : null;
       const newDiags = Array.isArray(data.diagnostics) ? data.diagnostics : [];
       _TS_WORKER_STATE.lastDiags = newDiags;
       if (_TYPECHECK_CACHE.src === data.src && newDiags.length > 0) {
-        _TYPECHECK_CACHE = { src: null, strict: null, configKey: null, diags: [] };
+        _TYPECHECK_CACHE = { src: null, strict: null, configKey: null, isTsx: null, diags: [] };
         try { uiHooks.updateEditorChrome(); } catch (_) {}
       }
     };
@@ -2679,11 +2976,13 @@ export function ensureTsWorker() {
   }
 }
 
-export function requestTsWorkerCheck(src: string, strict: boolean) {
+export function requestTsWorkerCheck(src: string, strict: boolean, fileName?: string, isTsx = false) {
   if (!strict || typeof src !== 'string' || typeof Worker === 'undefined') return;
   const w = ensureTsWorker();
   if (!w) return;
   _TS_WORKER_STATE.pendingSrc = src;
+  _TS_WORKER_STATE.pendingFileName = fileName || 'main.ts';
+  _TS_WORKER_STATE.pendingIsTsx = Boolean(isTsx);
   const configKey = formatTsConfigCacheKey(appState.TS_CONFIG);
   if (_TS_WORKER_STATE.timer) clearTimeout(_TS_WORKER_STATE.timer);
   _TS_WORKER_STATE.timer = setTimeout(() => {
@@ -2696,6 +2995,8 @@ export function requestTsWorkerCheck(src: string, strict: boolean) {
         strict: Boolean(strict),
         tsConfig: { ...appState.TS_CONFIG },
         configKey,
+        fileName: _TS_WORKER_STATE.pendingFileName,
+        isTsx: _TS_WORKER_STATE.pendingIsTsx,
       });
     } catch (_) {}
   }, 60);

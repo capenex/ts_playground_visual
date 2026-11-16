@@ -18,7 +18,28 @@ export interface ModuleImportSpec {
   resolvedPath: string | null;
   isTypeOnly: boolean;
   isBuiltinFs: boolean;
+  isVirtualModule?: boolean;
   bindings: ModuleImportBinding[];
+}
+
+const VIRTUAL_REACT_MODULES = new Set([
+  'react',
+  'react-dom',
+  'react-dom/client',
+  'react/jsx-runtime',
+]);
+
+export function isBuiltinFsSpecifier(spec: string): boolean {
+  const clean = String(spec ?? '').trim();
+  return clean === 'fs' || clean === 'node:fs' || clean === 'fs/promises' || clean === 'node:fs/promises';
+}
+
+export function isVirtualModuleSpecifier(spec: string): boolean {
+  const clean = String(spec ?? '').trim();
+  if (isBuiltinFsSpecifier(clean)) return true;
+  if (VIRTUAL_REACT_MODULES.has(clean)) return true;
+  if (/\.css(?:\?[^'"]*)?$/i.test(clean)) return true;
+  return false;
 }
 
 export interface ModuleExportSpec {
@@ -76,8 +97,11 @@ export function resolveModuleImportPath(
 ): string | null {
   const spec = String(specifier ?? '').trim();
   if (!spec) return null;
-  if (spec === 'fs' || spec === 'node:fs' || spec === 'fs/promises' || spec === 'node:fs/promises') {
+  if (isBuiltinFsSpecifier(spec)) {
     return 'fs';
+  }
+  if (VIRTUAL_REACT_MODULES.has(spec)) {
+    return spec;
   }
 
   const normFrom = normalizeWorkspaceModulePath(fromFile || 'main.ts');
@@ -203,14 +227,16 @@ export function parseModuleImportsAndExports(
       const sideEffectM = cleanStmt.match(/^import\s+(['"])([^'"]+)\1$/);
       if (sideEffectM && sideEffectM[2]) {
         const spec = sideEffectM[2].trim();
-        const isBuiltinFs = spec === 'fs' || spec === 'node:fs' || spec === 'fs/promises' || spec === 'node:fs/promises';
-        if (!isBuiltinFs) hasRelativeImports = true;
+        const isBuiltinFs = isBuiltinFsSpecifier(spec);
+        const isVirtualModule = isVirtualModuleSpecifier(spec);
+        if (!isVirtualModule) hasRelativeImports = true;
         imports.push({
           line: lineNum,
           specifier: spec,
           resolvedPath: resolveModuleImportPath(currentFile, spec, availableFiles),
           isTypeOnly: false,
           isBuiltinFs,
+          isVirtualModule,
           bindings: [],
         });
         continue;
@@ -221,8 +247,9 @@ export function parseModuleImportsAndExports(
         const isTypeOnly = Boolean(impM[1]);
         const clause = impM[2].trim();
         const spec = impM[4].trim();
-        const isBuiltinFs = spec === 'fs' || spec === 'node:fs' || spec === 'fs/promises' || spec === 'node:fs/promises';
-        if (!isBuiltinFs) hasRelativeImports = true;
+        const isBuiltinFs = isBuiltinFsSpecifier(spec);
+        const isVirtualModule = isVirtualModuleSpecifier(spec);
+        if (!isVirtualModule) hasRelativeImports = true;
         const bindings: ModuleImportBinding[] = [];
 
         const nsM = clause.match(/^\*\s+as\s+([A-Za-z_$][\w$]*)$/);
@@ -246,6 +273,7 @@ export function parseModuleImportsAndExports(
           resolvedPath: resolveModuleImportPath(currentFile, spec, availableFiles),
           isTypeOnly,
           isBuiltinFs,
+          isVirtualModule,
           bindings,
         });
       }
@@ -437,6 +465,10 @@ export function rewriteModuleEsmToCjs(
       const sideM = cleanStmt.match(/^import\s+(['"])([^'"]+)\1$/);
       if (sideM && sideM[2]) {
         const spec = sideM[2].trim();
+        if (/\.css(?:\?[^'"]*)?$/i.test(spec)) {
+          outLines.push(`${indent}/*__import_css__*/`);
+          continue;
+        }
         const resolved = resolveModuleImportPath(normCurrent, spec, availableFiles) || spec;
         outLines.push(`${indent}/*__import__*/ __require(${JSON.stringify(resolved)}, ${JSON.stringify(normCurrent)});`);
         continue;
@@ -695,7 +727,7 @@ export function buildModuleGraph(
     const deps: string[] = [];
 
     for (const imp of parsed.imports) {
-      if (imp.isBuiltinFs) continue;
+      if (imp.isBuiltinFs || imp.isVirtualModule) continue;
       if (!imp.resolvedPath || !allFiles.has(imp.resolvedPath)) {
         diagnostics.push({
           file: filePath,
@@ -743,7 +775,7 @@ export function buildModuleGraph(
   // Verify named imports exist in target module's exports
   modules.forEach((modNode) => {
     for (const imp of modNode.imports) {
-      if (imp.isBuiltinFs || !imp.resolvedPath) continue;
+      if (imp.isBuiltinFs || imp.isVirtualModule || !imp.resolvedPath) continue;
       const targetMod = modules.get(imp.resolvedPath);
       if (!targetMod) continue;
 

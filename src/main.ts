@@ -4,8 +4,11 @@
 import * as stateMod from './state';
 import * as domMod from './ui/dom';
 import * as tsSamplesMod from './samples/ts-samples';
+import * as reactSamplesMod from './samples/react-samples';
 import * as commentsMod from './compiler/comments';
 import * as transpileMod from './compiler/transpile';
+import * as jsxTranspileMod from './compiler/jsx-transpile';
+import * as propsSchemaMod from './compiler/props-schema';
 import * as instrumenterMod from './compiler/instrumenter';
 import * as typeCheckerMod from './compiler/type-checker';
 import * as eventLoopMod from './runtime/event-loop';
@@ -19,6 +22,7 @@ import * as videoWebmMod from './ui/video-webm';
 import * as vfsMod from './ui/vfs';
 import * as scriptTabsMod from './ui/script-tabs';
 import * as notebookMod from './ui/notebook';
+import * as componentStudioMod from './ui/component-studio';
 
 stateMod.bindStateGlobals();
 domMod.bindDomGlobals();
@@ -27,8 +31,11 @@ const allExports = {
   ...stateMod,
   ...domMod,
   ...tsSamplesMod,
+  ...reactSamplesMod,
   ...commentsMod,
   ...transpileMod,
+  ...jsxTranspileMod,
+  ...propsSchemaMod,
   ...instrumenterMod,
   ...typeCheckerMod,
   ...eventLoopMod,
@@ -42,6 +49,7 @@ const allExports = {
   ...vfsMod,
   ...scriptTabsMod,
   ...notebookMod,
+  ...componentStudioMod,
 };
 
 Object.assign(globalThis, allExports);

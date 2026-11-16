@@ -5,6 +5,7 @@ import type {
   ComplexityReport,
   ConsoleLogEntry,
   DebugSession,
+  EditorLanguage,
   InterfaceSchemaMeta,
   LangBuffer,
   TraceData,
@@ -94,8 +95,21 @@ export function esc(t: unknown): string {
     .replace(/"/g, '&quot;');
 }
 
+export function inferEditorLanguageFromFileName(fileName: string | null | undefined): EditorLanguage {
+  const lower = String(fileName || '').trim().toLowerCase();
+  if (lower.endsWith('.css')) return 'css';
+  if (lower.endsWith('.html') || lower.endsWith('.htm')) return 'html';
+  if (lower.endsWith('.json')) return 'json';
+  if (lower.endsWith('.tsx')) return 'tsx';
+  if (lower.endsWith('.jsx')) return 'jsx';
+  if (lower.endsWith('.js') || lower.endsWith('.mjs') || lower.endsWith('.cjs')) return 'js';
+  return 'ts';
+}
+
+export type AppViewMode = 'script' | 'notebook' | 'studio';
+
 export interface AppState {
-  VIEW_MODE: 'script' | 'notebook';
+  VIEW_MODE: AppViewMode;
   ACTIVE_NB_CELL_ID: string | null;
   FILE_NAME: string;
   LANG: 'ts';
@@ -257,7 +271,9 @@ export interface RuntimeUiHooks {
   openVfsScriptFile: (path: string, name: string, content: string) => void;
   onVfsFileDeleted: (delPath: string) => void;
   onVfsFileRenamed: (oldPath: string, nextPath: string, nextName: string) => void;
-  setViewMode: (mode: 'script' | 'notebook') => void;
+  setViewMode: (mode: AppViewMode) => void;
+  onStudioSourceChanged: () => void;
+  onStudioFileActivated: () => void;
   importSampleIntoNotebook: (code: string, sampleKey: string) => void;
   openTutorialModal: () => void;
   importTutorialNotebook: (tutorialId: string) => boolean;
@@ -287,6 +303,8 @@ export const uiHooks: RuntimeUiHooks = {
   onVfsFileDeleted: () => {},
   onVfsFileRenamed: () => {},
   setViewMode: () => {},
+  onStudioSourceChanged: () => {},
+  onStudioFileActivated: () => {},
   importSampleIntoNotebook: () => {},
   openTutorialModal: () => {},
   importTutorialNotebook: () => false,

@@ -50,7 +50,11 @@ export interface TypeInferEngine {
     paramStr: string,
     lineNum: number,
     checkUntypedParams?: boolean
-  ) => { params: Array<{ name: string; type: string; rawType: string; optional: boolean; isRest?: boolean }>; minArgs: number };
+  ) => {
+    params: Array<{ name: string; type: string; rawType: string; optional: boolean; isRest?: boolean }>;
+    minArgs: number;
+    extraBindings: Array<{ name: string; type: string }>;
+  };
   parseClassTopMember: (
     mem: string,
     propMap: Map<string, PropShapeInfo>,
@@ -364,6 +368,15 @@ export function createTypeInferEngine(ctx: TypeCheckContext, evalEngine: TypeEva
 
     while (s.startsWith('(') && findBalancedParen(s, 0) === s.length - 1) {
       s = s.slice(1, -1).trim();
+    }
+
+    if (
+      ctx.isTsx &&
+      s.startsWith('<') &&
+      /^<\/?(?:[A-Za-z_$][\w$.:-]*(?=[\s/>]|$)|>)/.test(s) &&
+      !/^<[A-Za-z_$][\w$]*\s*(?:,|\bextends\b)/.test(s)
+    ) {
+      return 'any';
     }
 
     const yieldM = s.match(/^yield\s*(\*)?\s*([\s\S]*)$/);
@@ -1365,10 +1378,96 @@ export function createTypeInferEngine(ctx: TypeCheckContext, evalEngine: TypeEva
   function parseParamList(paramStr: string, lineNum: number, checkUntypedParams = Boolean(ctx.tsConfig.noImplicitAny)) {
     const rawParams = paramStr ? splitTopLevelDecl(paramStr) : [];
     const params: Array<{ name: string; type: string; rawType: string; optional: boolean; isRest?: boolean }> = [];
+    const extraBindings: Array<{ name: string; type: string }> = [];
     let minArgs = 0;
     rawParams.forEach(pRaw => {
       const p = pRaw.trim().replace(/^(?:(?:public|private|protected|readonly|override)\s+)+/, '');
       if (!p) return;
+
+      if (p.startsWith('{') || p.startsWith('[')) {
+        let colonIdx = -1;
+        let eqIdx = -1;
+        let d = 0;
+        let ad = 0;
+        for (let i = 0; i < p.length; i++) {
+          const ch = p[i];
+          if (ch === '"' || ch === "'" || ch === '`') { i = skipString(p, i) - 1; continue; }
+          if (ch === '(' || ch === '{' || ch === '[') d++;
+          else if (ch === ')' || ch === '}' || ch === ']') d = Math.max(0, d - 1);
+          else if (ch === '<') ad++;
+          else if (ch === '>' && p[i - 1] !== '=') ad = Math.max(0, ad - 1);
+          else if (d === 0 && ad === 0) {
+            if (ch === ':' && colonIdx < 0 && eqIdx < 0) colonIdx = i;
+            else if (ch === '=' && p[i + 1] !== '>' && p[i + 1] !== '=' && eqIdx < 0) {
+              eqIdx = i;
+              break;
+            }
+          }
+        }
+        const patternPart = p.slice(0, colonIdx >= 0 ? colonIdx : (eqIdx >= 0 ? eqIdx : p.length)).trim();
+        const rawType = colonIdx >= 0 ? p.slice(colonIdx + 1, eqIdx >= 0 ? eqIdx : p.length).trim() : null;
+        const defaultPart = eqIdx >= 0 ? p.slice(eqIdx + 1).trim() : null;
+        const pType = rawType ? resolveAlias(rawType) : 'any';
+        const isOpt = Boolean(defaultPart);
+        if (!isOpt) minArgs++;
+        params.push({
+          name: `__destructured_${params.length}`,
+          type: pType,
+          rawType: rawType || pType,
+          optional: isOpt,
+        });
+
+        if (patternPart.startsWith('{') && patternPart.endsWith('}')) {
+          const shape = getInterfaceShape(pType);
+          const inner = patternPart.slice(1, -1);
+          splitTopLevel(inner).forEach((rawItem) => {
+            const item = rawItem.trim();
+            if (!item) return;
+            if (item.startsWith('...')) {
+              const restName = item.slice(3).trim();
+              if (/^[A-Za-z_$][\w$]*$/.test(restName)) {
+                extraBindings.push({ name: restName, type: 'any' });
+              }
+              return;
+            }
+            let itemEq = -1;
+            let itemColon = -1;
+            let bd = 0;
+            for (let k = 0; k < item.length; k++) {
+              const ch = item[k];
+              if (ch === '"' || ch === "'" || ch === '`') { k = skipString(item, k) - 1; continue; }
+              if (ch === '(' || ch === '{' || ch === '[') bd++;
+              else if (ch === ')' || ch === '}' || ch === ']') bd = Math.max(0, bd - 1);
+              else if (bd === 0 && ch === ':' && itemColon < 0 && itemEq < 0) itemColon = k;
+              else if (bd === 0 && ch === '=' && item[k + 1] !== '>' && item[k + 1] !== '=') {
+                itemEq = k;
+                break;
+              }
+            }
+            const lhs = item.slice(0, itemEq >= 0 ? itemEq : item.length).trim();
+            const rhsDefault = itemEq >= 0 ? item.slice(itemEq + 1).trim() : '';
+            const propName = (itemColon >= 0 ? lhs.slice(0, itemColon) : lhs).trim();
+            const localName = (itemColon >= 0 ? lhs.slice(itemColon + 1) : lhs).trim();
+            if (/^[A-Za-z_$][\w$]*$/.test(localName)) {
+              const propInfo = shape ? shape.get(propName) : undefined;
+              const bType = propInfo
+                ? propInfo.type
+                : (rhsDefault ? inferType(rhsDefault, lineNum) : 'any');
+              extraBindings.push({ name: localName, type: bType });
+            } else {
+              const nested = new Set<string>();
+              extractBindingNames(lhs, nested);
+              nested.forEach((n) => extraBindings.push({ name: n, type: 'any' }));
+            }
+          });
+        } else {
+          const bound = new Set<string>();
+          extractBindingNames(patternPart, bound);
+          bound.forEach((n) => extraBindings.push({ name: n, type: 'any' }));
+        }
+        return;
+      }
+
       const pm = p.match(/^(\.\.\.)?([A-Za-z_$][\w$]*)(\?)?(?:\s*:\s*((?:[^=]|=>)+?))?(?:\s*=\s*(?!=|>)([\s\S]+))?$/);
       if (pm && pm[2]) {
         const isRest = Boolean(pm[1]);
@@ -1389,7 +1488,7 @@ export function createTypeInferEngine(ctx: TypeCheckContext, evalEngine: TypeEva
         params.push({ name: pName, type: pType, rawType: rawType || pType, optional: isOpt, isRest });
       }
     });
-    return { params, minArgs };
+    return { params, minArgs, extraBindings };
   }
 
   function parseClassTopMember(mem: string, propMap: Map<string, PropShapeInfo>, clsName: string, lineNum: number) {

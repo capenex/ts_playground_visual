@@ -6,7 +6,7 @@ import { stripTypes } from "../compiler/transpile";
 import { collectNames } from "../compiler/instrumenter";
 import { typecheckTS, typecheckWorkspaceModules, normalizeWorkspaceModulePath } from "../compiler/type-checker";
 import { inferRuntimeTsType, formatFunctionTypeSignature, formatTsConfigCacheKey, parseTsConfigJson } from "../compiler/tc-types";
-import { appState, esc, registerUiHooks, uiHooks } from "../state";
+import { appState, esc, inferEditorLanguageFromFileName, registerUiHooks, uiHooks } from "../state";
 import { Diag, StepAnim } from "../types";
 import { editor, gutterEl, highlightEl, hoverTipEl } from "../ui/dom";
 import { isMapLike, isSetLike, isRecord, formatShortVal } from "../utils/format";
@@ -272,9 +272,11 @@ export function hlActiveLine(rawLine: string, anim?: StepAnim | null, declared?:
 export function updateEditorChrome() {
   const text = editor.value.replace(/\r\n?/g, '\n');
   const lines = text.split('\n');
-  const types = collectDeclaredTypeNames(text);
-  const declared = collectDeclaredNames(text);
-  const builtins = collectHighlightBuiltins(declared);
+  const editorLang = inferEditorLanguageFromFileName(appState.FILE_NAME);
+  const isCodeLang = editorLang === 'ts' || editorLang === 'tsx' || editorLang === 'js' || editorLang === 'jsx';
+  const types = isCodeLang ? collectDeclaredTypeNames(text) : new Set<string>();
+  const declared = isCodeLang ? collectDeclaredNames(text) : new Set<string>();
+  const builtins = isCodeLang ? collectHighlightBuiltins(declared) : new Set<string>();
   const liveErrors = liveTypeDiags(text);
   const liveByLine = new Map<number, Diag>();
   liveErrors.forEach((d: Diag) => { if (d && d.line >= 1 && !liveByLine.has(d.line)) liveByLine.set(d.line, d); });
@@ -303,7 +305,7 @@ export function updateEditorChrome() {
     const errorLines = new Set([...liveByLine.keys(), ...appState.TYPE_ERROR_LINES, ...appState.RUNTIME_ERROR_LINES]);
     if (st && st.error && curLine >= 1) errorLines.add(curLine);
     window.PlaygroundCM.syncFromApp({
-      language: appState.LANG,
+      language: editorLang,
       text,
       lines,
       declared,
@@ -342,6 +344,11 @@ let LIVE_TYPE_CACHE: { key: string | null; diags: Diag[] } = { key: null, diags:
 export function liveTypeDiags(src: string | null | undefined): Diag[] {
   const text = String(src == null ? '' : src);
   const currentFile = normalizeWorkspaceModulePath(appState.FILE_NAME || 'main.ts');
+  if (/\.(?:css|html?)$/i.test(currentFile)) {
+    const skipKey = `skip::${currentFile}`;
+    LIVE_TYPE_CACHE = { key: skipKey, diags: [] };
+    return [];
+  }
   const cfgKey = formatTsConfigCacheKey(appState.TS_CONFIG);
   if (currentFile.endsWith('.json')) {
     const jsonCacheKey = `json::${currentFile}::${text}`;
@@ -370,7 +377,8 @@ export function liveTypeDiags(src: string | null | undefined): Diag[] {
       fileMap = new Map<string, string>();
     }
   }
-  const cacheKey = `${currentFile}::${appState.STRICT_TS ? 1 : 0}::${cfgKey}::${mapSig}::${text}`;
+  const isStudio = appState.VIEW_MODE === 'studio' ? 1 : 0;
+  const cacheKey = `${currentFile}::${isStudio}::${appState.STRICT_TS ? 1 : 0}::${cfgKey}::${mapSig}::${text}`;
   if (LIVE_TYPE_CACHE.key === cacheKey) return LIVE_TYPE_CACHE.diags;
   let diags: Diag[] = [];
   try {
@@ -379,7 +387,7 @@ export function liveTypeDiags(src: string | null | undefined): Diag[] {
       const { diagnostics } = typecheckWorkspaceModules(currentFile, text, fileMap, appState.STRICT_TS);
       diags = diagnostics.filter((d: Diag) => !d.file || d.file === currentFile);
     } else {
-      diags = typecheckTS(text, appState.STRICT_TS) || [];
+      diags = typecheckTS(text, appState.STRICT_TS, currentFile) || [];
     }
   } catch (_) {
     diags = [];

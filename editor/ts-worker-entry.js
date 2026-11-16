@@ -560,15 +560,115 @@ declare module 'node:fs/promises' {
 // Algorithm Playground Predeclared Helpers (conditional if user hasn't declared them)
 `;
 
-const LIB_FILE_NAME = '/lib.es.d.ts';
-const USER_FILE_NAME = '/playground.ts';
+const LIB_REACT_DTS = `
+declare namespace JSX {
+  type Element = any;
+  interface IntrinsicElements {
+    [elemName: string]: any;
+  }
+  interface ElementAttributesProperty {
+    props: {};
+  }
+  interface ElementChildrenAttribute {
+    children: {};
+  }
+}
 
-const libSourceFile = ts.createSourceFile(
-  LIB_FILE_NAME,
-  LIB_ES_CORE_DTS,
-  ts.ScriptTarget.ES2022,
-  true
+declare namespace React {
+  export type ReactNode = any;
+  export type ReactElement<P = any, T = any> = any;
+  export type CSSProperties = Record<string, any>;
+  export type FC<P = {}> = (props: P & { children?: ReactNode }) => ReactElement | null;
+  export type FunctionComponent<P = {}> = FC<P>;
+  export type ComponentType<P = {}> = FC<P> | (new (props: P) => any);
+  export type ComponentProps<T = any> = any;
+  export type PropsWithChildren<P = {}> = P & { children?: ReactNode };
+  export type SyntheticEvent<T = any> = any;
+  export type MouseEvent<T = any> = any;
+  export type ChangeEvent<T = any> = any;
+  export type KeyboardEvent<T = any> = any;
+  export type FocusEvent<T = any> = any;
+  export type FormEvent<T = any> = any;
+  export type MouseEventHandler<T = any> = (event: MouseEvent<T>) => void;
+  export type ChangeEventHandler<T = any> = (event: ChangeEvent<T>) => void;
+  export type FormEventHandler<T = any> = (event: FormEvent<T>) => void;
+  export type RefObject<T> = { readonly current: T | null };
+  export type MutableRefObject<T> = { current: T };
+  export type Dispatch<A> = (value: A) => void;
+  export type SetStateAction<S> = S | ((prevState: S) => S);
+
+  export const Fragment: unique symbol;
+  export const StrictMode: any;
+  export const Suspense: any;
+
+  export function useState<S>(initialState: S | (() => S)): [S, Dispatch<SetStateAction<S>>];
+  export function useState<S = undefined>(): [S | undefined, Dispatch<SetStateAction<S | undefined>>];
+  export function useEffect(effect: () => (void | (() => void)), deps?: readonly any[]): void;
+  export function useLayoutEffect(effect: () => (void | (() => void)), deps?: readonly any[]): void;
+  export function useMemo<T>(factory: () => T, deps: readonly any[] | undefined): T;
+  export function useCallback<T extends Function>(callback: T, deps: readonly any[]): T;
+  export function useRef<T>(initialValue: T): MutableRefObject<T>;
+  export function useRef<T = undefined>(): MutableRefObject<T | undefined>;
+  export function useContext<T>(context: any): T;
+  export function useReducer<R extends (state: any, action: any) => any>(reducer: R, initialArg: any): [any, Dispatch<any>];
+  export function useId(): string;
+  export function useTransition(): [boolean, (callback: () => void) => void];
+  export function useDeferredValue<T>(value: T): T;
+  export function createContext<T>(defaultValue: T): any;
+  export function createElement(type: any, props?: any, ...children: any[]): ReactElement;
+  export function cloneElement(element: any, props?: any, ...children: any[]): ReactElement;
+  export function forwardRef<T, P = {}>(render: (props: P, ref: any) => ReactNode): FC<P>;
+  export function memo<P>(component: FC<P>): FC<P>;
+  export function lazy<T>(factory: () => Promise<{ default: T }>): T;
+}
+
+declare module 'react' {
+  export = React;
+}
+
+declare module 'react-dom' {
+  export function render(element: any, container: any): void;
+  export function createPortal(children: any, container: any): any;
+  const reactDomDefault: { render: typeof render; createPortal: typeof createPortal };
+  export default reactDomDefault;
+}
+
+declare module 'react-dom/client' {
+  export interface Root {
+    render(children: any): void;
+    unmount(): void;
+  }
+  export function createRoot(container: any): Root;
+}
+
+declare module 'react/jsx-runtime' {
+  export const Fragment: typeof React.Fragment;
+  export function jsx(type: any, props: any, key?: any): any;
+  export function jsxs(type: any, props: any, key?: any): any;
+}
+
+declare module '*.css' {
+  const styles: Record<string, string>;
+  export default styles;
+}
+`;
+
+const LIB_FILE_NAME = '/lib.es.d.ts';
+const USER_FILE_NAME_TS = '/playground.ts';
+const USER_FILE_NAME_TSX = '/playground.tsx';
+
+const hasTsCompilerApi = Boolean(
+  ts && typeof ts.createSourceFile === 'function' && ts.ScriptTarget && ts.ModuleKind && ts.JsxEmit
 );
+
+const libSourceFile = hasTsCompilerApi
+  ? ts.createSourceFile(
+      LIB_FILE_NAME,
+      LIB_ES_CORE_DTS,
+      ts.ScriptTarget.ES2022,
+      true
+    )
+  : null;
 
 function buildDefaultNodeDecls(src) {
   let extras = '';
@@ -608,25 +708,35 @@ declare class _Node {
   return extras;
 }
 
-const BASE_COMPILER_OPTIONS = {
-  target: ts.ScriptTarget.ES2022,
-  module: ts.ModuleKind.ESNext,
-  strict: false,
-  noImplicitAny: false,
-  strictNullChecks: false,
-  strictFunctionTypes: true,
-  noImplicitReturns: false,
-  noUnusedLocals: false,
-  noUncheckedIndexedAccess: false,
-  noEmit: true,
-  skipLibCheck: true,
-  noLib: false,
-};
+const BASE_COMPILER_OPTIONS = hasTsCompilerApi
+  ? {
+      target: ts.ScriptTarget.ES2022,
+      module: ts.ModuleKind.ESNext,
+      jsx: ts.JsxEmit.React,
+      esModuleInterop: true,
+      allowSyntheticDefaultImports: true,
+      strict: false,
+      noImplicitAny: false,
+      strictNullChecks: false,
+      strictFunctionTypes: true,
+      noImplicitReturns: false,
+      noUnusedLocals: false,
+      noUncheckedIndexedAccess: false,
+      noEmit: true,
+      skipLibCheck: true,
+      noLib: false,
+    }
+  : {};
 
-function buildCompilerOptions(tsConfig) {
-  if (!tsConfig || typeof tsConfig !== 'object') return BASE_COMPILER_OPTIONS;
-  return {
+function buildCompilerOptions(tsConfig, isTsx) {
+  if (!hasTsCompilerApi) return {};
+  const base = {
     ...BASE_COMPILER_OPTIONS,
+    jsx: isTsx ? ts.JsxEmit.React : ts.JsxEmit.None,
+  };
+  if (!tsConfig || typeof tsConfig !== 'object') return base;
+  return {
+    ...base,
     strict: Boolean(tsConfig.strict),
     noImplicitAny: Boolean(tsConfig.noImplicitAny),
     strictNullChecks: Boolean(tsConfig.strictNullChecks),
@@ -637,14 +747,16 @@ function buildCompilerOptions(tsConfig) {
   };
 }
 
-function checkTypeScriptSource(src, tsConfig) {
-  const fullLibText = LIB_ES_CORE_DTS + buildDefaultNodeDecls(src);
+function checkTypeScriptSource(src, tsConfig, isTsx = false) {
+  if (!hasTsCompilerApi) return [];
+  const userFileName = isTsx ? USER_FILE_NAME_TSX : USER_FILE_NAME_TS;
+  const fullLibText = LIB_ES_CORE_DTS + (isTsx ? LIB_REACT_DTS : '') + buildDefaultNodeDecls(src);
   const dynamicLibSf = ts.createSourceFile(LIB_FILE_NAME, fullLibText, ts.ScriptTarget.ES2022, true);
-  const userSf = ts.createSourceFile(USER_FILE_NAME, src, ts.ScriptTarget.ES2022, true);
+  const userSf = ts.createSourceFile(userFileName, src, ts.ScriptTarget.ES2022, true);
 
   const host = {
     getSourceFile: (fileName) => {
-      if (fileName === USER_FILE_NAME) return userSf;
+      if (fileName === userFileName) return userSf;
       if (fileName === LIB_FILE_NAME) return dynamicLibSf;
       return undefined;
     },
@@ -654,15 +766,15 @@ function checkTypeScriptSource(src, tsConfig) {
     getCanonicalFileName: (f) => f,
     getCurrentDirectory: () => '/',
     getNewLine: () => '\n',
-    fileExists: (fileName) => fileName === USER_FILE_NAME || fileName === LIB_FILE_NAME,
+    fileExists: (fileName) => fileName === userFileName || fileName === LIB_FILE_NAME,
     readFile: (fileName) => {
-      if (fileName === USER_FILE_NAME) return src;
+      if (fileName === userFileName) return src;
       if (fileName === LIB_FILE_NAME) return fullLibText;
       return undefined;
     },
   };
 
-  const program = ts.createProgram([USER_FILE_NAME], buildCompilerOptions(tsConfig), host);
+  const program = ts.createProgram([userFileName], buildCompilerOptions(tsConfig, isTsx), host);
   const rawDiags = [
     ...program.getSyntacticDiagnostics(userSf),
     ...program.getSemanticDiagnostics(userSf),
@@ -670,7 +782,7 @@ function checkTypeScriptSource(src, tsConfig) {
 
   const out = [];
   for (const d of rawDiags) {
-    if (!d.file || d.file.fileName !== USER_FILE_NAME) continue;
+    if (!d.file || d.file.fileName !== userFileName) continue;
     const pos = typeof d.start === 'number' ? d.start : 0;
     const lc = userSf.getLineAndCharacterOfPosition(pos);
     const msg = ts.flattenDiagnosticMessageText(d.messageText, '\n');
@@ -698,12 +810,13 @@ function transpileTypeScriptSource(src) {
 if (typeof self !== 'undefined' && typeof self.addEventListener === 'function') {
   self.addEventListener('message', (ev) => {
     const data = ev && ev.data ? ev.data : {};
-    const { id, type, src, tsConfig, configKey } = data;
+    const { id, type, src, tsConfig, configKey, fileName, isTsx } = data;
     try {
       if (type === 'check') {
         const s = String(src || '');
-        const diags = checkTypeScriptSource(s, tsConfig);
-        self.postMessage({ id, type: 'checkResult', src: s, configKey, diagnostics: diags, diags });
+        const tsxMode = Boolean(isTsx) || /\.(?:tsx|jsx)$/i.test(String(fileName || ''));
+        const diags = checkTypeScriptSource(s, tsConfig, tsxMode);
+        self.postMessage({ id, type: 'checkResult', src: s, configKey, isTsx: tsxMode, diagnostics: diags, diags });
       } else if (type === 'transpile') {
         const js = transpileTypeScriptSource(String(src || ''));
         self.postMessage({ id, type: 'transpileResult', js });

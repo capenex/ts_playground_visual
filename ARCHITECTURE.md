@@ -20,7 +20,7 @@
 ## 1. 核心架构设计原则
 
 1. **严格的数据与视图分离（Data / UI Separation）**
-   - **纯逻辑层零 DOM 依赖**：在 `src/**/*.ts` 的 **39 个 TypeScript 模块**中，**24 个核心数据/编译器/运行时/内核/工具/布局模块（23 个纯逻辑实现模块 + 1 个环境声明模块，占比 61.5%）完全不包含任何浏览器 DOM 引用**（无 `document`、`window`、`HTMLElement`、`localStorage`），可在纯 Node.js 环境（如 `test-pipeline.mjs`）直接导入并执行单元测试。
+   - **纯逻辑层零 DOM 依赖**：在 `src/**/*.ts` 的 **43 个 TypeScript 模块**中，**27 个核心数据/编译器/运行时/内核/工具/布局模块（26 个纯逻辑实现模块 + 1 个环境声明模块，占比 62.8%）完全不包含任何浏览器 DOM 引用**（无 `document`、`window`、`HTMLElement`、`localStorage`），可在纯 Node.js 环境（如 `test-pipeline.mjs`）直接导入并执行单元测试。
    - **DOM 操作完全收敛至 `src/ui/*` 与 `src/viz/*`**：所有 DOM 节点查询统一由 `src/ui/dom.ts` 强类型惰性注册表（`getEl` / `mustEl`）管理，严禁任何隐式 HTML `id` 全局变量。
 2. **单向无环依赖图（Strict Unidirectional DAG）**
    - 全仓模块构成严格的 7 层单向有向无环图（DAG），通过 `test-pipeline.mjs` 中的 **Tarjan 强连通分量（SCC）算法**门禁强制保证 **0 直接循环依赖** 与 **0 多节点传递循环依赖**。
@@ -31,15 +31,15 @@
 
 ---
 
-## 2. 39 模块七层单向架构全景
+## 2. 43 模块七层单向架构全景
 
 ### 2.1 分层拓扑图
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│ Layer 7: 应用入口与 UI 视图层 (src/main.ts, src/ui/*) [8 modules, DOM-aware]   │
+│ Layer 7: 应用入口与 UI 视图层 (src/main.ts, src/ui/*) [9 modules, DOM-aware]   │
 │   main.ts · controls.ts · vfs.ts · script-tabs.ts · notebook.ts ·            │
-│   video-webm.ts · share.ts · dom.ts                                          │
+│   component-studio.ts · video-webm.ts · share.ts · dom.ts                    │
 └───────────────┬──────────────────────────────────────────────┬───────────────┘
                 │ 单向调用                                      │ 注册 uiHooks
                 ▼                                              ▼
@@ -62,9 +62,10 @@
                 │
                 ▼
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│ Layer 3: TypeScript 编译器与静态类型检查层 (src/compiler/*) [9 modules, 0 DOM] │
-│   transpile.ts · transpile-helpers.ts · instrumenter.ts · comments.ts ·      │
-│   module-graph.ts · type-checker.ts · tc-infer.ts · tc-eval.ts · tc-types.ts │
+│ Layer 3: TypeScript 编译器与静态类型检查层 (src/compiler/*) [11 modules, 0 DOM]│
+│   transpile.ts · transpile-helpers.ts · jsx-transpile.ts · props-schema.ts · │
+│   instrumenter.ts · comments.ts · module-graph.ts · type-checker.ts ·        │
+│   tc-infer.ts · tc-eval.ts · tc-types.ts                                     │
 └───────────────┬──────────────────────────────────────────────────────────────┘
                 │
                 ▼
@@ -75,13 +76,13 @@
                 │
                 ▼
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│ Layer 1: 基础类型契约、纯工具与内置示例层 [4 modules, 100% 0 DOM]             │
+│ Layer 1: 基础类型契约、纯工具与内置示例层 [5 modules, 100% 0 DOM]             │
 │   src/types.ts · src/utils/format.ts · src/utils/webm-muxer.ts ·             │
-│   src/samples/ts-samples.ts                                                  │
+│   src/samples/ts-samples.ts · src/samples/react-samples.ts                   │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 2.2 全量 39 个模块职责矩阵
+### 2.2 全量 43 个模块职责矩阵
 
 | 层级 | 模块路径 | DOM 依赖 | 核心职责说明 |
 | :--- | :--- | :---: | :--- |
@@ -89,11 +90,14 @@
 | **L1 基础契约与纯工具** | `src/utils/format.ts` | **0 DOM** | 值格式化、HTML 转义、耗时格式化、源码行号构建等纯函数 |
 | **L1 基础契约与纯工具** | `src/utils/webm-muxer.ts` | **0 DOM** | 纯二进制 EBML / Matroska / WebM 视频容器封装器（`WebmMuxer`），无任何浏览器依赖 |
 | **L1 基础契约与纯工具** | `src/samples/ts-samples.ts` | **0 DOM** | 内置 10 个 TypeScript 算法与异步示例及预期输出（`TS_SAMPLE_EXPECTED`） |
+| **L1 基础契约与纯工具** | `src/samples/react-samples.ts` | **0 DOM** | 内置 3 个开箱即用的 TSX 组件示例（`Button.tsx`、`Badge.tsx`、`PricingCard.tsx`） |
 | **L2 状态与契约中枢** | `src/state.ts` | **0 DOM** | 全局单一状态树 `appState`、控制台缓冲 `CONSOLE_LOGS` 及 `uiHooks` 依赖倒置注册表 |
 | **L2 状态与契约中枢** | `src/globals.d.ts` | **0 DOM** | 最小化第三方运行时（CodeMirror、WebCodecs、VFS 桥）类型声明，0 隐式 DOM 全局变量 |
 | **L3 编译器与类型检查** | `src/compiler/comments.ts` | **0 DOM** | 源码注释清洗、字符串遮罩与 AST 位置映射 |
 | **L3 编译器与类型检查** | `src/compiler/transpile-helpers.ts` | **0 DOM** | TypeScript 泛型擦除、访问修饰符剥离、参数属性展开等底层文本转换辅助函数 |
 | **L3 编译器与类型检查** | `src/compiler/transpile.ts` | **0 DOM** | TS ➔ JS 轻量级转译流水线（Interface/Type 擦除、Enum 展开、类型断言剥离） |
+| **L3 编译器与类型检查** | `src/compiler/jsx-transpile.ts` | **0 DOM** | TSX/JSX ➔ `React.createElement` 转译器（支持 Fragment、自闭合、表达式与展开属性） |
+| **L3 编译器与类型检查** | `src/compiler/props-schema.ts` | **0 DOM** | 静态提取组件名称、Props 接口字段、可选性、默认值与注释描述 |
 | **L3 编译器与类型检查** | `src/compiler/instrumenter.ts` | **0 DOM** | Acorn AST 解析、变量追踪、步进插桩（`__t` 带模块路径标记）、复杂度估算与调用树生成 |
 | **L3 编译器与类型检查** | `src/compiler/module-graph.ts` | **0 DOM** | 多文件 ES Module 静态依赖图构建、拓扑排序、循环依赖检测（`TS2300`）与 1:1 保行号 ESM ➔ CJS 虚拟模块重写 |
 | **L3 编译器与类型检查** | `src/compiler/tc-types.ts` | **0 DOM** | 静态类型检查器内部符号表、接口/类结构与作用域上下文定义 |
@@ -121,6 +125,7 @@
 | **L7 UI 视图与入口** | `src/ui/vfs.ts` | DOM | VFS 侧边栏文件树渲染、上传/下载交互与 `localStorage` 持久化桥接 |
 | **L7 UI 视图与入口** | `src/ui/script-tabs.ts` | DOM | 编辑器顶部多标签栏 DOM 渲染与编辑器文档切换绑定 |
 | **L7 UI 视图与入口** | `src/ui/notebook.ts` | DOM | Notebook 视图层、Cell 独立 CodeMirror 编辑器生命周期（`WeakMap` 管理）与拖拽交互 |
+| **L7 UI 视图与入口** | `src/ui/component-studio.ts` | DOM | 组件设计 & Props 调试工坊视图（隔离沙箱 iframe、自动 Props 控件、视口与背景切换、JSX 复制） |
 | **L7 UI 视图与入口** | `src/ui/video-webm.ts` | DOM | Canvas 帧绘制、WebCodecs `VideoEncoder` 硬件编码及视频下载 UI |
 | **L7 UI 视图与入口** | `src/ui/share.ts` | DOM | Base64 URL 哈希分享链接生成、独立播放器 HTML 导出与剪贴板交互 |
 | **L7 UI 视图与入口** | `src/main.ts` | DOM | 应用启动总装入口：注册 `uiHooks`、绑定全局事件与快捷键、挂载 `window.App` 门面 API |

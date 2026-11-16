@@ -3,6 +3,7 @@
    ================================================================ */
 import type {
   Diag,
+  EditorLanguage,
   InterfaceSchemaMeta,
   StepAnim,
   StepSnapshot,
@@ -53,7 +54,7 @@ export interface WebCodecsVideoFrameConstructor {
 
 export interface PlaygroundCMBridge {
   syncFromApp(state: {
-    language: 'ts';
+    language: EditorLanguage;
     text: string;
     lines: string[];
     declared: Set<string>;
@@ -64,6 +65,7 @@ export interface PlaygroundCMBridge {
     st: StepSnapshot | null | undefined;
     errorLines: Set<number>;
   }): void;
+  setLanguage?(lang: EditorLanguage | string): void;
   revealLine(line: number, focus?: boolean): void;
   scrollToLine(line: number): void;
   posAtCoords(coords: { x: number; y: number }): { lineNum: number; col: number; text: string } | null;
@@ -151,7 +153,7 @@ declare global {
   var syncActiveScriptTabFromFileName: ((newFileName: string) => void) | undefined;
   var syncActiveScriptTabSource: ((src: string) => void) | undefined;
   var importNotebookFromJson: ((jsonText: string, fileName: string) => boolean) | undefined;
-  var setViewMode: ((mode: 'script' | 'notebook') => void) | undefined;
+  var setViewMode: ((mode: 'script' | 'notebook' | 'studio') => void) | undefined;
   var syncGutterAndHighlight: (() => void) | undefined;
   var updateCursorPos: (() => void) | undefined;
   var breakpoints: Set<number> | undefined;

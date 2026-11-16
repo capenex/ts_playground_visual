@@ -365,3 +365,5 @@ export interface NotebookDocument {
   lastGlobalVars: Record<string, unknown>;
   lastGlobalDs: Record<string, StepAnim>;
 }
+
+export type EditorLanguage = 'ts' | 'tsx' | 'js' | 'jsx' | 'css' | 'html' | 'json';

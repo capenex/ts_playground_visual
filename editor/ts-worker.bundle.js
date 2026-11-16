@@ -1,4 +1,4 @@
-"use strict";(()=>{var k=Object.create;var T=Object.defineProperty;var A=Object.getOwnPropertyDescriptor;var P=Object.getOwnPropertyNames;var F=Object.getPrototypeOf,R=Object.prototype.hasOwnProperty;var g=(e,r)=>()=>{try{return r||e((r={exports:{}}).exports,r),r.exports}catch(t){throw r=0,t}};var E=(e,r,t,o)=>{if(r&&typeof r=="object"||typeof r=="function")for(let a of P(r))!R.call(e,a)&&a!==t&&T(e,a,{get:()=>r[a],enumerable:!(o=A(r,a))||o.enumerable});return e};var w=(e,r,t)=>(t=e!=null?k(F(e)):{},E(r||!e||!e.__esModule?T(t,"default",{value:e,enumerable:!0}):t,e));var f=g((K,U)=>{U.exports={name:"typescript",version:"7.0.2",license:"Apache-2.0",author:"Microsoft Corp.",homepage:"https://www.typescriptlang.org/",description:"TypeScript is a language for application scale JavaScript development",keywords:["TypeScript","Microsoft","compiler","language","javascript"],bugs:{url:"https://github.com/microsoft/TypeScript/issues"},repository:{type:"git",url:"https://github.com/microsoft/TypeScript.git"},type:"module",preferUnplugged:!0,engines:{node:">=16.20.0"},files:["bin","lib","dist","vendor","NOTICE.txt"],bin:{tsc:"./bin/tsc"},exports:{"./package.json":"./package.json",".":"./lib/version.cjs","./unstable/sync":"./dist/api/sync/api.js","./unstable/async":"./dist/api/async/api.js","./unstable/fs":"./dist/api/fs.js","./unstable/proto":"./dist/api/proto.js","./unstable/ast":"./dist/ast/index.js","./unstable/ast/is":"./dist/ast/is.js","./unstable/ast/factory":"./dist/ast/factory.generated.js","./unstable/ast/utils":"./dist/ast/utils.js","./unstable/ast/scanner":"./dist/ast/scanner.js","./unstable/ast/visitor":"./dist/ast/visitor.js","./unstable/ast/clone":"./dist/ast/clone.js"},imports:{"#getExePath":"./lib/getExePath.js","#enums/*":{types:"./dist/enums/*.enum.d.ts",default:"./dist/enums/*.js"},"#vscode-jsonrpc/node":"./vendor/vscode-jsonrpc/lib/node/main.js"},gitHead:"2bd066d87f5bafd315be9f40889d0a60b9e58e0b",publishConfig:{access:"public",tag:"latest"},optionalDependencies:{"@typescript/typescript-win32-x64":"7.0.2","@typescript/typescript-win32-arm64":"7.0.2","@typescript/typescript-linux-x64":"7.0.2","@typescript/typescript-linux-arm":"7.0.2","@typescript/typescript-linux-arm64":"7.0.2","@typescript/typescript-darwin-x64":"7.0.2","@typescript/typescript-darwin-arm64":"7.0.2","@typescript/typescript-aix-ppc64":"7.0.2","@typescript/typescript-freebsd-arm64":"7.0.2","@typescript/typescript-freebsd-x64":"7.0.2","@typescript/typescript-linux-loong64":"7.0.2","@typescript/typescript-linux-mips64el":"7.0.2","@typescript/typescript-linux-ppc64":"7.0.2","@typescript/typescript-linux-riscv64":"7.0.2","@typescript/typescript-linux-s390x":"7.0.2","@typescript/typescript-netbsd-arm64":"7.0.2","@typescript/typescript-netbsd-x64":"7.0.2","@typescript/typescript-openbsd-arm64":"7.0.2","@typescript/typescript-openbsd-x64":"7.0.2","@typescript/typescript-sunos-x64":"7.0.2"}}});var x=g(m=>{var{version:V}=f();m.version=V;m.versionMajorMinor="7.0"});var b=w(x(),1),i=b.default||b,h=`
+"use strict";(()=>{var A=Object.create;var g=Object.defineProperty;var P=Object.getOwnPropertyDescriptor;var R=Object.getOwnPropertyNames;var E=Object.getPrototypeOf,F=Object.prototype.hasOwnProperty;var x=(e,n)=>()=>{try{return n||e((n={exports:{}}).exports,n),n.exports}catch(a){throw n=0,a}};var C=(e,n,a,i)=>{if(n&&typeof n=="object"||typeof n=="function")for(let o of R(n))!F.call(e,o)&&o!==a&&g(e,o,{get:()=>n[o],enumerable:!(i=P(n,o))||i.enumerable});return e};var w=(e,n,a)=>(a=e!=null?A(E(e)):{},C(n||!e||!e.__esModule?g(a,"default",{value:e,enumerable:!0}):a,e));var v=x((W,N)=>{N.exports={name:"typescript",version:"7.0.2",license:"Apache-2.0",author:"Microsoft Corp.",homepage:"https://www.typescriptlang.org/",description:"TypeScript is a language for application scale JavaScript development",keywords:["TypeScript","Microsoft","compiler","language","javascript"],bugs:{url:"https://github.com/microsoft/TypeScript/issues"},repository:{type:"git",url:"https://github.com/microsoft/TypeScript.git"},type:"module",preferUnplugged:!0,engines:{node:">=16.20.0"},files:["bin","lib","dist","vendor","NOTICE.txt"],bin:{tsc:"./bin/tsc"},exports:{"./package.json":"./package.json",".":"./lib/version.cjs","./unstable/sync":"./dist/api/sync/api.js","./unstable/async":"./dist/api/async/api.js","./unstable/fs":"./dist/api/fs.js","./unstable/proto":"./dist/api/proto.js","./unstable/ast":"./dist/ast/index.js","./unstable/ast/is":"./dist/ast/is.js","./unstable/ast/factory":"./dist/ast/factory.generated.js","./unstable/ast/utils":"./dist/ast/utils.js","./unstable/ast/scanner":"./dist/ast/scanner.js","./unstable/ast/visitor":"./dist/ast/visitor.js","./unstable/ast/clone":"./dist/ast/clone.js"},imports:{"#getExePath":"./lib/getExePath.js","#enums/*":{types:"./dist/enums/*.enum.d.ts",default:"./dist/enums/*.js"},"#vscode-jsonrpc/node":"./vendor/vscode-jsonrpc/lib/node/main.js"},gitHead:"2bd066d87f5bafd315be9f40889d0a60b9e58e0b",publishConfig:{access:"public",tag:"latest"},optionalDependencies:{"@typescript/typescript-win32-x64":"7.0.2","@typescript/typescript-win32-arm64":"7.0.2","@typescript/typescript-linux-x64":"7.0.2","@typescript/typescript-linux-arm":"7.0.2","@typescript/typescript-linux-arm64":"7.0.2","@typescript/typescript-darwin-x64":"7.0.2","@typescript/typescript-darwin-arm64":"7.0.2","@typescript/typescript-aix-ppc64":"7.0.2","@typescript/typescript-freebsd-arm64":"7.0.2","@typescript/typescript-freebsd-x64":"7.0.2","@typescript/typescript-linux-loong64":"7.0.2","@typescript/typescript-linux-mips64el":"7.0.2","@typescript/typescript-linux-ppc64":"7.0.2","@typescript/typescript-linux-riscv64":"7.0.2","@typescript/typescript-linux-s390x":"7.0.2","@typescript/typescript-netbsd-arm64":"7.0.2","@typescript/typescript-netbsd-x64":"7.0.2","@typescript/typescript-openbsd-arm64":"7.0.2","@typescript/typescript-openbsd-x64":"7.0.2","@typescript/typescript-sunos-x64":"7.0.2"}}});var h=x(b=>{var{version:V}=v();b.version=V;b.versionMajorMinor="7.0"});var T=w(h(),1),r=T.default||T,S=`
 interface Boolean {}
 interface Function {
   apply(this: Function, thisArg: any, argArray?: any): any;
@@ -554,20 +554,111 @@ declare module 'node:fs/promises' {
 }
 
 // Algorithm Playground Predeclared Helpers (conditional if user hasn't declared them)
-`,u="/lib.es.d.ts",l="/playground.ts",_=i.createSourceFile(u,h,i.ScriptTarget.ES2022,!0);function N(e){let r="";return/\b(?:class|interface|type)\s+ListNode\b/.test(e)||(r+=`
+`,U=`
+declare namespace JSX {
+  type Element = any;
+  interface IntrinsicElements {
+    [elemName: string]: any;
+  }
+  interface ElementAttributesProperty {
+    props: {};
+  }
+  interface ElementChildrenAttribute {
+    children: {};
+  }
+}
+
+declare namespace React {
+  export type ReactNode = any;
+  export type ReactElement<P = any, T = any> = any;
+  export type CSSProperties = Record<string, any>;
+  export type FC<P = {}> = (props: P & { children?: ReactNode }) => ReactElement | null;
+  export type FunctionComponent<P = {}> = FC<P>;
+  export type ComponentType<P = {}> = FC<P> | (new (props: P) => any);
+  export type ComponentProps<T = any> = any;
+  export type PropsWithChildren<P = {}> = P & { children?: ReactNode };
+  export type SyntheticEvent<T = any> = any;
+  export type MouseEvent<T = any> = any;
+  export type ChangeEvent<T = any> = any;
+  export type KeyboardEvent<T = any> = any;
+  export type FocusEvent<T = any> = any;
+  export type FormEvent<T = any> = any;
+  export type MouseEventHandler<T = any> = (event: MouseEvent<T>) => void;
+  export type ChangeEventHandler<T = any> = (event: ChangeEvent<T>) => void;
+  export type FormEventHandler<T = any> = (event: FormEvent<T>) => void;
+  export type RefObject<T> = { readonly current: T | null };
+  export type MutableRefObject<T> = { current: T };
+  export type Dispatch<A> = (value: A) => void;
+  export type SetStateAction<S> = S | ((prevState: S) => S);
+
+  export const Fragment: unique symbol;
+  export const StrictMode: any;
+  export const Suspense: any;
+
+  export function useState<S>(initialState: S | (() => S)): [S, Dispatch<SetStateAction<S>>];
+  export function useState<S = undefined>(): [S | undefined, Dispatch<SetStateAction<S | undefined>>];
+  export function useEffect(effect: () => (void | (() => void)), deps?: readonly any[]): void;
+  export function useLayoutEffect(effect: () => (void | (() => void)), deps?: readonly any[]): void;
+  export function useMemo<T>(factory: () => T, deps: readonly any[] | undefined): T;
+  export function useCallback<T extends Function>(callback: T, deps: readonly any[]): T;
+  export function useRef<T>(initialValue: T): MutableRefObject<T>;
+  export function useRef<T = undefined>(): MutableRefObject<T | undefined>;
+  export function useContext<T>(context: any): T;
+  export function useReducer<R extends (state: any, action: any) => any>(reducer: R, initialArg: any): [any, Dispatch<any>];
+  export function useId(): string;
+  export function useTransition(): [boolean, (callback: () => void) => void];
+  export function useDeferredValue<T>(value: T): T;
+  export function createContext<T>(defaultValue: T): any;
+  export function createElement(type: any, props?: any, ...children: any[]): ReactElement;
+  export function cloneElement(element: any, props?: any, ...children: any[]): ReactElement;
+  export function forwardRef<T, P = {}>(render: (props: P, ref: any) => ReactNode): FC<P>;
+  export function memo<P>(component: FC<P>): FC<P>;
+  export function lazy<T>(factory: () => Promise<{ default: T }>): T;
+}
+
+declare module 'react' {
+  export = React;
+}
+
+declare module 'react-dom' {
+  export function render(element: any, container: any): void;
+  export function createPortal(children: any, container: any): any;
+  const reactDomDefault: { render: typeof render; createPortal: typeof createPortal };
+  export default reactDomDefault;
+}
+
+declare module 'react-dom/client' {
+  export interface Root {
+    render(children: any): void;
+    unmount(): void;
+  }
+  export function createRoot(container: any): Root;
+}
+
+declare module 'react/jsx-runtime' {
+  export const Fragment: typeof React.Fragment;
+  export function jsx(type: any, props: any, key?: any): any;
+  export function jsxs(type: any, props: any, key?: any): any;
+}
+
+declare module '*.css' {
+  const styles: Record<string, string>;
+  export default styles;
+}
+`,u="/lib.es.d.ts",j="/playground.ts",L="/playground.tsx",y=!!(r&&typeof r.createSourceFile=="function"&&r.ScriptTarget&&r.ModuleKind&&r.JsxEmit),J=y?r.createSourceFile(u,S,r.ScriptTarget.ES2022,!0):null;function M(e){let n="";return/\b(?:class|interface|type)\s+ListNode\b/.test(e)||(n+=`
 declare class ListNode {
   val: number;
   next: ListNode | null;
   constructor(val?: number, next?: ListNode | null);
 }
-`),/\b(?:class|interface|type)\s+TreeNode\b/.test(e)||(r+=`
+`),/\b(?:class|interface|type)\s+TreeNode\b/.test(e)||(n+=`
 declare class TreeNode {
   val: number;
   left: TreeNode | null;
   right: TreeNode | null;
   constructor(val?: number, left?: TreeNode | null, right?: TreeNode | null);
 }
-`),/\b(?:class|interface|type)\s+_Node\b/.test(e)||(r+=`
+`),/\b(?:class|interface|type)\s+_Node\b/.test(e)||(n+=`
 declare class _Node {
   val: number;
   next: _Node | null;
@@ -578,6 +669,6 @@ declare class _Node {
   right: _Node | null;
   constructor(val?: number, ...rest: any[]);
 }
-`),r}var v={target:i.ScriptTarget.ES2022,module:i.ModuleKind.ESNext,strict:!1,noImplicitAny:!1,strictNullChecks:!1,strictFunctionTypes:!0,noImplicitReturns:!1,noUnusedLocals:!1,noUncheckedIndexedAccess:!1,noEmit:!0,skipLibCheck:!0,noLib:!1};function j(e){return!e||typeof e!="object"?v:{...v,strict:!!e.strict,noImplicitAny:!!e.noImplicitAny,strictNullChecks:!!e.strictNullChecks,strictFunctionTypes:e.strictFunctionTypes!==void 0?!!e.strictFunctionTypes:!0,noImplicitReturns:!!e.noImplicitReturns,noUnusedLocals:!!e.noUnusedLocals,noUncheckedIndexedAccess:!!e.noUncheckedIndexedAccess}}function C(e,r){let t=h+N(e),o=i.createSourceFile(u,t,i.ScriptTarget.ES2022,!0),a=i.createSourceFile(l,e,i.ScriptTarget.ES2022,!0),y={getSourceFile:n=>{if(n===l)return a;if(n===u)return o},writeFile:()=>{},getDefaultLibFileName:()=>u,useCaseSensitiveFileNames:()=>!0,getCanonicalFileName:n=>n,getCurrentDirectory:()=>"/",getNewLine:()=>`
-`,fileExists:n=>n===l||n===u,readFile:n=>{if(n===l)return e;if(n===u)return t}},d=i.createProgram([l],j(r),y),s=[...d.getSyntacticDiagnostics(a),...d.getSemanticDiagnostics(a)],c=[];for(let n of s){if(!n.file||n.file.fileName!==l)continue;let S=typeof n.start=="number"?n.start:0,p=a.getLineAndCharacterOfPosition(S),I=i.flattenDiagnosticMessageText(n.messageText,`
-`);c.push({line:p.line+1,col:p.character+1,code:"TS"+n.code,message:I})}return c}function L(e){return i.transpileModule(e,{compilerOptions:{target:i.ScriptTarget.ES2022,module:i.ModuleKind.None,removeComments:!1}}).outputText}typeof self<"u"&&typeof self.addEventListener=="function"&&self.addEventListener("message",e=>{let r=e&&e.data?e.data:{},{id:t,type:o,src:a,tsConfig:y,configKey:d}=r;try{if(o==="check"){let s=String(a||""),c=C(s,y);self.postMessage({id:t,type:"checkResult",src:s,configKey:d,diagnostics:c,diags:c})}else if(o==="transpile"){let s=L(String(a||""));self.postMessage({id:t,type:"transpileResult",js:s})}}catch(s){self.postMessage({id:t,type:"error",error:s&&s.message?s.message:String(s)})}});})();
+`),n}var K=y?{target:r.ScriptTarget.ES2022,module:r.ModuleKind.ESNext,jsx:r.JsxEmit.React,esModuleInterop:!0,allowSyntheticDefaultImports:!0,strict:!1,noImplicitAny:!1,strictNullChecks:!1,strictFunctionTypes:!0,noImplicitReturns:!1,noUnusedLocals:!1,noUncheckedIndexedAccess:!1,noEmit:!0,skipLibCheck:!0,noLib:!1}:{};function O(e,n){if(!y)return{};let a={...K,jsx:n?r.JsxEmit.React:r.JsxEmit.None};return!e||typeof e!="object"?a:{...a,strict:!!e.strict,noImplicitAny:!!e.noImplicitAny,strictNullChecks:!!e.strictNullChecks,strictFunctionTypes:e.strictFunctionTypes!==void 0?!!e.strictFunctionTypes:!0,noImplicitReturns:!!e.noImplicitReturns,noUnusedLocals:!!e.noUnusedLocals,noUncheckedIndexedAccess:!!e.noUncheckedIndexedAccess}}function _(e,n,a=!1){if(!y)return[];let i=a?L:j,o=S+(a?U:"")+M(e),p=r.createSourceFile(u,o,r.ScriptTarget.ES2022,!0),l=r.createSourceFile(i,e,r.ScriptTarget.ES2022,!0),m={getSourceFile:t=>{if(t===i)return l;if(t===u)return p},writeFile:()=>{},getDefaultLibFileName:()=>u,useCaseSensitiveFileNames:()=>!0,getCanonicalFileName:t=>t,getCurrentDirectory:()=>"/",getNewLine:()=>`
+`,fileExists:t=>t===i||t===u,readFile:t=>{if(t===i)return e;if(t===u)return o}},d=r.createProgram([i],O(n,a),m),s=[...d.getSyntacticDiagnostics(l),...d.getSemanticDiagnostics(l)],c=[];for(let t of s){if(!t.file||t.file.fileName!==i)continue;let I=typeof t.start=="number"?t.start:0,f=l.getLineAndCharacterOfPosition(I),k=r.flattenDiagnosticMessageText(t.messageText,`
+`);c.push({line:f.line+1,col:f.character+1,code:"TS"+t.code,message:k})}return c}function D(e){return r.transpileModule(e,{compilerOptions:{target:r.ScriptTarget.ES2022,module:r.ModuleKind.None,removeComments:!1}}).outputText}typeof self<"u"&&typeof self.addEventListener=="function"&&self.addEventListener("message",e=>{let n=e&&e.data?e.data:{},{id:a,type:i,src:o,tsConfig:p,configKey:l,fileName:m,isTsx:d}=n;try{if(i==="check"){let s=String(o||""),c=!!d||/\.(?:tsx|jsx)$/i.test(String(m||"")),t=_(s,p,c);self.postMessage({id:a,type:"checkResult",src:s,configKey:l,isTsx:c,diagnostics:t,diags:t})}else if(i==="transpile"){let s=D(String(o||""));self.postMessage({id:a,type:"transpileResult",js:s})}}catch(s){self.postMessage({id:a,type:"error",error:s&&s.message?s.message:String(s)})}});})();

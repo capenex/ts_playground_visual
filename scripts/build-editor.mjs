@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = path.join(ROOT, 'editor', 'cm.bundle.js');
 const TS_WORKER_OUT = path.join(ROOT, 'editor', 'ts-worker.bundle.js');
+const REACT_RUNTIME_OUT = path.join(ROOT, 'editor', 'react-runtime.bundle.js');
 const APP_OUT = path.join(ROOT, 'js', 'app.bundle.js');
 
 await build({
@@ -41,6 +42,19 @@ await build({
   logLevel: 'warning',
 });
 
+await build({
+  entryPoints: [path.join(ROOT, 'editor', 'react-runtime-entry.js')],
+  bundle: true,
+  minify: true,
+  platform: 'browser',
+  format: 'iife',
+  define: { 'process.env.NODE_ENV': '"production"' },
+  target: ['chrome100', 'firefox100', 'safari16'],
+  outfile: REACT_RUNTIME_OUT,
+  legalComments: 'none',
+  logLevel: 'warning',
+});
+
 const fs = await import('node:fs');
 
 const STORAGE_VERSION = process.env.STORAGE_VERSION || '20261026-1';
@@ -66,5 +80,6 @@ if (fs.existsSync(indexPath)) {
 const appKb = Math.round(fs.statSync(APP_OUT).size / 1024);
 const kb = Math.round(fs.statSync(OUT).size / 1024);
 const tsKb = Math.round(fs.statSync(TS_WORKER_OUT).size / 1024);
-console.log(`built js/app.bundle.js · ${appKb} KB | editor/cm.bundle.js · ${kb} KB | editor/ts-worker.bundle.js · ${tsKb} KB | storage-version · ${STORAGE_VERSION}`);
+const reactKb = Math.round(fs.statSync(REACT_RUNTIME_OUT).size / 1024);
+console.log(`built js/app.bundle.js · ${appKb} KB | editor/cm.bundle.js · ${kb} KB | editor/ts-worker.bundle.js · ${tsKb} KB | editor/react-runtime.bundle.js · ${reactKb} KB | storage-version · ${STORAGE_VERSION}`);
 

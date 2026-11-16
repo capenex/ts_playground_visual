@@ -78,6 +78,15 @@ export function syncActiveScriptTabFromFileName(newFileName: string) {
   renderVfsTreeUI();
 }
 
+function tabIconClassForFileName(title: string): string {
+  const lower = String(title || "").trim().toLowerCase();
+  if (lower.endsWith(".css")) return "css-icon";
+  if (lower.endsWith(".html") || lower.endsWith(".htm")) return "html-icon";
+  if (lower.endsWith(".tsx") || lower.endsWith(".jsx")) return "tsx-icon";
+  if (lower.endsWith(".json")) return "json-icon";
+  return "ts-icon";
+}
+
 export function renderScriptTabsUI() {
   if (typeof document !== "undefined" && typeof document.dispatchEvent === "function") {
     try {
@@ -101,9 +110,10 @@ export function renderScriptTabsUI() {
         const normPath = normalizeWorkspaceModulePath(t.vfsPath || t.title);
         const isDebugEntry = isMultiDebug && appState.DEBUG_SESSION.entryFile === normPath;
         const badge = isDebugEntry ? ` <span class="dim" title="当前多文件调试入口模块">▶</span>` : "";
+        const iconCls = tabIconClassForFileName(t.title);
         return (
           `<div class="nb-tab${isAct ? " active" : ""}" role="tab" tabindex="0" aria-selected="${isAct ? "true" : "false"}" data-script-tab-id="${esc(t.id)}" title="单击或按 Enter/Space 切换标签页 · 双击文件名重命名">` +
-          `<span class="nb-tab-icon ts-icon" aria-hidden="true"></span>` +
+          `<span class="nb-tab-icon ${iconCls}" aria-hidden="true"></span>` +
           `<span class="nb-tab-title">${esc(t.title)}${badge}</span>` +
           (store.tabs.length > 1
             ? `<button type="button" class="nb-tab-close" data-close-script-tab="${esc(t.id)}" title="关闭标签页">×</button>`
@@ -315,6 +325,9 @@ export function initScriptTabsAndImportEvents() {
             setScriptTabSyncing(false);
             resetTraceState();
             updateEditorChrome();
+            if (appState.VIEW_MODE === "studio") {
+              uiHooks.onStudioFileActivated();
+            }
           }
           renderScriptTabsUI();
           renderVfsTreeUI();
@@ -374,6 +387,9 @@ export function initScriptTabsAndImportEvents() {
           updateEditorChrome();
           renderScriptTabsUI();
           renderVfsTreeUI();
+          if (appState.VIEW_MODE === "studio") {
+            uiHooks.onStudioFileActivated();
+          }
         }
       }
     });
@@ -447,6 +463,7 @@ export function initScriptTabsAndImportEvents() {
             setScriptTabSyncing(true);
             setFileName(nextName);
             setScriptTabSyncing(false);
+            updateEditorChrome();
           }
           say(`✓ 文件已重命名为 ${nextName}`, "ok");
         }
@@ -485,6 +502,9 @@ export function openVfsScriptFile(path: string, name: string, content: string): 
   resetTraceState();
   updateEditorChrome();
   renderScriptTabsUI();
+  if (appState.VIEW_MODE === "studio") {
+    uiHooks.onStudioFileActivated();
+  }
 }
 
 export function switchToScriptFile(targetPath: string): void {
@@ -519,8 +539,12 @@ export function switchToScriptFile(targetPath: string): void {
   if (editor) editor.value = targetTab.source;
   setFileName(targetTab.vfsPath || targetTab.title);
   setScriptTabSyncing(false);
+  updateEditorChrome();
   renderScriptTabsUI();
   renderVfsTreeUI();
+  if (appState.VIEW_MODE === "studio") {
+    uiHooks.onStudioFileActivated();
+  }
 }
 
 export function collectWorkspaceFileMap(): Map<string, string> {

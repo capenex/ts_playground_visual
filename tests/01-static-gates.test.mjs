@@ -13,8 +13,8 @@ export async function runStaticGatesSuite() {
   const tsFiles = walkTsFiles(SRC_DIR).sort();
   const relFiles = tsFiles.map((f) => path.relative(ROOT, f).replace(/\\/g, '/'));
 
-  // Gate 10a: Exact 39 TypeScript modules in src/**/*.ts
-  assertEq('Gate 10a: src/**/*.ts exact module count is 39', relFiles.length, 39);
+  // Gate 10a: Exact 43 TypeScript modules in src/**/*.ts
+  assertEq('Gate 10a: src/**/*.ts exact module count is 43', relFiles.length, 43);
   check(
     'Gate 10b: Python legacy directories & files completely removed',
     !fs.existsSync(path.join(ROOT, 'python')) &&
@@ -162,7 +162,7 @@ export async function runStaticGatesSuite() {
   }
   assertEq('Gate 8: Tarjan SCC circular dependency count is 0', cycles.length, 0);
 
-  // Gate 9: Full 23 Pure Logic Implementation Modules Zero-DOM Isolation Check
+  // Gate 9: Full 26 Pure Logic Implementation Modules Zero-DOM Isolation Check
   const pureModulePrefixes = [
     'src/types.ts',
     'src/state.ts',
@@ -177,7 +177,7 @@ export async function runStaticGatesSuite() {
   const pureModules = relFiles.filter((rel) =>
     pureModulePrefixes.some((p) => (p.endsWith('/') ? rel.startsWith(p) : rel === p)),
   );
-  assertEq('Gate 9a: exact count of pure 0-DOM implementation modules is 23', pureModules.length, 23);
+  assertEq('Gate 9a: exact count of pure 0-DOM implementation modules is 26', pureModules.length, 26);
 
   let domViolations = 0;
   for (const rel of pureModules) {
@@ -188,7 +188,7 @@ export async function runStaticGatesSuite() {
       check(`Gate 9b (${rel}): 0 DOM references`, false);
     }
   }
-  assertEq('Gate 9b: total DOM reference violations in 23 pure modules is 0', domViolations, 0);
+  assertEq('Gate 9b: total DOM reference violations in 26 pure modules is 0', domViolations, 0);
 
   // TypeScript Official Compiler (`tsc --noEmit`) Strict Check
   // Spawn the compiler through the current node binary: the node_modules/.bin shims are

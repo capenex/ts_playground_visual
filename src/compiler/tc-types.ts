@@ -214,6 +214,7 @@ export interface VarEnvInfo {
 export interface FnSigInfo {
   name: string;
   params: Array<{ name: string; type: string; rawType: string; optional: boolean; isRest?: boolean }>;
+  extraBindings?: Array<{ name: string; type: string }>;
   minArgs: number;
   returnType: string;
   rawReturnType: string;
@@ -228,6 +229,7 @@ export interface FnSigInfo {
 export interface TypeCheckContext {
   lines: string[];
   tsConfig: TsCompilerOptions;
+  isTsx: boolean;
   diagnostics: Array<{ line: number; code: string; message?: string }>;
   fns: Map<string, FnSigInfo>;
   typeAliases: Map<string, string>;
@@ -264,9 +266,27 @@ export const BUILTIN_TS_GLOBALS = new Set([
   'checkpoint', '断点',
 ]);
 
+export const REACT_BUILTIN_IDENTIFIERS = new Set([
+  'React', 'ReactDOM', 'Fragment', 'StrictMode', 'Suspense',
+  'useState', 'useEffect', 'useLayoutEffect', 'useMemo', 'useCallback',
+  'useRef', 'useContext', 'useReducer', 'useId', 'useTransition',
+  'useDeferredValue', 'useImperativeHandle', 'useDebugValue',
+  'createContext', 'createElement', 'cloneElement', 'isValidElement',
+  'forwardRef', 'memo', 'lazy', 'Children',
+]);
+
+export const REACT_BUILTIN_TYPES = new Set([
+  'ReactNode', 'ReactElement', 'CSSProperties', 'FC', 'FunctionComponent',
+  'ComponentType', 'ComponentProps', 'PropsWithChildren',
+  'MouseEvent', 'ChangeEvent', 'KeyboardEvent', 'FocusEvent', 'FormEvent',
+  'SyntheticEvent', 'RefObject', 'MutableRefObject', 'Dispatch', 'SetStateAction',
+  'JSX',
+]);
+
 export function createTypeCheckContext(
   src: string,
-  customTsConfig?: TsCompilerOptions
+  customTsConfig?: TsCompilerOptions,
+  isTsx = false
 ): TypeCheckContext {
   const lines = src.replace(/\r\n?/g, '\n').split('\n');
   const tsConfig: TsCompilerOptions = customTsConfig ? { ...customTsConfig } : { ...appState.TS_CONFIG };
@@ -284,6 +304,15 @@ export function createTypeCheckContext(
   const enumValueTypes = new Map<string, Set<string>>();
   const env = new Map<string, VarEnvInfo>();
   const activeTypeParams = new Map<string, string>();
+
+  if (isTsx) {
+    REACT_BUILTIN_IDENTIFIERS.forEach((id) => {
+      env.set(id, { type: 'any', isConst: true, declaredType: 'any' });
+    });
+    REACT_BUILTIN_TYPES.forEach((tName) => {
+      typeAliases.set(tName, 'any');
+    });
+  }
 
   function getKnownNominalTypes(): Set<string> {
     const s = new Set<string>();
@@ -305,6 +334,7 @@ export function createTypeCheckContext(
       activeTypeParams.has(name) ||
       enumsSet.has(name) ||
       BUILTIN_TS_GLOBALS.has(name) ||
+      (isTsx && REACT_BUILTIN_IDENTIFIERS.has(name)) ||
       RESERVED_WORDS.has(name)
     );
   }
@@ -318,6 +348,7 @@ export function createTypeCheckContext(
   return {
     lines,
     tsConfig,
+    isTsx,
     diagnostics,
     fns,
     typeAliases,

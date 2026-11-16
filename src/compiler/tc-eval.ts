@@ -12,6 +12,7 @@ import {
   parseRecordTypeArgs,
   parseTopLevelConditional,
   PropShapeInfo,
+  REACT_BUILTIN_TYPES,
   splitTopLevelDecl,
   splitTopLevelIntersection,
   splitTopLevelUnion,
@@ -591,9 +592,16 @@ export function createTypeEvalEngine(ctx: TypeCheckContext): TypeEvalEngine {
       }
     }
 
+    if (ctx.isTsx && (t.startsWith('React.') || t.startsWith('JSX.'))) {
+      return 'any';
+    }
+
     const genM = t.match(/^([A-Za-z_$][\w$]*)<([\s\S]+)>$/);
     if (genM && genM[1] && genM[2]) {
       const baseName = genM[1];
+      if (ctx.isTsx && REACT_BUILTIN_TYPES.has(baseName)) {
+        return 'any';
+      }
       const rawArgs = splitTopLevelDecl(genM[2]).map(a => evaluateType(a.trim(), typeEnv, depth + 1, expanding));
       const arg0 = rawArgs[0] || 'any';
       const arg1 = rawArgs[1] || 'any';

@@ -35,10 +35,11 @@ import {
   TS_NOTEBOOK_TUTORIALS,
 } from "../notebook/notebook-model";
 import { resetTraceState, say } from "../runtime/event-loop";
-import { appState, esc, registerUiHooks } from "../state";
+import { appState, AppViewMode, esc, registerUiHooks } from "../state";
 import type { NotebookCell, NotebookDocument } from "../types";
 import { buildStepVizRow, clearFlyLayer } from "../viz/ast-view";
 import { collectDeclaredNames, collectDeclaredTypeNames, hl, hlActiveLine } from "../viz/highlight";
+import { enterStudioMode, leaveStudioMode } from "./component-studio";
 import { stopAuto } from "./controls";
 import {
   $,
@@ -183,16 +184,17 @@ export function importNotebookFromJson(jsonText: string, fileName: string): bool
   return true;
 }
 
-/* ── Switch View Mode ('script' | 'notebook') ── */
-export function setViewMode(mode: "script" | "notebook") {
-  const next = mode === "notebook" ? "notebook" : "script";
+/* ── Switch View Mode ('script' | 'notebook' | 'studio') ── */
+export function setViewMode(mode: AppViewMode) {
+  const next: AppViewMode =
+    mode === "notebook" ? "notebook" : mode === "studio" ? "studio" : "script";
   if (next === "notebook") {
     ensureNotebookDeferredInit();
   }
   appState.VIEW_MODE = next;
   if (document.body && document.body.classList) {
-    if (next === "notebook") document.body.classList.add("notebook-mode");
-    else document.body.classList.remove("notebook-mode");
+    document.body.classList.toggle("notebook-mode", next === "notebook");
+    document.body.classList.toggle("studio-mode", next === "studio");
   }
   const modeSwitch = $("modeSwitch");
   if (modeSwitch && modeSwitch.querySelectorAll) {
@@ -222,6 +224,7 @@ export function setViewMode(mode: "script" | "notebook") {
   if (b2 && b2.classList) b2.classList.remove("active");
 
   if (next === "notebook") {
+    leaveStudioMode();
     const doc = getActiveNotebook();
     appState.ACTIVE_NB_CELL_ID = doc.activeCellId;
     syncNotebookGlobalsToSidePanel(doc);
@@ -232,6 +235,11 @@ export function setViewMode(mode: "script" | "notebook") {
     stopAuto();
     clearFlyLayer();
     renderScriptTabsUI();
+    if (next === "studio") {
+      enterStudioMode();
+    } else {
+      leaveStudioMode();
+    }
   }
   renderVfsTreeUI();
 }
@@ -890,7 +898,8 @@ export function initNotebookUI() {
     modeSwitch.addEventListener("click", (e: MouseEvent) => {
       const btn = closestElement(e, ".mode-tab");
       if (!btn || !btn.dataset.mode) return;
-      setViewMode(btn.dataset.mode === "notebook" ? "notebook" : "script");
+      const m = btn.dataset.mode;
+      setViewMode(m === "notebook" ? "notebook" : m === "studio" ? "studio" : "script");
     });
   }
 

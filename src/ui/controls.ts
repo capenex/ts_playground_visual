@@ -14,6 +14,7 @@ import {
   AUTO_PLAY_MS,
   createTsConfigFromPreset,
   detectTsConfigPreset,
+  inferEditorLanguageFromFileName,
   MAX_STEPS,
   registerUiHooks,
   uiHooks,
@@ -423,12 +424,26 @@ $('auto').onclick = async () => {
   }, AUTO_PLAY_MS);
 };
 
+function guardNonExecutableFileAction(actionLabel: string): boolean {
+  const fileName = String(appState.FILE_NAME || '').trim();
+  if (/\.css$/i.test(fileName)) {
+    say(`ℹ 当前文件 "${fileName}" 是 CSS 样式文件，无法直接${actionLabel}；请在「⚛️ 组件工坊」模式中联动预览样式效果。`, 'dim');
+    return true;
+  }
+  if (/\.html?$/i.test(fileName)) {
+    say(`ℹ 当前文件 "${fileName}" 是 HTML 文件，无法直接作为 TypeScript ${actionLabel}；请切换到 .ts / .tsx 文件后再执行。`, 'dim');
+    return true;
+  }
+  return false;
+}
+
 $('btnRun').onclick = () => {
   stopAuto();
   if (appState.VIEW_MODE === 'notebook' && typeof globalThis.runNotebookCell === 'function') {
     globalThis.runNotebookCell(undefined, true);
     return;
   }
+  if (guardNonExecutableFileAction('运行')) return;
   runOnce();
 };
 $('btnTrace').onclick = () => {
@@ -438,6 +453,7 @@ $('btnTrace').onclick = () => {
     globalThis.debugNotebookCell(undefined);
     return;
   }
+  if (guardNonExecutableFileAction('调试')) return;
   startDebug(0);
 };
 
@@ -508,6 +524,9 @@ export function setFileName(name: string | null | undefined) {
   if (fileNameEl && fileNameEl.value !== appState.FILE_NAME) fileNameEl.value = appState.FILE_NAME;
   const tag = $('fileExportTag');
   if (tag) tag.textContent = exportFileName();
+  if (typeof window !== 'undefined' && window.PlaygroundCM && typeof window.PlaygroundCM.setLanguage === 'function') {
+    try { window.PlaygroundCM.setLanguage(inferEditorLanguageFromFileName(appState.FILE_NAME)); } catch (_) {}
+  }
   if (typeof globalThis.syncActiveScriptTabFromFileName === 'function') {
     try { globalThis.syncActiveScriptTabFromFileName(appState.FILE_NAME); } catch (_) {}
   }
@@ -779,8 +798,10 @@ editor.addEventListener('keydown', (e: KeyboardEvent) => {
     if (e.shiftKey) {
       if (document.body && document.body.classList) document.body.classList.remove('editing-code');
       if (isEditorFocused()) blurEditor();
+      if (guardNonExecutableFileAction('调试')) return;
       startDebug(0);
     } else {
+      if (guardNonExecutableFileAction('运行')) return;
       runOnce();
     }
   }
@@ -817,6 +838,7 @@ export function onSourceChanged() {
   appState.COMPLEXITY_REPORT = null;
   hideHoverTip();
   updateEditorChrome();
+  uiHooks.onStudioSourceChanged();
   if (appState.TRACE.steps.length || appState.DEBUG_SESSION.active) {
     if (staleTimer) clearTimeout(staleTimer);
     staleTimer = setTimeout(() => {
@@ -927,19 +949,21 @@ export function applyTsConfig(nextCfg: TsCompilerOptions, writeToVfs = true): vo
 
   if (writeToVfs) {
     ensureVfsInitialized();
-    const jsonText = serializeTsConfigToJson(normalized);
-    VFS_NODES.set('tsconfig.json', {
-      path: 'tsconfig.json',
-      name: 'tsconfig.json',
-      type: 'file',
-      parentPath: '',
-      content: jsonText,
-    });
-    persistVfsToClientStorage();
-    notifyVfsStoreChanged();
-    if (appState.FILE_NAME === 'tsconfig.json' || appState.FILE_NAME.endsWith('/tsconfig.json')) {
-      editor.value = jsonText;
-      try { syncActiveScriptTabSource(jsonText); } catch (_) {}
+    if (VFS_NODES.has('tsconfig.json')) {
+      const jsonText = serializeTsConfigToJson(normalized);
+      VFS_NODES.set('tsconfig.json', {
+        path: 'tsconfig.json',
+        name: 'tsconfig.json',
+        type: 'file',
+        parentPath: '',
+        content: jsonText,
+      });
+      persistVfsToClientStorage();
+      notifyVfsStoreChanged();
+      if (appState.FILE_NAME === 'tsconfig.json' || appState.FILE_NAME.endsWith('/tsconfig.json')) {
+        editor.value = jsonText;
+        try { syncActiveScriptTabSource(jsonText); } catch (_) {}
+      }
     }
   }
 

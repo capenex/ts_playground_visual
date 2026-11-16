@@ -96,6 +96,7 @@ export const tutorialModalDetailEl = $('tutorialModalDetail');
 export const watchExprInputEl = $<HTMLInputElement>('watchExprInput');
 export const btnAddWatchEl = $<HTMLButtonElement>('btnAddWatch');
 export const complexityPopEl = $('complexityPop');
+export const studioPanelEl = $('studioPanel');
 
 export const dom = {
   $,
@@ -128,6 +129,7 @@ export const dom = {
   watchExprInputEl,
   btnAddWatchEl,
   complexityPopEl,
+  studioPanelEl,
 };
 
 export function renderConsoleLogEntry(entry: ConsoleLogEntry): void {

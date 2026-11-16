@@ -6,6 +6,8 @@ import {
   EditorState, StateField, StateEffect, Compartment, Prec, CharCategory,
 } from '@codemirror/state';
 import { javascript } from '@codemirror/lang-javascript';
+import { html } from '@codemirror/lang-html';
+import { css } from '@codemirror/lang-css';
 import { HighlightStyle, syntaxHighlighting, indentUnit, syntaxTree } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
 import { search, openSearchPanel, selectNextOccurrence, SearchCursor } from '@codemirror/search';
@@ -762,9 +764,33 @@ function init() {
     return computeCompletionsForDoc(docText, context.pos, context.explicit);
   }
 
-  const languageExt = () => [javascript({ typescript: true }), EditorState.languageData.of(() => [{ autocomplete: tsCompletionSource }])];
+  function normalizeEditorLang(lang) {
+    const raw = String(lang || '').trim().toLowerCase();
+    if (raw === 'css' || raw.endsWith('.css')) return 'css';
+    if (raw === 'html' || raw === 'htm' || raw.endsWith('.html') || raw.endsWith('.htm')) return 'html';
+    if (raw === 'json' || raw.endsWith('.json')) return 'json';
+    if (raw === 'tsx' || raw.endsWith('.tsx')) return 'tsx';
+    if (raw === 'jsx' || raw.endsWith('.jsx')) return 'jsx';
+    if (raw === 'js' || raw.endsWith('.js') || raw.endsWith('.mjs') || raw.endsWith('.cjs')) return 'js';
+    return 'ts';
+  }
 
-  const placeholderFor = () => '// 写 TypeScript，可在任意位置调用 checkpoint() 设置检查点，最后一行直接写入口调用，例如 main()';
+  const languageExt = (lang) => {
+    const norm = normalizeEditorLang(lang);
+    if (norm === 'css') return [css()];
+    if (norm === 'html') return [html()];
+    if (norm === 'json') return [javascript({ typescript: false, jsx: false })];
+    return [javascript({ typescript: true, jsx: true }), EditorState.languageData.of(() => [{ autocomplete: tsCompletionSource }])];
+  };
+
+  const placeholderFor = (lang) => {
+    const norm = normalizeEditorLang(lang);
+    if (norm === 'css') return '/* 编写 CSS 样式，在组件工坊模式下可实时联动热更新预览 */';
+    if (norm === 'html') return '<!-- 编写 HTML 片段 -->';
+    if (norm === 'json') return '// 编辑 JSON 配置文件';
+    if (norm === 'tsx' || norm === 'jsx') return '// 编写 React TSX 组件，支持 Props 接口与独立 CSS 导入';
+    return '// 写 TypeScript，可在任意位置调用 checkpoint() 设置检查点，最后一行直接写入口调用，例如 main()';
+  };
 
   let currentLang = 'ts';
   let declaredSignature = '';
@@ -898,8 +924,16 @@ function init() {
     });
   } catch (_) { /* fallback to boot-time sync */ }
 
-  function setLanguage() {
-    currentLang = 'ts';
+  function setLanguage(lang) {
+    const nextLang = normalizeEditorLang(lang);
+    if (nextLang === currentLang) return;
+    currentLang = nextLang;
+    view.dispatch({
+      effects: [
+        languageCompartment.reconfigure(languageExt(nextLang)),
+        placeholderCompartment.reconfigure(placeholder(placeholderFor(nextLang))),
+      ],
+    });
   }
 
   function buildNameDeco(names, className) {

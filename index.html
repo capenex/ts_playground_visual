@@ -9,11 +9,11 @@
 <meta property="og:description" content="Self-contained TypeScript playground with a unified source editor and step-through trace debugger." />
 <meta property="og:type" content="website" />
 <meta name="twitter:card" content="summary_large_image" />
-<link rel="preload" href="css/app.css?v=20261030a" as="style">
-<link rel="preload" href="js/app.bundle.js?v=20261030a" as="script">
-<link rel="preload" href="app-session.js" as="script">
-<link rel="preload" href="editor/cm.bundle.js?v=20261030a" as="script">
-<link rel="stylesheet" href="css/app.css?v=20261030a">
+<link rel="preload" href="css/app.css?v=20261116d" as="style">
+<link rel="preload" href="js/app.bundle.js?v=20261116d" as="script">
+<link rel="preload" href="app-session.js?v=20261116d" as="script">
+<link rel="preload" href="editor/cm.bundle.js?v=20261116d" as="script">
+<link rel="stylesheet" href="css/app.css?v=20261116d">
 <script src="storage-guard.js?v=20261026-1"></script>
 </head>
 <body>
@@ -30,6 +30,7 @@
   <div class="mode-switch" id="modeSwitch" role="tablist" aria-label="视图模式切换">
     <button type="button" class="mode-tab active" data-mode="script" title="单文件模式">📄 单文件</button>
     <button type="button" class="mode-tab" data-mode="notebook" title="Notebook 模式">📓 Notebook</button>
+    <button type="button" class="mode-tab" data-mode="studio" title="组件设计与 Props 调试工坊">⚛️ 组件工坊</button>
   </div>
   <div class="spacer"></div>
   <select id="sampleSel" title="内置样例（切换后自动开启 Debug 模式）" hidden>
@@ -68,7 +69,7 @@
       </div>
     </div>
   </div>
-  <input id="fileInput" type="file" accept=".ts,.tsx,.js,.jsx,.ipynb,.txt,.json,.csv,text/plain,application/json" hidden>
+  <input id="fileInput" type="file" accept=".ts,.tsx,.js,.jsx,.css,.html,.htm,.ipynb,.txt,.json,.csv,text/plain,text/css,text/html,application/json" hidden>
   <button id="btnRun" class="primary" title="运行 (Ctrl/Cmd+Enter)">▶ 运行</button>
   <button id="btnTrace" class="trace-btn" title="Debug 调试 (Ctrl/Cmd+Shift+Enter)">🐞 Debug</button>
   <div class="top-menu-wrap" id="exportMenuWrap">
@@ -198,6 +199,52 @@
     <div class="slots" id="slots"></div>
     <div class="console complexity-bar" id="console" title="点击查看复杂度详情"><div><span class="p">›</span><span class="dim">⏱ 复杂度就绪</span></div></div>
     <div class="complexity-pop" id="complexityPop" hidden></div>
+    <div id="studioPanel" class="studio-panel" hidden>
+      <div class="studio-toolbar">
+        <div class="studio-toolbar-left">
+          <span class="studio-badge">⚛️ Studio</span>
+          <select id="studioSampleSel" class="studio-sample-sel" title="切换内置 TSX 组件示例"></select>
+        </div>
+        <div class="studio-toolbar-right">
+          <div class="studio-seg-group" id="studioViewportGroup" role="group" aria-label="视口尺寸">
+            <button type="button" class="studio-seg-btn active" data-viewport="desktop" title="桌面全宽">🖥 Desktop</button>
+            <button type="button" class="studio-seg-btn" data-viewport="tablet" title="平板 768px">📱 Tablet</button>
+            <button type="button" class="studio-seg-btn" data-viewport="mobile" title="手机 375px">📲 375px</button>
+          </div>
+          <div class="studio-seg-group" id="studioBgGroup" role="group" aria-label="画布背景">
+            <button type="button" class="studio-seg-btn active" data-bg="light" title="浅色背景">☀️</button>
+            <button type="button" class="studio-seg-btn" data-bg="dark" title="深色背景">🌙</button>
+            <button type="button" class="studio-seg-btn" data-bg="dots" title="点阵网格">⠿</button>
+          </div>
+          <button type="button" id="studioBtnCopyJsx" class="studio-copy-btn" title="复制当前 Props 的 JSX 调用代码">📋 复制 JSX</button>
+        </div>
+      </div>
+      <div class="studio-stage bg-light" id="studioStage">
+        <div class="studio-viewport-frame viewport-desktop" id="studioViewportFrame">
+          <iframe id="studioPreviewFrame" class="studio-preview-iframe" sandbox="allow-scripts" title="组件隔离沙箱预览"></iframe>
+        </div>
+        <div class="studio-error-banner" id="studioErrorBanner" hidden></div>
+      </div>
+      <div class="studio-bottom-split">
+        <div class="studio-props-pane">
+          <div class="studio-pane-head">
+            <span>PROPS</span>
+            <span class="studio-component-tag" id="studioComponentTag">未检测到组件</span>
+            <button type="button" id="studioBtnResetProps" class="studio-mini-btn" title="重置为默认值">↺ 重置</button>
+          </div>
+          <div class="studio-props-list" id="studioPropsList"></div>
+        </div>
+        <div class="studio-events-pane">
+          <div class="studio-pane-head">
+            <span>EVENTS</span>
+            <button type="button" id="studioBtnClearEvents" class="studio-mini-btn" title="清空事件日志">清空</button>
+          </div>
+          <div class="studio-events-log" id="studioEventsLog">
+            <div class="studio-empty-hint">触发组件回调事件将在此记录…</div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -331,8 +378,8 @@
   </div>
 </div>
 
-<script src="js/app.bundle.js?v=20261030a"></script>
-<script src="app-session.js"></script>
-<script src="editor/cm.bundle.js?v=20261030a"></script>
+<script src="js/app.bundle.js?v=20261116d"></script>
+<script src="app-session.js?v=20261116d"></script>
+<script src="editor/cm.bundle.js?v=20261116d"></script>
 </body>
 </html>

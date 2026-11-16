@@ -13,7 +13,7 @@ import {
   VFS_STORAGE_KEY,
   VfsNode,
 } from "../runtime/vfs-store";
-import { esc, uiHooks } from "../state";
+import { appState, esc, uiHooks } from "../state";
 import { $, closestElement, editor, eventTargetElement } from "./dom";
 
 export * from "../runtime/vfs-store";
@@ -90,8 +90,14 @@ function buildVfsTreeDom(treeEl: HTMLElement) {
     const icon =
       ext === "ipynb"
         ? "📓"
+        : ext === "tsx" || ext === "jsx"
+        ? "⚛️"
         : ext === "ts"
         ? "📘"
+        : ext === "css"
+        ? "🎨"
+        : ext === "html" || ext === "htm"
+        ? "🌐"
         : ext === "json"
         ? "🗂"
         : "📄";
@@ -171,7 +177,9 @@ export function openVfsFile(rawPath: string) {
     return;
   }
 
-  uiHooks.setViewMode("script");
+  if (!(appState.VIEW_MODE === "studio" && /\.(?:tsx|jsx|css)$/i.test(node.name))) {
+    uiHooks.setViewMode("script");
+  }
   uiHooks.openVfsScriptFile(node.path, node.name, node.content || "");
   renderVfsTreeUI();
   say(`📂 已打开 ${node.path}`, "ok");

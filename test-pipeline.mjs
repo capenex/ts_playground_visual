@@ -14,6 +14,7 @@ import { runCompilerTypecheckSuite } from './tests/02-compiler-typecheck.test.mj
 import { runRuntimeDebugSuite } from './tests/03-runtime-debug.test.mjs';
 import { runVizEditorSuite } from './tests/04-viz-editor.test.mjs';
 import { runWorkspaceNotebookSuite } from './tests/05-workspace-nb.test.mjs';
+import { runComponentStudioSuite } from './tests/06-component-studio.test.mjs';
 
 async function main() {
   const t0 = Date.now();
@@ -35,6 +36,9 @@ async function main() {
 
   // Suite 5: VFS Workspace, Script Tabs & Jupyter Notebook Kernel
   await runWorkspaceNotebookSuite(sandbox, elements);
+
+  // Suite 6: Component Studio (JSX Transpiler, Props Schema & Studio Mode)
+  await runComponentStudioSuite(sandbox, elements);
 
   const { passed, failed } = getStats();
   const elapsed = ((Date.now() - t0) / 1000).toFixed(2);
